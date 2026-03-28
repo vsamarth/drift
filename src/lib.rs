@@ -1,4 +1,6 @@
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use anyhow::{Context, Result, anyhow, bail};
 use base64::Engine;
@@ -7,6 +9,13 @@ use iroh::{Endpoint, EndpointAddr, RelayMode, TransportAddr, Watcher};
 use serde::{Deserialize, Serialize};
 use tokio::fs::{self, File};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::signal;
+use tokio::time::{MissedTickBehavior, interval};
+
+pub mod rendezvous;
+pub mod server;
+
+use rendezvous::{OfferFile, OfferManifest, OfferStatus, RendezvousClient};
 
 pub const ALPN: &[u8] = b"drift/v0";
 const ACK_OK: &[u8] = b"ok";
@@ -17,19 +26,118 @@ struct TransferTicket {
     relay_url: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct FileHeader {
     name: String,
     size: u64,
 }
 
 #[derive(Debug, Clone)]
-pub struct ReceiveSetup {
+struct PreparedFile {
+    path: PathBuf,
+    header: FileHeader,
+}
+
+#[derive(Debug, Clone)]
+struct ReceiveSetup {
     pub out_dir: PathBuf,
     pub ticket: String,
 }
 
-pub async fn receive(out_dir: PathBuf) -> Result<()> {
+pub async fn send(files: Vec<PathBuf>, server_url: Option<String>) -> Result<()> {
+    let prepared = prepare_files(files).await?;
+    let endpoint = bind_endpoint()
+        .await
+        .context("binding local iroh endpoint")?;
+    let ticket = make_ticket(&endpoint).await?;
+    let client = RendezvousClient::new(rendezvous::resolve_server_url(server_url.as_deref()));
+    let offer = client
+        .create_offer(ticket, prepared.manifest.clone())
+        .await?;
+
+    println!("Offer ready");
+    println!("Code: {}", offer.code);
+    println!("Expires: {}", offer.expires_at);
+    println!(
+        "Files: {} ({})",
+        prepared.manifest.file_count,
+        human_size(prepared.manifest.total_size)
+    );
+    println!("Waiting for receiver to accept...");
+
+    let mut accept_future = Box::pin(endpoint.accept());
+    let mut poll = interval(Duration::from_secs(2));
+    poll.set_missed_tick_behavior(MissedTickBehavior::Delay);
+    poll.tick().await;
+    let mut ctrl_c = Box::pin(signal::ctrl_c());
+    let mut accepted = false;
+
+    loop {
+        tokio::select! {
+            _ = &mut ctrl_c => {
+                endpoint.close().await;
+                bail!("transfer interrupted");
+            }
+            incoming = &mut accept_future => {
+                let incoming = incoming.context("sender stopped before a receiver connected")?;
+                let connection = incoming.await.context("accepting receiver connection")?;
+                println!(
+                    "Receiver connected from {}",
+                    describe_remote(connection.remote_id(), endpoint.remote_info(connection.remote_id()).await.as_ref())
+                );
+                send_files_over_connection(connection, &prepared.files).await?;
+                endpoint.close().await;
+                return Ok(());
+            }
+            _ = poll.tick() => {
+                match client.offer_status(&offer.code).await?.status {
+                    OfferStatus::Pending => {}
+                    OfferStatus::Accepted => {
+                        if !accepted {
+                            accepted = true;
+                            println!("Offer accepted. Waiting for receiver connection...");
+                        }
+                    }
+                    OfferStatus::Declined => {
+                        endpoint.close().await;
+                        bail!("receiver declined the offer");
+                    }
+                    OfferStatus::Expired => {
+                        endpoint.close().await;
+                        bail!("offer expired before the receiver accepted");
+                    }
+                }
+            }
+        }
+    }
+}
+
+pub async fn receive(code: String, out_dir: PathBuf, server_url: Option<String>) -> Result<()> {
+    rendezvous::validate_code(&code)?;
+
+    let client = RendezvousClient::new(rendezvous::resolve_server_url(server_url.as_deref()));
+    let preview = client.offer_preview(&code).await?;
+
+    println!("Incoming offer");
+    println!("Files: {}", preview.manifest.file_count);
+    println!("Total size: {}", human_size(preview.manifest.total_size));
+    println!("Expires: {}", preview.expires_at);
+    for file in &preview.manifest.files {
+        println!("  {} ({})", file.name, human_size(file.size));
+    }
+
+    if !confirm_accept()? {
+        client.decline_offer(&code).await?;
+        println!("Offer declined");
+        return Ok(());
+    }
+
+    let accepted = client.accept_offer(&code).await?;
+    println!("Accepted offer. Connecting to sender...");
+    receive_from_ticket(accepted.ticket, out_dir).await
+}
+
+pub async fn receive_ticket(out_dir: PathBuf) -> Result<()> {
     fs::create_dir_all(&out_dir)
         .await
         .with_context(|| format!("creating output directory {}", out_dir.display()))?;
@@ -44,14 +152,11 @@ pub async fn receive(out_dir: PathBuf) -> Result<()> {
     println!("{}", setup.ticket);
     println!("Waiting for a sender...");
 
-    run_receiver(endpoint, setup.out_dir).await
+    receive_on_endpoint(endpoint, setup.out_dir).await
 }
 
-pub async fn send(ticket: String, files: Vec<PathBuf>) -> Result<()> {
-    if files.is_empty() {
-        bail!("provide at least one file to send");
-    }
-
+pub async fn send_ticket(ticket: String, files: Vec<PathBuf>) -> Result<()> {
+    let prepared = prepare_files(files).await?;
     let endpoint = bind_endpoint()
         .await
         .context("binding local iroh endpoint")?;
@@ -61,7 +166,19 @@ pub async fn send(ticket: String, files: Vec<PathBuf>) -> Result<()> {
         .await
         .context("connecting to receiver")?;
 
-    for path in files {
+    send_files_over_connection(connection, &prepared.files).await
+}
+
+async fn prepare_files(paths: Vec<PathBuf>) -> Result<PreparedFiles> {
+    if paths.is_empty() {
+        bail!("provide at least one file to send");
+    }
+
+    let mut files = Vec::with_capacity(paths.len());
+    let mut manifest_files = Vec::with_capacity(paths.len());
+    let mut total_size = 0_u64;
+
+    for path in paths {
         let metadata = fs::metadata(&path)
             .await
             .with_context(|| format!("reading metadata for {}", path.display()))?;
@@ -75,51 +192,59 @@ pub async fn send(ticket: String, files: Vec<PathBuf>) -> Result<()> {
             .ok_or_else(|| anyhow!("{} does not have a valid UTF-8 file name", path.display()))?
             .to_owned();
 
+        total_size = total_size
+            .checked_add(metadata.len())
+            .ok_or_else(|| anyhow!("total transfer size exceeds u64"))?;
+
         let header = FileHeader {
-            name: file_name,
+            name: file_name.clone(),
             size: metadata.len(),
         };
 
-        let (mut send_stream, mut recv_stream) = connection
-            .open_bi()
-            .await
-            .with_context(|| format!("opening transfer stream for {}", path.display()))?;
-
-        write_header(&mut send_stream, &header).await?;
-        send_file(&mut send_stream, &path).await?;
-        send_stream.finish()?;
-
-        let ack = recv_stream
-            .read_to_end(64)
-            .await
-            .with_context(|| format!("waiting for receiver ack for {}", path.display()))?;
-        if ack != ACK_OK {
-            bail!(
-                "receiver returned an unexpected response for {}",
-                path.display()
-            );
-        }
-
-        println!("Sent {} ({})", path.display(), human_size(header.size));
+        manifest_files.push(OfferFile {
+            name: file_name,
+            size: metadata.len(),
+        });
+        files.push(PreparedFile { path, header });
     }
 
-    connection.close(0u32.into(), b"done");
-    Ok(())
+    Ok(PreparedFiles {
+        files,
+        manifest: OfferManifest {
+            file_count: manifest_files.len() as u64,
+            total_size,
+            files: manifest_files,
+        },
+    })
 }
 
-pub async fn prepare_receiver(out_dir: PathBuf) -> Result<ReceiveSetup> {
+async fn receive_from_ticket(ticket: String, out_dir: PathBuf) -> Result<()> {
     fs::create_dir_all(&out_dir)
         .await
         .with_context(|| format!("creating output directory {}", out_dir.display()))?;
 
-    let endpoint = bind_endpoint().await?;
-    let ticket = make_ticket(&endpoint).await?;
-    endpoint.close().await;
+    let endpoint = bind_endpoint()
+        .await
+        .context("binding local iroh endpoint")?;
+    let addr = decode_ticket(&ticket)?;
+    let connection = endpoint
+        .connect(addr, ALPN)
+        .await
+        .context("connecting to sender")?;
 
-    Ok(ReceiveSetup { out_dir, ticket })
+    println!(
+        "Connected to {}",
+        describe_remote(
+            connection.remote_id(),
+            endpoint.remote_info(connection.remote_id()).await.as_ref()
+        )
+    );
+    receive_files_over_connection(connection, out_dir).await?;
+    endpoint.close().await;
+    Ok(())
 }
 
-pub async fn run_receiver(endpoint: Endpoint, out_dir: PathBuf) -> Result<()> {
+async fn receive_on_endpoint(endpoint: Endpoint, out_dir: PathBuf) -> Result<()> {
     fs::create_dir_all(&out_dir)
         .await
         .with_context(|| format!("creating output directory {}", out_dir.display()))?;
@@ -129,13 +254,56 @@ pub async fn run_receiver(endpoint: Endpoint, out_dir: PathBuf) -> Result<()> {
         .await
         .context("receiver stopped before a sender connected")?;
     let connection = incoming.await.context("accepting sender connection")?;
-    let remote_id = connection.remote_id();
-    let remote = endpoint.remote_info(remote_id).await;
     println!(
         "Connected to {}",
-        describe_remote(remote_id, remote.as_ref())
+        describe_remote(
+            connection.remote_id(),
+            endpoint.remote_info(connection.remote_id()).await.as_ref()
+        )
     );
+    receive_files_over_connection(connection, out_dir).await
+}
 
+async fn send_files_over_connection(
+    connection: iroh::endpoint::Connection,
+    files: &[PreparedFile],
+) -> Result<()> {
+    for prepared in files {
+        let (mut send_stream, mut recv_stream) = connection
+            .open_bi()
+            .await
+            .with_context(|| format!("opening transfer stream for {}", prepared.path.display()))?;
+
+        write_header(&mut send_stream, &prepared.header).await?;
+        send_file(&mut send_stream, &prepared.path).await?;
+        send_stream.finish()?;
+
+        let ack = recv_stream
+            .read_to_end(64)
+            .await
+            .with_context(|| format!("waiting for receiver ack for {}", prepared.path.display()))?;
+        if ack != ACK_OK {
+            bail!(
+                "receiver returned an unexpected response for {}",
+                prepared.path.display()
+            );
+        }
+
+        println!(
+            "Sent {} ({})",
+            prepared.path.display(),
+            human_size(prepared.header.size)
+        );
+    }
+
+    connection.close(0u32.into(), b"done");
+    Ok(())
+}
+
+async fn receive_files_over_connection(
+    connection: iroh::endpoint::Connection,
+    out_dir: PathBuf,
+) -> Result<()> {
     let mut received_any = false;
     loop {
         match connection.accept_bi().await {
@@ -318,6 +486,19 @@ async fn path_exists(path: &Path) -> Result<bool> {
     }
 }
 
+fn confirm_accept() -> Result<bool> {
+    print!("Accept? [y/N]: ");
+    io::stdout().flush().context("flushing prompt")?;
+
+    let mut input = String::new();
+    io::stdin()
+        .read_line(&mut input)
+        .context("reading confirmation")?;
+
+    let response = input.trim().to_ascii_lowercase();
+    Ok(matches!(response.as_str(), "y" | "yes"))
+}
+
 fn describe_remote(
     remote_id: iroh::EndpointId,
     remote: Option<&iroh::endpoint::RemoteInfo>,
@@ -348,4 +529,10 @@ fn human_size(bytes: u64) -> String {
     } else {
         format!("{value:.1} {}", UNITS[unit])
     }
+}
+
+#[derive(Debug, Clone)]
+struct PreparedFiles {
+    files: Vec<PreparedFile>,
+    manifest: OfferManifest,
 }

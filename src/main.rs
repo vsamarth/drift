@@ -2,14 +2,10 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
-use drift::{receive, send};
+use drift::{receive, receive_ticket, send, send_ticket};
 
 #[derive(Parser, Debug)]
-#[command(
-    name = "drift",
-    version,
-    about = "Minimal AirDrop-style file transfer over iroh"
-)]
+#[command(name = "drift", version, about = "Short-code file transfer over iroh")]
 struct Cli {
     #[command(subcommand)]
     command: Command,
@@ -17,14 +13,27 @@ struct Cli {
 
 #[derive(Subcommand, Debug)]
 enum Command {
+    Send {
+        #[arg(required = true)]
+        files: Vec<PathBuf>,
+        #[arg(long)]
+        server: Option<String>,
+    },
     Receive {
+        code: String,
         #[arg(short, long, default_value = ".")]
         out: PathBuf,
+        #[arg(long)]
+        server: Option<String>,
     },
-    Send {
+    SendTicket {
         ticket: String,
         #[arg(required = true)]
         files: Vec<PathBuf>,
+    },
+    ReceiveTicket {
+        #[arg(short, long, default_value = ".")]
+        out: PathBuf,
     },
 }
 
@@ -33,7 +42,9 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Command::Receive { out } => receive(out).await,
-        Command::Send { ticket, files } => send(ticket, files).await,
+        Command::Send { files, server } => send(files, server).await,
+        Command::Receive { code, out, server } => receive(code, out, server).await,
+        Command::SendTicket { ticket, files } => send_ticket(ticket, files).await,
+        Command::ReceiveTicket { out } => receive_ticket(out).await,
     }
 }
