@@ -9,7 +9,7 @@ pub const CODE_ALPHABET: &str = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct OfferFile {
-    pub name: String,
+    pub path: String,
     pub size: u64,
 }
 

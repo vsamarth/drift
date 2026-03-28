@@ -17,6 +17,7 @@ use time::format_description::well_known::Rfc3339;
 use tokio::net::TcpListener;
 use tokio::time::sleep;
 
+use crate::validate_transfer_path;
 use crate::rendezvous::{
     CODE_ALPHABET, CODE_LENGTH, CreateOfferRequest, CreateOfferResponse, OfferAcceptResponse,
     OfferManifest, OfferPreviewResponse, OfferStatus, OfferStatusResponse, validate_code,
@@ -28,7 +29,7 @@ const OFFER_TTL_SECONDS: i64 = 300;
 const CLEANUP_INTERVAL_SECONDS: u64 = 30;
 const MAX_TICKET_LENGTH: usize = 4096;
 const MAX_FILES_PER_OFFER: usize = 1000;
-const MAX_FILE_NAME_LENGTH: usize = 255;
+const MAX_FILE_PATH_LENGTH: usize = 1024;
 
 type SharedState = Arc<AppState>;
 
@@ -341,19 +342,22 @@ fn validate_offer_request(request: &CreateOfferRequest) -> Result<(), ApiError> 
     }
 
     for file in &request.manifest.files {
-        if file.name.trim().is_empty() {
+        if file.path.trim().is_empty() {
             return Err(ApiError::new(
                 StatusCode::BAD_REQUEST,
-                "file names must not be empty",
+                "file paths must not be empty",
             ));
         }
 
-        if file.name.len() > MAX_FILE_NAME_LENGTH {
+        if file.path.len() > MAX_FILE_PATH_LENGTH {
             return Err(ApiError::new(
                 StatusCode::BAD_REQUEST,
-                "file name is too long",
+                "file path is too long",
             ));
         }
+
+        validate_transfer_path(&file.path)
+            .map_err(|err| ApiError::new(StatusCode::BAD_REQUEST, err.to_string()))?;
     }
 
     Ok(())
@@ -444,7 +448,7 @@ mod tests {
     fn test_manifest() -> OfferManifest {
         OfferManifest {
             files: vec![OfferFile {
-                name: "sample.txt".to_owned(),
+                path: "sample.txt".to_owned(),
                 size: 12,
             }],
             file_count: 1,
@@ -608,6 +612,29 @@ mod tests {
         let body = serde_json::to_vec(&CreateOfferRequest {
             ticket: String::new(),
             manifest: test_manifest(),
+        })
+        .expect("create body");
+
+        let response = app
+            .oneshot(request(Method::POST, "/v1/offers", Body::from(body)))
+            .await
+            .expect("invalid response");
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn invalid_path_manifest_is_rejected() {
+        let app = test_app();
+        let body = serde_json::to_vec(&CreateOfferRequest {
+            ticket: "ticket".to_owned(),
+            manifest: OfferManifest {
+                files: vec![OfferFile {
+                    path: "../sample.txt".to_owned(),
+                    size: 12,
+                }],
+                file_count: 1,
+                total_size: 12,
+            },
         })
         .expect("create body");
 
