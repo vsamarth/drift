@@ -16,16 +16,18 @@ class ShellStateContent extends StatelessWidget {
     required this.controller,
     required this.view,
     required this.availableHeight,
+    this.idleWindowHovering = false,
   });
 
   final DriftController controller;
   final ShellView view;
   final double availableHeight;
+  final bool idleWindowHovering;
 
   static Widget _scrollable(Widget child) => SingleChildScrollView(
-        physics: const BouncingScrollPhysics(),
-        child: child,
-      );
+    physics: const BouncingScrollPhysics(),
+    child: child,
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -33,6 +35,7 @@ class ShellStateContent extends StatelessWidget {
       ShellView.sendIdle => SendDropPanel(
         onChooseFiles: controller.activateSendDropTarget,
         height: availableHeight,
+        windowHovering: idleWindowHovering,
       ),
       ShellView.receiveEntry => ReceiveEntryCard(
         controller: controller,
@@ -47,7 +50,9 @@ class ShellStateContent extends StatelessWidget {
         errorText: controller.receiveErrorText,
         height: availableHeight,
       ),
-      ShellView.sendSelected => _scrollable(SendSelectedCard(controller: controller)),
+      ShellView.sendSelected => _scrollable(
+        SendSelectedCard(controller: controller),
+      ),
       ShellView.sendReady => _scrollable(
         SendCodeCard(
           controller: controller,
@@ -70,7 +75,9 @@ class ShellStateContent extends StatelessWidget {
         TransferResultCard(
           tone: TransferResultTone.success,
           title: 'Transfer complete',
-          message: controller.sendSummary?.statusMessage ?? 'Files sent successfully',
+          message:
+              controller.sendSummary?.statusMessage ??
+              'Files sent successfully',
           primaryLabel: 'Send more files',
           onPrimary: controller.resetShell,
         ),
@@ -79,17 +86,22 @@ class ShellStateContent extends StatelessWidget {
         TransferResultCard(
           tone: TransferResultTone.error,
           title: 'Transfer failed',
-          message: controller.sendSummary?.statusMessage ?? 'This transfer did not finish.',
+          message:
+              controller.sendSummary?.statusMessage ??
+              'This transfer did not finish.',
           primaryLabel: 'Try again',
           onPrimary: controller.resetShell,
         ),
       ),
-      ShellView.receiveReview => _scrollable(ReceiveReviewCard(controller: controller)),
+      ShellView.receiveReview => _scrollable(
+        ReceiveReviewCard(controller: controller),
+      ),
       ShellView.receiveCompleted => _scrollable(
         TransferResultCard(
           tone: TransferResultTone.success,
           title: 'Files saved',
-          message: controller.receiveSummary?.statusMessage ?? 'Saved to Downloads',
+          message:
+              controller.receiveSummary?.statusMessage ?? 'Saved to Downloads',
           primaryLabel: 'Done',
           onPrimary: controller.resetShell,
         ),

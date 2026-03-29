@@ -1,13 +1,24 @@
+import 'dart:io';
+
 import 'package:flutter/foundation.dart';
 
 import '../core/models/transfer_models.dart';
 import 'drift_sample_data.dart';
 
 class DriftController extends ChangeNotifier {
-  DriftController();
+  DriftController({
+    String? deviceName,
+    String idleReceiveCode = 'F9P2Q1',
+    String idleReceiveStatus = 'Ready',
+  }) : _deviceName = _normalizeDeviceName(deviceName ?? _defaultDeviceName()),
+       _idleReceiveCode = idleReceiveCode.trim().toUpperCase(),
+       _idleReceiveStatus = idleReceiveStatus;
 
   static const int compactPreviewLimit = 3;
 
+  final String _deviceName;
+  final String _idleReceiveCode;
+  final String _idleReceiveStatus;
   TransferDirection _mode = TransferDirection.send;
   TransferStage _sendStage = TransferStage.idle;
   TransferStage _receiveStage = TransferStage.idle;
@@ -20,6 +31,9 @@ class DriftController extends ChangeNotifier {
   TransferSummaryViewData? _sendSummary;
   TransferSummaryViewData? _receiveSummary;
 
+  String get deviceName => _deviceName;
+  String get idleReceiveCode => _idleReceiveCode;
+  String get idleReceiveStatus => _idleReceiveStatus;
   TransferDirection get mode => _mode;
   TransferStage get sendStage => _sendStage;
   TransferStage get receiveStage => _receiveStage;
@@ -183,9 +197,7 @@ class DriftController extends ChangeNotifier {
     _receiveStage = TransferStage.review;
     _receiveErrorText = null;
     _receiveSummary = sampleReceiveSummary;
-    _receiveItems = List<TransferItemViewData>.unmodifiable(
-      sampleReceiveItems,
-    );
+    _receiveItems = List<TransferItemViewData>.unmodifiable(sampleReceiveItems);
     notifyListeners();
   }
 
@@ -196,9 +208,7 @@ class DriftController extends ChangeNotifier {
     _receiveSummary = sampleReceiveSummary.copyWith(
       statusMessage: 'Saved to Downloads',
     );
-    _receiveItems = List<TransferItemViewData>.unmodifiable(
-      sampleReceiveItems,
-    );
+    _receiveItems = List<TransferItemViewData>.unmodifiable(sampleReceiveItems);
     notifyListeners();
   }
 
@@ -238,5 +248,27 @@ class DriftController extends ChangeNotifier {
     _receiveErrorText = null;
     _receiveItems = const [];
     _receiveSummary = null;
+  }
+
+  static String _defaultDeviceName() {
+    try {
+      final hostname = Platform.localHostname.trim();
+      if (hostname.isNotEmpty) {
+        return hostname;
+      }
+    } catch (_) {
+      // Fall back to a calm, user-friendly desktop label when hostname is unavailable.
+    }
+    return 'This Mac';
+  }
+
+  static String _normalizeDeviceName(String value) {
+    final trimmed = value.trim();
+    if (trimmed.isEmpty) {
+      return 'This Mac';
+    }
+
+    final firstSegment = trimmed.split('.').first.trim();
+    return firstSegment.isEmpty ? 'This Mac' : firstSegment;
   }
 }

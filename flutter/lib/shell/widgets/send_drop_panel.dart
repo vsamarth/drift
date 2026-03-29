@@ -1,17 +1,18 @@
 import 'package:flutter/material.dart';
 
 import '../../core/theme/drift_theme.dart';
-import 'drop_zone_border_painter.dart';
 
 class SendDropPanel extends StatefulWidget {
   const SendDropPanel({
     super.key,
     required this.onChooseFiles,
     required this.height,
+    this.windowHovering = false,
   });
 
   final VoidCallback onChooseFiles;
   final double height;
+  final bool windowHovering;
 
   @override
   State<SendDropPanel> createState() => _SendDropPanelState();
@@ -22,6 +23,9 @@ class _SendDropPanelState extends State<SendDropPanel> {
 
   @override
   Widget build(BuildContext context) {
+    final isInteractive = _hovering || widget.windowHovering;
+    final headline = isInteractive ? 'Drop to send' : 'Drop files to send';
+
     return MouseRegion(
       cursor: SystemMouseCursors.click,
       onEnter: (_) => setState(() => _hovering = true),
@@ -29,77 +33,99 @@ class _SendDropPanelState extends State<SendDropPanel> {
       child: GestureDetector(
         onTap: widget.onChooseFiles,
         child: AnimatedContainer(
+          key: const ValueKey<String>('send-drop-surface'),
           duration: const Duration(milliseconds: 180),
           height: widget.height,
-          padding: const EdgeInsets.all(12),
+          curve: Curves.easeOutCubic,
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
           decoration: BoxDecoration(
-            color: _hovering ? const Color(0xFFF8F8F8) : kSurface,
-            borderRadius: BorderRadius.circular(14),
+            color: isInteractive
+                ? const Color(0xFFFEFEFE)
+                : const Color(0xFFFCFCFC),
+            borderRadius: BorderRadius.circular(30),
             border: Border.all(
-              color: _hovering ? kSubtle : kBorder,
+              color: isInteractive
+                  ? const Color(0xFFDADADA)
+                  : Colors.transparent,
             ),
-          ),
-          child: CustomPaint(
-            painter: DropZoneBorderPainter(
-              color: _hovering ? const Color(0xFF8C8C8C) : const Color(0xFFC8C8C8),
-              strokeWidth: _hovering ? 1.75 : 1.35,
-              dashLength: 7,
-              gapLength: 5,
-              radius: 12,
-            ),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 32),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Center(
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 180),
-                      width: 52,
-                      height: 52,
-                      decoration: BoxDecoration(
-                        color: _hovering ? kFill : const Color(0xFFF0F0F0),
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: kBorder),
-                      ),
-                      child: Icon(
-                        Icons.upload_file_outlined,
-                        size: 24,
-                        color: _hovering ? kInk : kMuted,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    'Drop files here',
-                    style: driftSans(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w600,
-                      color: kInk,
-                      letterSpacing: -0.3,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    'Any file or folder — received instantly on the other device',
-                    style: driftSans(
-                      fontSize: 13,
-                      color: kMuted,
-                      height: 1.5,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 20),
-                  Center(
-                    child: OutlinedButton(
-                      onPressed: widget.onChooseFiles,
-                      child: const Text('Choose files'),
-                    ),
-                  ),
-                ],
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(
+                  alpha: isInteractive ? 0.022 : 0.012,
+                ),
+                blurRadius: isInteractive ? 18 : 10,
+                offset: const Offset(0, 6),
               ),
+            ],
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 42),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Center(
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 180),
+                    curve: Curves.easeOutCubic,
+                    width: 42,
+                    height: 42,
+                    decoration: BoxDecoration(
+                      color: isInteractive
+                          ? const Color(0xFFF4F4F4)
+                          : const Color(0xFFF7F7F7),
+                      borderRadius: BorderRadius.circular(15),
+                      border: Border.all(
+                        color: isInteractive
+                            ? const Color(0xFFE2E2E2)
+                            : const Color(0xFFE9E9E9),
+                      ),
+                    ),
+                    child: Icon(
+                      Icons.drive_folder_upload_outlined,
+                      size: 18,
+                      color: isInteractive
+                          ? const Color(0xFF666666)
+                          : kMuted.withValues(alpha: 0.72),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Text(
+                  headline,
+                  style: driftSans(
+                    fontSize: 24,
+                    fontWeight: FontWeight.w600,
+                    color: kInk,
+                    letterSpacing: -0.7,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 22),
+                Center(
+                  child: OutlinedButton(
+                    onPressed: widget.onChooseFiles,
+                    style: OutlinedButton.styleFrom(
+                      backgroundColor: Colors.white.withValues(alpha: 0.35),
+                      foregroundColor: const Color(0xFF444444),
+                      minimumSize: const Size(0, 32),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 13,
+                        vertical: 7,
+                      ),
+                      side: const BorderSide(
+                        color: Color(0xFFE7E7E7),
+                        width: 0.9,
+                      ),
+                      textStyle: driftSans(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    child: const Text('Select files'),
+                  ),
+                ),
+              ],
             ),
           ),
         ),
