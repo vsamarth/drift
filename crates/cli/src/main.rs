@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
-use drift::{receive, receive_ticket, send, send_ticket};
+use drift_core::{receive, receive_ticket, send, send_ticket};
 
 #[derive(Parser, Debug)]
 #[command(name = "drift", version, about = "Short-code file transfer over iroh")]

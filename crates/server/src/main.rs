@@ -2,7 +2,7 @@ use std::net::SocketAddr;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
-use drift::server;
+use drift_core::server;
 
 #[derive(Parser, Debug)]
 #[command(

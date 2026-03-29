@@ -218,7 +218,10 @@ pub(crate) async fn ensure_destination_available(out_dir: &Path, destination: &P
         match fs::metadata(parent).await {
             Ok(metadata) => {
                 if !metadata.is_dir() {
-                    bail!("destination parent is not a directory: {}", parent.display());
+                    bail!(
+                        "destination parent is not a directory: {}",
+                        parent.display()
+                    );
                 }
             }
             Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
@@ -236,7 +239,12 @@ pub(crate) async fn ensure_destination_available(out_dir: &Path, destination: &P
 fn input_root_name(path: &Path) -> Result<String> {
     path.file_name()
         .and_then(|name| name.to_str())
-        .ok_or_else(|| anyhow!("{} does not have a valid UTF-8 final path component", path.display()))
+        .ok_or_else(|| {
+            anyhow!(
+                "{} does not have a valid UTF-8 final path component",
+                path.display()
+            )
+        })
         .map(|name| name.to_owned())
 }
 
@@ -425,7 +433,15 @@ mod tests {
 
     #[test]
     fn validate_transfer_path_rejects_unsafe_inputs() {
-        for invalid in ["", "/tmp/file", "../file", "a//b", "a/./b", "a/../b", r"a\b"] {
+        for invalid in [
+            "",
+            "/tmp/file",
+            "../file",
+            "a//b",
+            "a/./b",
+            "a/../b",
+            r"a\b",
+        ] {
             assert!(validate_transfer_path(invalid).is_err(), "{invalid}");
         }
     }

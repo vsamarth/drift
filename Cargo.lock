@@ -750,10 +750,19 @@ name = "drift"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "clap",
+ "drift-core",
+ "tokio",
+]
+
+[[package]]
+name = "drift-core"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
  "axum",
  "base64",
  "bincode",
- "clap",
  "futures-lite",
  "http-body-util",
  "iroh",
@@ -764,6 +773,16 @@ dependencies = [
  "time",
  "tokio",
  "tower",
+]
+
+[[package]]
+name = "drift-server"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "drift-core",
+ "tokio",
 ]
 
 [[package]]

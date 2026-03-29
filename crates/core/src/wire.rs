@@ -57,7 +57,9 @@ pub(crate) fn decode_ticket(ticket: &str) -> Result<EndpointAddr> {
     Ok(addr.with_addrs(Vec::<TransportAddr>::new()))
 }
 
-pub(crate) async fn read_header(recv_stream: &mut iroh::endpoint::RecvStream) -> Result<FileHeader> {
+pub(crate) async fn read_header(
+    recv_stream: &mut iroh::endpoint::RecvStream,
+) -> Result<FileHeader> {
     let header_len = recv_stream
         .read_u32()
         .await

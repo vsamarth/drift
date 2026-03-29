@@ -6,11 +6,11 @@ FILE ?= Cargo.toml
 OUT ?= downloads
 
 server:
-	cargo run --bin drift-server -- serve --listen $(SERVER_ADDR)
+	cargo run -p drift-server -- serve --listen $(SERVER_ADDR)
 
 send:
-	DRIFT_RENDEZVOUS_URL=$(SERVER_URL) cargo run --bin drift -- send $(FILE)
+	DRIFT_RENDEZVOUS_URL=$(SERVER_URL) cargo run -p drift -- send $(FILE)
 
 receive:
 	@if [ -z "$(CODE)" ]; then echo "usage: make receive CODE=AB2CD3"; exit 1; fi
-	DRIFT_RENDEZVOUS_URL=$(SERVER_URL) cargo run --bin drift -- receive $(CODE) --out $(OUT)
+	DRIFT_RENDEZVOUS_URL=$(SERVER_URL) cargo run -p drift -- receive $(CODE) --out $(OUT)

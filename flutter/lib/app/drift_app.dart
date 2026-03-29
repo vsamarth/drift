@@ -1,12 +1,11 @@
 import 'package:flutter/material.dart';
 
-import 'drift_controller.dart';
-import 'drift_theme.dart';
-import 'widgets/desktop_shell.dart';
+import '../core/theme/drift_theme.dart';
+import '../shell/utility_shell.dart';
+import '../state/drift_controller.dart';
 
 class DriftApp extends StatefulWidget {
-  const DriftApp({super.key, DriftController? controller})
-    : controller = controller;
+  const DriftApp({super.key, this.controller});
 
   final DriftController? controller;
 
@@ -34,13 +33,13 @@ class _DriftAppState extends State<DriftApp> {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'drift',
+      title: 'Drift',
       debugShowCheckedModeBanner: false,
       theme: buildDriftTheme(),
       home: AnimatedBuilder(
         animation: _controller,
         builder: (context, _) {
-          return DesktopShell(controller: _controller);
+          return UtilityShell(controller: _controller);
         },
       ),
     );

@@ -81,15 +81,12 @@ pub(crate) async fn send_files_over_connection(
     files: &[PreparedFile],
 ) -> Result<()> {
     for prepared in files {
-        let (mut send_stream, mut recv_stream) = connection
-            .open_bi()
-            .await
-            .with_context(|| {
-                format!(
-                    "opening transfer stream for {}",
-                    prepared.source_path.display()
-                )
-            })?;
+        let (mut send_stream, mut recv_stream) = connection.open_bi().await.with_context(|| {
+            format!(
+                "opening transfer stream for {}",
+                prepared.source_path.display()
+            )
+        })?;
 
         let header = FileHeader {
             path: prepared.transfer_path.clone(),
@@ -99,15 +96,12 @@ pub(crate) async fn send_files_over_connection(
         send_file(&mut send_stream, &prepared.source_path).await?;
         send_stream.finish()?;
 
-        let ack = recv_stream
-            .read_to_end(64)
-            .await
-            .with_context(|| {
-                format!(
-                    "waiting for receiver ack for {}",
-                    prepared.source_path.display()
-                )
-            })?;
+        let ack = recv_stream.read_to_end(64).await.with_context(|| {
+            format!(
+                "waiting for receiver ack for {}",
+                prepared.source_path.display()
+            )
+        })?;
         if ack != ACK_OK {
             bail!(
                 "receiver returned an unexpected response for {}",
@@ -139,9 +133,9 @@ async fn receive_files_over_connection(
                 received_any = true;
                 let header = read_header(&mut recv_stream).await?;
                 let target_path = if let Some(expected_files) = expected_files.as_mut() {
-                    let expected = expected_files.remove(&header.path).ok_or_else(|| {
-                        anyhow!("sender sent unexpected path {}", header.path)
-                    })?;
+                    let expected = expected_files
+                        .remove(&header.path)
+                        .ok_or_else(|| anyhow!("sender sent unexpected path {}", header.path))?;
                     if header.size != expected.size {
                         bail!(
                             "sender reported size {} for {}, expected {}",

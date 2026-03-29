@@ -8,7 +8,9 @@ use tokio::time::{MissedTickBehavior, interval};
 
 use crate::fs_plan::{build_expected_files, prepare_files};
 use crate::rendezvous::{OfferStatus, RendezvousClient};
-use crate::session::{bind_endpoint, receive_from_ticket, receive_on_endpoint, send_files_over_connection};
+use crate::session::{
+    bind_endpoint, receive_from_ticket, receive_on_endpoint, send_files_over_connection,
+};
 use crate::util::{confirm_accept, human_size};
 use crate::wire::{ALPN, decode_ticket, make_ticket};
 
@@ -18,7 +20,8 @@ pub async fn send(files: Vec<PathBuf>, server_url: Option<String>) -> Result<()>
         .await
         .context("binding local iroh endpoint")?;
     let ticket = make_ticket(&endpoint).await?;
-    let client = RendezvousClient::new(crate::rendezvous::resolve_server_url(server_url.as_deref()));
+    let client =
+        RendezvousClient::new(crate::rendezvous::resolve_server_url(server_url.as_deref()));
     let offer = client
         .create_offer(ticket, prepared.manifest.clone())
         .await?;
@@ -83,7 +86,8 @@ pub async fn send(files: Vec<PathBuf>, server_url: Option<String>) -> Result<()>
 pub async fn receive(code: String, out_dir: PathBuf, server_url: Option<String>) -> Result<()> {
     crate::rendezvous::validate_code(&code)?;
 
-    let client = RendezvousClient::new(crate::rendezvous::resolve_server_url(server_url.as_deref()));
+    let client =
+        RendezvousClient::new(crate::rendezvous::resolve_server_url(server_url.as_deref()));
     let preview = client.offer_preview(&code).await?;
 
     fs::create_dir_all(&out_dir)

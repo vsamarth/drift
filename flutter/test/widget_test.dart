@@ -2,11 +2,10 @@ import 'package:drift_app/app/drift_app.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-Future<void> pumpDesktopApp(WidgetTester tester) async {
-  await pumpSizedApp(tester, const Size(1440, 1000));
-}
-
-Future<void> pumpSizedApp(WidgetTester tester, Size size) async {
+Future<void> pumpUtilityApp(
+  WidgetTester tester, {
+  Size size = const Size(440, 560),
+}) async {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1.0;
   addTearDown(() {
@@ -16,54 +15,41 @@ Future<void> pumpSizedApp(WidgetTester tester, Size size) async {
 
   await tester.pumpWidget(const DriftApp());
   await tester.pumpAndSettle();
+  expectNoFlutterError(tester);
 }
 
+void expectNoFlutterError(WidgetTester tester) {
+  expect(tester.takeException(), isNull);
+}
+
+Finder receiveButton() =>
+    find.byKey(const ValueKey<String>('receive-submit')).last;
+Finder sendTab() => find.byKey(const ValueKey<String>('send-tab'));
+Finder receiveTab() => find.byKey(const ValueKey<String>('receive-tab'));
+Finder chooseFilesButton() => find.text('Choose files');
+Finder saveToDownloadsButton() => find.text('Save to Downloads');
+Finder copyCodeButton() => find.text('Copy code');
+
 void main() {
-  testWidgets('app launches in send mode', (tester) async {
-    await pumpDesktopApp(tester);
+  testWidgets('app launches in compact send mode', (tester) async {
+    await pumpUtilityApp(tester);
 
-    expect(find.text('drift'), findsOneWidget);
-    expect(find.text('Send'), findsWidgets);
-    expect(find.text('Drag files or folders here.'), findsOneWidget);
-  });
-
-  testWidgets('mode switching updates workspace without replacing shell', (
-    tester,
-  ) async {
-    await pumpDesktopApp(tester);
-
-    await tester.tap(find.byKey(const ValueKey<String>('mode-Receive')));
-    await tester.pumpAndSettle();
-
-    expect(find.text('Receive'), findsWidgets);
-    expect(find.text('Manifest Preview'), findsOneWidget);
-  });
-
-  testWidgets('send flow covers collecting and ready states', (tester) async {
-    await pumpDesktopApp(tester);
-
-    await tester.tap(find.text('Simulate Drop'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('Drop zone is live and ready.'), findsOneWidget);
-    expect(find.text('sample.txt'), findsWidgets);
-
-    await tester.tap(find.text('Load Sample Files'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('AB2CD3'), findsWidgets);
+    expect(find.byKey(const ValueKey<String>('utility-shell')), findsOneWidget);
+    expect(sendTab(), findsOneWidget);
+    expect(receiveTab(), findsOneWidget);
+    expect(find.text('Drop files here'), findsOneWidget);
     expect(
-      find.text('Offer ready. Share the short code with your receiver.'),
-      findsWidgets,
+      find.text('Any file or folder — received instantly on the other device'),
+      findsOneWidget,
     );
+    expect(find.text('Receive files'), findsNothing);
+    expectNoFlutterError(tester);
   });
 
-  testWidgets('receive flow covers review, completed, and error states', (
-    tester,
-  ) async {
-    await pumpDesktopApp(tester);
+  testWidgets('receive flow previews files and completes', (tester) async {
+    await pumpUtilityApp(tester);
 
-    await tester.tap(find.byKey(const ValueKey<String>('mode-Receive')));
+    await tester.tap(receiveTab());
     await tester.pumpAndSettle();
 
     await tester.enterText(
@@ -71,41 +57,122 @@ void main() {
       'ab2cd3',
     );
     await tester.pump();
-    await tester.tap(find.text('Preview Offer'));
+    await tester.ensureVisible(receiveButton());
+    await tester.tap(receiveButton());
     await tester.pumpAndSettle();
 
-    expect(find.text('Accept Transfer'), findsOneWidget);
+    expect(find.text('Save these files?'), findsOneWidget);
+    expect(find.text('Save to Downloads'), findsOneWidget);
     expect(find.text('vacation.jpg'), findsOneWidget);
+    expect(find.text('+1 more item'), findsOneWidget);
 
-    await tester.tap(find.text('Accept Transfer'));
+    await tester.ensureVisible(saveToDownloadsButton());
+    await tester.tap(saveToDownloadsButton());
     await tester.pumpAndSettle();
 
-    expect(
-      find.text('Accepted. Files will be saved to ~/Downloads/Drift.'),
-      findsOneWidget,
-    );
-
-    await tester.tap(find.text('Expired Example'));
-    await tester.pumpAndSettle();
-
-    expect(
-      find.text('That code has expired. Ask the sender to create a new one.'),
-      findsWidgets,
-    );
+    expect(find.text('Files saved'), findsOneWidget);
+    expect(find.text('Saved to Downloads'), findsOneWidget);
+    expectNoFlutterError(tester);
   });
 
-  testWidgets('send workspace stays usable in a compact window', (
-    tester,
-  ) async {
-    await pumpSizedApp(tester, const Size(980, 720));
+  testWidgets('receive flow validates short codes inline', (tester) async {
+    await pumpUtilityApp(tester);
 
-    expect(find.text('Drag files or folders here.'), findsOneWidget);
-
-    await tester.tap(find.text('Simulate Drop'));
+    await tester.tap(receiveTab());
     await tester.pumpAndSettle();
 
-    expect(find.text('Drop zone is live and ready.'), findsOneWidget);
-    expect(find.text('Selection'), findsOneWidget);
-    expect(find.text('Offer Status'), findsOneWidget);
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('receive-code-field')),
+      'abc',
+    );
+    await tester.pump();
+    await tester.ensureVisible(receiveButton());
+    await tester.tap(receiveButton());
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('Enter the 6-character code from the sender.'),
+      findsOneWidget,
+    );
+    expectNoFlutterError(tester);
+  });
+
+  testWidgets('send flow covers selection, code sharing, and completion', (
+    tester,
+  ) async {
+    await pumpUtilityApp(tester);
+
+    await tester.ensureVisible(chooseFilesButton());
+    await tester.tap(chooseFilesButton());
+    await tester.pumpAndSettle();
+
+    expect(find.text('2 items ready'), findsOneWidget);
+    expect(find.text('sample.txt'), findsWidgets);
+
+    await tester.tap(find.text('Create code'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Ready to send'), findsOneWidget);
+    expect(find.text('AB2 CD3'), findsOneWidget);
+    expect(find.text('+1 more item'), findsOneWidget);
+
+    await tester.ensureVisible(copyCodeButton());
+    await tester.tap(copyCodeButton());
+    await tester.pumpAndSettle();
+
+    expect(find.text('Waiting for receiver…'), findsOneWidget);
+
+    await tester.tap(find.text('Mark as done'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Transfer complete'), findsOneWidget);
+
+    await tester.tap(find.text('Send more files'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Drop files here'), findsOneWidget);
+    expectNoFlutterError(tester);
+  });
+
+  testWidgets('receive error can recover back into a valid receive flow', (
+    tester,
+  ) async {
+    await pumpUtilityApp(tester);
+
+    await tester.tap(receiveTab());
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('receive-code-field')),
+      'abc',
+    );
+    await tester.pump();
+    await tester.ensureVisible(receiveButton());
+    await tester.tap(receiveButton());
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('receive-code-field')),
+      'ab2cd3',
+    );
+    await tester.pump();
+    await tester.ensureVisible(receiveButton());
+    await tester.tap(receiveButton());
+    await tester.pumpAndSettle();
+
+    expect(find.text('Save these files?'), findsOneWidget);
+    expectNoFlutterError(tester);
+  });
+
+  testWidgets('larger windows keep the same compact shell', (tester) async {
+    await pumpUtilityApp(tester, size: const Size(840, 760));
+
+    expect(find.byKey(const ValueKey<String>('utility-shell')), findsOneWidget);
+    expect(find.text('Drop files here'), findsOneWidget);
+    expect(
+      tester.getSize(find.byKey(const ValueKey<String>('utility-shell'))).width,
+      lessThanOrEqualTo(496),
+    );
+    expectNoFlutterError(tester);
   });
 }
