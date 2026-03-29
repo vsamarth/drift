@@ -49,31 +49,35 @@ Finder shellBackButton() =>
 DriftController buildTestController({
   List<SendDestinationViewData>? nearbySendDestinations,
   List<TransferItemViewData>? droppedSendItems,
+  SendItemSource? sendItemSource,
   SendTransferSource? sendTransferSource,
 }) => DriftController(
   deviceName: 'Samarth MacBook Pro',
   idleReceiveCode: 'F9P2Q1',
   enableIdleReceiverRefresh: false,
+  animateSendingConnection: false,
   nearbySendDestinations: nearbySendDestinations,
   droppedSendItems: droppedSendItems,
-  sendItemSource: FakeSendItemSource(
-    pickedItems:
-        droppedSendItems ??
-        const [
-          TransferItemViewData(
-            name: 'sample.txt',
-            path: 'sample.txt',
-            size: '18 KB',
-            kind: TransferItemKind.file,
-          ),
-          TransferItemViewData(
-            name: 'photos',
-            path: 'photos/',
-            size: '12 items',
-            kind: TransferItemKind.folder,
-          ),
-        ],
-  ),
+  sendItemSource:
+      sendItemSource ??
+      FakeSendItemSource(
+        pickedItems:
+            droppedSendItems ??
+            const [
+              TransferItemViewData(
+                name: 'sample.txt',
+                path: 'sample.txt',
+                size: '18 KB',
+                kind: TransferItemKind.file,
+              ),
+              TransferItemViewData(
+                name: 'photos',
+                path: 'photos/',
+                size: '12 items',
+                kind: TransferItemKind.folder,
+              ),
+            ],
+      ),
   sendTransferSource: sendTransferSource ?? FakeSendTransferSource(),
   receiveRegistrationSource: const FakeReceiveRegistrationSource(),
 );
@@ -187,6 +191,23 @@ void main() {
     expect(find.text('Receive files'), findsNothing);
     expect(find.text('Send'), findsNothing);
     expect(find.text('Receive'), findsNothing);
+    expectNoFlutterError(tester);
+  });
+
+  testWidgets('empty file pick stays on idle send state', (tester) async {
+    await pumpUtilityApp(
+      tester,
+      controller: buildTestController(
+        sendItemSource: FakeSendItemSource(pickedItems: const []),
+      ),
+    );
+
+    await tester.tap(chooseFilesButton());
+    await tester.pumpAndSettle();
+
+    expect(find.text('Drop files to send'), findsOneWidget);
+    expect(find.text('Or enter a code'), findsNothing);
+    expect(shellBackButton(), findsNothing);
     expectNoFlutterError(tester);
   });
 
@@ -392,6 +413,37 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Drop files to send'), findsOneWidget);
+    expectNoFlutterError(tester);
+  });
+
+  testWidgets('cancel during send returns to file selection', (tester) async {
+    final sendTransferSource = FakeSendTransferSource();
+    await pumpUtilityApp(
+      tester,
+      controller: buildTestController(sendTransferSource: sendTransferSource),
+    );
+
+    await tester.tap(chooseFilesButton());
+    await tester.pumpAndSettle();
+    await tester.enterText(sendCodeField(), 'ab2cd3');
+    await tester.pump();
+
+    sendTransferSource.emit(
+      sendTransferUpdate(
+        phase: SendTransferUpdatePhase.connecting,
+        destinationLabel: 'Code AB2 CD3',
+        statusMessage: 'Request sent',
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Cancel'), findsOneWidget);
+
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Or enter a code'), findsOneWidget);
+    expect(find.text('sample.txt'), findsWidgets);
     expectNoFlutterError(tester);
   });
 

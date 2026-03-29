@@ -4,6 +4,7 @@ import '../../core/models/transfer_models.dart';
 import '../../core/theme/drift_theme.dart';
 import '../../state/drift_controller.dart';
 import 'preview_list.dart';
+import 'sending_connection_strip.dart';
 
 class SendCodeCard extends StatelessWidget {
   const SendCodeCard({
@@ -13,6 +14,7 @@ class SendCodeCard extends StatelessWidget {
     required this.status,
     this.primaryLabel,
     this.onPrimary,
+    this.fillBody = false,
   });
 
   final DriftController controller;
@@ -20,6 +22,8 @@ class SendCodeCard extends StatelessWidget {
   final String status;
   final String? primaryLabel;
   final VoidCallback? onPrimary;
+
+  final bool fillBody;
 
   @override
   Widget build(BuildContext context) {
@@ -32,83 +36,205 @@ class SendCodeCard extends StatelessWidget {
     final itemSummary =
         '$itemCount ${itemCount == 1 ? 'item' : 'items'}${totalSize.isEmpty ? '' : ' · $totalSize'}';
 
+    if (!fillBody) {
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(8, 6, 8, 10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              title,
+              style: driftSans(
+                fontSize: 22,
+                fontWeight: FontWeight.w700,
+                color: kInk,
+                letterSpacing: -0.5,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              status,
+              style: driftSans(fontSize: 13, color: kMuted, height: 1.45),
+            ),
+            const SizedBox(height: 18),
+            const Divider(height: 1),
+            const SizedBox(height: 14),
+            _RecipientRow(
+              destinationLabel: destinationLabel,
+              itemSummary: itemSummary,
+              dotColor: dotColor,
+            ),
+            const SizedBox(height: 14),
+            const Divider(height: 1),
+            const SizedBox(height: 14),
+            PreviewList(
+              items: controller.visibleSendItems,
+              hiddenItemCount: controller.hiddenSendItemCount,
+            ),
+            if (primaryLabel != null && onPrimary != null) ...[
+              const SizedBox(height: 20),
+              FilledButton(onPressed: onPrimary, child: Text(primaryLabel!)),
+            ],
+          ],
+        ),
+      );
+    }
+
+    // Full-body: header at top; middle space shows device link + pulse; table scrolls below.
     return Padding(
       padding: const EdgeInsets.fromLTRB(8, 6, 8, 10),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(
-            title,
-            style: driftSans(
-              fontSize: 22,
-              fontWeight: FontWeight.w700,
-              color: kInk,
-              letterSpacing: -0.5,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            status,
-            style: driftSans(
-              fontSize: 13,
-              color: kMuted,
-              height: 1.45,
-            ),
-          ),
-          const SizedBox(height: 18),
-          const Divider(height: 1),
-          const SizedBox(height: 14),
           Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Padding(
-                padding: const EdgeInsets.only(top: 5),
-                child: Container(
-                  width: 8,
-                  height: 8,
-                  decoration: BoxDecoration(
-                    color: dotColor,
-                    shape: BoxShape.circle,
-                  ),
+              Container(
+                width: 7,
+                height: 7,
+                decoration: BoxDecoration(
+                  color: dotColor,
+                  shape: BoxShape.circle,
                 ),
               ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      destinationLabel,
-                      style: driftSans(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        color: kInk,
-                        letterSpacing: -0.2,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      itemSummary,
-                      style: driftSans(fontSize: 12, color: kMuted),
-                    ),
-                  ],
+              const SizedBox(width: 8),
+              Text(
+                title,
+                style: driftSans(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w600,
+                  color: kMuted,
+                  letterSpacing: 0.2,
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 14),
-          const Divider(height: 1),
-          const SizedBox(height: 14),
-          PreviewList(
-            items: controller.visibleSendItems,
-            hiddenItemCount: controller.hiddenSendItemCount,
+          const SizedBox(height: 18),
+          Text(
+            destinationLabel,
+            style: driftSans(
+              fontSize: 28,
+              fontWeight: FontWeight.w700,
+              color: kInk,
+              letterSpacing: -0.8,
+              height: 1.1,
+            ),
           ),
+          const SizedBox(height: 8),
+          Text(
+            status,
+            style: driftSans(fontSize: 13, color: kMuted, height: 1.5),
+          ),
+          const SizedBox(height: 18),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Expanded(
+                  flex: 2,
+                  child: Center(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                      child: SendingConnectionStrip(
+                        localLabel: controller.deviceName,
+                        animate: controller.animateSendingConnection,
+                      ),
+                    ),
+                  ),
+                ),
+                Expanded(
+                  flex: 3,
+                  child: SingleChildScrollView(
+                    physics: const BouncingScrollPhysics(),
+                    child: PreviewTable(
+                      items: controller.visibleSendItems,
+                      hiddenItemCount: controller.hiddenSendItemCount,
+                      footerSummary: itemSummary,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (stage == TransferStage.ready || stage == TransferStage.waiting) ...[
+            Padding(
+              padding: const EdgeInsets.only(top: 6, bottom: 2),
+              child: Center(
+                child: TextButton(
+                  onPressed: controller.cancelSendInProgress,
+                  style: TextButton.styleFrom(
+                    foregroundColor: kMuted,
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 8,
+                    ),
+                  ),
+                  child: Text(
+                    'Cancel',
+                    style: driftSans(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
           if (primaryLabel != null && onPrimary != null) ...[
-            const SizedBox(height: 20),
+            const SizedBox(height: 16),
             FilledButton(onPressed: onPrimary, child: Text(primaryLabel!)),
           ],
         ],
       ),
+    );
+  }
+}
+
+class _RecipientRow extends StatelessWidget {
+  const _RecipientRow({
+    required this.destinationLabel,
+    required this.itemSummary,
+    required this.dotColor,
+  });
+
+  final String destinationLabel;
+  final String itemSummary;
+  final Color dotColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(top: 5),
+          child: Container(
+            width: 8,
+            height: 8,
+            decoration: BoxDecoration(color: dotColor, shape: BoxShape.circle),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                destinationLabel,
+                style: driftSans(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: kInk,
+                  letterSpacing: -0.2,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(itemSummary, style: driftSans(fontSize: 12, color: kMuted)),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }
@@ -125,9 +251,7 @@ Color _dotColorFor(TransferStage stage) {
 
 String _displayRecipient(String? rawValue) {
   final trimmed = rawValue?.trim() ?? '';
-  if (trimmed.isEmpty) {
-    return 'Recipient device';
-  }
+  if (trimmed.isEmpty) return 'Recipient device';
 
   final normalized = trimmed
       .replaceAll(RegExp(r'[_-]+'), ' ')
@@ -140,6 +264,5 @@ String _displayRecipient(String? rawValue) {
       lowercase == 'unknown') {
     return 'Recipient device';
   }
-
   return normalized;
 }

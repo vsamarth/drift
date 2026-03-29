@@ -20,6 +20,7 @@ class DriftController extends ChangeNotifier {
     SendItemSource? sendItemSource,
     SendTransferSource? sendTransferSource,
     ReceiveRegistrationSource? receiveRegistrationSource,
+    bool animateSendingConnection = true,
   }) : _deviceName = _normalizeDeviceName(deviceName ?? _defaultDeviceName()),
        _idleReceiveCode = idleReceiveCode.trim().toUpperCase(),
        _idleReceiveStatus = idleReceiveStatus,
@@ -47,7 +48,8 @@ class DriftController extends ChangeNotifier {
        _sendTransferSource =
            sendTransferSource ?? const LocalSendTransferSource(),
        _receiveRegistrationSource =
-           receiveRegistrationSource ?? const LocalReceiveRegistrationSource() {
+           receiveRegistrationSource ?? const LocalReceiveRegistrationSource(),
+       _animateSendingConnection = animateSendingConnection {
     unawaited(_ensureIdleReceiver());
     if (enableIdleReceiverRefresh) {
       _idleReceiverRefreshTimer = Timer.periodic(const Duration(minutes: 1), (
@@ -86,8 +88,10 @@ class DriftController extends ChangeNotifier {
   TransferSummaryViewData? _sendSummary;
   TransferSummaryViewData? _receiveSummary;
   bool _isInspectingSendItems = false;
+  final bool _animateSendingConnection;
 
   String get deviceName => _deviceName;
+  bool get animateSendingConnection => _animateSendingConnection;
   String get idleReceiveCode => _idleReceiveCode;
   String get idleReceiveStatus => _idleReceiveStatus;
   TransferDirection get mode => _mode;
@@ -260,6 +264,16 @@ class DriftController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Stops an in-flight send (waiting for recipient / connecting) and returns
+  /// to the file + code screen. No-op if not in [ready] or [waiting].
+  void cancelSendInProgress() {
+    if (_sendStage != TransferStage.ready && _sendStage != TransferStage.waiting) {
+      return;
+    }
+    _returnToSendSelection();
+    notifyListeners();
+  }
+
   void resetShell() {
     _cancelActiveSendTransfer();
     _mode = TransferDirection.send;
@@ -358,12 +372,12 @@ class DriftController extends ChangeNotifier {
     try {
       final items = await _sendItemSource.pickFiles();
       if (items.isEmpty) {
-        _finishSendInspection();
+        clearSendFlow();
         return;
       }
       _applySelectedSendItems(items);
     } catch (error, stackTrace) {
-      _finishSendInspection();
+      clearSendFlow();
       _reportSendSelectionError(error, stackTrace);
     }
   }
@@ -376,12 +390,12 @@ class DriftController extends ChangeNotifier {
     try {
       final items = await _sendItemSource.loadPaths(paths);
       if (items.isEmpty) {
-        _finishSendInspection();
+        clearSendFlow();
         return;
       }
       _applySelectedSendItems(items);
     } catch (error, stackTrace) {
-      _finishSendInspection();
+      clearSendFlow();
       _reportSendSelectionError(error, stackTrace);
     }
   }

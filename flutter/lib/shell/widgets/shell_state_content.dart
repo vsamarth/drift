@@ -54,15 +54,21 @@ class ShellStateContent extends StatelessWidget {
       ShellView.sendSelected => _scrollable(
         SendSelectedCard(controller: controller),
       ),
-      ShellView.sendReady => _scrollable(
-        SendCodeCard(
+      ShellView.sendReady => SizedBox(
+        height: availableHeight,
+        width: double.infinity,
+        child: SendCodeCard(
+          fillBody: true,
           controller: controller,
           title: 'Sending',
           status: controller.sendSummary?.statusMessage ?? 'Request sent',
         ),
       ),
-      ShellView.sendWaiting => _scrollable(
-        SendCodeCard(
+      ShellView.sendWaiting => SizedBox(
+        height: availableHeight,
+        width: double.infinity,
+        child: SendCodeCard(
+          fillBody: true,
           controller: controller,
           title: 'Sending',
           status:
@@ -70,8 +76,11 @@ class ShellStateContent extends StatelessWidget {
               'Waiting for recipient to confirm.',
         ),
       ),
-      ShellView.sendCompleted => _scrollable(
-        TransferResultCard(
+      ShellView.sendCompleted => SizedBox(
+        height: availableHeight,
+        width: double.infinity,
+        child: TransferResultCard(
+          fillBody: true,
           tone: TransferResultTone.success,
           title: 'Transfer complete',
           message:
@@ -81,8 +90,11 @@ class ShellStateContent extends StatelessWidget {
           onPrimary: controller.resetShell,
         ),
       ),
-      ShellView.sendError => _scrollable(
-        TransferResultCard(
+      ShellView.sendError => SizedBox(
+        height: availableHeight,
+        width: double.infinity,
+        child: TransferResultCard(
+          fillBody: true,
           tone: TransferResultTone.error,
           title: 'Transfer failed',
           message:
@@ -93,8 +105,11 @@ class ShellStateContent extends StatelessWidget {
       ShellView.receiveReview => _scrollable(
         ReceiveReviewCard(controller: controller),
       ),
-      ShellView.receiveCompleted => _scrollable(
-        TransferResultCard(
+      ShellView.receiveCompleted => SizedBox(
+        height: availableHeight,
+        width: double.infinity,
+        child: TransferResultCard(
+          fillBody: true,
           tone: TransferResultTone.success,
           title: 'Files saved',
           message:
