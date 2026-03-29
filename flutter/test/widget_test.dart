@@ -1,6 +1,7 @@
 import 'dart:ui';
 
 import 'package:drift_app/app/drift_app.dart';
+import 'package:drift_app/core/models/transfer_models.dart';
 import 'package:drift_app/state/drift_controller.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
@@ -31,17 +32,26 @@ Finder receiveButton() =>
     find.byKey(const ValueKey<String>('receive-submit')).last;
 Finder chooseFilesButton() => find.text('Select files');
 Finder saveToDownloadsButton() => find.text('Save to Downloads');
-Finder copyCodeButton() => find.text('Copy code');
 Finder idleDropSurface() =>
     find.byKey(const ValueKey<String>('send-drop-surface'));
 Finder idleIdentityZone() =>
     find.byKey(const ValueKey<String>('idle-identity-zone'));
 Finder idleReceiveCodePill() =>
     find.byKey(const ValueKey<String>('idle-receive-code'));
+Finder sendCodeField() => find.byKey(const ValueKey<String>('send-code-field'));
+Finder firstSendDestination() =>
+    find.byKey(const ValueKey<String>('send-destination-0'));
+Finder shellBackButton() =>
+    find.byKey(const ValueKey<String>('shell-back-button'));
 
-DriftController buildTestController() => DriftController(
+DriftController buildTestController({
+  List<SendDestinationViewData>? nearbySendDestinations,
+  List<TransferItemViewData>? droppedSendItems,
+}) => DriftController(
   deviceName: 'Samarth MacBook Pro',
   idleReceiveCode: 'F9P2Q1',
+  nearbySendDestinations: nearbySendDestinations,
+  droppedSendItems: droppedSendItems,
 );
 
 Future<String?> recordClipboardWrites(Future<void> Function() action) async {
@@ -157,7 +167,7 @@ void main() {
     expectNoFlutterError(tester);
   });
 
-  testWidgets('send flow covers selection, code sharing, and completion', (
+  testWidgets('after drop state prioritizes destinations over setup actions', (
     tester,
   ) async {
     await pumpUtilityApp(tester, controller: buildTestController());
@@ -166,31 +176,134 @@ void main() {
     await tester.tap(chooseFilesButton());
     await tester.pumpAndSettle();
 
-    expect(find.text('2 items ready'), findsOneWidget);
+    expect(find.text('2 items'), findsOneWidget);
+    expect(find.text('Nearby devices'), findsOneWidget);
+    expect(find.text('Or enter a code'), findsOneWidget);
     expect(find.text('sample.txt'), findsWidgets);
+    expect(find.text('Create code'), findsNothing);
+    expect(firstSendDestination(), findsOneWidget);
 
-    await tester.tap(find.text('Create code'));
+    await tester.tap(firstSendDestination());
     await tester.pumpAndSettle();
 
-    expect(find.text('Ready to send'), findsOneWidget);
-    expect(find.text('AB2 CD3'), findsOneWidget);
-    expect(find.text('+1 more item'), findsOneWidget);
+    expect(find.text('Connecting'), findsOneWidget);
+    expect(find.text('Starting transfer to Maya’s iPhone.'), findsOneWidget);
 
-    await tester.ensureVisible(copyCodeButton());
-    await tester.tap(copyCodeButton());
+    await tester.tap(find.text('Continue'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Waiting for receiver…'), findsOneWidget);
+    expect(find.text('Sending'), findsOneWidget);
 
-    await tester.tap(find.text('Mark as done'));
+    await tester.tap(find.text('Finish transfer'));
     await tester.pumpAndSettle();
 
     expect(find.text('Transfer complete'), findsOneWidget);
+    expect(find.text('Your files were sent'), findsOneWidget);
 
     await tester.tap(find.text('Send more files'));
     await tester.pumpAndSettle();
 
     expect(find.text('Drop files to send'), findsOneWidget);
+    expectNoFlutterError(tester);
+  });
+
+  testWidgets('valid send code starts automatically without a submit button', (
+    tester,
+  ) async {
+    await pumpUtilityApp(tester, controller: buildTestController());
+
+    await tester.tap(chooseFilesButton());
+    await tester.pumpAndSettle();
+
+    await tester.enterText(sendCodeField(), 'ab2cd3');
+    await tester.pumpAndSettle();
+
+    expect(find.text('Connecting'), findsOneWidget);
+    expect(find.text('Starting transfer to Code AB2 CD3.'), findsOneWidget);
+    expect(find.text('Create code'), findsNothing);
+    expectNoFlutterError(tester);
+  });
+
+  testWidgets('back arrow returns send flow to the previous screen', (
+    tester,
+  ) async {
+    await pumpUtilityApp(tester, controller: buildTestController());
+
+    await tester.tap(chooseFilesButton());
+    await tester.pumpAndSettle();
+
+    expect(shellBackButton(), findsOneWidget);
+
+    await tester.tap(firstSendDestination());
+    await tester.pumpAndSettle();
+
+    expect(find.text('Connecting'), findsOneWidget);
+
+    await tester.tap(shellBackButton());
+    await tester.pumpAndSettle();
+
+    expect(find.text('Nearby devices'), findsOneWidget);
+    expect(find.text('sample.txt'), findsWidgets);
+
+    await tester.tap(shellBackButton());
+    await tester.pumpAndSettle();
+
+    expect(find.text('Drop files to send'), findsOneWidget);
+    expectNoFlutterError(tester);
+  });
+
+  testWidgets('partial send code does not begin the transfer', (tester) async {
+    await pumpUtilityApp(tester, controller: buildTestController());
+
+    await tester.tap(chooseFilesButton());
+    await tester.pumpAndSettle();
+
+    await tester.enterText(sendCodeField(), 'ab2');
+    await tester.pump();
+
+    expect(find.text('Maya’s iPhone'), findsOneWidget);
+    expect(find.text('Connecting'), findsNothing);
+    expectNoFlutterError(tester);
+  });
+
+  testWidgets(
+    'after drop state stays calm when nearby devices are unavailable',
+    (tester) async {
+      final controller = buildTestController(nearbySendDestinations: const []);
+      await pumpUtilityApp(tester, controller: controller);
+
+      await tester.tap(chooseFilesButton());
+      await tester.pumpAndSettle();
+
+      expect(find.text('Nearby devices'), findsOneWidget);
+      expect(find.text('Or enter a code'), findsOneWidget);
+      expect(find.text('No nearby devices right now'), findsOneWidget);
+      expect(sendCodeField(), findsOneWidget);
+      expectNoFlutterError(tester);
+    },
+  );
+
+  testWidgets('single dropped item renders a compact summary row', (
+    tester,
+  ) async {
+    final controller = buildTestController(
+      droppedSendItems: const [
+        TransferItemViewData(
+          name: 'proposal.pdf',
+          path: 'proposal.pdf',
+          size: '2.4 MB',
+          kind: TransferItemKind.file,
+        ),
+      ],
+    );
+    await pumpUtilityApp(tester, controller: controller);
+
+    await tester.tap(chooseFilesButton());
+    await tester.pumpAndSettle();
+
+    expect(find.text('1 item'), findsOneWidget);
+    expect(find.text('proposal.pdf'), findsOneWidget);
+    expect(find.text('+1 more item'), findsNothing);
     expectNoFlutterError(tester);
   });
 
@@ -219,6 +332,36 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Save these files?'), findsOneWidget);
+    expectNoFlutterError(tester);
+  });
+
+  testWidgets('back arrow returns receive review to code entry', (
+    tester,
+  ) async {
+    final controller = buildTestController()..openReceiveEntry();
+    await pumpUtilityApp(tester, controller: controller);
+
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('receive-code-field')),
+      'ab2cd3',
+    );
+    await tester.pump();
+    await tester.ensureVisible(receiveButton());
+    await tester.tap(receiveButton());
+    await tester.pumpAndSettle();
+
+    expect(find.text('Save these files?'), findsOneWidget);
+    expect(shellBackButton(), findsOneWidget);
+
+    await tester.tap(shellBackButton());
+    await tester.pumpAndSettle();
+
+    expect(find.text('Receive files'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('receive-code-field')),
+      findsOneWidget,
+    );
+    expect(find.text('Save these files?'), findsNothing);
     expectNoFlutterError(tester);
   });
 

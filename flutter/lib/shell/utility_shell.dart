@@ -70,7 +70,7 @@ class _UtilityShellState extends State<UtilityShell> {
                               const SizedBox(height: 8),
                             ] else ...[
                               ShellHeader(controller: controller),
-                              const SizedBox(height: 12),
+                              const SizedBox(height: 8),
                             ],
                             Expanded(
                               child: LayoutBuilder(

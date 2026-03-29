@@ -56,18 +56,20 @@ class ShellStateContent extends StatelessWidget {
       ShellView.sendReady => _scrollable(
         SendCodeCard(
           controller: controller,
-          title: 'Ready to send',
-          status: 'Share this code with the receiving device',
-          primaryLabel: 'Copy code',
+          title: 'Connecting',
+          status:
+              'Starting transfer to ${controller.sendDestinationLabel ?? 'the other device'}.',
+          primaryLabel: 'Continue',
           onPrimary: controller.markSendWaiting,
         ),
       ),
       ShellView.sendWaiting => _scrollable(
         SendCodeCard(
           controller: controller,
-          title: 'Waiting for receiver…',
-          status: 'Enter this code on the other device',
-          primaryLabel: 'Mark as done',
+          title: 'Sending',
+          status:
+              'Waiting for ${controller.sendDestinationLabel ?? 'the other device'} to finish connecting.',
+          primaryLabel: 'Finish transfer',
           onPrimary: controller.completeSendDemo,
         ),
       ),

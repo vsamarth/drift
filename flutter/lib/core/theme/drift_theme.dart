@@ -1,22 +1,28 @@
 import 'package:flutter/material.dart';
 
 // ── Design tokens ─────────────────────────────────────────────────────────────
-// Near-monochrome palette. No colour accent — ink does everything.
+// Near-monochrome base with a restrained dual-accent identity.
 
-const Color kBg = Color(0xFFF0F0F0);
+const Color kBg = Color(0xFFF3F4F4);
 const Color kSurface = Color(0xFFFFFFFF);
-const Color kFill = Color(0xFFEAEAEA); // tab container, inner areas
-const Color kBorder = Color(0xFFE2E2E2);
+const Color kFill = Color(0xFFEEF0F0); // tab container, inner areas
+const Color kBorder = Color(0xFFDDE2E3);
 const Color kInk = Color(0xFF141414);
 const Color kMuted = Color(0xFF8A8A8A);
 const Color kSubtle = Color(0xFFBBBBBB);
 const Color kCodeBg = Color(0xFF191919); // dark code card
+const Color kAccentCyan = Color(0xFF79B8C6);
+const Color kAccentCyanStrong = Color(0xFF5FA7B7);
+const Color kAccentCyanHover = Color(0x1F79B8C6);
+const Color kAccentCyanPressed = Color(0x3379B8C6);
+const Color kAccentWarm = Color(0xFFF2E7BA);
+const Color kAccentWarmSurface = Color(0x14F2E7BA);
 
 // Keep these for token completeness; widgets reference them.
-const Color kPrimary = kInk;
-const Color kPrimaryDark = kInk;
-const Color kPrimaryLight = Color(0xFF3A3A3A);
-const Color kSurface2 = Color(0xFFF7F7F7);
+const Color kPrimary = kAccentCyanStrong;
+const Color kPrimaryDark = kAccentCyanStrong;
+const Color kPrimaryLight = Color(0xFFA9D0D8);
+const Color kSurface2 = Color(0xFFFAFBFB);
 
 // ── Typography (no network; avoids google_fonts runtime fetch) ───────────────
 
@@ -57,16 +63,17 @@ TextStyle driftMono({
 // ── Theme ─────────────────────────────────────────────────────────────────────
 
 ThemeData buildDriftTheme() {
-  final colorScheme = ColorScheme.fromSeed(
-    seedColor: kInk,
-    brightness: Brightness.light,
-  ).copyWith(
-    primary: kInk,
-    secondary: const Color(0xFF3A3A3A),
-    surface: kSurface,
-    onSurface: kInk,
-    outline: kBorder,
-  );
+  final colorScheme =
+      ColorScheme.fromSeed(
+        seedColor: kAccentCyan,
+        brightness: Brightness.light,
+      ).copyWith(
+        primary: kAccentCyanStrong,
+        secondary: kAccentWarm,
+        surface: kSurface,
+        onSurface: kInk,
+        outline: kBorder,
+      );
 
   final textTheme = TextTheme(
     headlineLarge: driftSans(
@@ -153,7 +160,7 @@ ThemeData buildDriftTheme() {
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(10),
-        borderSide: const BorderSide(color: kInk, width: 1.5),
+        borderSide: const BorderSide(color: kAccentCyanStrong, width: 1.4),
       ),
       errorBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(10),

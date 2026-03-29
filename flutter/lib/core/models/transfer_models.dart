@@ -14,6 +14,8 @@ enum TransferStage {
 
 enum TransferItemKind { file, folder }
 
+enum SendDestinationKind { laptop, phone, tablet }
+
 @immutable
 class TransferItemViewData {
   const TransferItemViewData({
@@ -27,6 +29,19 @@ class TransferItemViewData {
   final String path;
   final String size;
   final TransferItemKind kind;
+}
+
+@immutable
+class SendDestinationViewData {
+  const SendDestinationViewData({
+    required this.name,
+    required this.kind,
+    this.hint,
+  });
+
+  final String name;
+  final SendDestinationKind kind;
+  final String? hint;
 }
 
 @immutable

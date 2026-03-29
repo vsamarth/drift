@@ -9,12 +9,20 @@ class ReceiveCodeField extends StatefulWidget {
     required this.onChanged,
     this.onSubmitted,
     this.hasError = false,
+    this.fieldKey,
+    this.hintText = 'Enter code',
+    this.compact = false,
+    this.understated = false,
   });
 
   final String code;
   final ValueChanged<String> onChanged;
   final ValueChanged<String>? onSubmitted;
   final bool hasError;
+  final Key? fieldKey;
+  final String hintText;
+  final bool compact;
+  final bool understated;
 
   @override
   State<ReceiveCodeField> createState() => _ReceiveCodeFieldState();
@@ -51,6 +59,7 @@ class _ReceiveCodeFieldState extends State<ReceiveCodeField> {
     const errorColor = Color(0xFFCC3333);
 
     return TextField(
+      key: widget.fieldKey,
       controller: _ctrl,
       onChanged: widget.onChanged,
       onSubmitted: widget.onSubmitted,
@@ -62,7 +71,13 @@ class _ReceiveCodeFieldState extends State<ReceiveCodeField> {
         color: kInk,
       ),
       decoration: InputDecoration(
-        hintText: 'Enter code',
+        hintText: widget.hintText,
+        fillColor: widget.understated
+            ? kSurface.withValues(alpha: 0.70)
+            : (widget.compact ? kSurface2 : kSurface),
+        contentPadding: widget.compact || widget.understated
+            ? const EdgeInsets.symmetric(horizontal: 14, vertical: 12)
+            : null,
         hintStyle: driftSans(
           color: kSubtle,
           fontSize: 14,
@@ -70,16 +85,24 @@ class _ReceiveCodeFieldState extends State<ReceiveCodeField> {
           letterSpacing: 0,
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(
+            widget.compact || widget.understated ? 14 : 10,
+          ),
           borderSide: BorderSide(
-            color: widget.hasError ? errorColor : kBorder,
+            color: widget.hasError
+                ? errorColor
+                : (widget.compact || widget.understated
+                      ? kBorder.withValues(alpha: 0.62)
+                      : kBorder),
           ),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(
+            widget.compact || widget.understated ? 14 : 10,
+          ),
           borderSide: BorderSide(
-            color: widget.hasError ? errorColor : kInk,
-            width: 1.5,
+            color: widget.hasError ? errorColor : kAccentCyanStrong,
+            width: widget.compact || widget.understated ? 1.2 : 1.5,
           ),
         ),
       ),

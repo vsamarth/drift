@@ -1,5 +1,22 @@
 import '../core/models/transfer_models.dart';
 
+const List<SendDestinationViewData> sampleSendDestinations = [
+  SendDestinationViewData(
+    name: 'Maya’s iPhone',
+    kind: SendDestinationKind.phone,
+    hint: 'Nearby',
+  ),
+  SendDestinationViewData(
+    name: 'Studio MacBook',
+    kind: SendDestinationKind.laptop,
+    hint: 'Trusted',
+  ),
+  SendDestinationViewData(
+    name: 'Kitchen iPad',
+    kind: SendDestinationKind.tablet,
+  ),
+];
+
 const List<TransferItemViewData> sampleSendItems = [
   TransferItemViewData(
     name: 'sample.txt',
@@ -31,9 +48,9 @@ const TransferSummaryViewData sampleSendSummary = TransferSummaryViewData(
   itemCount: 4,
   totalSize: '14.7 MB',
   code: 'AB2CD3',
-  expiresAt: 'Active for 14 minutes',
-  destinationLabel: 'Share this code on the other device',
-  statusMessage: 'Ready to send',
+  expiresAt: 'Ready to transfer',
+  destinationLabel: 'Maya’s iPhone',
+  statusMessage: 'Connecting',
 );
 
 const List<TransferItemViewData> sampleReceiveItems = [

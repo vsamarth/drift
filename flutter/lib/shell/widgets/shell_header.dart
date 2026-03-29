@@ -11,17 +11,18 @@ class ShellHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Align(
-      alignment: Alignment.centerRight,
-      child: GestureDetector(
-        onTap: controller.resetShell,
-        child: Text(
-          'Start over',
-          style: driftSans(
-            fontSize: 13,
-            fontWeight: FontWeight.w500,
-            color: kMuted,
-          ),
+      alignment: Alignment.centerLeft,
+      child: IconButton(
+        key: const ValueKey<String>('shell-back-button'),
+        onPressed: controller.canGoBack ? controller.goBack : null,
+        tooltip: 'Back',
+        style: IconButton.styleFrom(
+          foregroundColor: kMuted.withValues(alpha: 0.92),
+          minimumSize: const Size(30, 30),
+          padding: const EdgeInsets.all(6),
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
         ),
+        icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 16),
       ),
     );
   }
