@@ -320,7 +320,11 @@ async fn cleanup_task(state: SharedState) {
             purge_discovery_locked(&mut pairs, now);
             let after = pairs.len();
             if after != before {
-                info!(removed = before - after, remaining = after, "expired peers cleaned up");
+                info!(
+                    removed = before - after,
+                    remaining = after,
+                    "expired peers cleaned up"
+                );
             }
         }
     }

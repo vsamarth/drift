@@ -8,6 +8,7 @@
 
 import 'api/preview.dart';
 import 'api/receiver.dart';
+import 'api/sender.dart';
 import 'api/simple.dart';
 import 'dart:async';
 import 'dart:convert';
@@ -23,6 +24,13 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   });
 
   @protected
+  AnyhowException dco_decode_AnyhowException(dynamic raw);
+
+  @protected
+  RustStreamSink<SendTransferEvent>
+  dco_decode_StreamSink_send_transfer_event_Sse(dynamic raw);
+
+  @protected
   String dco_decode_String(dynamic raw);
 
   @protected
@@ -32,6 +40,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   IdleReceiverRegistration dco_decode_box_autoadd_idle_receiver_registration(
     dynamic raw,
   );
+
+  @protected
+  SendTransferRequest dco_decode_box_autoadd_send_transfer_request(dynamic raw);
+
+  @protected
+  int dco_decode_i_32(dynamic raw);
 
   @protected
   IdleReceiverRegistration dco_decode_idle_receiver_registration(dynamic raw);
@@ -59,6 +73,15 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   SelectionPreview dco_decode_selection_preview(dynamic raw);
 
   @protected
+  SendTransferEvent dco_decode_send_transfer_event(dynamic raw);
+
+  @protected
+  SendTransferPhase dco_decode_send_transfer_phase(dynamic raw);
+
+  @protected
+  SendTransferRequest dco_decode_send_transfer_request(dynamic raw);
+
+  @protected
   BigInt dco_decode_u_64(dynamic raw);
 
   @protected
@@ -66,6 +89,13 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void dco_decode_unit(dynamic raw);
+
+  @protected
+  AnyhowException sse_decode_AnyhowException(SseDeserializer deserializer);
+
+  @protected
+  RustStreamSink<SendTransferEvent>
+  sse_decode_StreamSink_send_transfer_event_Sse(SseDeserializer deserializer);
 
   @protected
   String sse_decode_String(SseDeserializer deserializer);
@@ -77,6 +107,14 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   IdleReceiverRegistration sse_decode_box_autoadd_idle_receiver_registration(
     SseDeserializer deserializer,
   );
+
+  @protected
+  SendTransferRequest sse_decode_box_autoadd_send_transfer_request(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  int sse_decode_i_32(SseDeserializer deserializer);
 
   @protected
   IdleReceiverRegistration sse_decode_idle_receiver_registration(
@@ -110,6 +148,21 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   SelectionPreview sse_decode_selection_preview(SseDeserializer deserializer);
 
   @protected
+  SendTransferEvent sse_decode_send_transfer_event(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  SendTransferPhase sse_decode_send_transfer_phase(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  SendTransferRequest sse_decode_send_transfer_request(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   BigInt sse_decode_u_64(SseDeserializer deserializer);
 
   @protected
@@ -119,7 +172,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_decode_unit(SseDeserializer deserializer);
 
   @protected
-  int sse_decode_i_32(SseDeserializer deserializer);
+  void sse_encode_AnyhowException(
+    AnyhowException self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_StreamSink_send_transfer_event_Sse(
+    RustStreamSink<SendTransferEvent> self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_String(String self, SseSerializer serializer);
@@ -132,6 +194,15 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
     IdleReceiverRegistration self,
     SseSerializer serializer,
   );
+
+  @protected
+  void sse_encode_box_autoadd_send_transfer_request(
+    SendTransferRequest self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_i_32(int self, SseSerializer serializer);
 
   @protected
   void sse_encode_idle_receiver_registration(
@@ -173,6 +244,24 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_send_transfer_event(
+    SendTransferEvent self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_send_transfer_phase(
+    SendTransferPhase self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_send_transfer_request(
+    SendTransferRequest self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_u_64(BigInt self, SseSerializer serializer);
 
   @protected
@@ -180,9 +269,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_unit(void self, SseSerializer serializer);
-
-  @protected
-  void sse_encode_i_32(int self, SseSerializer serializer);
 }
 
 // Section: wire_class

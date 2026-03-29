@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import '../core/models/transfer_models.dart';
 import '../platform/receive_registration_source.dart';
 import '../platform/send_item_source.dart';
+import '../platform/send_transfer_source.dart';
 import 'drift_sample_data.dart';
 
 class DriftController extends ChangeNotifier {
@@ -17,6 +18,7 @@ class DriftController extends ChangeNotifier {
     List<SendDestinationViewData>? nearbySendDestinations,
     List<TransferItemViewData>? droppedSendItems,
     SendItemSource? sendItemSource,
+    SendTransferSource? sendTransferSource,
     ReceiveRegistrationSource? receiveRegistrationSource,
   }) : _deviceName = _normalizeDeviceName(deviceName ?? _defaultDeviceName()),
        _idleReceiveCode = idleReceiveCode.trim().toUpperCase(),
@@ -39,9 +41,11 @@ class DriftController extends ChangeNotifier {
              ],
        ),
        _defaultSendDestinations = List<SendDestinationViewData>.unmodifiable(
-         nearbySendDestinations ?? sampleSendDestinations,
+         nearbySendDestinations ?? const [],
        ),
        _sendItemSource = sendItemSource ?? const LocalSendItemSource(),
+       _sendTransferSource =
+           sendTransferSource ?? const LocalSendTransferSource(),
        _receiveRegistrationSource =
            receiveRegistrationSource ?? const LocalReceiveRegistrationSource() {
     unawaited(_ensureIdleReceiver());
@@ -62,8 +66,11 @@ class DriftController extends ChangeNotifier {
   final List<TransferItemViewData> _defaultDroppedSendItems;
   final List<SendDestinationViewData> _defaultSendDestinations;
   final SendItemSource _sendItemSource;
+  final SendTransferSource _sendTransferSource;
   final ReceiveRegistrationSource _receiveRegistrationSource;
   Timer? _idleReceiverRefreshTimer;
+  StreamSubscription<SendTransferUpdate>? _sendTransferSubscription;
+  int _sendTransferGeneration = 0;
   TransferDirection _mode = TransferDirection.send;
   TransferStage _sendStage = TransferStage.idle;
   TransferStage _receiveStage = TransferStage.idle;
@@ -169,6 +176,7 @@ class DriftController extends ChangeNotifier {
   }
 
   void clearSendFlow() {
+    _cancelActiveSendTransfer();
     _mode = TransferDirection.send;
     _sendStage = TransferStage.idle;
     _sendDropActive = false;
@@ -181,12 +189,6 @@ class DriftController extends ChangeNotifier {
     notifyListeners();
   }
 
-  void selectNearbyDestination(SendDestinationViewData destination) {
-    _sendDestinationCode = '';
-    _beginSend(destination.name, statusMessage: 'Connecting');
-    notifyListeners();
-  }
-
   void updateSendDestinationCode(String value) {
     final normalized = value.toUpperCase().replaceAll(RegExp(r'[^A-Z0-9]'), '');
     if (normalized == _sendDestinationCode) {
@@ -194,51 +196,12 @@ class DriftController extends ChangeNotifier {
     }
     _sendDestinationCode = normalized;
     notifyListeners();
-    if (_sendDestinationCode.length == 6) {
-      _beginSend(_formatCodeAsDestination(_sendDestinationCode));
-      notifyListeners();
+    if (_sendDestinationCode.length == 6 &&
+        _sendStage == TransferStage.collecting &&
+        !_isInspectingSendItems &&
+        _sendItems.isNotEmpty) {
+      _startSendTransfer(_sendDestinationCode);
     }
-  }
-
-  void generateOffer() {
-    _beginSend(_sendDestinationLabel ?? sampleSendSummary.destinationLabel);
-    notifyListeners();
-  }
-
-  void markSendWaiting() {
-    _resetReceiveFlow();
-    _mode = TransferDirection.send;
-    _sendStage = TransferStage.waiting;
-    _sendSummary = (_sendSummary ?? sampleSendSummary).copyWith(
-      destinationLabel:
-          _sendDestinationLabel ?? sampleSendSummary.destinationLabel,
-      statusMessage: 'Waiting for the other device',
-    );
-    notifyListeners();
-  }
-
-  void completeSendDemo() {
-    _resetReceiveFlow();
-    _mode = TransferDirection.send;
-    _sendStage = TransferStage.completed;
-    _sendSummary = sampleSendSummary.copyWith(
-      statusMessage: 'Your files were sent',
-      destinationLabel:
-          _sendDestinationLabel ?? sampleSendSummary.destinationLabel,
-    );
-    notifyListeners();
-  }
-
-  void failSendDemo() {
-    _resetReceiveFlow();
-    _mode = TransferDirection.send;
-    _sendStage = TransferStage.error;
-    _sendSummary = sampleSendSummary.copyWith(
-      statusMessage: 'This transfer did not finish. Try again.',
-      destinationLabel:
-          _sendDestinationLabel ?? sampleSendSummary.destinationLabel,
-    );
-    notifyListeners();
   }
 
   void updateReceiveCode(String value) {
@@ -298,6 +261,7 @@ class DriftController extends ChangeNotifier {
   }
 
   void resetShell() {
+    _cancelActiveSendTransfer();
     _mode = TransferDirection.send;
     _sendStage = TransferStage.idle;
     _sendDropActive = false;
@@ -364,23 +328,28 @@ class DriftController extends ChangeNotifier {
     _receiveSummary = null;
   }
 
-  void _beginSend(
-    String destinationLabel, {
-    String statusMessage = 'Connecting',
-  }) {
+  void _beginSend(SendTransferUpdate update) {
     _resetReceiveFlow();
     _mode = TransferDirection.send;
-    _sendStage = TransferStage.ready;
+    _sendStage = switch (update.phase) {
+      SendTransferUpdatePhase.connecting => TransferStage.ready,
+      SendTransferUpdatePhase.waitingForDecision => TransferStage.waiting,
+      SendTransferUpdatePhase.sending => TransferStage.waiting,
+      SendTransferUpdatePhase.completed => TransferStage.completed,
+      SendTransferUpdatePhase.failed => TransferStage.error,
+    };
     _sendDropActive = false;
-    _sendDestinationLabel = destinationLabel;
+    _sendDestinationLabel = update.destinationLabel;
     _nearbySendDestinations = _defaultSendDestinations;
     _sendItems = List<TransferItemViewData>.unmodifiable(
       _sendItems.isEmpty ? sampleSendItems : _sendItems,
     );
-    _sendSummary = sampleSendSummary.copyWith(
-      itemCount: _sendItems.length,
-      destinationLabel: destinationLabel,
-      statusMessage: statusMessage,
+    _sendSummary = (_sendSummary ?? sampleSendSummary).copyWith(
+      itemCount: update.itemCount,
+      totalSize: update.totalSize,
+      code: _sendDestinationCode,
+      destinationLabel: update.destinationLabel,
+      statusMessage: update.errorMessage ?? update.statusMessage,
     );
   }
 
@@ -436,6 +405,7 @@ class DriftController extends ChangeNotifier {
   }
 
   void _applySelectedSendItems(List<TransferItemViewData> items) {
+    _cancelActiveSendTransfer();
     _resetReceiveFlow();
     _mode = TransferDirection.send;
     _sendStage = TransferStage.collecting;
@@ -449,6 +419,7 @@ class DriftController extends ChangeNotifier {
   }
 
   void _beginSendInspection({required bool clearExistingItems}) {
+    _cancelActiveSendTransfer();
     _resetReceiveFlow();
     _mode = TransferDirection.send;
     _sendStage = TransferStage.collecting;
@@ -491,6 +462,7 @@ class DriftController extends ChangeNotifier {
 
   @override
   void dispose() {
+    _cancelActiveSendTransfer();
     _idleReceiverRefreshTimer?.cancel();
     super.dispose();
   }
@@ -513,6 +485,7 @@ class DriftController extends ChangeNotifier {
   }
 
   void _returnToSendSelection() {
+    _cancelActiveSendTransfer();
     _mode = TransferDirection.send;
     _sendStage = TransferStage.collecting;
     _sendDropActive = true;
@@ -522,6 +495,74 @@ class DriftController extends ChangeNotifier {
     _nearbySendDestinations = _defaultSendDestinations;
     _sendSummary = null;
     _resetReceiveFlow();
+  }
+
+  void _startSendTransfer(String normalizedCode) {
+    _cancelActiveSendTransfer();
+    final generation = ++_sendTransferGeneration;
+    debugPrint(
+      '[drift/controller] starting send transfer '
+      'generation=$generation code=$normalizedCode items=${_sendItems.length}',
+    );
+    final request = SendTransferRequestData(
+      code: normalizedCode,
+      paths: _sendItems.map((item) => item.path).toList(growable: false),
+      deviceName: _deviceName,
+    );
+
+    _sendTransferSubscription = _sendTransferSource
+        .startTransfer(request)
+        .listen(
+          (update) {
+            if (generation != _sendTransferGeneration) {
+              debugPrint(
+                '[drift/controller] ignoring stale send update '
+                'generation=$generation current=$_sendTransferGeneration',
+              );
+              return;
+            }
+            debugPrint(
+              '[drift/controller] applying send update '
+              'generation=$generation phase=${update.phase.name} '
+              'destination=${update.destinationLabel}',
+            );
+            _beginSend(update);
+            notifyListeners();
+          },
+          onError: (Object error, StackTrace stackTrace) {
+            if (generation != _sendTransferGeneration) {
+              return;
+            }
+            debugPrint('[drift/controller] failed to send files: $error');
+            debugPrintStack(stackTrace: stackTrace);
+            _beginSend(
+              SendTransferUpdate(
+                phase: SendTransferUpdatePhase.failed,
+                destinationLabel:
+                    _sendDestinationLabel ??
+                    _formatCodeAsDestination(normalizedCode),
+                statusMessage:
+                    'Starting transfer to ${_sendDestinationLabel ?? _formatCodeAsDestination(normalizedCode)}.',
+                itemCount: _sendItems.length,
+                totalSize: sampleSendSummary.totalSize,
+                errorMessage: error.toString(),
+              ),
+            );
+            notifyListeners();
+          },
+        );
+  }
+
+  void _cancelActiveSendTransfer() {
+    if (_sendTransferSubscription != null) {
+      debugPrint(
+        '[drift/controller] cancelling send transfer '
+        'generation=$_sendTransferGeneration',
+      );
+    }
+    _sendTransferGeneration += 1;
+    unawaited(_sendTransferSubscription?.cancel());
+    _sendTransferSubscription = null;
   }
 
   static String _formatCodeAsDestination(String code) {

@@ -10,15 +10,15 @@ class TransferResultCard extends StatelessWidget {
     required this.tone,
     required this.title,
     required this.message,
-    required this.primaryLabel,
-    required this.onPrimary,
+    this.primaryLabel,
+    this.onPrimary,
   });
 
   final TransferResultTone tone;
   final String title;
   final String message;
-  final String primaryLabel;
-  final VoidCallback onPrimary;
+  final String? primaryLabel;
+  final VoidCallback? onPrimary;
 
   @override
   Widget build(BuildContext context) {
@@ -64,20 +64,22 @@ class TransferResultCard extends StatelessWidget {
               height: 1.5,
             ),
           ),
-          const SizedBox(height: 20),
-          FilledButton(
-            onPressed: onPrimary,
-            style: FilledButton.styleFrom(
-              backgroundColor: fgColor,
-              foregroundColor: Colors.white,
-              minimumSize: const Size(0, 44),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10),
+          if (primaryLabel != null && onPrimary != null) ...[
+            const SizedBox(height: 20),
+            FilledButton(
+              onPressed: onPrimary,
+              style: FilledButton.styleFrom(
+                backgroundColor: fgColor,
+                foregroundColor: Colors.white,
+                minimumSize: const Size(0, 44),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                textStyle: driftSans(fontSize: 14, fontWeight: FontWeight.w600),
               ),
-              textStyle: driftSans(fontSize: 14, fontWeight: FontWeight.w600),
+              child: Text(primaryLabel!),
             ),
-            child: Text(primaryLabel),
-          ),
+          ],
         ],
       ),
     );

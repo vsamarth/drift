@@ -11,15 +11,15 @@ class SendCodeCard extends StatelessWidget {
     required this.controller,
     required this.title,
     required this.status,
-    required this.primaryLabel,
-    required this.onPrimary,
+    this.primaryLabel,
+    this.onPrimary,
   });
 
   final DriftController controller;
   final String title;
   final String status;
-  final String primaryLabel;
-  final VoidCallback onPrimary;
+  final String? primaryLabel;
+  final VoidCallback? onPrimary;
 
   @override
   Widget build(BuildContext context) {
@@ -106,8 +106,10 @@ class SendCodeCard extends StatelessWidget {
             items: controller.visibleSendItems,
             hiddenItemCount: controller.hiddenSendItemCount,
           ),
-          const SizedBox(height: 20),
-          FilledButton(onPressed: onPrimary, child: Text(primaryLabel)),
+          if (primaryLabel != null && onPrimary != null) ...[
+            const SizedBox(height: 20),
+            FilledButton(onPressed: onPrimary, child: Text(primaryLabel!)),
+          ],
         ],
       ),
     );

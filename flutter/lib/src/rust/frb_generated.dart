@@ -5,6 +5,7 @@
 
 import 'api/preview.dart';
 import 'api/receiver.dart';
+import 'api/sender.dart';
 import 'api/simple.dart';
 import 'dart:async';
 import 'dart:convert';
@@ -68,7 +69,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.11.1';
 
   @override
-  int get rustContentHash => 27635700;
+  int get rustContentHash => -1970159617;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -96,6 +97,10 @@ abstract class RustLibApi extends BaseApi {
 
   Future<IdleReceiverRegistration> crateApiReceiverRegisterIdleReceiver({
     String? serverUrl,
+  });
+
+  Stream<SendTransferEvent> crateApiSenderStartSendTransfer({
+    required SendTransferRequest request,
   });
 }
 
@@ -285,6 +290,57 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         argNames: ["serverUrl"],
       );
 
+  @override
+  Stream<SendTransferEvent> crateApiSenderStartSendTransfer({
+    required SendTransferRequest request,
+  }) {
+    final updates = RustStreamSink<SendTransferEvent>();
+    unawaited(
+      handler.executeNormal(
+        NormalTask(
+          callFfi: (port_) {
+            final serializer = SseSerializer(generalizedFrbRustBinding);
+            sse_encode_box_autoadd_send_transfer_request(request, serializer);
+            sse_encode_StreamSink_send_transfer_event_Sse(updates, serializer);
+            pdeCallFfi(
+              generalizedFrbRustBinding,
+              serializer,
+              funcId: 7,
+              port: port_,
+            );
+          },
+          codec: SseCodec(
+            decodeSuccessData: sse_decode_unit,
+            decodeErrorData: sse_decode_String,
+          ),
+          constMeta: kCrateApiSenderStartSendTransferConstMeta,
+          argValues: [request, updates],
+          apiImpl: this,
+        ),
+      ),
+    );
+    return updates.stream;
+  }
+
+  TaskConstMeta get kCrateApiSenderStartSendTransferConstMeta =>
+      const TaskConstMeta(
+        debugName: "start_send_transfer",
+        argNames: ["request", "updates"],
+      );
+
+  @protected
+  AnyhowException dco_decode_AnyhowException(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return AnyhowException(raw as String);
+  }
+
+  @protected
+  RustStreamSink<SendTransferEvent>
+  dco_decode_StreamSink_send_transfer_event_Sse(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    throw UnimplementedError();
+  }
+
   @protected
   String dco_decode_String(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
@@ -303,6 +359,20 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return dco_decode_idle_receiver_registration(raw);
+  }
+
+  @protected
+  SendTransferRequest dco_decode_box_autoadd_send_transfer_request(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_send_transfer_request(raw);
+  }
+
+  @protected
+  int dco_decode_i_32(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw as int;
   }
 
   @protected
@@ -379,6 +449,42 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  SendTransferEvent dco_decode_send_transfer_event(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 6)
+      throw Exception('unexpected arr length: expect 6 but see ${arr.length}');
+    return SendTransferEvent(
+      phase: dco_decode_send_transfer_phase(arr[0]),
+      destinationLabel: dco_decode_String(arr[1]),
+      statusMessage: dco_decode_String(arr[2]),
+      itemCount: dco_decode_u_64(arr[3]),
+      totalSize: dco_decode_u_64(arr[4]),
+      errorMessage: dco_decode_opt_String(arr[5]),
+    );
+  }
+
+  @protected
+  SendTransferPhase dco_decode_send_transfer_phase(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return SendTransferPhase.values[raw as int];
+  }
+
+  @protected
+  SendTransferRequest dco_decode_send_transfer_request(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 4)
+      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
+    return SendTransferRequest(
+      code: dco_decode_String(arr[0]),
+      paths: dco_decode_list_String(arr[1]),
+      serverUrl: dco_decode_opt_String(arr[2]),
+      deviceName: dco_decode_String(arr[3]),
+    );
+  }
+
+  @protected
   BigInt dco_decode_u_64(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return dcoDecodeU64(raw);
@@ -394,6 +500,20 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   void dco_decode_unit(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return;
+  }
+
+  @protected
+  AnyhowException sse_decode_AnyhowException(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var inner = sse_decode_String(deserializer);
+    return AnyhowException(inner);
+  }
+
+  @protected
+  RustStreamSink<SendTransferEvent>
+  sse_decode_StreamSink_send_transfer_event_Sse(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    throw UnimplementedError('Unreachable ()');
   }
 
   @protected
@@ -415,6 +535,20 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return (sse_decode_idle_receiver_registration(deserializer));
+  }
+
+  @protected
+  SendTransferRequest sse_decode_box_autoadd_send_transfer_request(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_send_transfer_request(deserializer));
+  }
+
+  @protected
+  int sse_decode_i_32(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return deserializer.buffer.getInt32();
   }
 
   @protected
@@ -516,6 +650,53 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  SendTransferEvent sse_decode_send_transfer_event(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_phase = sse_decode_send_transfer_phase(deserializer);
+    var var_destinationLabel = sse_decode_String(deserializer);
+    var var_statusMessage = sse_decode_String(deserializer);
+    var var_itemCount = sse_decode_u_64(deserializer);
+    var var_totalSize = sse_decode_u_64(deserializer);
+    var var_errorMessage = sse_decode_opt_String(deserializer);
+    return SendTransferEvent(
+      phase: var_phase,
+      destinationLabel: var_destinationLabel,
+      statusMessage: var_statusMessage,
+      itemCount: var_itemCount,
+      totalSize: var_totalSize,
+      errorMessage: var_errorMessage,
+    );
+  }
+
+  @protected
+  SendTransferPhase sse_decode_send_transfer_phase(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var inner = sse_decode_i_32(deserializer);
+    return SendTransferPhase.values[inner];
+  }
+
+  @protected
+  SendTransferRequest sse_decode_send_transfer_request(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_code = sse_decode_String(deserializer);
+    var var_paths = sse_decode_list_String(deserializer);
+    var var_serverUrl = sse_decode_opt_String(deserializer);
+    var var_deviceName = sse_decode_String(deserializer);
+    return SendTransferRequest(
+      code: var_code,
+      paths: var_paths,
+      serverUrl: var_serverUrl,
+      deviceName: var_deviceName,
+    );
+  }
+
+  @protected
   BigInt sse_decode_u_64(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return deserializer.buffer.getBigUint64();
@@ -533,9 +714,29 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  int sse_decode_i_32(SseDeserializer deserializer) {
+  void sse_encode_AnyhowException(
+    AnyhowException self,
+    SseSerializer serializer,
+  ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
-    return deserializer.buffer.getInt32();
+    sse_encode_String(self.message, serializer);
+  }
+
+  @protected
+  void sse_encode_StreamSink_send_transfer_event_Sse(
+    RustStreamSink<SendTransferEvent> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(
+      self.setupAndSerialize(
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_send_transfer_event,
+          decodeErrorData: sse_decode_AnyhowException,
+        ),
+      ),
+      serializer,
+    );
   }
 
   @protected
@@ -557,6 +758,21 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_idle_receiver_registration(self, serializer);
+  }
+
+  @protected
+  void sse_encode_box_autoadd_send_transfer_request(
+    SendTransferRequest self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_send_transfer_request(self, serializer);
+  }
+
+  @protected
+  void sse_encode_i_32(int self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    serializer.buffer.putInt32(self);
   }
 
   @protected
@@ -645,6 +861,41 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_send_transfer_event(
+    SendTransferEvent self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_send_transfer_phase(self.phase, serializer);
+    sse_encode_String(self.destinationLabel, serializer);
+    sse_encode_String(self.statusMessage, serializer);
+    sse_encode_u_64(self.itemCount, serializer);
+    sse_encode_u_64(self.totalSize, serializer);
+    sse_encode_opt_String(self.errorMessage, serializer);
+  }
+
+  @protected
+  void sse_encode_send_transfer_phase(
+    SendTransferPhase self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.index, serializer);
+  }
+
+  @protected
+  void sse_encode_send_transfer_request(
+    SendTransferRequest self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.code, serializer);
+    sse_encode_list_String(self.paths, serializer);
+    sse_encode_opt_String(self.serverUrl, serializer);
+    sse_encode_String(self.deviceName, serializer);
+  }
+
+  @protected
   void sse_encode_u_64(BigInt self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     serializer.buffer.putBigUint64(self);
@@ -659,11 +910,5 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   @protected
   void sse_encode_unit(void self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
-  }
-
-  @protected
-  void sse_encode_i_32(int self, SseSerializer serializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    serializer.buffer.putInt32(self);
   }
 }

@@ -379,7 +379,10 @@ fn inspect_selected_path(path: &Path) -> Result<SelectedPathPreview> {
                 }
 
                 if !child_type.is_file() {
-                    bail!("{} is not a regular file or directory", child_path.display());
+                    bail!(
+                        "{} is not a regular file or directory",
+                        child_path.display()
+                    );
                 }
 
                 file_count = file_count

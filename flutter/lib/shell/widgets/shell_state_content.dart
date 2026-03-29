@@ -59,9 +59,8 @@ class ShellStateContent extends StatelessWidget {
           controller: controller,
           title: 'Connecting',
           status:
+              controller.sendSummary?.statusMessage ??
               'Starting transfer to ${controller.sendDestinationLabel ?? 'the other device'}.',
-          primaryLabel: 'Continue',
-          onPrimary: controller.markSendWaiting,
         ),
       ),
       ShellView.sendWaiting => _scrollable(
@@ -69,9 +68,8 @@ class ShellStateContent extends StatelessWidget {
           controller: controller,
           title: 'Sending',
           status:
+              controller.sendSummary?.statusMessage ??
               'Waiting for ${controller.sendDestinationLabel ?? 'the other device'} to finish connecting.',
-          primaryLabel: 'Finish transfer',
-          onPrimary: controller.completeSendDemo,
         ),
       ),
       ShellView.sendCompleted => _scrollable(
@@ -92,8 +90,6 @@ class ShellStateContent extends StatelessWidget {
           message:
               controller.sendSummary?.statusMessage ??
               'This transfer did not finish.',
-          primaryLabel: 'Try again',
-          onPrimary: controller.resetShell,
         ),
       ),
       ShellView.receiveReview => _scrollable(

@@ -1,22 +1,5 @@
 import '../core/models/transfer_models.dart';
 
-const List<SendDestinationViewData> sampleSendDestinations = [
-  SendDestinationViewData(
-    name: 'Maya’s iPhone',
-    kind: SendDestinationKind.phone,
-    hint: 'Nearby',
-  ),
-  SendDestinationViewData(
-    name: 'Studio MacBook',
-    kind: SendDestinationKind.laptop,
-    hint: 'Trusted',
-  ),
-  SendDestinationViewData(
-    name: 'Kitchen iPad',
-    kind: SendDestinationKind.tablet,
-  ),
-];
-
 const List<TransferItemViewData> sampleSendItems = [
   TransferItemViewData(
     name: 'sample.txt',

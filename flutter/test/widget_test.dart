@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'dart:ui';
 
 import 'package:drift_app/app/drift_app.dart';
 import 'package:drift_app/core/models/transfer_models.dart';
 import 'package:drift_app/platform/receive_registration_source.dart';
 import 'package:drift_app/platform/send_item_source.dart';
+import 'package:drift_app/platform/send_transfer_source.dart';
 import 'package:drift_app/state/drift_controller.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
@@ -41,14 +43,13 @@ Finder idleIdentityZone() =>
 Finder idleReceiveCodePill() =>
     find.byKey(const ValueKey<String>('idle-receive-code'));
 Finder sendCodeField() => find.byKey(const ValueKey<String>('send-code-field'));
-Finder firstSendDestination() =>
-    find.byKey(const ValueKey<String>('send-destination-0'));
 Finder shellBackButton() =>
     find.byKey(const ValueKey<String>('shell-back-button'));
 
 DriftController buildTestController({
   List<SendDestinationViewData>? nearbySendDestinations,
   List<TransferItemViewData>? droppedSendItems,
+  SendTransferSource? sendTransferSource,
 }) => DriftController(
   deviceName: 'Samarth MacBook Pro',
   idleReceiveCode: 'F9P2Q1',
@@ -73,6 +74,7 @@ DriftController buildTestController({
           ),
         ],
   ),
+  sendTransferSource: sendTransferSource ?? FakeSendTransferSource(),
   receiveRegistrationSource: const FakeReceiveRegistrationSource(),
 );
 
@@ -96,6 +98,45 @@ class FakeReceiveRegistrationSource implements ReceiveRegistrationSource {
   @override
   Future<ReceiveRegistrationData> ensureIdleReceiver() async =>
       const ReceiveRegistrationData(code: 'F9P2Q1', expiresAt: 'unused');
+}
+
+class FakeSendTransferSource implements SendTransferSource {
+  SendTransferRequestData? lastRequest;
+  StreamController<SendTransferUpdate>? _controller;
+
+  @override
+  Stream<SendTransferUpdate> startTransfer(SendTransferRequestData request) {
+    lastRequest = request;
+    _controller?.close();
+    _controller = StreamController<SendTransferUpdate>();
+    return _controller!.stream;
+  }
+
+  void emit(SendTransferUpdate update) {
+    _controller?.add(update);
+  }
+
+  Future<void> finish() async {
+    await _controller?.close();
+  }
+}
+
+SendTransferUpdate sendTransferUpdate({
+  required SendTransferUpdatePhase phase,
+  required String destinationLabel,
+  required String statusMessage,
+  String? errorMessage,
+  int itemCount = 2,
+  String totalSize = '18 KB',
+}) {
+  return SendTransferUpdate(
+    phase: phase,
+    destinationLabel: destinationLabel,
+    statusMessage: statusMessage,
+    itemCount: itemCount,
+    totalSize: totalSize,
+    errorMessage: errorMessage,
+  );
 }
 
 Future<String?> recordClipboardWrites(Future<void> Function() action) async {
@@ -211,34 +252,73 @@ void main() {
     expectNoFlutterError(tester);
   });
 
-  testWidgets('after drop state prioritizes destinations over setup actions', (
+  testWidgets('after drop state routes straight to manual code entry', (
     tester,
   ) async {
-    await pumpUtilityApp(tester, controller: buildTestController());
+    final sendTransferSource = FakeSendTransferSource();
+    await pumpUtilityApp(
+      tester,
+      controller: buildTestController(sendTransferSource: sendTransferSource),
+    );
 
     await tester.ensureVisible(chooseFilesButton());
     await tester.tap(chooseFilesButton());
     await tester.pumpAndSettle();
 
     expect(find.text('2 items'), findsOneWidget);
-    expect(find.text('Nearby devices'), findsOneWidget);
     expect(find.text('Or enter a code'), findsOneWidget);
     expect(find.text('sample.txt'), findsWidgets);
     expect(find.text('Create code'), findsNothing);
-    expect(firstSendDestination(), findsOneWidget);
 
-    await tester.tap(firstSendDestination());
+    await tester.enterText(sendCodeField(), 'ab2cd3');
+    await tester.pump();
+
+    sendTransferSource.emit(
+      sendTransferUpdate(
+        phase: SendTransferUpdatePhase.connecting,
+        destinationLabel: 'Code AB2 CD3',
+        statusMessage: 'Starting transfer to Code AB2 CD3.',
+      ),
+    );
     await tester.pumpAndSettle();
 
     expect(find.text('Connecting'), findsOneWidget);
-    expect(find.text('Starting transfer to Maya’s iPhone.'), findsOneWidget);
+    expect(find.text('Starting transfer to Code AB2 CD3.'), findsOneWidget);
 
-    await tester.tap(find.text('Continue'));
+    sendTransferSource.emit(
+      sendTransferUpdate(
+        phase: SendTransferUpdatePhase.waitingForDecision,
+        destinationLabel: 'Maya’s iPhone',
+        statusMessage: 'Waiting for Maya’s iPhone to accept the transfer.',
+      ),
+    );
     await tester.pumpAndSettle();
 
     expect(find.text('Sending'), findsOneWidget);
+    expect(
+      find.text('Waiting for Maya’s iPhone to accept the transfer.'),
+      findsOneWidget,
+    );
 
-    await tester.tap(find.text('Finish transfer'));
+    sendTransferSource.emit(
+      sendTransferUpdate(
+        phase: SendTransferUpdatePhase.sending,
+        destinationLabel: 'Maya’s iPhone',
+        statusMessage: 'Sending files to Maya’s iPhone.',
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Sending files to Maya’s iPhone.'), findsOneWidget);
+
+    sendTransferSource.emit(
+      sendTransferUpdate(
+        phase: SendTransferUpdatePhase.completed,
+        destinationLabel: 'Maya’s iPhone',
+        statusMessage: 'Your files were sent',
+      ),
+    );
+    await sendTransferSource.finish();
     await tester.pumpAndSettle();
 
     expect(find.text('Transfer complete'), findsOneWidget);
@@ -254,31 +334,52 @@ void main() {
   testWidgets('valid send code starts automatically without a submit button', (
     tester,
   ) async {
-    await pumpUtilityApp(tester, controller: buildTestController());
+    final sendTransferSource = FakeSendTransferSource();
+    await pumpUtilityApp(
+      tester,
+      controller: buildTestController(sendTransferSource: sendTransferSource),
+    );
 
     await tester.tap(chooseFilesButton());
     await tester.pumpAndSettle();
 
     await tester.enterText(sendCodeField(), 'ab2cd3');
-    await tester.pumpAndSettle();
+    await tester.pump();
 
-    expect(find.text('Connecting'), findsOneWidget);
-    expect(find.text('Starting transfer to Code AB2 CD3.'), findsOneWidget);
-    expect(find.text('Create code'), findsNothing);
+    expect(sendTransferSource.lastRequest, isNotNull);
+    expect(sendTransferSource.lastRequest?.code, 'AB2CD3');
+    expect(sendTransferSource.lastRequest?.deviceName, 'Samarth MacBook Pro');
+    expect(sendTransferSource.lastRequest?.paths, ['sample.txt', 'photos/']);
+    expect(find.text('Continue'), findsNothing);
+    expect(find.text('Finish transfer'), findsNothing);
     expectNoFlutterError(tester);
   });
 
   testWidgets('back arrow returns send flow to the previous screen', (
     tester,
   ) async {
-    await pumpUtilityApp(tester, controller: buildTestController());
+    final sendTransferSource = FakeSendTransferSource();
+    await pumpUtilityApp(
+      tester,
+      controller: buildTestController(sendTransferSource: sendTransferSource),
+    );
 
     await tester.tap(chooseFilesButton());
     await tester.pumpAndSettle();
 
     expect(shellBackButton(), findsOneWidget);
+    expect(find.text('Or enter a code'), findsOneWidget);
 
-    await tester.tap(firstSendDestination());
+    await tester.enterText(sendCodeField(), 'ab2cd3');
+    await tester.pump();
+
+    sendTransferSource.emit(
+      sendTransferUpdate(
+        phase: SendTransferUpdatePhase.connecting,
+        destinationLabel: 'Code AB2 CD3',
+        statusMessage: 'Starting transfer to Code AB2 CD3.',
+      ),
+    );
     await tester.pumpAndSettle();
 
     expect(find.text('Connecting'), findsOneWidget);
@@ -286,7 +387,7 @@ void main() {
     await tester.tap(shellBackButton());
     await tester.pumpAndSettle();
 
-    expect(find.text('Nearby devices'), findsOneWidget);
+    expect(find.text('Or enter a code'), findsOneWidget);
     expect(find.text('sample.txt'), findsWidgets);
 
     await tester.tap(shellBackButton());
@@ -297,35 +398,91 @@ void main() {
   });
 
   testWidgets('partial send code does not begin the transfer', (tester) async {
-    await pumpUtilityApp(tester, controller: buildTestController());
+    final sendTransferSource = FakeSendTransferSource();
+    await pumpUtilityApp(
+      tester,
+      controller: buildTestController(sendTransferSource: sendTransferSource),
+    );
 
     await tester.tap(chooseFilesButton());
     await tester.pumpAndSettle();
 
+    expect(find.text('Nearby devices'), findsNothing);
+    expect(find.text('No nearby devices right now'), findsNothing);
+
     await tester.enterText(sendCodeField(), 'ab2');
     await tester.pump();
 
-    expect(find.text('Maya’s iPhone'), findsOneWidget);
+    expect(sendTransferSource.lastRequest, isNull);
     expect(find.text('Connecting'), findsNothing);
     expectNoFlutterError(tester);
   });
 
   testWidgets(
-    'after drop state stays calm when nearby devices are unavailable',
+    'send failure shows the rust error and back returns to selection',
     (tester) async {
-      final controller = buildTestController(nearbySendDestinations: const []);
-      await pumpUtilityApp(tester, controller: controller);
+      final sendTransferSource = FakeSendTransferSource();
+      await pumpUtilityApp(
+        tester,
+        controller: buildTestController(sendTransferSource: sendTransferSource),
+      );
 
       await tester.tap(chooseFilesButton());
       await tester.pumpAndSettle();
+      await tester.enterText(sendCodeField(), 'ab2cd3');
+      await tester.pump();
 
-      expect(find.text('Nearby devices'), findsOneWidget);
+      sendTransferSource.emit(
+        sendTransferUpdate(
+          phase: SendTransferUpdatePhase.connecting,
+          destinationLabel: 'Code AB2 CD3',
+          statusMessage: 'Starting transfer to Code AB2 CD3.',
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      sendTransferSource.emit(
+        sendTransferUpdate(
+          phase: SendTransferUpdatePhase.failed,
+          destinationLabel: 'Code AB2 CD3',
+          statusMessage: 'Starting transfer to Code AB2 CD3.',
+          errorMessage:
+              'receiver declined the offer: receiver declined the offer',
+        ),
+      );
+      await sendTransferSource.finish();
+      await tester.pumpAndSettle();
+
+      expect(find.text('Transfer failed'), findsOneWidget);
+      expect(
+        find.text('receiver declined the offer: receiver declined the offer'),
+        findsOneWidget,
+      );
+
+      await tester.tap(shellBackButton());
+      await tester.pumpAndSettle();
+
       expect(find.text('Or enter a code'), findsOneWidget);
-      expect(find.text('No nearby devices right now'), findsOneWidget);
-      expect(sendCodeField(), findsOneWidget);
+      expect(find.text('sample.txt'), findsWidgets);
       expectNoFlutterError(tester);
     },
   );
+
+  testWidgets('after drop state shows only the manual code flow', (
+    tester,
+  ) async {
+    final controller = buildTestController(nearbySendDestinations: const []);
+    await pumpUtilityApp(tester, controller: controller);
+
+    await tester.tap(chooseFilesButton());
+    await tester.pumpAndSettle();
+
+    expect(find.text('Or enter a code'), findsOneWidget);
+    expect(find.text('Nearby devices'), findsNothing);
+    expect(find.text('No nearby devices right now'), findsNothing);
+    expect(sendCodeField(), findsOneWidget);
+    expectNoFlutterError(tester);
+  });
 
   testWidgets('single dropped item renders a compact summary row', (
     tester,

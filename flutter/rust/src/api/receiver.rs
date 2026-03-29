@@ -1,4 +1,4 @@
-use std::sync::{LazyLock, Mutex};
+use std::sync::Mutex;
 
 use drift_core::rendezvous::{resolve_server_url, RegisterPeerResponse, RendezvousClient};
 use drift_core::session::bind_endpoint;
@@ -6,16 +6,10 @@ use drift_core::wire::make_ticket_now;
 use iroh::Endpoint;
 use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
-use tokio::runtime::Runtime;
+
+use super::RUNTIME;
 
 const LOCAL_RENDEZVOUS_URL: &str = "http://127.0.0.1:8787";
-
-static RUNTIME: LazyLock<Runtime> = LazyLock::new(|| {
-    tokio::runtime::Builder::new_multi_thread()
-        .enable_all()
-        .build()
-        .expect("tokio runtime")
-});
 
 static IDLE_RECEIVER: Mutex<Option<IdleReceiver>> = Mutex::new(None);
 
@@ -36,6 +30,7 @@ pub fn register_idle_receiver(
 ) -> Result<IdleReceiverRegistration, String> {
     RUNTIME.block_on(async move {
         let resolved_url = resolve_server_url(server_url.as_deref().or(Some(LOCAL_RENDEZVOUS_URL)));
+        log(&format!("registering idle receiver against {resolved_url}"));
         replace_idle_receiver(register_new_idle_receiver(resolved_url).await).await
     })
 }
@@ -45,6 +40,7 @@ pub fn ensure_idle_receiver(
 ) -> Result<IdleReceiverRegistration, String> {
     RUNTIME.block_on(async move {
         let resolved_url = resolve_server_url(server_url.as_deref().or(Some(LOCAL_RENDEZVOUS_URL)));
+        log(&format!("ensuring idle receiver against {resolved_url}"));
         let existing = take_idle_receiver()?;
 
         let next = match existing {
@@ -61,7 +57,13 @@ pub fn ensure_idle_receiver(
                         .await
                         .map_err(|err| err.to_string())?
                     {
-                        Some(_) => receiver,
+                        Some(_) => {
+                            log(&format!(
+                                "reusing idle receiver code {} on {}",
+                                receiver.registration.code, receiver.server_url
+                            ));
+                            receiver
+                        }
                         None => {
                             receiver.endpoint.close().await;
                             register_new_idle_receiver(resolved_url).await?
@@ -92,6 +94,10 @@ async fn register_new_idle_receiver(server_url: String) -> Result<IdleReceiver, 
         .register_peer(ticket)
         .await
         .map_err(|err| err.to_string())?;
+    log(&format!(
+        "registered idle receiver code {} on {}",
+        registration.code, server_url
+    ));
 
     Ok(IdleReceiver {
         endpoint,
@@ -123,4 +129,8 @@ fn is_expired(registration: &RegisterPeerResponse) -> Result<bool, String> {
     let expires_at =
         OffsetDateTime::parse(&registration.expires_at, &Rfc3339).map_err(|err| err.to_string())?;
     Ok(OffsetDateTime::now_utc() >= expires_at)
+}
+
+fn log(message: &str) {
+    eprintln!("[drift_bridge::receiver] {message}");
 }
