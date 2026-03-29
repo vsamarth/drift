@@ -37,7 +37,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.11.1";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -1970159617;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 1511764207;
 
 // Section: executor
 
@@ -242,6 +242,81 @@ fn wire__crate__api__receiver__register_idle_receiver_impl(
         },
     )
 }
+fn wire__crate__api__receiver__respond_idle_incoming_offer_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "respond_idle_incoming_offer",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_accept = <bool>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok = crate::api::receiver::respond_idle_incoming_offer(api_accept)?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__api__receiver__start_idle_incoming_listener_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "start_idle_incoming_listener",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_download_root = <String>::sse_decode(&mut deserializer);
+            let api_device_name = <String>::sse_decode(&mut deserializer);
+            let api_updates = <StreamSink<
+                crate::api::receiver::IdleIncomingEvent,
+                flutter_rust_bridge::for_generated::SseCodec,
+            >>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok = crate::api::receiver::start_idle_incoming_listener(
+                        api_download_root,
+                        api_device_name,
+                        api_updates,
+                    )?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
 fn wire__crate__api__sender__start_send_transfer_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -294,6 +369,19 @@ impl SseDecode for flutter_rust_bridge::for_generated::anyhow::Error {
 
 impl SseDecode
     for StreamSink<
+        crate::api::receiver::IdleIncomingEvent,
+        flutter_rust_bridge::for_generated::SseCodec,
+    >
+{
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <String>::sse_decode(deserializer);
+        return StreamSink::deserialize(inner);
+    }
+}
+
+impl SseDecode
+    for StreamSink<
         crate::api::sender::SendTransferEvent,
         flutter_rust_bridge::for_generated::SseCodec,
     >
@@ -327,6 +415,63 @@ impl SseDecode for i32 {
     }
 }
 
+impl SseDecode for crate::api::receiver::IdleIncomingEvent {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_phase = <crate::api::receiver::IdleIncomingPhase>::sse_decode(deserializer);
+        let mut var_senderName = <String>::sse_decode(deserializer);
+        let mut var_destinationLabel = <String>::sse_decode(deserializer);
+        let mut var_saveRootLabel = <String>::sse_decode(deserializer);
+        let mut var_statusMessage = <String>::sse_decode(deserializer);
+        let mut var_itemCount = <u64>::sse_decode(deserializer);
+        let mut var_totalSizeBytes = <u64>::sse_decode(deserializer);
+        let mut var_totalSizeLabel = <String>::sse_decode(deserializer);
+        let mut var_files =
+            <Vec<crate::api::receiver::IdleIncomingFileRow>>::sse_decode(deserializer);
+        let mut var_errorMessage = <Option<String>>::sse_decode(deserializer);
+        return crate::api::receiver::IdleIncomingEvent {
+            phase: var_phase,
+            sender_name: var_senderName,
+            destination_label: var_destinationLabel,
+            save_root_label: var_saveRootLabel,
+            status_message: var_statusMessage,
+            item_count: var_itemCount,
+            total_size_bytes: var_totalSizeBytes,
+            total_size_label: var_totalSizeLabel,
+            files: var_files,
+            error_message: var_errorMessage,
+        };
+    }
+}
+
+impl SseDecode for crate::api::receiver::IdleIncomingFileRow {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_path = <String>::sse_decode(deserializer);
+        let mut var_size = <u64>::sse_decode(deserializer);
+        return crate::api::receiver::IdleIncomingFileRow {
+            path: var_path,
+            size: var_size,
+        };
+    }
+}
+
+impl SseDecode for crate::api::receiver::IdleIncomingPhase {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => crate::api::receiver::IdleIncomingPhase::Connecting,
+            1 => crate::api::receiver::IdleIncomingPhase::OfferReady,
+            2 => crate::api::receiver::IdleIncomingPhase::Receiving,
+            3 => crate::api::receiver::IdleIncomingPhase::Completed,
+            4 => crate::api::receiver::IdleIncomingPhase::Failed,
+            5 => crate::api::receiver::IdleIncomingPhase::Declined,
+            _ => unreachable!("Invalid variant for IdleIncomingPhase: {}", inner),
+        };
+    }
+}
+
 impl SseDecode for crate::api::receiver::IdleReceiverRegistration {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -346,6 +491,20 @@ impl SseDecode for Vec<String> {
         let mut ans_ = vec![];
         for idx_ in 0..len_ {
             ans_.push(<String>::sse_decode(deserializer));
+        }
+        return ans_;
+    }
+}
+
+impl SseDecode for Vec<crate::api::receiver::IdleIncomingFileRow> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = vec![];
+        for idx_ in 0..len_ {
+            ans_.push(<crate::api::receiver::IdleIncomingFileRow>::sse_decode(
+                deserializer,
+            ));
         }
         return ans_;
     }
@@ -531,7 +690,19 @@ fn pde_ffi_dispatcher_primary_impl(
             rust_vec_len,
             data_len,
         ),
-        7 => wire__crate__api__sender__start_send_transfer_impl(port, ptr, rust_vec_len, data_len),
+        7 => wire__crate__api__receiver__respond_idle_incoming_offer_impl(
+            port,
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        8 => wire__crate__api__receiver__start_idle_incoming_listener_impl(
+            port,
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        9 => wire__crate__api__sender__start_send_transfer_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -551,6 +722,81 @@ fn pde_ffi_dispatcher_sync_impl(
 
 // Section: rust2dart
 
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::receiver::IdleIncomingEvent {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.phase.into_into_dart().into_dart(),
+            self.sender_name.into_into_dart().into_dart(),
+            self.destination_label.into_into_dart().into_dart(),
+            self.save_root_label.into_into_dart().into_dart(),
+            self.status_message.into_into_dart().into_dart(),
+            self.item_count.into_into_dart().into_dart(),
+            self.total_size_bytes.into_into_dart().into_dart(),
+            self.total_size_label.into_into_dart().into_dart(),
+            self.files.into_into_dart().into_dart(),
+            self.error_message.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::receiver::IdleIncomingEvent
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::receiver::IdleIncomingEvent>
+    for crate::api::receiver::IdleIncomingEvent
+{
+    fn into_into_dart(self) -> crate::api::receiver::IdleIncomingEvent {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::receiver::IdleIncomingFileRow {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.path.into_into_dart().into_dart(),
+            self.size.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::receiver::IdleIncomingFileRow
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::receiver::IdleIncomingFileRow>
+    for crate::api::receiver::IdleIncomingFileRow
+{
+    fn into_into_dart(self) -> crate::api::receiver::IdleIncomingFileRow {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::receiver::IdleIncomingPhase {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            Self::Connecting => 0.into_dart(),
+            Self::OfferReady => 1.into_dart(),
+            Self::Receiving => 2.into_dart(),
+            Self::Completed => 3.into_dart(),
+            Self::Failed => 4.into_dart(),
+            Self::Declined => 5.into_dart(),
+            _ => unreachable!(),
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::receiver::IdleIncomingPhase
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::receiver::IdleIncomingPhase>
+    for crate::api::receiver::IdleIncomingPhase
+{
+    fn into_into_dart(self) -> crate::api::receiver::IdleIncomingPhase {
+        self
+    }
+}
 // Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::api::receiver::IdleReceiverRegistration {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
@@ -701,6 +947,18 @@ impl SseEncode for flutter_rust_bridge::for_generated::anyhow::Error {
 
 impl SseEncode
     for StreamSink<
+        crate::api::receiver::IdleIncomingEvent,
+        flutter_rust_bridge::for_generated::SseCodec,
+    >
+{
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        unimplemented!("")
+    }
+}
+
+impl SseEncode
+    for StreamSink<
         crate::api::sender::SendTransferEvent,
         flutter_rust_bridge::for_generated::SseCodec,
     >
@@ -732,6 +990,50 @@ impl SseEncode for i32 {
     }
 }
 
+impl SseEncode for crate::api::receiver::IdleIncomingEvent {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <crate::api::receiver::IdleIncomingPhase>::sse_encode(self.phase, serializer);
+        <String>::sse_encode(self.sender_name, serializer);
+        <String>::sse_encode(self.destination_label, serializer);
+        <String>::sse_encode(self.save_root_label, serializer);
+        <String>::sse_encode(self.status_message, serializer);
+        <u64>::sse_encode(self.item_count, serializer);
+        <u64>::sse_encode(self.total_size_bytes, serializer);
+        <String>::sse_encode(self.total_size_label, serializer);
+        <Vec<crate::api::receiver::IdleIncomingFileRow>>::sse_encode(self.files, serializer);
+        <Option<String>>::sse_encode(self.error_message, serializer);
+    }
+}
+
+impl SseEncode for crate::api::receiver::IdleIncomingFileRow {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.path, serializer);
+        <u64>::sse_encode(self.size, serializer);
+    }
+}
+
+impl SseEncode for crate::api::receiver::IdleIncomingPhase {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(
+            match self {
+                crate::api::receiver::IdleIncomingPhase::Connecting => 0,
+                crate::api::receiver::IdleIncomingPhase::OfferReady => 1,
+                crate::api::receiver::IdleIncomingPhase::Receiving => 2,
+                crate::api::receiver::IdleIncomingPhase::Completed => 3,
+                crate::api::receiver::IdleIncomingPhase::Failed => 4,
+                crate::api::receiver::IdleIncomingPhase::Declined => 5,
+                _ => {
+                    unimplemented!("");
+                }
+            },
+            serializer,
+        );
+    }
+}
+
 impl SseEncode for crate::api::receiver::IdleReceiverRegistration {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -746,6 +1048,16 @@ impl SseEncode for Vec<String> {
         <i32>::sse_encode(self.len() as _, serializer);
         for item in self {
             <String>::sse_encode(item, serializer);
+        }
+    }
+}
+
+impl SseEncode for Vec<crate::api::receiver::IdleIncomingFileRow> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::receiver::IdleIncomingFileRow>::sse_encode(item, serializer);
         }
     }
 }

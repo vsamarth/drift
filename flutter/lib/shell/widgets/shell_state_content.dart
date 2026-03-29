@@ -105,6 +105,19 @@ class ShellStateContent extends StatelessWidget {
         width: double.infinity,
         child: ReceiveReviewCard(controller: controller),
       ),
+      ShellView.receiveReceiving => SizedBox(
+        height: availableHeight,
+        width: double.infinity,
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Text(
+              controller.receiveSummary?.statusMessage ?? 'Receiving files…',
+              textAlign: TextAlign.center,
+            ),
+          ),
+        ),
+      ),
       ShellView.receiveCompleted => SizedBox(
         height: availableHeight,
         width: double.infinity,

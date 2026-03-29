@@ -11,6 +11,7 @@ enum ShellView {
   sendError,
   receiveEntry,
   receiveReview,
+  receiveReceiving,
   receiveCompleted,
   receiveError,
 }
@@ -19,6 +20,7 @@ ShellView shellViewFor(DriftController c) {
   if (c.mode == TransferDirection.receive) {
     return switch (c.receiveStage) {
       TransferStage.review => ShellView.receiveReview,
+      TransferStage.waiting => ShellView.receiveReceiving,
       TransferStage.completed => ShellView.receiveCompleted,
       TransferStage.error => ShellView.receiveError,
       _ => ShellView.receiveEntry,

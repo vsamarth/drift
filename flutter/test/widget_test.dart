@@ -80,6 +80,7 @@ DriftController buildTestController({
       ),
   sendTransferSource: sendTransferSource ?? FakeSendTransferSource(),
   receiveRegistrationSource: const FakeReceiveRegistrationSource(),
+  enableIdleIncomingListener: false,
 );
 
 class FakeSendItemSource implements SendItemSource {

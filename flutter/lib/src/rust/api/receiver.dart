@@ -6,9 +6,9 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `is_expired`, `log`, `register_new_idle_receiver`, `replace_idle_receiver`, `take_idle_receiver`
+// These functions are ignored because they are not marked as `pub`: `display_sender_label`, `format_error_chain`, `is_expired`, `log`, `register_new_idle_receiver`, `replace_idle_receiver`, `run_idle_incoming_loop`, `save_root_display`, `take_idle_receiver`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `IdleReceiver`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `fmt`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`, `fmt`
 
 Future<IdleReceiverRegistration> registerIdleReceiver({String? serverUrl}) =>
     RustLib.instance.api.crateApiReceiverRegisterIdleReceiver(
@@ -22,6 +22,104 @@ Future<IdleReceiverRegistration> ensureIdleReceiver({String? serverUrl}) =>
 
 Future<IdleReceiverRegistration?> currentIdleReceiverRegistration() =>
     RustLib.instance.api.crateApiReceiverCurrentIdleReceiverRegistration();
+
+/// Spawns a background task that accepts incoming connections on the idle receiver endpoint
+/// and streams [IdleIncomingEvent] updates. Safe to call once; later calls are no-ops.
+Stream<IdleIncomingEvent> startIdleIncomingListener({
+  required String downloadRoot,
+  required String deviceName,
+}) => RustLib.instance.api.crateApiReceiverStartIdleIncomingListener(
+  downloadRoot: downloadRoot,
+  deviceName: deviceName,
+);
+
+/// Completes the pending offer decision from the UI. Call after [IdleIncomingPhase::OfferReady].
+Future<void> respondIdleIncomingOffer({required bool accept}) => RustLib
+    .instance
+    .api
+    .crateApiReceiverRespondIdleIncomingOffer(accept: accept);
+
+class IdleIncomingEvent {
+  final IdleIncomingPhase phase;
+  final String senderName;
+  final String destinationLabel;
+  final String saveRootLabel;
+  final String statusMessage;
+  final BigInt itemCount;
+  final BigInt totalSizeBytes;
+  final String totalSizeLabel;
+  final List<IdleIncomingFileRow> files;
+  final String? errorMessage;
+
+  const IdleIncomingEvent({
+    required this.phase,
+    required this.senderName,
+    required this.destinationLabel,
+    required this.saveRootLabel,
+    required this.statusMessage,
+    required this.itemCount,
+    required this.totalSizeBytes,
+    required this.totalSizeLabel,
+    required this.files,
+    this.errorMessage,
+  });
+
+  @override
+  int get hashCode =>
+      phase.hashCode ^
+      senderName.hashCode ^
+      destinationLabel.hashCode ^
+      saveRootLabel.hashCode ^
+      statusMessage.hashCode ^
+      itemCount.hashCode ^
+      totalSizeBytes.hashCode ^
+      totalSizeLabel.hashCode ^
+      files.hashCode ^
+      errorMessage.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is IdleIncomingEvent &&
+          runtimeType == other.runtimeType &&
+          phase == other.phase &&
+          senderName == other.senderName &&
+          destinationLabel == other.destinationLabel &&
+          saveRootLabel == other.saveRootLabel &&
+          statusMessage == other.statusMessage &&
+          itemCount == other.itemCount &&
+          totalSizeBytes == other.totalSizeBytes &&
+          totalSizeLabel == other.totalSizeLabel &&
+          files == other.files &&
+          errorMessage == other.errorMessage;
+}
+
+class IdleIncomingFileRow {
+  final String path;
+  final BigInt size;
+
+  const IdleIncomingFileRow({required this.path, required this.size});
+
+  @override
+  int get hashCode => path.hashCode ^ size.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is IdleIncomingFileRow &&
+          runtimeType == other.runtimeType &&
+          path == other.path &&
+          size == other.size;
+}
+
+enum IdleIncomingPhase {
+  connecting,
+  offerReady,
+  receiving,
+  completed,
+  failed,
+  declined,
+}
 
 class IdleReceiverRegistration {
   final String code;

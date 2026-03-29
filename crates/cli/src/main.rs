@@ -2,11 +2,13 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
-use drift::{receive, send};
+use drift::{LoggingOpts, init_tracing, receive, send};
 
 #[derive(Parser, Debug)]
 #[command(name = "drift", version, about = "Short-code file transfer over iroh")]
 struct Cli {
+    #[command(flatten)]
+    logging: LoggingOpts,
     #[command(subcommand)]
     command: Command,
 }
@@ -31,6 +33,7 @@ enum Command {
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
+    init_tracing(cli.logging.log_format, cli.logging.verbose);
 
     match cli.command {
         Command::Send {

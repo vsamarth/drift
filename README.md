@@ -46,3 +46,18 @@ DRIFT_RENDEZVOUS_URL=http://127.0.0.1:8787 cargo run -p drift -- send AB2CD3 sam
 1. `--server`
 2. `DRIFT_RENDEZVOUS_URL`
 3. built-in default URL
+
+## CLI logging
+
+The `drift` binary logs to **stderr** with `tracing`. Use **structured fields** (pretty text by default, or JSON for pipelines).
+
+- **Format:** `--log-format pretty` (default) or `--log-format json` (one JSON object per line). Override with env `DRIFT_LOG_FORMAT=json`.
+- **Filters:** standard `RUST_LOG` (e.g. `RUST_LOG=drift=debug,iroh=info`). If unset, default is `warn` for dependencies and `info` for the `drift` crate; use `-v` / `-vv` for `drift` at `debug` / `trace` without setting `RUST_LOG`.
+- **Receive:** manifest and progress lines from `drift-core` still print to **stdout** during the transfer; stderr carries the structured CLI events (`receive.*`, `send.*`).
+
+Example:
+
+```bash
+DRIFT_RENDEZVOUS_URL=http://127.0.0.1:8787 \
+  cargo run -p drift -- --log-format json send AB2CD3 sample.txt 2>send.log
+```

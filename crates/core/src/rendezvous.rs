@@ -42,7 +42,7 @@ pub enum PairStatus {
     Open,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PairStatusResponse {
     pub status: PairStatus,
 }

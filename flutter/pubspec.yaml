@@ -37,6 +37,7 @@ dependencies:
     path: rust_builder
   file_selector: ^1.1.0
   flutter_rust_bridge: 2.11.1
+  window_manager: ^0.5.1
 
 dev_dependencies:
   flutter_test:

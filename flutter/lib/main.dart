@@ -1,10 +1,12 @@
 import 'package:flutter/widgets.dart';
+import 'package:window_manager/window_manager.dart';
 
 import 'app/drift_app.dart';
 import 'src/rust/frb_generated.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await windowManager.ensureInitialized();
   await RustLib.init();
   runApp(const DriftApp());
 }

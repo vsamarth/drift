@@ -4,9 +4,11 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 
 import '../core/models/transfer_models.dart';
+import '../platform/app_focus.dart';
 import '../platform/receive_registration_source.dart';
 import '../platform/send_item_source.dart';
 import '../platform/send_transfer_source.dart';
+import '../src/rust/api/receiver.dart' as rust_receiver;
 import 'drift_sample_data.dart';
 
 class DriftController extends ChangeNotifier {
@@ -21,6 +23,7 @@ class DriftController extends ChangeNotifier {
     SendTransferSource? sendTransferSource,
     ReceiveRegistrationSource? receiveRegistrationSource,
     bool animateSendingConnection = true,
+    bool enableIdleIncomingListener = true,
   }) : _deviceName = _normalizeDeviceName(deviceName ?? _defaultDeviceName()),
        _idleReceiveCode = idleReceiveCode.trim().toUpperCase(),
        _idleReceiveStatus = idleReceiveStatus,
@@ -49,7 +52,8 @@ class DriftController extends ChangeNotifier {
            sendTransferSource ?? const LocalSendTransferSource(),
        _receiveRegistrationSource =
            receiveRegistrationSource ?? const LocalReceiveRegistrationSource(),
-       _animateSendingConnection = animateSendingConnection {
+       _animateSendingConnection = animateSendingConnection,
+       _enableIdleIncomingListener = enableIdleIncomingListener {
     unawaited(_ensureIdleReceiver());
     if (enableIdleReceiverRefresh) {
       _idleReceiverRefreshTimer = Timer.periodic(const Duration(minutes: 1), (
@@ -58,6 +62,7 @@ class DriftController extends ChangeNotifier {
         unawaited(_ensureIdleReceiver());
       });
     }
+    _startIdleIncomingListener();
   }
 
   final String _deviceName;
@@ -68,8 +73,13 @@ class DriftController extends ChangeNotifier {
   final SendItemSource _sendItemSource;
   final SendTransferSource _sendTransferSource;
   final ReceiveRegistrationSource _receiveRegistrationSource;
+  final bool _enableIdleIncomingListener;
   Timer? _idleReceiverRefreshTimer;
   StreamSubscription<SendTransferUpdate>? _sendTransferSubscription;
+  StreamSubscription<rust_receiver.IdleIncomingEvent>? _idleIncomingSubscription;
+  bool _idleIncomingDecisionPending = false;
+  /// After a dummy "Save", Rust still completes with [IdleIncomingPhase.declined]; skip that reset once.
+  bool _skipNextIncomingDeclinedReset = false;
   int _sendTransferGeneration = 0;
   TransferDirection _mode = TransferDirection.send;
   TransferStage _sendStage = TransferStage.idle;
@@ -162,7 +172,10 @@ class DriftController extends ChangeNotifier {
 
   /// Back control in [ShellHeader]; hidden on send success so users rely on primary actions.
   bool get showShellBackButton =>
-      canGoBack && _sendStage != TransferStage.completed;
+      canGoBack &&
+      _sendStage != TransferStage.completed &&
+      !(_mode == TransferDirection.receive &&
+          _receiveStage == TransferStage.waiting);
 
   void setMode(TransferDirection mode) {
     if (_mode == mode) {
@@ -274,17 +287,30 @@ class DriftController extends ChangeNotifier {
   }
 
   void acceptReceiveOffer() {
+    if (_idleIncomingDecisionPending) {
+      // Demo: decline on the wire so the listener unblocks without writing files.
+      // UI still shows a placeholder success until real save is wired.
+      _skipNextIncomingDeclinedReset = true;
+      unawaited(_respondIdleIncoming(accept: false));
+      _idleIncomingDecisionPending = false;
+    }
     _mode = TransferDirection.receive;
     _receiveEntryExpanded = true;
     _receiveStage = TransferStage.completed;
-    _receiveSummary = sampleReceiveSummary.copyWith(
+    _receiveSummary = (_receiveSummary ?? sampleReceiveSummary).copyWith(
       statusMessage: 'Saved to Downloads',
     );
-    _receiveItems = List<TransferItemViewData>.unmodifiable(sampleReceiveItems);
+    _receiveItems = List<TransferItemViewData>.unmodifiable(
+      _receiveItems.isEmpty ? sampleReceiveItems : _receiveItems,
+    );
     notifyListeners();
   }
 
   void declineReceiveOffer() {
+    if (_idleIncomingDecisionPending) {
+      unawaited(_respondIdleIncoming(accept: false));
+      return;
+    }
     closeReceiveEntry();
   }
 
@@ -331,6 +357,17 @@ class DriftController extends ChangeNotifier {
     if (_mode == TransferDirection.receive) {
       switch (_receiveStage) {
         case TransferStage.review:
+          if (_idleIncomingDecisionPending) {
+            unawaited(_respondIdleIncoming(accept: false));
+          }
+          _receiveStage = TransferStage.idle;
+          _receiveEntryExpanded = false;
+          _receiveErrorText = null;
+          _receiveItems = const [];
+          _receiveSummary = null;
+          _idleIncomingDecisionPending = false;
+          notifyListeners();
+          return;
         case TransferStage.error:
         case TransferStage.completed:
           _receiveStage = TransferStage.idle;
@@ -373,6 +410,8 @@ class DriftController extends ChangeNotifier {
     _receiveErrorText = null;
     _receiveItems = const [];
     _receiveSummary = null;
+    _idleIncomingDecisionPending = false;
+    _skipNextIncomingDeclinedReset = false;
   }
 
   void _beginSend(SendTransferUpdate update) {
@@ -517,7 +556,181 @@ class DriftController extends ChangeNotifier {
   void dispose() {
     _cancelActiveSendTransfer();
     _idleReceiverRefreshTimer?.cancel();
+    unawaited(_idleIncomingSubscription?.cancel());
+    _idleIncomingSubscription = null;
     super.dispose();
+  }
+
+  void _startIdleIncomingListener() {
+    if (!_enableIdleIncomingListener) {
+      return;
+    }
+    unawaited(_idleIncomingSubscription?.cancel());
+    _idleIncomingSubscription = rust_receiver
+        .startIdleIncomingListener(
+          downloadRoot: _defaultReceiveDownloadRoot(),
+          deviceName: _deviceName,
+        )
+        .listen(
+          _onIdleIncomingEvent,
+          onError: (Object error, StackTrace stackTrace) {
+            debugPrint('Idle incoming listener error: $error');
+            debugPrintStack(stackTrace: stackTrace);
+            resetShell();
+          },
+        );
+  }
+
+  void _onIdleIncomingEvent(rust_receiver.IdleIncomingEvent event) {
+    switch (event.phase) {
+      case rust_receiver.IdleIncomingPhase.connecting:
+        return;
+      case rust_receiver.IdleIncomingPhase.offerReady:
+        _applyIdleOfferReady(event);
+        return;
+      case rust_receiver.IdleIncomingPhase.receiving:
+        _idleIncomingDecisionPending = false;
+        _mode = TransferDirection.receive;
+        _receiveEntryExpanded = true;
+        _receiveStage = TransferStage.waiting;
+        _receiveSummary = (_receiveSummary ??
+                TransferSummaryViewData(
+                  itemCount: _bigIntToInt(event.itemCount),
+                  totalSize: event.totalSizeLabel,
+                  code: _idleReceiveCode,
+                  expiresAt: '',
+                  destinationLabel: event.destinationLabel,
+                  statusMessage: event.statusMessage,
+                ))
+            .copyWith(statusMessage: event.statusMessage);
+        notifyListeners();
+        return;
+      case rust_receiver.IdleIncomingPhase.completed:
+        _idleIncomingDecisionPending = false;
+        _mode = TransferDirection.receive;
+        _receiveEntryExpanded = true;
+        _receiveStage = TransferStage.completed;
+        _receiveSummary = (_receiveSummary ??
+                TransferSummaryViewData(
+                  itemCount: _bigIntToInt(event.itemCount),
+                  totalSize: event.totalSizeLabel,
+                  code: _idleReceiveCode,
+                  expiresAt: '',
+                  destinationLabel: event.saveRootLabel,
+                  statusMessage: event.statusMessage,
+                ))
+            .copyWith(
+              itemCount: _bigIntToInt(event.itemCount),
+              totalSize: event.totalSizeLabel,
+              destinationLabel: event.saveRootLabel,
+              statusMessage: event.statusMessage,
+            );
+        _receiveErrorText = null;
+        notifyListeners();
+        unawaited(_ensureIdleReceiver());
+        return;
+      case rust_receiver.IdleIncomingPhase.failed:
+        _idleIncomingDecisionPending = false;
+        debugPrint(
+          '[drift/controller] incoming receive failed: '
+          '${event.errorMessage ?? event.statusMessage}',
+        );
+        resetShell();
+        unawaited(_ensureIdleReceiver());
+        return;
+      case rust_receiver.IdleIncomingPhase.declined:
+        _idleIncomingDecisionPending = false;
+        if (_skipNextIncomingDeclinedReset) {
+          _skipNextIncomingDeclinedReset = false;
+          unawaited(_ensureIdleReceiver());
+          return;
+        }
+        _resetReceiveFlow();
+        _mode = TransferDirection.receive;
+        notifyListeners();
+        unawaited(_ensureIdleReceiver());
+        return;
+    }
+  }
+
+  void _applyIdleOfferReady(rust_receiver.IdleIncomingEvent event) {
+    final items = event.files.map(_incomingFileToViewData).toList();
+    _idleIncomingDecisionPending = true;
+    _cancelActiveSendTransfer();
+    _mode = TransferDirection.receive;
+    _receiveEntryExpanded = true;
+    _receiveStage = TransferStage.review;
+    _receiveErrorText = null;
+    _receiveItems = List<TransferItemViewData>.unmodifiable(items);
+    _receiveSummary = TransferSummaryViewData(
+      itemCount: _bigIntToInt(event.itemCount),
+      totalSize: event.totalSizeLabel,
+      code: _idleReceiveCode,
+      expiresAt: '',
+      destinationLabel: event.destinationLabel,
+      statusMessage: event.statusMessage,
+    );
+    unawaited(focusAppForIncomingTransfer());
+    notifyListeners();
+  }
+
+  TransferItemViewData _incomingFileToViewData(rust_receiver.IdleIncomingFileRow f) {
+    final path = f.path;
+    final segments = path.split('/')..removeWhere((s) => s.isEmpty);
+    final name = segments.isEmpty ? path : segments.last;
+    final bytes = _bigIntToInt(f.size);
+    return TransferItemViewData(
+      name: name,
+      path: path,
+      size: _formatByteSize(bytes),
+      kind: TransferItemKind.file,
+    );
+  }
+
+  static int _bigIntToInt(BigInt v) {
+    if (v.bitLength > 63) {
+      return 0x7fffffff;
+    }
+    return v.toInt();
+  }
+
+  static String _formatByteSize(int bytes) {
+    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    var value = bytes.toDouble();
+    var unitIndex = 0;
+    while (value >= 1024 && unitIndex < units.length - 1) {
+      value /= 1024;
+      unitIndex += 1;
+    }
+    final decimals = value >= 10 || unitIndex == 0 ? 0 : 1;
+    return '${value.toStringAsFixed(decimals)} ${units[unitIndex]}';
+  }
+
+  static String _defaultReceiveDownloadRoot() {
+    if (Platform.isMacOS || Platform.isLinux) {
+      final home = Platform.environment['HOME'];
+      if (home != null && home.isNotEmpty) {
+        return '$home/Downloads';
+      }
+    }
+    if (Platform.isWindows) {
+      final profile = Platform.environment['USERPROFILE'];
+      if (profile != null && profile.isNotEmpty) {
+        return '$profile\\Downloads';
+      }
+    }
+    return Directory.systemTemp.path;
+  }
+
+  Future<void> _respondIdleIncoming({required bool accept}) async {
+    try {
+      await rust_receiver.respondIdleIncomingOffer(accept: accept);
+    } catch (error, stackTrace) {
+      debugPrint('respondIdleIncomingOffer failed: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      _idleIncomingDecisionPending = false;
+      resetShell();
+    }
   }
 
   Future<void> _ensureIdleReceiver() async {
