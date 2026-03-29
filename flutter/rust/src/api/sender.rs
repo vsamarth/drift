@@ -115,7 +115,7 @@ fn map_progress(progress: SendTransferProgress) -> SendTransferEvent {
         }
         CoreSendTransferPhase::WaitingForDecision => (
             SendTransferPhase::WaitingForDecision,
-            format!("Waiting for {destination_label} to confirm."),
+            "Waiting for confirmation.".to_owned(),
         ),
         CoreSendTransferPhase::Sending => (
             SendTransferPhase::Sending,

@@ -250,6 +250,7 @@ void main() {
     expect(find.text('beach.mov'), findsOneWidget);
     expect(find.text('boarding-pass.pdf'), findsOneWidget);
     expect(find.text('+1 more item'), findsNothing);
+    expect(find.text('4 · 14.9 MB'), findsOneWidget);
 
     await tester.ensureVisible(saveToDownloadsButton());
     await tester.tap(saveToDownloadsButton());
@@ -259,7 +260,7 @@ void main() {
     expect(find.text('Saved to Downloads'), findsOneWidget);
     expect(find.text('Saved to'), findsOneWidget);
     expect(find.text('Downloads'), findsOneWidget);
-    expect(find.text('4 items'), findsOneWidget);
+    expect(find.text('4'), findsOneWidget);
     expect(find.text('14.9 MB'), findsOneWidget);
     expectNoFlutterError(tester);
   });
@@ -297,7 +298,7 @@ void main() {
     await tester.tap(chooseFilesButton());
     await tester.pumpAndSettle();
 
-    expect(find.text('2 items'), findsOneWidget);
+    expect(find.text('2'), findsOneWidget);
     expect(find.text('Or enter a code'), findsOneWidget);
     expect(find.text('sample.txt'), findsWidgets);
     expect(find.text('Create code'), findsNothing);
@@ -322,13 +323,13 @@ void main() {
       sendTransferUpdate(
         phase: SendTransferUpdatePhase.waitingForDecision,
         destinationLabel: 'Maya’s iPhone',
-        statusMessage: 'Waiting for Maya’s iPhone to confirm.',
+        statusMessage: 'Waiting for confirmation.',
       ),
     );
     await tester.pumpAndSettle();
 
     expect(find.text('Sending'), findsOneWidget);
-    expect(find.text('Waiting for Maya’s iPhone to confirm.'), findsOneWidget);
+    expect(find.text('Waiting for confirmation.'), findsOneWidget);
 
     sendTransferSource.emit(
       sendTransferUpdate(
@@ -354,7 +355,7 @@ void main() {
     expect(find.text('Transfer complete'), findsOneWidget);
     expect(find.text('Files sent successfully'), findsOneWidget);
     expect(find.text('Sent to'), findsOneWidget);
-    expect(find.text('2 items'), findsOneWidget);
+    expect(find.text('2'), findsOneWidget);
     expect(find.text('Size'), findsOneWidget);
     expect(find.text('18 KB'), findsOneWidget);
 
@@ -551,7 +552,7 @@ void main() {
       sendTransferUpdate(
         phase: SendTransferUpdatePhase.waitingForDecision,
         destinationLabel: 'unknown-device',
-        statusMessage: 'Waiting for Recipient device to confirm.',
+        statusMessage: 'Waiting for confirmation.',
       ),
     );
     await tester.pumpAndSettle();
@@ -559,7 +560,7 @@ void main() {
     expect(find.text('Recipient device'), findsOneWidget);
     expect(find.text('unknown-device'), findsNothing);
     expect(
-      find.text('Waiting for Recipient device to confirm.'),
+      find.text('Waiting for confirmation.'),
       findsOneWidget,
     );
     expectNoFlutterError(tester);
@@ -599,7 +600,7 @@ void main() {
     await tester.tap(chooseFilesButton());
     await tester.pumpAndSettle();
 
-    expect(find.text('1 item'), findsOneWidget);
+    expect(find.text('1'), findsOneWidget);
     expect(find.text('proposal.pdf'), findsOneWidget);
     expect(find.text('+1 more item'), findsNothing);
     expectNoFlutterError(tester);

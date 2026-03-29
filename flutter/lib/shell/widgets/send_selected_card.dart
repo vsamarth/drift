@@ -126,9 +126,7 @@ class SelectedItemsSection extends StatelessWidget {
         Text(
           isInspecting && count == 0
               ? 'Inspecting files'
-              : count == 1
-              ? '1 item'
-              : '$count items',
+              : '$count',
           style: driftSans(
             fontSize: 12.5,
             fontWeight: FontWeight.w500,

@@ -95,7 +95,6 @@ class DriftController extends ChangeNotifier {
   DateTime? _lastSendProgressSampleAt;
   int? _lastSendProgressBytes;
   double? _sendSmoothedBps;
-  DateTime? _sendTransferSessionStartedAt;
   DateTime? _sendPayloadStartedAt;
   List<TransferMetricRow>? _sendCompletionMetrics;
 
@@ -143,7 +142,7 @@ class DriftController extends ChangeNotifier {
       ),
       TransferMetricRow(
         label: 'Files',
-        value: s.itemCount == 1 ? '1 item' : '${s.itemCount} items',
+        value: '${s.itemCount}',
       ),
       TransferMetricRow(label: 'Size', value: s.totalSize),
     ];
@@ -224,7 +223,6 @@ class DriftController extends ChangeNotifier {
     _sendItems = const [];
     _sendSummary = null;
     _clearSendTransferMetrics();
-    _sendTransferSessionStartedAt = null;
     _sendPayloadStartedAt = null;
     _sendCompletionMetrics = null;
     notifyListeners();
@@ -323,7 +321,6 @@ class DriftController extends ChangeNotifier {
     _sendItems = const [];
     _sendSummary = null;
     _clearSendTransferMetrics();
-    _sendTransferSessionStartedAt = null;
     _sendPayloadStartedAt = null;
     _sendCompletionMetrics = null;
     _resetReceiveFlow();
@@ -380,7 +377,6 @@ class DriftController extends ChangeNotifier {
 
   void _beginSend(SendTransferUpdate update) {
     _resetReceiveFlow();
-    _sendTransferSessionStartedAt ??= DateTime.now();
     _mode = TransferDirection.send;
     _sendStage = switch (update.phase) {
       SendTransferUpdatePhase.connecting => TransferStage.ready,
@@ -552,7 +548,6 @@ class DriftController extends ChangeNotifier {
     _nearbySendDestinations = _defaultSendDestinations;
     _sendSummary = null;
     _clearSendTransferMetrics();
-    _sendTransferSessionStartedAt = null;
     _sendPayloadStartedAt = null;
     _sendCompletionMetrics = null;
     _resetReceiveFlow();
@@ -560,7 +555,6 @@ class DriftController extends ChangeNotifier {
 
   void _startSendTransfer(String normalizedCode) {
     _cancelActiveSendTransfer();
-    _sendTransferSessionStartedAt = null;
     _sendPayloadStartedAt = null;
     _sendCompletionMetrics = null;
     final generation = ++_sendTransferGeneration;
@@ -673,31 +667,22 @@ class DriftController extends ChangeNotifier {
         : update.destinationLabel;
     rows.add(TransferMetricRow(label: 'Sent to', value: recipient));
     final n = update.itemCount;
-    rows.add(
-      TransferMetricRow(
-        label: 'Files',
-        value: n == 1 ? '1 item' : '$n items',
-      ),
-    );
+    rows.add(TransferMetricRow(label: 'Files', value: '$n'));
     rows.add(TransferMetricRow(label: 'Size', value: update.totalSize));
 
-    final sessionStart = _sendTransferSessionStartedAt;
+    final payloadStart = _sendPayloadStartedAt;
     final now = DateTime.now();
-    if (sessionStart != null) {
-      final totalElapsed = now.difference(sessionStart);
-      if (totalElapsed.inMilliseconds >= 500) {
+    if (payloadStart != null) {
+      final transferElapsed = now.difference(payloadStart);
+      if (transferElapsed.inMilliseconds >= 200) {
         rows.add(
           TransferMetricRow(
-            label: 'Total time',
-            value: _formatElapsedDuration(totalElapsed),
+            label: 'Transfer time',
+            value: _formatElapsedDuration(transferElapsed),
           ),
         );
       }
-    }
-
-    final payloadStart = _sendPayloadStartedAt;
-    if (payloadStart != null) {
-      final payloadSec = now.difference(payloadStart).inMilliseconds / 1000.0;
+      final payloadSec = transferElapsed.inMilliseconds / 1000.0;
       if (payloadSec >= 0.25 && update.bytesSent > 0) {
         rows.add(
           TransferMetricRow(

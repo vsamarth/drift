@@ -34,7 +34,7 @@ class SendCodeCard extends StatelessWidget {
     final stage = controller.sendStage;
     final dotColor = _dotColorFor(stage);
     final itemSummary =
-        '$itemCount ${itemCount == 1 ? 'item' : 'items'}${totalSize.isEmpty ? '' : ' · $totalSize'}';
+        '$itemCount${totalSize.isEmpty ? '' : ' · $totalSize'}';
 
     if (!fillBody) {
       return Padding(

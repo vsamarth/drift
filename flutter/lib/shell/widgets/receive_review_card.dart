@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/models/transfer_models.dart';
 import '../../state/drift_controller.dart';
 import 'preview_list.dart';
 
@@ -23,7 +24,7 @@ class ReceiveReviewCard extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           Text(
-            '${summary?.itemCount ?? 0} items · ${summary?.totalSize ?? ''}',
+            _receiveSubtitle(summary),
             style: Theme.of(context).textTheme.bodyMedium,
           ),
           const SizedBox(height: 14),
@@ -55,4 +56,13 @@ class ReceiveReviewCard extends StatelessWidget {
       ),
     );
   }
+}
+
+String _receiveSubtitle(TransferSummaryViewData? summary) {
+  final n = summary?.itemCount ?? 0;
+  final size = summary?.totalSize ?? '';
+  if (size.isEmpty) {
+    return '$n';
+  }
+  return '$n · $size';
 }

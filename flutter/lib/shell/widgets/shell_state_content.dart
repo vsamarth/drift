@@ -70,7 +70,7 @@ class ShellStateContent extends StatelessWidget {
           title: 'Sending',
           status:
               controller.sendSummary?.statusMessage ??
-              'Waiting for recipient to confirm.',
+              'Waiting for confirmation.',
         ),
       ),
       ShellView.sendCompleted => SizedBox(

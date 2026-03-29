@@ -65,28 +65,30 @@ class PreviewTable extends StatelessWidget {
           if (i > 0) _divider,
           _PreviewTableRow(item: items[i]),
         ],
-        _divider,
-        Padding(
-          padding: const EdgeInsets.only(top: 10, bottom: 4),
-          child: Row(
-            children: [
-              const SizedBox(width: 28),
-              Expanded(
-                child: Text(
-                  footerSummary,
-                  textAlign: TextAlign.right,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: driftSans(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                    color: kMuted,
+        if (items.length > 1) ...[
+          _divider,
+          Padding(
+            padding: const EdgeInsets.only(top: 10, bottom: 4),
+            child: Row(
+              children: [
+                const SizedBox(width: 28),
+                Expanded(
+                  child: Text(
+                    footerSummary,
+                    textAlign: TextAlign.right,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: driftSans(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                      color: kMuted,
+                    ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
+        ],
       ],
     );
   }
