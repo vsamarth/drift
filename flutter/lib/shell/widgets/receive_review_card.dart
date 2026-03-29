@@ -13,9 +13,9 @@ class ReceiveReviewCard extends StatelessWidget {
     final summary = controller.receiveSummary;
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 6, 8, 10),
+      padding: const EdgeInsets.fromLTRB(8, 4, 8, 10),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
             'Save these files?',
@@ -26,12 +26,17 @@ class ReceiveReviewCard extends StatelessWidget {
             '${summary?.itemCount ?? 0} items · ${summary?.totalSize ?? ''}',
             style: Theme.of(context).textTheme.bodyMedium,
           ),
-          const SizedBox(height: 16),
-          PreviewList(
-            items: controller.visibleReceiveItems,
-            hiddenItemCount: controller.hiddenReceiveItemCount,
+          const SizedBox(height: 14),
+          Expanded(
+            child: SingleChildScrollView(
+              physics: const BouncingScrollPhysics(),
+              child: PreviewList(
+                items: controller.visibleReceiveItems,
+                hiddenItemCount: controller.hiddenReceiveItemCount,
+              ),
+            ),
           ),
-          const SizedBox(height: 18),
+          const SizedBox(height: 14),
           Row(
             children: [
               Expanded(

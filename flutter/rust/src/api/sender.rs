@@ -35,6 +35,7 @@ pub struct SendTransferEvent {
     pub status_message: String,
     pub item_count: u64,
     pub total_size: u64,
+    pub bytes_sent: u64,
     pub error_message: Option<String>,
 }
 
@@ -63,8 +64,12 @@ pub fn start_send_transfer(
             |progress| {
                 let event = map_progress(progress);
                 log(&format!(
-                    "send transfer update: phase={:?}, destination={}, items={}, total_size={}",
-                    event.phase, event.destination_label, event.item_count, event.total_size
+                    "send transfer update: phase={:?}, destination={}, items={}, total_size={}, bytes_sent={}",
+                    event.phase,
+                    event.destination_label,
+                    event.item_count,
+                    event.total_size,
+                    event.bytes_sent
                 ));
                 last_event = Some(event.clone());
                 let _ = updates.add(event);
@@ -81,6 +86,7 @@ pub fn start_send_transfer(
                 status_message: format!("Starting transfer to {fallback_destination_label}."),
                 item_count: 0,
                 total_size: 0,
+                bytes_sent: 0,
                 error_message: Some(error_message.clone()),
             });
 
@@ -90,6 +96,7 @@ pub fn start_send_transfer(
                 status_message: failed.status_message,
                 item_count: failed.item_count,
                 total_size: failed.total_size,
+                bytes_sent: failed.bytes_sent,
                 error_message: Some(error_message),
             });
         } else {
@@ -126,6 +133,7 @@ fn map_progress(progress: SendTransferProgress) -> SendTransferEvent {
         status_message,
         item_count: progress.manifest.file_count,
         total_size: progress.manifest.total_size,
+        bytes_sent: progress.bytes_sent,
         error_message: None,
     }
 }

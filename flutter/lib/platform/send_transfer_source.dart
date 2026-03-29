@@ -31,6 +31,8 @@ class SendTransferUpdate {
     required this.statusMessage,
     required this.itemCount,
     required this.totalSize,
+    required this.bytesSent,
+    required this.totalBytes,
     this.errorMessage,
   });
 
@@ -39,6 +41,8 @@ class SendTransferUpdate {
   final String statusMessage;
   final int itemCount;
   final String totalSize;
+  final int bytesSent;
+  final int totalBytes;
   final String? errorMessage;
 }
 
@@ -69,7 +73,8 @@ class LocalSendTransferSource implements SendTransferSource {
           debugPrint(
             '[drift/send] update phase=${mapped.phase.name} '
             'destination=${mapped.destinationLabel} '
-            'items=${mapped.itemCount} total=${mapped.totalSize}'
+            'items=${mapped.itemCount} total=${mapped.totalSize} '
+            'payload=${mapped.bytesSent}/${mapped.totalBytes} B'
             '${mapped.errorMessage == null ? '' : ' error=${mapped.errorMessage}'}',
           );
           return mapped;
@@ -93,8 +98,17 @@ class LocalSendTransferSource implements SendTransferSource {
       statusMessage: event.statusMessage,
       itemCount: event.itemCount.toInt(),
       totalSize: _formatBytes(event.totalSize.toInt()),
+      bytesSent: _asDartInt(event.bytesSent),
+      totalBytes: _asDartInt(event.totalSize),
       errorMessage: event.errorMessage,
     );
+  }
+
+  static int _asDartInt(BigInt v) {
+    if (v.bitLength > 63) {
+      return 0x7fffffffffffffff;
+    }
+    return v.toInt();
   }
 
   static String _formatBytes(int bytes) {

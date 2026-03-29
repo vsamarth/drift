@@ -45,14 +45,20 @@ class _SendScreenState extends State<SendScreen> {
         controller.appendDroppedSendItems(paths);
       },
       child: Stack(
+        fit: StackFit.expand,
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(8, 6, 8, 10),
+            padding: const EdgeInsets.fromLTRB(8, 4, 8, 10),
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                SelectedItemsSection(controller: controller),
-                const SizedBox(height: 34),
+                Expanded(
+                  child: SingleChildScrollView(
+                    physics: const BouncingScrollPhysics(),
+                    child: SelectedItemsSection(controller: controller),
+                  ),
+                ),
+                const SizedBox(height: 18),
                 ManualCodeSection(controller: controller),
               ],
             ),
@@ -130,7 +136,7 @@ class SelectedItemsSection extends StatelessWidget {
             color: kMuted,
           ),
         ),
-        const SizedBox(height: 10),
+        const SizedBox(height: 8),
         if (isInspecting && count == 0) ...[
           const _SelectedItemSkeleton(),
           const Divider(height: 1, thickness: 1, indent: 36),
@@ -263,7 +269,7 @@ class ManualCodeSection extends StatelessWidget {
             color: kInk.withValues(alpha: 0.56),
           ),
         ),
-        const SizedBox(height: 14),
+        const SizedBox(height: 10),
         ReceiveCodeField(
           fieldKey: const ValueKey<String>('send-code-field'),
           code: controller.sendDestinationCode,

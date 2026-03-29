@@ -441,6 +441,7 @@ impl SseDecode for crate::api::sender::SendTransferEvent {
         let mut var_statusMessage = <String>::sse_decode(deserializer);
         let mut var_itemCount = <u64>::sse_decode(deserializer);
         let mut var_totalSize = <u64>::sse_decode(deserializer);
+        let mut var_bytesSent = <u64>::sse_decode(deserializer);
         let mut var_errorMessage = <Option<String>>::sse_decode(deserializer);
         return crate::api::sender::SendTransferEvent {
             phase: var_phase,
@@ -448,6 +449,7 @@ impl SseDecode for crate::api::sender::SendTransferEvent {
             status_message: var_statusMessage,
             item_count: var_itemCount,
             total_size: var_totalSize,
+            bytes_sent: var_bytesSent,
             error_message: var_errorMessage,
         };
     }
@@ -625,6 +627,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::sender::SendTransferEvent {
             self.status_message.into_into_dart().into_dart(),
             self.item_count.into_into_dart().into_dart(),
             self.total_size.into_into_dart().into_dart(),
+            self.bytes_sent.into_into_dart().into_dart(),
             self.error_message.into_into_dart().into_dart(),
         ]
         .into_dart()
@@ -815,6 +818,7 @@ impl SseEncode for crate::api::sender::SendTransferEvent {
         <String>::sse_encode(self.status_message, serializer);
         <u64>::sse_encode(self.item_count, serializer);
         <u64>::sse_encode(self.total_size, serializer);
+        <u64>::sse_encode(self.bytes_sent, serializer);
         <Option<String>>::sse_encode(self.error_message, serializer);
     }
 }

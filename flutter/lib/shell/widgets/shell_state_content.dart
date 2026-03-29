@@ -24,11 +24,6 @@ class ShellStateContent extends StatelessWidget {
   final double availableHeight;
   final bool idleWindowHovering;
 
-  static Widget _scrollable(Widget child) => SingleChildScrollView(
-    physics: const BouncingScrollPhysics(),
-    child: child,
-  );
-
   @override
   Widget build(BuildContext context) {
     return switch (view) {
@@ -51,8 +46,10 @@ class ShellStateContent extends StatelessWidget {
         errorText: controller.receiveErrorText,
         height: availableHeight,
       ),
-      ShellView.sendSelected => _scrollable(
-        SendSelectedCard(controller: controller),
+      ShellView.sendSelected => SizedBox(
+        height: availableHeight,
+        width: double.infinity,
+        child: SendSelectedCard(controller: controller),
       ),
       ShellView.sendReady => SizedBox(
         height: availableHeight,
@@ -102,8 +99,10 @@ class ShellStateContent extends StatelessWidget {
               'This transfer did not finish.',
         ),
       ),
-      ShellView.receiveReview => _scrollable(
-        ReceiveReviewCard(controller: controller),
+      ShellView.receiveReview => SizedBox(
+        height: availableHeight,
+        width: double.infinity,
+        child: ReceiveReviewCard(controller: controller),
       ),
       ShellView.receiveCompleted => SizedBox(
         height: availableHeight,

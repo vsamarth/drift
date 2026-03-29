@@ -25,6 +25,8 @@ pub struct SendTransferProgress {
     pub phase: SendTransferPhase,
     pub destination_label: String,
     pub manifest: OfferManifest,
+    /// Total payload bytes sent so far (file contents only); `0` until streaming starts.
+    pub bytes_sent: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -53,6 +55,7 @@ where
         SendTransferPhase::Connecting,
         destination_label.clone(),
         &prepared,
+        0,
     ));
 
     let result = send_prepared_files(
@@ -127,6 +130,7 @@ where
         SendTransferPhase::WaitingForDecision,
         receiver_hello.device_name.clone(),
         prepared,
+        0,
     ));
 
     match read_message::<ControlMessage>(&mut control_recv)
@@ -140,13 +144,23 @@ where
                 SendTransferPhase::Sending,
                 receiver_hello.device_name.clone(),
                 prepared,
+                0,
             ));
-            send_files_over_connection(connection, &prepared.files).await?;
+            send_files_over_connection(connection, &prepared.files, |sent| {
+                on_progress(progress(
+                    SendTransferPhase::Sending,
+                    receiver_hello.device_name.clone(),
+                    prepared,
+                    sent,
+                ));
+            })
+            .await?;
             machine.transition(SenderState::Completed)?;
             on_progress(progress(
                 SendTransferPhase::Completed,
                 receiver_hello.device_name.clone(),
                 prepared,
+                prepared.manifest.total_size,
             ));
         }
         ControlMessage::Decline(message) => {
@@ -173,11 +187,13 @@ fn progress(
     phase: SendTransferPhase,
     destination_label: String,
     prepared: &PreparedFiles,
+    bytes_sent: u64,
 ) -> SendTransferProgress {
     SendTransferProgress {
         phase,
         destination_label,
         manifest: prepared.manifest.clone(),
+        bytes_sent,
     }
 }
 

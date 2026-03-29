@@ -10,6 +10,9 @@ class ShellHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (!controller.showShellBackButton) {
+      return const SizedBox.shrink();
+    }
     return Align(
       alignment: Alignment.centerLeft,
       child: IconButton(

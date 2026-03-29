@@ -56,6 +56,10 @@ class SendCodeCard extends StatelessWidget {
               status,
               style: driftSans(fontSize: 13, color: kMuted, height: 1.45),
             ),
+            if (controller.hasSendPayloadProgress) ...[
+              const SizedBox(height: 14),
+              _SendPayloadLinearBar(controller: controller),
+            ],
             const SizedBox(height: 18),
             const Divider(height: 1),
             const SizedBox(height: 14),
@@ -137,6 +141,8 @@ class SendCodeCard extends StatelessWidget {
                       child: SendingConnectionStrip(
                         localLabel: controller.deviceName,
                         animate: controller.animateSendingConnection,
+                        mode: _sendingStripMode(controller),
+                        transferProgress: _transferProgressForStrip(controller),
                       ),
                     ),
                   ),
@@ -247,6 +253,51 @@ Color _dotColorFor(TransferStage stage) {
     TransferStage.error => const Color(0xFFCC3333),
     _ => const Color(0xFF4B98AA),
   };
+}
+
+class _SendPayloadLinearBar extends StatelessWidget {
+  const _SendPayloadLinearBar({required this.controller});
+
+  final DriftController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final sent = controller.sendPayloadBytesSent ?? 0;
+    final total = controller.sendPayloadTotalBytes ?? 0;
+    final progress = total <= 0 ? 0.0 : (sent / total).clamp(0.0, 1.0);
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(5),
+      child: LinearProgressIndicator(
+        value: progress,
+        minHeight: 6,
+        backgroundColor: kMuted.withValues(alpha: 0.14),
+        color: kAccentCyanStrong,
+      ),
+    );
+  }
+}
+
+SendingStripMode _sendingStripMode(DriftController controller) {
+  if (controller.hasSendPayloadProgress) {
+    return SendingStripMode.transferring;
+  }
+  if (controller.sendStage == TransferStage.waiting) {
+    return SendingStripMode.waitingOnRecipient;
+  }
+  return SendingStripMode.looping;
+}
+
+double _transferProgressForStrip(DriftController controller) {
+  if (!controller.hasSendPayloadProgress) {
+    return 0;
+  }
+  final total = controller.sendPayloadTotalBytes ?? 0;
+  if (total <= 0) {
+    return 0;
+  }
+  final sent = controller.sendPayloadBytesSent ?? 0;
+  return (sent / total).clamp(0.0, 1.0);
 }
 
 String _displayRecipient(String? rawValue) {

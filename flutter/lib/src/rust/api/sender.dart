@@ -6,7 +6,7 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `map_progress`
+// These functions are ignored because they are not marked as `pub`: `display_destination_label`, `format_error_chain`, `log`, `map_progress`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_receiver_is_total_eq`, `clone`, `clone`, `clone`, `eq`, `fmt`, `fmt`, `fmt`
 
 Stream<SendTransferEvent> startSendTransfer({
@@ -19,6 +19,7 @@ class SendTransferEvent {
   final String statusMessage;
   final BigInt itemCount;
   final BigInt totalSize;
+  final BigInt bytesSent;
   final String? errorMessage;
 
   const SendTransferEvent({
@@ -27,6 +28,7 @@ class SendTransferEvent {
     required this.statusMessage,
     required this.itemCount,
     required this.totalSize,
+    required this.bytesSent,
     this.errorMessage,
   });
 
@@ -37,6 +39,7 @@ class SendTransferEvent {
       statusMessage.hashCode ^
       itemCount.hashCode ^
       totalSize.hashCode ^
+      bytesSent.hashCode ^
       errorMessage.hashCode;
 
   @override
@@ -49,6 +52,7 @@ class SendTransferEvent {
           statusMessage == other.statusMessage &&
           itemCount == other.itemCount &&
           totalSize == other.totalSize &&
+          bytesSent == other.bytesSent &&
           errorMessage == other.errorMessage;
 }
 

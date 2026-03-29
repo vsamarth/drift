@@ -58,7 +58,7 @@ class _UtilityShellState extends State<UtilityShell> {
                         key: const ValueKey<String>('utility-shell'),
                         padding: EdgeInsets.fromLTRB(
                           20,
-                          isIdle ? 28 : 40,
+                          isIdle ? 28 : 26,
                           20,
                           20,
                         ),
@@ -70,7 +70,7 @@ class _UtilityShellState extends State<UtilityShell> {
                               const SizedBox(height: 8),
                             ] else ...[
                               ShellHeader(controller: controller),
-                              const SizedBox(height: 8),
+                              const SizedBox(height: 6),
                             ],
                             Expanded(
                               child: LayoutBuilder(

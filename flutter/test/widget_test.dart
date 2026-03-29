@@ -132,6 +132,8 @@ SendTransferUpdate sendTransferUpdate({
   String? errorMessage,
   int itemCount = 2,
   String totalSize = '18 KB',
+  int bytesSent = 0,
+  int totalBytes = 0,
 }) {
   return SendTransferUpdate(
     phase: phase,
@@ -139,6 +141,8 @@ SendTransferUpdate sendTransferUpdate({
     statusMessage: statusMessage,
     itemCount: itemCount,
     totalSize: totalSize,
+    bytesSent: bytesSent,
+    totalBytes: totalBytes,
     errorMessage: errorMessage,
   );
 }

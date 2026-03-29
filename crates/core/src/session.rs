@@ -4,7 +4,8 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, anyhow, bail};
 use iroh::{Endpoint, RelayMode};
 use tokio::fs::{self, File};
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::time::{Duration, Instant};
 
 use crate::fs_plan::{
     ExpectedFile, PreparedFile, ensure_destination_available, resolve_transfer_destination,
@@ -13,6 +14,10 @@ use crate::util::{describe_remote, human_size};
 use crate::wire::{ALPN, FileHeader, read_header, write_header};
 
 const ACK_OK: &[u8] = b"ok";
+
+/// Payload progress: emit at most ~5× per second or every 256 KiB to avoid flooding UI.
+const PROGRESS_EMIT_INTERVAL: Duration = Duration::from_millis(200);
+const PROGRESS_EMIT_MIN_BYTES: u64 = 256 * 1024;
 
 pub async fn bind_endpoint() -> Result<Endpoint> {
     Endpoint::builder()
@@ -43,10 +48,18 @@ pub async fn connect_to_ticket(
     Ok(connection)
 }
 
-pub async fn send_files_over_connection(
+pub async fn send_files_over_connection<F>(
     connection: iroh::endpoint::Connection,
     files: &[PreparedFile],
-) -> Result<()> {
+    mut on_progress: F,
+) -> Result<()>
+where
+    F: FnMut(u64),
+{
+    let mut cumulative = 0_u64;
+    let mut last_emit = Instant::now();
+    let mut bytes_since_emit = 0_u64;
+
     for prepared in files {
         let (mut send_stream, mut recv_stream) = connection.open_bi().await.with_context(|| {
             format!(
@@ -60,7 +73,15 @@ pub async fn send_files_over_connection(
             size: prepared.size,
         };
         write_header(&mut send_stream, &header).await?;
-        send_file(&mut send_stream, &prepared.source_path).await?;
+        send_file_with_progress(
+            &mut send_stream,
+            &prepared.source_path,
+            &mut cumulative,
+            &mut last_emit,
+            &mut bytes_since_emit,
+            &mut on_progress,
+        )
+        .await?;
         send_stream.finish()?;
 
         let ack = recv_stream.read_to_end(64).await.with_context(|| {
@@ -158,13 +179,50 @@ pub async fn receive_files_over_connection(
     }
 }
 
-async fn send_file(send_stream: &mut iroh::endpoint::SendStream, path: &Path) -> Result<()> {
+async fn send_file_with_progress<F>(
+    send_stream: &mut iroh::endpoint::SendStream,
+    path: &Path,
+    cumulative: &mut u64,
+    last_emit: &mut Instant,
+    bytes_since_emit: &mut u64,
+    on_progress: &mut F,
+) -> Result<()>
+where
+    F: FnMut(u64),
+{
     let mut file = File::open(path)
         .await
         .with_context(|| format!("opening {}", path.display()))?;
-    tokio::io::copy(&mut file, send_stream)
+    let mut buf = vec![0_u8; 256 * 1024];
+    loop {
+        let n = file
+            .read(&mut buf)
+            .await
+            .with_context(|| format!("reading {}", path.display()))?;
+        if n == 0 {
+            break;
+        }
+        send_stream
+            .write_all(&buf[..n])
+            .await
+            .with_context(|| format!("streaming {}", path.display()))?;
+        *cumulative += n as u64;
+        *bytes_since_emit += n as u64;
+        if last_emit.elapsed() >= PROGRESS_EMIT_INTERVAL
+            || *bytes_since_emit >= PROGRESS_EMIT_MIN_BYTES
+        {
+            on_progress(*cumulative);
+            *last_emit = Instant::now();
+            *bytes_since_emit = 0;
+        }
+    }
+    send_stream
+        .flush()
         .await
-        .with_context(|| format!("streaming {}", path.display()))?;
+        .with_context(|| format!("flushing stream for {}", path.display()))?;
+    on_progress(*cumulative);
+    *last_emit = Instant::now();
+    *bytes_since_emit = 0;
     Ok(())
 }
 

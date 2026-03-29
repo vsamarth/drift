@@ -87,13 +87,23 @@ class PreviewTable extends StatelessWidget {
         _divider,
         Padding(
           padding: const EdgeInsets.only(top: 10, bottom: 4),
-          child: Text(
-            footerSummary,
-            style: driftSans(
-              fontSize: 12,
-              fontWeight: FontWeight.w500,
-              color: kMuted,
-            ),
+          child: Row(
+            children: [
+              const SizedBox(width: 28),
+              Expanded(
+                child: Text(
+                  footerSummary,
+                  textAlign: TextAlign.right,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: driftSans(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                    color: kMuted,
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
       ],

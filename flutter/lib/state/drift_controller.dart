@@ -90,6 +90,14 @@ class DriftController extends ChangeNotifier {
   bool _isInspectingSendItems = false;
   final bool _animateSendingConnection;
 
+  int? _sendPayloadBytesSent;
+  int? _sendPayloadTotalBytes;
+  String? _sendTransferSpeedLabel;
+  String? _sendTransferEtaLabel;
+  DateTime? _lastSendProgressSampleAt;
+  int? _lastSendProgressBytes;
+  double? _sendSmoothedBps;
+
   String get deviceName => _deviceName;
   bool get animateSendingConnection => _animateSendingConnection;
   String get idleReceiveCode => _idleReceiveCode;
@@ -110,6 +118,15 @@ class DriftController extends ChangeNotifier {
       List<SendDestinationViewData>.unmodifiable(_nearbySendDestinations);
   TransferSummaryViewData? get sendSummary => _sendSummary;
   TransferSummaryViewData? get receiveSummary => _receiveSummary;
+
+  int? get sendPayloadBytesSent => _sendPayloadBytesSent;
+  int? get sendPayloadTotalBytes => _sendPayloadTotalBytes;
+  String? get sendTransferSpeedLabel => _sendTransferSpeedLabel;
+  String? get sendTransferEtaLabel => _sendTransferEtaLabel;
+  bool get hasSendPayloadProgress =>
+      _sendPayloadBytesSent != null &&
+      _sendPayloadTotalBytes != null &&
+      _sendPayloadTotalBytes! > 0;
   List<TransferItemViewData> get visibleSendItems =>
       List<TransferItemViewData>.unmodifiable(
         _sendItems.take(compactPreviewLimit),
@@ -131,6 +148,10 @@ class DriftController extends ChangeNotifier {
   bool get hasSendFlow => _sendStage != TransferStage.idle;
   bool get hasReceiveFlow => _receiveStage != TransferStage.idle;
   bool get canGoBack => hasSendFlow || _mode == TransferDirection.receive;
+
+  /// Back control in [ShellHeader]; hidden on send success so users rely on primary actions.
+  bool get showShellBackButton =>
+      canGoBack && _sendStage != TransferStage.completed;
 
   void setMode(TransferDirection mode) {
     if (_mode == mode) {
@@ -190,6 +211,7 @@ class DriftController extends ChangeNotifier {
     _nearbySendDestinations = const [];
     _sendItems = const [];
     _sendSummary = null;
+    _clearSendTransferMetrics();
     notifyListeners();
   }
 
@@ -285,6 +307,7 @@ class DriftController extends ChangeNotifier {
     _nearbySendDestinations = const [];
     _sendItems = const [];
     _sendSummary = null;
+    _clearSendTransferMetrics();
     _resetReceiveFlow();
     notifyListeners();
   }
@@ -352,6 +375,7 @@ class DriftController extends ChangeNotifier {
       SendTransferUpdatePhase.completed => TransferStage.completed,
       SendTransferUpdatePhase.failed => TransferStage.error,
     };
+    _applySendTransferMetrics(update);
     _sendDropActive = false;
     _sendDestinationLabel = update.destinationLabel;
     _nearbySendDestinations = _defaultSendDestinations;
@@ -508,6 +532,7 @@ class DriftController extends ChangeNotifier {
     _sendDestinationLabel = null;
     _nearbySendDestinations = _defaultSendDestinations;
     _sendSummary = null;
+    _clearSendTransferMetrics();
     _resetReceiveFlow();
   }
 
@@ -558,6 +583,8 @@ class DriftController extends ChangeNotifier {
                 statusMessage: 'Request sent',
                 itemCount: _sendItems.length,
                 totalSize: sampleSendSummary.totalSize,
+                bytesSent: 0,
+                totalBytes: 0,
                 errorMessage: error.toString(),
               ),
             );
@@ -582,6 +609,99 @@ class DriftController extends ChangeNotifier {
     final prefix = code.substring(0, 3);
     final suffix = code.substring(3);
     return 'Code $prefix $suffix';
+  }
+
+  void _clearSendTransferMetrics() {
+    _sendPayloadBytesSent = null;
+    _sendPayloadTotalBytes = null;
+    _sendTransferSpeedLabel = null;
+    _sendTransferEtaLabel = null;
+    _lastSendProgressSampleAt = null;
+    _lastSendProgressBytes = null;
+    _sendSmoothedBps = null;
+  }
+
+  void _applySendTransferMetrics(SendTransferUpdate update) {
+    switch (update.phase) {
+      case SendTransferUpdatePhase.connecting:
+      case SendTransferUpdatePhase.waitingForDecision:
+        _clearSendTransferMetrics();
+        return;
+      case SendTransferUpdatePhase.sending:
+        _sendPayloadBytesSent = update.bytesSent;
+        _sendPayloadTotalBytes = update.totalBytes;
+        _refreshSendThroughputEstimate();
+        return;
+      case SendTransferUpdatePhase.completed:
+      case SendTransferUpdatePhase.failed:
+        _clearSendTransferMetrics();
+        return;
+    }
+  }
+
+  void _refreshSendThroughputEstimate() {
+    final bytesSent = _sendPayloadBytesSent;
+    final totalBytes = _sendPayloadTotalBytes;
+    if (bytesSent == null || totalBytes == null || totalBytes <= 0) {
+      _sendTransferSpeedLabel = null;
+      _sendTransferEtaLabel = null;
+      return;
+    }
+
+    final now = DateTime.now();
+    final prevAt = _lastSendProgressSampleAt;
+    final prevBytes = _lastSendProgressBytes;
+    if (prevAt != null && prevBytes != null) {
+      final dtSec = now.difference(prevAt).inMicroseconds / 1e6;
+      final dBytes = bytesSent - prevBytes;
+      if (dtSec >= 0.08 && dBytes >= 0) {
+        final inst = dBytes / dtSec;
+        final prev = _sendSmoothedBps;
+        _sendSmoothedBps = prev == null
+            ? inst
+            : 0.22 * inst + 0.78 * prev;
+      }
+    }
+    _lastSendProgressSampleAt = now;
+    _lastSendProgressBytes = bytesSent;
+
+    final bps = _sendSmoothedBps;
+    if (bps != null && bps >= 16) {
+      _sendTransferSpeedLabel = _formatBytesPerSecond(bps);
+      final left = (totalBytes - bytesSent).clamp(0, totalBytes);
+      _sendTransferEtaLabel =
+          left <= 0 ? null : _formatEtaSeconds(left / bps);
+    } else {
+      _sendTransferSpeedLabel = null;
+      _sendTransferEtaLabel = null;
+    }
+  }
+
+  static String _formatBytesPerSecond(double bps) {
+    const units = ['B/s', 'KB/s', 'MB/s', 'GB/s'];
+    var v = bps;
+    var i = 0;
+    while (v >= 1024 && i < units.length - 1) {
+      v /= 1024;
+      i += 1;
+    }
+    final decimals = v >= 10 || i == 0 ? 0 : 1;
+    return '${v.toStringAsFixed(decimals)} ${units[i]}';
+  }
+
+  static String _formatEtaSeconds(double seconds) {
+    if (seconds.isNaN || seconds.isInfinite || seconds <= 0) {
+      return '';
+    }
+    if (seconds < 45) {
+      return 'About ${seconds.round()} s left';
+    }
+    if (seconds < 3600) {
+      final m = (seconds / 60).ceil();
+      return m <= 1 ? 'About 1 min left' : 'About $m min left';
+    }
+    final h = (seconds / 3600).ceil();
+    return h <= 1 ? 'About 1 h left' : 'About $h h left';
   }
 
   static String _defaultDeviceName() {

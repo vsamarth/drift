@@ -452,15 +452,16 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   SendTransferEvent dco_decode_send_transfer_event(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 6)
-      throw Exception('unexpected arr length: expect 6 but see ${arr.length}');
+    if (arr.length != 7)
+      throw Exception('unexpected arr length: expect 7 but see ${arr.length}');
     return SendTransferEvent(
       phase: dco_decode_send_transfer_phase(arr[0]),
       destinationLabel: dco_decode_String(arr[1]),
       statusMessage: dco_decode_String(arr[2]),
       itemCount: dco_decode_u_64(arr[3]),
       totalSize: dco_decode_u_64(arr[4]),
-      errorMessage: dco_decode_opt_String(arr[5]),
+      bytesSent: dco_decode_u_64(arr[5]),
+      errorMessage: dco_decode_opt_String(arr[6]),
     );
   }
 
@@ -659,6 +660,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_statusMessage = sse_decode_String(deserializer);
     var var_itemCount = sse_decode_u_64(deserializer);
     var var_totalSize = sse_decode_u_64(deserializer);
+    var var_bytesSent = sse_decode_u_64(deserializer);
     var var_errorMessage = sse_decode_opt_String(deserializer);
     return SendTransferEvent(
       phase: var_phase,
@@ -666,6 +668,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       statusMessage: var_statusMessage,
       itemCount: var_itemCount,
       totalSize: var_totalSize,
+      bytesSent: var_bytesSent,
       errorMessage: var_errorMessage,
     );
   }
@@ -871,6 +874,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_String(self.statusMessage, serializer);
     sse_encode_u_64(self.itemCount, serializer);
     sse_encode_u_64(self.totalSize, serializer);
+    sse_encode_u_64(self.bytesSent, serializer);
     sse_encode_opt_String(self.errorMessage, serializer);
   }
 
