@@ -31,8 +31,7 @@ class ReceiveReviewCard extends StatelessWidget {
             child: SingleChildScrollView(
               physics: const BouncingScrollPhysics(),
               child: PreviewList(
-                items: controller.visibleReceiveItems,
-                hiddenItemCount: controller.hiddenReceiveItemCount,
+                items: controller.receiveItems,
               ),
             ),
           ),

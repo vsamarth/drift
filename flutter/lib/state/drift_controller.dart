@@ -60,8 +60,6 @@ class DriftController extends ChangeNotifier {
     }
   }
 
-  static const int compactPreviewLimit = 3;
-
   final String _deviceName;
   String _idleReceiveCode;
   String _idleReceiveStatus;
@@ -97,6 +95,9 @@ class DriftController extends ChangeNotifier {
   DateTime? _lastSendProgressSampleAt;
   int? _lastSendProgressBytes;
   double? _sendSmoothedBps;
+  DateTime? _sendTransferSessionStartedAt;
+  DateTime? _sendPayloadStartedAt;
+  List<TransferMetricRow>? _sendCompletionMetrics;
 
   String get deviceName => _deviceName;
   bool get animateSendingConnection => _animateSendingConnection;
@@ -127,16 +128,27 @@ class DriftController extends ChangeNotifier {
       _sendPayloadBytesSent != null &&
       _sendPayloadTotalBytes != null &&
       _sendPayloadTotalBytes! > 0;
-  List<TransferItemViewData> get visibleSendItems =>
-      List<TransferItemViewData>.unmodifiable(
-        _sendItems.take(compactPreviewLimit),
-      );
-  List<TransferItemViewData> get visibleReceiveItems =>
-      List<TransferItemViewData>.unmodifiable(
-        _receiveItems.take(compactPreviewLimit),
-      );
-  int get hiddenSendItemCount => _hiddenItemCount(_sendItems);
-  int get hiddenReceiveItemCount => _hiddenItemCount(_receiveItems);
+
+  List<TransferMetricRow>? get sendCompletionMetrics => _sendCompletionMetrics;
+
+  List<TransferMetricRow>? get receiveCompletionMetrics {
+    if (_receiveStage != TransferStage.completed || _receiveSummary == null) {
+      return null;
+    }
+    final s = _receiveSummary!;
+    return [
+      TransferMetricRow(
+        label: 'Saved to',
+        value: s.destinationLabel,
+      ),
+      TransferMetricRow(
+        label: 'Files',
+        value: s.itemCount == 1 ? '1 item' : '${s.itemCount} items',
+      ),
+      TransferMetricRow(label: 'Size', value: s.totalSize),
+    ];
+  }
+
   List<TransferItemViewData> get activeItems =>
       _mode == TransferDirection.receive ? _receiveItems : _sendItems;
   String? get primaryItemLabel =>
@@ -212,6 +224,9 @@ class DriftController extends ChangeNotifier {
     _sendItems = const [];
     _sendSummary = null;
     _clearSendTransferMetrics();
+    _sendTransferSessionStartedAt = null;
+    _sendPayloadStartedAt = null;
+    _sendCompletionMetrics = null;
     notifyListeners();
   }
 
@@ -308,6 +323,9 @@ class DriftController extends ChangeNotifier {
     _sendItems = const [];
     _sendSummary = null;
     _clearSendTransferMetrics();
+    _sendTransferSessionStartedAt = null;
+    _sendPayloadStartedAt = null;
+    _sendCompletionMetrics = null;
     _resetReceiveFlow();
     notifyListeners();
   }
@@ -352,11 +370,6 @@ class DriftController extends ChangeNotifier {
     }
   }
 
-  int _hiddenItemCount(List<TransferItemViewData> items) {
-    final hidden = items.length - compactPreviewLimit;
-    return hidden > 0 ? hidden : 0;
-  }
-
   void _resetReceiveFlow() {
     _receiveEntryExpanded = false;
     _receiveStage = TransferStage.idle;
@@ -367,6 +380,7 @@ class DriftController extends ChangeNotifier {
 
   void _beginSend(SendTransferUpdate update) {
     _resetReceiveFlow();
+    _sendTransferSessionStartedAt ??= DateTime.now();
     _mode = TransferDirection.send;
     _sendStage = switch (update.phase) {
       SendTransferUpdatePhase.connecting => TransferStage.ready,
@@ -389,6 +403,11 @@ class DriftController extends ChangeNotifier {
       destinationLabel: update.destinationLabel,
       statusMessage: update.errorMessage ?? update.statusMessage,
     );
+    if (update.phase == SendTransferUpdatePhase.completed) {
+      _sendCompletionMetrics = _buildSendCompletionMetrics(update);
+    } else {
+      _sendCompletionMetrics = null;
+    }
   }
 
   Future<void> _pickSendItems() async {
@@ -533,11 +552,17 @@ class DriftController extends ChangeNotifier {
     _nearbySendDestinations = _defaultSendDestinations;
     _sendSummary = null;
     _clearSendTransferMetrics();
+    _sendTransferSessionStartedAt = null;
+    _sendPayloadStartedAt = null;
+    _sendCompletionMetrics = null;
     _resetReceiveFlow();
   }
 
   void _startSendTransfer(String normalizedCode) {
     _cancelActiveSendTransfer();
+    _sendTransferSessionStartedAt = null;
+    _sendPayloadStartedAt = null;
+    _sendCompletionMetrics = null;
     final generation = ++_sendTransferGeneration;
     debugPrint(
       '[drift/controller] starting send transfer '
@@ -626,10 +651,12 @@ class DriftController extends ChangeNotifier {
       case SendTransferUpdatePhase.connecting:
       case SendTransferUpdatePhase.waitingForDecision:
         _clearSendTransferMetrics();
+        _sendPayloadStartedAt = null;
         return;
       case SendTransferUpdatePhase.sending:
         _sendPayloadBytesSent = update.bytesSent;
         _sendPayloadTotalBytes = update.totalBytes;
+        _sendPayloadStartedAt ??= DateTime.now();
         _refreshSendThroughputEstimate();
         return;
       case SendTransferUpdatePhase.completed:
@@ -637,6 +664,70 @@ class DriftController extends ChangeNotifier {
         _clearSendTransferMetrics();
         return;
     }
+  }
+
+  List<TransferMetricRow> _buildSendCompletionMetrics(SendTransferUpdate update) {
+    final rows = <TransferMetricRow>[];
+    final recipient = update.destinationLabel.trim().isEmpty
+        ? 'Recipient device'
+        : update.destinationLabel;
+    rows.add(TransferMetricRow(label: 'Sent to', value: recipient));
+    final n = update.itemCount;
+    rows.add(
+      TransferMetricRow(
+        label: 'Files',
+        value: n == 1 ? '1 item' : '$n items',
+      ),
+    );
+    rows.add(TransferMetricRow(label: 'Size', value: update.totalSize));
+
+    final sessionStart = _sendTransferSessionStartedAt;
+    final now = DateTime.now();
+    if (sessionStart != null) {
+      final totalElapsed = now.difference(sessionStart);
+      if (totalElapsed.inMilliseconds >= 500) {
+        rows.add(
+          TransferMetricRow(
+            label: 'Total time',
+            value: _formatElapsedDuration(totalElapsed),
+          ),
+        );
+      }
+    }
+
+    final payloadStart = _sendPayloadStartedAt;
+    if (payloadStart != null) {
+      final payloadSec = now.difference(payloadStart).inMilliseconds / 1000.0;
+      if (payloadSec >= 0.25 && update.bytesSent > 0) {
+        rows.add(
+          TransferMetricRow(
+            label: 'Average speed',
+            value: _formatBytesPerSecond(update.bytesSent / payloadSec),
+          ),
+        );
+      }
+    }
+
+    return rows;
+  }
+
+  static String _formatElapsedDuration(Duration d) {
+    final ms = d.inMilliseconds;
+    if (ms < 60 * 1000) {
+      final sec = (ms / 1000).clamp(0.05, double.infinity);
+      if (sec < 10) {
+        return '${sec.toStringAsFixed(1)} s';
+      }
+      return '${sec.round()} s';
+    }
+    if (ms < 3600 * 1000) {
+      final m = d.inMinutes;
+      final s = d.inSeconds % 60;
+      return s == 0 ? '$m min' : '$m min $s s';
+    }
+    final h = d.inHours;
+    final m = d.inMinutes % 60;
+    return m == 0 ? '$h h' : '$h h $m min';
   }
 
   void _refreshSendThroughputEstimate() {

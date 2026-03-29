@@ -117,9 +117,8 @@ class SelectedItemsSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isInspecting = controller.isInspectingSendItems;
-    final items = controller.visibleSendItems;
-    final hiddenItemCount = controller.hiddenSendItemCount;
-    final count = controller.sendItems.length;
+    final items = controller.sendItems;
+    final count = items.length;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -147,16 +146,6 @@ class SelectedItemsSection extends StatelessWidget {
           for (int i = 0; i < items.length; i++) ...[
             if (i > 0) const Divider(height: 1, thickness: 1, indent: 36),
             SelectedItemRow(item: items[i]),
-          ],
-          if (hiddenItemCount > 0) ...[
-            const Divider(height: 1, thickness: 1, indent: 36),
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 10),
-              child: Text(
-                '+$hiddenItemCount more ${hiddenItemCount == 1 ? 'item' : 'items'}',
-                style: driftSans(fontSize: 12.5, color: kMuted),
-              ),
-            ),
           ],
         ],
         if (isInspecting && count > 0) ...[

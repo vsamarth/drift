@@ -45,6 +45,14 @@ class SendDestinationViewData {
 }
 
 @immutable
+class TransferMetricRow {
+  const TransferMetricRow({required this.label, required this.value});
+
+  final String label;
+  final String value;
+}
+
+@immutable
 class TransferSummaryViewData {
   const TransferSummaryViewData({
     required this.itemCount,

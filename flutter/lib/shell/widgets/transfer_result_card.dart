@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/models/transfer_models.dart';
 import '../../core/theme/drift_theme.dart';
 
 enum TransferResultTone { success, error }
@@ -10,6 +11,7 @@ class TransferResultCard extends StatelessWidget {
     required this.tone,
     required this.title,
     required this.message,
+    this.metrics,
     this.primaryLabel,
     this.onPrimary,
     this.fillBody = false,
@@ -18,6 +20,7 @@ class TransferResultCard extends StatelessWidget {
   final TransferResultTone tone;
   final String title;
   final String message;
+  final List<TransferMetricRow>? metrics;
   final String? primaryLabel;
   final VoidCallback? onPrimary;
 
@@ -62,6 +65,17 @@ class TransferResultCard extends StatelessWidget {
           textAlign: fillBody ? TextAlign.center : TextAlign.start,
           style: messageStyle,
         ),
+        if (metrics != null && metrics!.isNotEmpty) ...[
+          SizedBox(height: fillBody ? 22 : 18),
+          fillBody
+              ? Align(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 340),
+                    child: _TransferMetricsPanel(metrics: metrics!),
+                  ),
+                )
+              : _TransferMetricsPanel(metrics: metrics!),
+        ],
       ],
     );
 
@@ -87,10 +101,21 @@ class TransferResultCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Expanded(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [statusBlock],
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                return SingleChildScrollView(
+                  physics: const BouncingScrollPhysics(),
+                  child: ConstrainedBox(
+                    constraints:
+                        BoxConstraints(minHeight: constraints.maxHeight),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [statusBlock],
+                    ),
+                  ),
+                );
+              },
             ),
           ),
           if (primaryLabel != null && onPrimary != null) ...[
@@ -101,6 +126,64 @@ class TransferResultCard extends StatelessWidget {
             ),
           ],
         ],
+      ),
+    );
+  }
+}
+
+class _TransferMetricsPanel extends StatelessWidget {
+  const _TransferMetricsPanel({required this.metrics});
+
+  final List<TransferMetricRow> metrics;
+
+  @override
+  Widget build(BuildContext context) {
+    final labelStyle = driftSans(
+      fontSize: 12,
+      fontWeight: FontWeight.w500,
+      color: kMuted,
+    );
+    final valueStyle = driftSans(
+      fontSize: 12.5,
+      fontWeight: FontWeight.w600,
+      color: kInk,
+    );
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: kFill.withValues(alpha: 0.65),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: kBorder.withValues(alpha: 0.75)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            for (int i = 0; i < metrics.length; i++) ...[
+              if (i > 0) const SizedBox(height: 10),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    flex: 2,
+                    child: Text(metrics[i].label, style: labelStyle),
+                  ),
+                  Expanded(
+                    flex: 3,
+                    child: Text(
+                      metrics[i].value,
+                      textAlign: TextAlign.end,
+                      style: valueStyle,
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }

@@ -83,6 +83,7 @@ class ShellStateContent extends StatelessWidget {
           message:
               controller.sendSummary?.statusMessage ??
               'Files sent successfully',
+          metrics: controller.sendCompletionMetrics,
           primaryLabel: 'Send more files',
           onPrimary: controller.resetShell,
         ),
@@ -113,6 +114,7 @@ class ShellStateContent extends StatelessWidget {
           title: 'Files saved',
           message:
               controller.receiveSummary?.statusMessage ?? 'Saved to Downloads',
+          metrics: controller.receiveCompletionMetrics,
           primaryLabel: 'Done',
           onPrimary: controller.resetShell,
         ),

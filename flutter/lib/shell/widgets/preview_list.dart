@@ -10,12 +10,10 @@ class PreviewTable extends StatelessWidget {
   const PreviewTable({
     super.key,
     required this.items,
-    required this.hiddenItemCount,
     required this.footerSummary,
   });
 
   final List<TransferItemViewData> items;
-  final int hiddenItemCount;
   final String footerSummary;
 
   static final _divider = Divider(
@@ -26,7 +24,7 @@ class PreviewTable extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (items.isEmpty && hiddenItemCount == 0) {
+    if (items.isEmpty) {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 12),
         child: Text('No files', style: Theme.of(context).textTheme.bodyMedium),
@@ -66,23 +64,6 @@ class PreviewTable extends StatelessWidget {
         for (int i = 0; i < items.length; i++) ...[
           if (i > 0) _divider,
           _PreviewTableRow(item: items[i]),
-        ],
-        if (hiddenItemCount > 0) ...[
-          _divider,
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 10),
-            child: Row(
-              children: [
-                const SizedBox(width: 28),
-                Expanded(
-                  child: Text(
-                    '+$hiddenItemCount more ${hiddenItemCount == 1 ? 'item' : 'items'}',
-                    style: driftSans(fontSize: 12.5, color: kMuted),
-                  ),
-                ),
-              ],
-            ),
-          ),
         ],
         _divider,
         Padding(
@@ -164,11 +145,9 @@ class PreviewList extends StatelessWidget {
   const PreviewList({
     super.key,
     required this.items,
-    required this.hiddenItemCount,
   });
 
   final List<TransferItemViewData> items;
-  final int hiddenItemCount;
 
   @override
   Widget build(BuildContext context) {
@@ -182,16 +161,6 @@ class PreviewList extends StatelessWidget {
         for (int i = 0; i < items.length; i++) ...[
           if (i > 0) const Divider(height: 1, thickness: 1, indent: 42),
           PreviewRow(item: items[i]),
-        ],
-        if (hiddenItemCount > 0) ...[
-          const Divider(height: 1, thickness: 1, indent: 42),
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
-            child: Text(
-              '+$hiddenItemCount more ${hiddenItemCount == 1 ? 'item' : 'items'}',
-              style: Theme.of(context).textTheme.bodyMedium,
-            ),
-          ),
         ],
       ],
     );

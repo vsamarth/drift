@@ -71,9 +71,12 @@ class SendCodeCard extends StatelessWidget {
             const SizedBox(height: 14),
             const Divider(height: 1),
             const SizedBox(height: 14),
-            PreviewList(
-              items: controller.visibleSendItems,
-              hiddenItemCount: controller.hiddenSendItemCount,
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 360),
+              child: SingleChildScrollView(
+                physics: const BouncingScrollPhysics(),
+                child: PreviewList(items: controller.sendItems),
+              ),
             ),
             if (primaryLabel != null && onPrimary != null) ...[
               const SizedBox(height: 20),
@@ -152,8 +155,7 @@ class SendCodeCard extends StatelessWidget {
                   child: SingleChildScrollView(
                     physics: const BouncingScrollPhysics(),
                     child: PreviewTable(
-                      items: controller.visibleSendItems,
-                      hiddenItemCount: controller.hiddenSendItemCount,
+                      items: controller.sendItems,
                       footerSummary: itemSummary,
                     ),
                   ),

@@ -245,8 +245,11 @@ void main() {
 
     expect(find.text('Save these files?'), findsOneWidget);
     expect(find.text('Save to Downloads'), findsOneWidget);
+    expect(find.text('sample.txt'), findsOneWidget);
     expect(find.text('vacation.jpg'), findsOneWidget);
-    expect(find.text('+1 more item'), findsOneWidget);
+    expect(find.text('beach.mov'), findsOneWidget);
+    expect(find.text('boarding-pass.pdf'), findsOneWidget);
+    expect(find.text('+1 more item'), findsNothing);
 
     await tester.ensureVisible(saveToDownloadsButton());
     await tester.tap(saveToDownloadsButton());
@@ -254,6 +257,10 @@ void main() {
 
     expect(find.text('Files saved'), findsOneWidget);
     expect(find.text('Saved to Downloads'), findsOneWidget);
+    expect(find.text('Saved to'), findsOneWidget);
+    expect(find.text('Downloads'), findsOneWidget);
+    expect(find.text('4 items'), findsOneWidget);
+    expect(find.text('14.9 MB'), findsOneWidget);
     expectNoFlutterError(tester);
   });
 
@@ -346,6 +353,10 @@ void main() {
 
     expect(find.text('Transfer complete'), findsOneWidget);
     expect(find.text('Files sent successfully'), findsOneWidget);
+    expect(find.text('Sent to'), findsOneWidget);
+    expect(find.text('2 items'), findsOneWidget);
+    expect(find.text('Size'), findsOneWidget);
+    expect(find.text('18 KB'), findsOneWidget);
 
     await tester.tap(find.text('Send more files'));
     await tester.pumpAndSettle();
