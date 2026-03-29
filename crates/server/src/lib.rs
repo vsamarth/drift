@@ -21,6 +21,8 @@ use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
 use tokio::net::TcpListener;
 use tokio::time::sleep;
+use tracing::{info, warn};
+use tracing_subscriber::EnvFilter;
 
 const CREATE_LIMIT_PER_MINUTE: usize = 10;
 const ACCESS_LIMIT_PER_MINUTE: usize = 60;
@@ -115,12 +117,15 @@ pub fn app(state: SharedState) -> Router {
 }
 
 pub async fn serve(listen_addr: SocketAddr) -> Result<()> {
+    init_logging();
     let state = Arc::new(AppState::new());
     tokio::spawn(cleanup_task(state.clone()));
 
     let listener = TcpListener::bind(listen_addr)
         .await
         .with_context(|| format!("binding rendezvous server on {listen_addr}"))?;
+
+    info!(%listen_addr, "rendezvous server listening");
 
     axum::serve(
         listener,
@@ -139,6 +144,11 @@ async fn register_peer(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Json(request): Json<RegisterPeerRequest>,
 ) -> Result<(StatusCode, Json<RegisterPeerResponse>), ApiError> {
+    info!(
+        client_ip = %addr.ip(),
+        ticket_len = request.ticket.len(),
+        "register request received"
+    );
     state
         .create_limiter
         .lock()
@@ -156,12 +166,22 @@ async fn register_peer(
     purge_discovery_locked(&mut pairs, now);
     let code = unique_code(&pairs);
     pairs.insert(code.clone(), session);
+    let pair_count = pairs.len();
+    let expires_at_formatted = format_timestamp(expires_at)?;
+
+    info!(
+        client_ip = %addr.ip(),
+        %code,
+        expires_at = %expires_at_formatted,
+        pair_count,
+        "peer registered"
+    );
 
     Ok((
         StatusCode::CREATED,
         Json(RegisterPeerResponse {
             code,
-            expires_at: format_timestamp(expires_at)?,
+            expires_at: expires_at_formatted,
         }),
     ))
 }
@@ -171,6 +191,7 @@ async fn claim_peer(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Path(code): Path<String>,
 ) -> Result<Json<ClaimPeerResponse>, ApiError> {
+    info!(client_ip = %addr.ip(), %code, "claim request received");
     rate_limit_access(&state, addr.ip())?;
     validate_code_api(&code)?;
 
@@ -182,12 +203,21 @@ async fn claim_peer(
         .ok_or_else(|| ApiError::new(StatusCode::NOT_FOUND, "peer not found"))?;
 
     match session.claim(now) {
-        Ok(ticket) => Ok(Json(ClaimPeerResponse { ticket })),
-        Err(DiscoveryError::Claimed) => Err(ApiError::new(
-            StatusCode::CONFLICT,
-            "peer has already been claimed",
-        )),
-        Err(DiscoveryError::Expired) => Err(ApiError::new(StatusCode::NOT_FOUND, "peer expired")),
+        Ok(ticket) => {
+            info!(client_ip = %addr.ip(), %code, "peer claimed");
+            Ok(Json(ClaimPeerResponse { ticket }))
+        }
+        Err(DiscoveryError::Claimed) => {
+            warn!(client_ip = %addr.ip(), %code, "claim rejected because peer was already claimed");
+            Err(ApiError::new(
+                StatusCode::CONFLICT,
+                "peer has already been claimed",
+            ))
+        }
+        Err(DiscoveryError::Expired) => {
+            warn!(client_ip = %addr.ip(), %code, "claim rejected because peer expired");
+            Err(ApiError::new(StatusCode::NOT_FOUND, "peer expired"))
+        }
     }
 }
 
@@ -196,6 +226,7 @@ async fn get_pair_status(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Path(code): Path<String>,
 ) -> Result<Json<PairStatusResponse>, ApiError> {
+    info!(client_ip = %addr.ip(), %code, "status request received");
     rate_limit_access(&state, addr.ip())?;
     validate_code_api(&code)?;
 
@@ -207,9 +238,11 @@ async fn get_pair_status(
         .ok_or_else(|| ApiError::new(StatusCode::NOT_FOUND, "peer not found"))?;
 
     if session.state(now) != DiscoveryState::Open {
+        warn!(client_ip = %addr.ip(), %code, "status lookup found non-open peer");
         return Err(ApiError::new(StatusCode::NOT_FOUND, "peer not found"));
     }
 
+    info!(client_ip = %addr.ip(), %code, status = "open", "status request resolved");
     Ok(Json(PairStatusResponse {
         status: PairStatus::Open,
     }))
@@ -283,9 +316,25 @@ async fn cleanup_task(state: SharedState) {
         sleep(Duration::from_secs(CLEANUP_INTERVAL_SECONDS)).await;
         let now = OffsetDateTime::now_utc();
         if let Ok(mut pairs) = state.pairs.lock() {
+            let before = pairs.len();
             purge_discovery_locked(&mut pairs, now);
+            let after = pairs.len();
+            if after != before {
+                info!(removed = before - after, remaining = after, "expired peers cleaned up");
+            }
         }
     }
+}
+
+fn init_logging() {
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter(
+            EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| EnvFilter::new("drift_server=info")),
+        )
+        .with_target(true)
+        .compact()
+        .try_init();
 }
 
 #[cfg(test)]

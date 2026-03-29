@@ -2,6 +2,8 @@ import 'dart:ui';
 
 import 'package:drift_app/app/drift_app.dart';
 import 'package:drift_app/core/models/transfer_models.dart';
+import 'package:drift_app/platform/receive_registration_source.dart';
+import 'package:drift_app/platform/send_item_source.dart';
 import 'package:drift_app/state/drift_controller.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
@@ -50,9 +52,51 @@ DriftController buildTestController({
 }) => DriftController(
   deviceName: 'Samarth MacBook Pro',
   idleReceiveCode: 'F9P2Q1',
+  enableIdleReceiverRefresh: false,
   nearbySendDestinations: nearbySendDestinations,
   droppedSendItems: droppedSendItems,
+  sendItemSource: FakeSendItemSource(
+    pickedItems:
+        droppedSendItems ??
+        const [
+          TransferItemViewData(
+            name: 'sample.txt',
+            path: 'sample.txt',
+            size: '18 KB',
+            kind: TransferItemKind.file,
+          ),
+          TransferItemViewData(
+            name: 'photos',
+            path: 'photos/',
+            size: '12 items',
+            kind: TransferItemKind.folder,
+          ),
+        ],
+  ),
+  receiveRegistrationSource: const FakeReceiveRegistrationSource(),
 );
+
+class FakeSendItemSource implements SendItemSource {
+  FakeSendItemSource({required this.pickedItems});
+
+  final List<TransferItemViewData> pickedItems;
+
+  @override
+  Future<List<TransferItemViewData>> pickFiles() async =>
+      List<TransferItemViewData>.unmodifiable(pickedItems);
+
+  @override
+  Future<List<TransferItemViewData>> loadPaths(List<String> paths) async =>
+      List<TransferItemViewData>.unmodifiable(pickedItems);
+}
+
+class FakeReceiveRegistrationSource implements ReceiveRegistrationSource {
+  const FakeReceiveRegistrationSource();
+
+  @override
+  Future<ReceiveRegistrationData> ensureIdleReceiver() async =>
+      const ReceiveRegistrationData(code: 'F9P2Q1', expiresAt: 'unused');
+}
 
 Future<String?> recordClipboardWrites(Future<void> Function() action) async {
   String? clipboardText;

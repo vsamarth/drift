@@ -1,0 +1,17 @@
+[package]
+name = "drift_bridge"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "staticlib"]
+
+[dependencies]
+drift-core = { path = "../../crates/core" }
+flutter_rust_bridge = "=2.11.1"
+iroh = "0.96"
+time = { version = "0.3", features = ["formatting", "parsing"] }
+tokio = { version = "1.50", features = ["rt-multi-thread"] }
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)'] }

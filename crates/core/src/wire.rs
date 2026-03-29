@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-use iroh::{Endpoint, EndpointAddr, TransportAddr, Watcher};
+use iroh::{Endpoint, EndpointAddr, TransportAddr};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -66,8 +66,14 @@ pub struct FileHeader {
 
 pub async fn make_ticket(endpoint: &Endpoint) -> Result<String> {
     endpoint.online().await;
-    let addr = endpoint.watch_addr().get();
+    make_ticket_from_addr(endpoint.addr())
+}
 
+pub fn make_ticket_now(endpoint: &Endpoint) -> Result<String> {
+    make_ticket_from_addr(endpoint.addr())
+}
+
+fn make_ticket_from_addr(addr: EndpointAddr) -> Result<String> {
     let ticket = TransferTicket {
         node_id: addr.id.to_string(),
         relay_url: addr.relay_urls().next().map(|url| url.to_string()),

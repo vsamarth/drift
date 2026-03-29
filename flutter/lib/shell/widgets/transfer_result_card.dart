@@ -23,10 +23,15 @@ class TransferResultCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isSuccess = tone == TransferResultTone.success;
-    final fgColor = isSuccess ? const Color(0xFF1A6B3A) : const Color(0xFFAA2222);
-    final bgColor = isSuccess ? const Color(0xFFF2FAF5) : const Color(0xFFFFF0F0);
-    final borderColor =
-        isSuccess ? const Color(0xFFCCE8D8) : const Color(0xFFEECCCC);
+    final fgColor = isSuccess
+        ? const Color(0xFF1A6B3A)
+        : const Color(0xFFAA2222);
+    final bgColor = isSuccess
+        ? const Color(0xFFF2FAF5)
+        : const Color(0xFFFFF0F0);
+    final borderColor = isSuccess
+        ? const Color(0xFFCCE8D8)
+        : const Color(0xFFEECCCC);
     final icon = isSuccess ? Icons.check_circle_rounded : Icons.error_rounded;
 
     return Container(
@@ -69,10 +74,7 @@ class TransferResultCard extends StatelessWidget {
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(10),
               ),
-              textStyle: driftSans(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-              ),
+              textStyle: driftSans(fontSize: 14, fontWeight: FontWeight.w600),
             ),
             child: Text(primaryLabel),
           ),

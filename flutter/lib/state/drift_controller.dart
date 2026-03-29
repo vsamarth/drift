@@ -1,17 +1,23 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 
 import '../core/models/transfer_models.dart';
+import '../platform/receive_registration_source.dart';
+import '../platform/send_item_source.dart';
 import 'drift_sample_data.dart';
 
 class DriftController extends ChangeNotifier {
   DriftController({
     String? deviceName,
-    String idleReceiveCode = 'F9P2Q1',
-    String idleReceiveStatus = 'Ready',
+    String idleReceiveCode = '......',
+    String idleReceiveStatus = 'Registering',
+    bool enableIdleReceiverRefresh = true,
     List<SendDestinationViewData>? nearbySendDestinations,
     List<TransferItemViewData>? droppedSendItems,
+    SendItemSource? sendItemSource,
+    ReceiveRegistrationSource? receiveRegistrationSource,
   }) : _deviceName = _normalizeDeviceName(deviceName ?? _defaultDeviceName()),
        _idleReceiveCode = idleReceiveCode.trim().toUpperCase(),
        _idleReceiveStatus = idleReceiveStatus,
@@ -34,15 +40,30 @@ class DriftController extends ChangeNotifier {
        ),
        _defaultSendDestinations = List<SendDestinationViewData>.unmodifiable(
          nearbySendDestinations ?? sampleSendDestinations,
-       );
+       ),
+       _sendItemSource = sendItemSource ?? const LocalSendItemSource(),
+       _receiveRegistrationSource =
+           receiveRegistrationSource ?? const LocalReceiveRegistrationSource() {
+    unawaited(_ensureIdleReceiver());
+    if (enableIdleReceiverRefresh) {
+      _idleReceiverRefreshTimer = Timer.periodic(const Duration(minutes: 1), (
+        _,
+      ) {
+        unawaited(_ensureIdleReceiver());
+      });
+    }
+  }
 
   static const int compactPreviewLimit = 3;
 
   final String _deviceName;
-  final String _idleReceiveCode;
-  final String _idleReceiveStatus;
+  String _idleReceiveCode;
+  String _idleReceiveStatus;
   final List<TransferItemViewData> _defaultDroppedSendItems;
   final List<SendDestinationViewData> _defaultSendDestinations;
+  final SendItemSource _sendItemSource;
+  final ReceiveRegistrationSource _receiveRegistrationSource;
+  Timer? _idleReceiverRefreshTimer;
   TransferDirection _mode = TransferDirection.send;
   TransferStage _sendStage = TransferStage.idle;
   TransferStage _receiveStage = TransferStage.idle;
@@ -57,6 +78,7 @@ class DriftController extends ChangeNotifier {
   List<SendDestinationViewData> _nearbySendDestinations = const [];
   TransferSummaryViewData? _sendSummary;
   TransferSummaryViewData? _receiveSummary;
+  bool _isInspectingSendItems = false;
 
   String get deviceName => _deviceName;
   String get idleReceiveCode => _idleReceiveCode;
@@ -71,6 +93,7 @@ class DriftController extends ChangeNotifier {
   String get receiveCode => _receiveCode;
   String? get receiveErrorText => _receiveErrorText;
   List<TransferItemViewData> get sendItems => _sendItems;
+  bool get isInspectingSendItems => _isInspectingSendItems;
   List<TransferItemViewData> get receiveItems => _receiveItems;
   List<SendDestinationViewData> get nearbySendDestinations =>
       List<SendDestinationViewData>.unmodifiable(_nearbySendDestinations);
@@ -130,21 +153,26 @@ class DriftController extends ChangeNotifier {
   }
 
   void activateSendDropTarget() {
-    _resetReceiveFlow();
-    _mode = TransferDirection.send;
-    _sendStage = TransferStage.collecting;
-    _sendDropActive = true;
-    _sendDestinationCode = '';
-    _sendDestinationLabel = null;
-    _nearbySendDestinations = _defaultSendDestinations;
-    _sendItems = _defaultDroppedSendItems;
-    notifyListeners();
+    _applySelectedSendItems(_defaultDroppedSendItems);
+  }
+
+  void pickSendItems() {
+    unawaited(_pickSendItems());
+  }
+
+  void acceptDroppedSendItems(List<String> paths) {
+    unawaited(_acceptDroppedSendItems(paths));
+  }
+
+  void appendDroppedSendItems(List<String> paths) {
+    unawaited(_appendDroppedSendItems(paths));
   }
 
   void clearSendFlow() {
     _mode = TransferDirection.send;
     _sendStage = TransferStage.idle;
     _sendDropActive = false;
+    _isInspectingSendItems = false;
     _sendDestinationCode = '';
     _sendDestinationLabel = null;
     _nearbySendDestinations = const [];
@@ -273,6 +301,7 @@ class DriftController extends ChangeNotifier {
     _mode = TransferDirection.send;
     _sendStage = TransferStage.idle;
     _sendDropActive = false;
+    _isInspectingSendItems = false;
     _sendDestinationCode = '';
     _sendDestinationLabel = null;
     _nearbySendDestinations = const [];
@@ -355,10 +384,139 @@ class DriftController extends ChangeNotifier {
     );
   }
 
+  Future<void> _pickSendItems() async {
+    _beginSendInspection(clearExistingItems: true);
+    try {
+      final items = await _sendItemSource.pickFiles();
+      if (items.isEmpty) {
+        _finishSendInspection();
+        return;
+      }
+      _applySelectedSendItems(items);
+    } catch (error, stackTrace) {
+      _finishSendInspection();
+      _reportSendSelectionError(error, stackTrace);
+    }
+  }
+
+  Future<void> _acceptDroppedSendItems(List<String> paths) async {
+    if (paths.isEmpty) {
+      return;
+    }
+    _beginSendInspection(clearExistingItems: true);
+    try {
+      final items = await _sendItemSource.loadPaths(paths);
+      if (items.isEmpty) {
+        _finishSendInspection();
+        return;
+      }
+      _applySelectedSendItems(items);
+    } catch (error, stackTrace) {
+      _finishSendInspection();
+      _reportSendSelectionError(error, stackTrace);
+    }
+  }
+
+  Future<void> _appendDroppedSendItems(List<String> paths) async {
+    if (paths.isEmpty) {
+      return;
+    }
+    _beginSendInspection(clearExistingItems: false);
+    try {
+      final items = await _sendItemSource.loadPaths(paths);
+      if (items.isEmpty) {
+        _finishSendInspection();
+        return;
+      }
+      _applySelectedSendItems(_mergeSendItems(_sendItems, items));
+    } catch (error, stackTrace) {
+      _finishSendInspection();
+      _reportSendSelectionError(error, stackTrace);
+    }
+  }
+
+  void _applySelectedSendItems(List<TransferItemViewData> items) {
+    _resetReceiveFlow();
+    _mode = TransferDirection.send;
+    _sendStage = TransferStage.collecting;
+    _sendDropActive = true;
+    _sendDestinationCode = '';
+    _sendDestinationLabel = null;
+    _nearbySendDestinations = _defaultSendDestinations;
+    _sendItems = List<TransferItemViewData>.unmodifiable(items);
+    _isInspectingSendItems = false;
+    notifyListeners();
+  }
+
+  void _beginSendInspection({required bool clearExistingItems}) {
+    _resetReceiveFlow();
+    _mode = TransferDirection.send;
+    _sendStage = TransferStage.collecting;
+    _sendDropActive = true;
+    _sendDestinationCode = '';
+    _sendDestinationLabel = null;
+    _nearbySendDestinations = _defaultSendDestinations;
+    _isInspectingSendItems = true;
+    if (clearExistingItems) {
+      _sendItems = const [];
+    }
+    notifyListeners();
+  }
+
+  void _finishSendInspection() {
+    _isInspectingSendItems = false;
+    notifyListeners();
+  }
+
+  List<TransferItemViewData> _mergeSendItems(
+    List<TransferItemViewData> existing,
+    List<TransferItemViewData> incoming,
+  ) {
+    final merged = <TransferItemViewData>[];
+    final seenPaths = <String>{};
+
+    for (final item in [...existing, ...incoming]) {
+      if (seenPaths.add(item.path)) {
+        merged.add(item);
+      }
+    }
+
+    return merged;
+  }
+
+  void _reportSendSelectionError(Object error, StackTrace stackTrace) {
+    debugPrint('Failed to inspect selected send items: $error');
+    debugPrintStack(stackTrace: stackTrace);
+  }
+
+  @override
+  void dispose() {
+    _idleReceiverRefreshTimer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _ensureIdleReceiver() async {
+    try {
+      final registration = await _receiveRegistrationSource
+          .ensureIdleReceiver();
+      _idleReceiveCode = registration.code.trim().toUpperCase();
+      _idleReceiveStatus = 'Ready';
+      notifyListeners();
+    } catch (error, stackTrace) {
+      if (_idleReceiveCode.trim().length != 6) {
+        _idleReceiveStatus = 'Unavailable';
+        notifyListeners();
+      }
+      debugPrint('Failed to ensure idle receiver: $error');
+      debugPrintStack(stackTrace: stackTrace);
+    }
+  }
+
   void _returnToSendSelection() {
     _mode = TransferDirection.send;
     _sendStage = TransferStage.collecting;
     _sendDropActive = true;
+    _isInspectingSendItems = false;
     _sendDestinationCode = '';
     _sendDestinationLabel = null;
     _nearbySendDestinations = _defaultSendDestinations;

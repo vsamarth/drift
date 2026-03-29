@@ -1,17 +1,41 @@
-# drift_app
+# Drift Flutter App
 
-A new Flutter project.
+This Flutter app is wired to Rust with `flutter_rust_bridge`.
 
-## Getting Started
+## What Is Set Up
 
-This project is a starting point for a Flutter application.
+- Rust crate: `flutter/rust`
+- Generated Dart bindings: `flutter/lib/src/rust`
+- FRB config: `flutter/flutter_rust_bridge.yaml`
+- Native build glue: `flutter/rust_builder`
 
-A few resources to get you started if this is your first Flutter project:
+The current hello-world path is:
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+- Rust function: `flutter/rust/src/api/simple.rs`
+- Dart wrapper: `flutter/lib/src/rust/api/simple.dart`
+- App entrypoint: `flutter/lib/main.dart`
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+On startup, Flutter initializes the Rust library and calls `greet(name: 'Drift')`.
+The returned string is shown in the idle identity area so you can confirm the bridge is working.
+
+## Regenerate Bindings
+
+From `flutter/`:
+
+```bash
+flutter_rust_bridge_codegen generate
+```
+
+## Run The App
+
+From `flutter/`:
+
+```bash
+flutter run -d macos
+```
+
+## Edit The Rust API
+
+1. Update Rust functions under `flutter/rust/src/api/`
+2. Regenerate bindings with `flutter_rust_bridge_codegen generate`
+3. Re-run the Flutter app

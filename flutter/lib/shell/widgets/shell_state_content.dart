@@ -33,7 +33,8 @@ class ShellStateContent extends StatelessWidget {
   Widget build(BuildContext context) {
     return switch (view) {
       ShellView.sendIdle => SendDropPanel(
-        onChooseFiles: controller.activateSendDropTarget,
+        onChooseFiles: controller.pickSendItems,
+        onDropPaths: controller.acceptDroppedSendItems,
         height: availableHeight,
         windowHovering: idleWindowHovering,
       ),

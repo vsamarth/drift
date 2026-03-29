@@ -23,8 +23,7 @@ class PreviewList extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         for (int i = 0; i < items.length; i++) ...[
-          if (i > 0)
-            const Divider(height: 1, thickness: 1, indent: 42),
+          if (i > 0) const Divider(height: 1, thickness: 1, indent: 42),
           PreviewRow(item: items[i]),
         ],
         if (hiddenItemCount > 0) ...[
@@ -50,8 +49,9 @@ class PreviewRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isFolder = item.kind == TransferItemKind.folder;
-    final icon =
-        isFolder ? Icons.folder_outlined : Icons.insert_drive_file_outlined;
+    final icon = isFolder
+        ? Icons.folder_outlined
+        : Icons.insert_drive_file_outlined;
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 10),
@@ -71,13 +71,7 @@ class PreviewRow extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 8),
-          Text(
-            item.size,
-            style: driftSans(
-              fontSize: 12,
-              color: kMuted,
-            ),
-          ),
+          Text(item.size, style: driftSans(fontSize: 12, color: kMuted)),
         ],
       ),
     );
