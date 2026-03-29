@@ -38,7 +38,7 @@ class _UtilityShellState extends State<UtilityShell> {
       body: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
         curve: Curves.easeOutCubic,
-        color: isIdle && _idleWindowHovering ? const Color(0xFFF2F2F2) : kBg,
+        color: kBg,
         child: SafeArea(
           child: MouseRegion(
             onEnter: isIdle ? (_) => _setIdleWindowHovering(true) : null,

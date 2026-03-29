@@ -541,8 +541,7 @@ class DriftController extends ChangeNotifier {
                 destinationLabel:
                     _sendDestinationLabel ??
                     _formatCodeAsDestination(normalizedCode),
-                statusMessage:
-                    'Starting transfer to ${_sendDestinationLabel ?? _formatCodeAsDestination(normalizedCode)}.',
+                statusMessage: 'Request sent',
                 itemCount: _sendItems.length,
                 totalSize: sampleSendSummary.totalSize,
                 errorMessage: error.toString(),

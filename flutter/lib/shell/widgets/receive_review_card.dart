@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 
 import '../../state/drift_controller.dart';
 import 'preview_list.dart';
-import 'shell_surface_card.dart';
 
 class ReceiveReviewCard extends StatelessWidget {
   const ReceiveReviewCard({super.key, required this.controller});
@@ -13,7 +12,8 @@ class ReceiveReviewCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final summary = controller.receiveSummary;
 
-    return ShellSurfaceCard(
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(8, 6, 8, 10),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

@@ -55,23 +55,14 @@ class _SendDropPanelState extends State<SendDropPanel> {
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
             decoration: BoxDecoration(
               color: isInteractive
-                  ? const Color(0xFFFEFEFE)
-                  : const Color(0xFFFCFCFC),
-              borderRadius: BorderRadius.circular(30),
+                  ? const Color(0xFFECEDED)
+                  : kBg,
+              borderRadius: BorderRadius.circular(16),
               border: Border.all(
                 color: isInteractive
-                    ? const Color(0xFFDADADA)
-                    : Colors.transparent,
+                    ? const Color(0xFFCED3D4)
+                    : kBorder,
               ),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(
-                    alpha: isInteractive ? 0.022 : 0.012,
-                  ),
-                  blurRadius: isInteractive ? 18 : 10,
-                  offset: const Offset(0, 6),
-                ),
-              ],
             ),
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 42),

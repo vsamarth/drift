@@ -253,7 +253,7 @@ fn local_device_name() -> String {
         }
     }
 
-    "unknown-device".to_owned()
+    "Recipient device".to_owned()
 }
 
 fn log_send_progress(last_phase: &mut Option<SendTransferPhase>, progress: SendTransferProgress) {

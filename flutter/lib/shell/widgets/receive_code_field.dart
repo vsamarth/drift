@@ -57,6 +57,7 @@ class _ReceiveCodeFieldState extends State<ReceiveCodeField> {
   @override
   Widget build(BuildContext context) {
     const errorColor = Color(0xFFCC3333);
+    final isSmall = widget.compact || widget.understated;
 
     return TextField(
       key: widget.fieldKey,
@@ -75,7 +76,7 @@ class _ReceiveCodeFieldState extends State<ReceiveCodeField> {
         fillColor: widget.understated
             ? kSurface.withValues(alpha: 0.70)
             : (widget.compact ? kSurface2 : kSurface),
-        contentPadding: widget.compact || widget.understated
+        contentPadding: isSmall
             ? const EdgeInsets.symmetric(horizontal: 14, vertical: 12)
             : null,
         hintStyle: driftSans(
@@ -85,24 +86,18 @@ class _ReceiveCodeFieldState extends State<ReceiveCodeField> {
           letterSpacing: 0,
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(
-            widget.compact || widget.understated ? 14 : 10,
-          ),
+          borderRadius: BorderRadius.circular(8),
           borderSide: BorderSide(
             color: widget.hasError
                 ? errorColor
-                : (widget.compact || widget.understated
-                      ? kBorder.withValues(alpha: 0.62)
-                      : kBorder),
+                : (isSmall ? kBorder.withValues(alpha: 0.62) : kBorder),
           ),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(
-            widget.compact || widget.understated ? 14 : 10,
-          ),
+          borderRadius: BorderRadius.circular(8),
           borderSide: BorderSide(
             color: widget.hasError ? errorColor : kAccentCyanStrong,
-            width: widget.compact || widget.understated ? 1.2 : 1.5,
+            width: isSmall ? 1.2 : 1.5,
           ),
         ),
       ),

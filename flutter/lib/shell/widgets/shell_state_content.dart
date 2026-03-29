@@ -57,10 +57,8 @@ class ShellStateContent extends StatelessWidget {
       ShellView.sendReady => _scrollable(
         SendCodeCard(
           controller: controller,
-          title: 'Connecting',
-          status:
-              controller.sendSummary?.statusMessage ??
-              'Starting transfer to ${controller.sendDestinationLabel ?? 'the other device'}.',
+          title: 'Sending',
+          status: controller.sendSummary?.statusMessage ?? 'Request sent',
         ),
       ),
       ShellView.sendWaiting => _scrollable(
@@ -69,7 +67,7 @@ class ShellStateContent extends StatelessWidget {
           title: 'Sending',
           status:
               controller.sendSummary?.statusMessage ??
-              'Waiting for ${controller.sendDestinationLabel ?? 'the other device'} to finish connecting.',
+              'Waiting for recipient to confirm.',
         ),
       ),
       ShellView.sendCompleted => _scrollable(

@@ -101,36 +101,56 @@ pub fn start_send_transfer(
 }
 
 fn map_progress(progress: SendTransferProgress) -> SendTransferEvent {
+    let destination_label = display_destination_label(&progress.destination_label);
     let (phase, status_message) = match progress.phase {
-        CoreSendTransferPhase::Connecting => (
-            SendTransferPhase::Connecting,
-            format!("Starting transfer to {}.", progress.destination_label),
-        ),
+        CoreSendTransferPhase::Connecting => {
+            (SendTransferPhase::Connecting, "Request sent".to_owned())
+        }
         CoreSendTransferPhase::WaitingForDecision => (
             SendTransferPhase::WaitingForDecision,
-            format!(
-                "Waiting for {} to accept the transfer.",
-                progress.destination_label
-            ),
+            format!("Waiting for {destination_label} to confirm."),
         ),
         CoreSendTransferPhase::Sending => (
             SendTransferPhase::Sending,
-            format!("Sending files to {}.", progress.destination_label),
+            format!("Sending to {destination_label}."),
         ),
         CoreSendTransferPhase::Completed => (
             SendTransferPhase::Completed,
-            "Your files were sent".to_owned(),
+            "Files sent successfully".to_owned(),
         ),
     };
 
     SendTransferEvent {
         phase,
-        destination_label: progress.destination_label,
+        destination_label,
         status_message,
         item_count: progress.manifest.file_count,
         total_size: progress.manifest.total_size,
         error_message: None,
     }
+}
+
+fn display_destination_label(value: &str) -> String {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return "Recipient device".to_owned();
+    }
+
+    let normalized = trimmed
+        .replace(['_', '-'], " ")
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    let lowercase = normalized.to_ascii_lowercase();
+    if lowercase.is_empty()
+        || lowercase == "unknown device"
+        || lowercase == "unknown-device"
+        || lowercase == "unknown"
+    {
+        return "Recipient device".to_owned();
+    }
+
+    normalized
 }
 
 fn format_error_chain(error: &anyhow::Error) -> String {

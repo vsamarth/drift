@@ -46,123 +46,49 @@ class _SendScreenState extends State<SendScreen> {
       },
       child: Stack(
         children: [
-          AnimatedContainer(
-            duration: const Duration(milliseconds: 180),
-            curve: Curves.easeOutCubic,
-            decoration: BoxDecoration(
-              color: _dropHovering ? kSurface.withValues(alpha: 0.16) : null,
-              borderRadius: BorderRadius.circular(24),
-              border: Border.all(
-                color: _dropHovering
-                    ? kBorder.withValues(alpha: 0.88)
-                    : Colors.transparent,
-              ),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(8, 6, 8, 10),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  SelectedItemsSection(controller: controller),
-                  const SizedBox(height: 34),
-                  ManualCodeSection(controller: controller),
-                ],
-              ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(8, 6, 8, 10),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SelectedItemsSection(controller: controller),
+                const SizedBox(height: 34),
+                ManualCodeSection(controller: controller),
+              ],
             ),
           ),
-          IgnorePointer(
-            ignoring: !_dropHovering,
-            child: AnimatedOpacity(
-              duration: const Duration(milliseconds: 160),
-              curve: Curves.easeOutCubic,
-              opacity: _dropHovering ? 1 : 0,
-              child: Container(
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.22),
-                  borderRadius: BorderRadius.circular(24),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.all(14),
-                  child: Stack(
-                    alignment: Alignment.bottomCenter,
+          Positioned.fill(
+            child: IgnorePointer(
+              ignoring: !_dropHovering,
+              child: AnimatedOpacity(
+                duration: const Duration(milliseconds: 160),
+                curve: Curves.easeOutCubic,
+                opacity: _dropHovering ? 1 : 0,
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: kAccentCyan.withValues(alpha: 0.06),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: kAccentCyanStrong.withValues(alpha: 0.4),
+                      width: 1.5,
+                    ),
+                  ),
+                  alignment: Alignment.center,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      Positioned.fill(
-                        child: DecoratedBox(
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.52),
-                            borderRadius: BorderRadius.circular(22),
-                            border: Border.all(
-                              color: const Color(0xFFD7D7D7),
-                              width: 1.2,
-                            ),
-                          ),
-                          child: CustomPaint(
-                            painter: _DropOverlayBorderPainter(),
-                          ),
-                        ),
+                      Icon(
+                        Icons.add_circle_outline_rounded,
+                        size: 24,
+                        color: kAccentCyanStrong,
                       ),
-                      Container(
-                        margin: const EdgeInsets.only(bottom: 10),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 11,
-                        ),
-                        decoration: BoxDecoration(
-                          color: const Color(
-                            0xFFF8F8F8,
-                          ).withValues(alpha: 0.96),
-                          borderRadius: BorderRadius.circular(18),
-                          border: Border.all(color: const Color(0xFFE2E2E2)),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.05),
-                              blurRadius: 18,
-                              offset: const Offset(0, 6),
-                            ),
-                          ],
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Container(
-                              width: 28,
-                              height: 28,
-                              decoration: const BoxDecoration(
-                                color: Color(0xFF49B36C),
-                                shape: BoxShape.circle,
-                              ),
-                              child: const Icon(
-                                Icons.add,
-                                size: 16,
-                                color: Colors.white,
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Column(
-                              mainAxisSize: MainAxisSize.min,
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  'Drop to add files',
-                                  style: driftSans(
-                                    fontSize: 16.5,
-                                    fontWeight: FontWeight.w600,
-                                    color: kInk,
-                                    letterSpacing: -0.35,
-                                  ),
-                                ),
-                                const SizedBox(height: 1),
-                                Text(
-                                  'They’ll be appended to this transfer',
-                                  style: driftSans(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w500,
-                                    color: kMuted,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
+                      const SizedBox(height: 8),
+                      Text(
+                        'Drop to add files',
+                        style: driftSans(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: kAccentCyanStrong,
                         ),
                       ),
                     ],
@@ -175,35 +101,6 @@ class _SendScreenState extends State<SendScreen> {
       ),
     );
   }
-}
-
-class _DropOverlayBorderPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final rect = Offset.zero & size;
-    final insetRect = rect.deflate(10);
-    final rrect = RRect.fromRectAndRadius(insetRect, const Radius.circular(18));
-    final paint = Paint()
-      ..color = const Color(0xFFCFCFCF)
-      ..strokeWidth = 1.2
-      ..style = PaintingStyle.stroke;
-
-    const dashWidth = 9.0;
-    const dashGap = 7.0;
-    final path = Path()..addRRect(rrect);
-
-    for (final metric in path.computeMetrics()) {
-      var distance = 0.0;
-      while (distance < metric.length) {
-        final next = distance + dashWidth;
-        canvas.drawPath(metric.extractPath(distance, next), paint);
-        distance += dashWidth + dashGap;
-      }
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 class SelectedItemsSection extends StatelessWidget {
@@ -278,9 +175,8 @@ class SelectedItemRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isFolder = item.kind == TransferItemKind.folder;
-    final icon = isFolder
-        ? Icons.folder_outlined
-        : Icons.insert_drive_file_outlined;
+    final icon =
+        isFolder ? Icons.folder_outlined : Icons.insert_drive_file_outlined;
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 10),

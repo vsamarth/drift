@@ -277,52 +277,50 @@ void main() {
       sendTransferUpdate(
         phase: SendTransferUpdatePhase.connecting,
         destinationLabel: 'Code AB2 CD3',
-        statusMessage: 'Starting transfer to Code AB2 CD3.',
+        statusMessage: 'Request sent',
       ),
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Connecting'), findsOneWidget);
-    expect(find.text('Starting transfer to Code AB2 CD3.'), findsOneWidget);
+    expect(find.text('Sending'), findsWidgets);
+    expect(find.text('Request sent'), findsOneWidget);
+    expect(find.text('Code AB2 CD3'), findsOneWidget);
 
     sendTransferSource.emit(
       sendTransferUpdate(
         phase: SendTransferUpdatePhase.waitingForDecision,
         destinationLabel: 'Maya’s iPhone',
-        statusMessage: 'Waiting for Maya’s iPhone to accept the transfer.',
+        statusMessage: 'Waiting for Maya’s iPhone to confirm.',
       ),
     );
     await tester.pumpAndSettle();
 
     expect(find.text('Sending'), findsOneWidget);
-    expect(
-      find.text('Waiting for Maya’s iPhone to accept the transfer.'),
-      findsOneWidget,
-    );
+    expect(find.text('Waiting for Maya’s iPhone to confirm.'), findsOneWidget);
 
     sendTransferSource.emit(
       sendTransferUpdate(
         phase: SendTransferUpdatePhase.sending,
         destinationLabel: 'Maya’s iPhone',
-        statusMessage: 'Sending files to Maya’s iPhone.',
+        statusMessage: 'Sending to Maya’s iPhone.',
       ),
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Sending files to Maya’s iPhone.'), findsOneWidget);
+    expect(find.text('Sending to Maya’s iPhone.'), findsOneWidget);
 
     sendTransferSource.emit(
       sendTransferUpdate(
         phase: SendTransferUpdatePhase.completed,
         destinationLabel: 'Maya’s iPhone',
-        statusMessage: 'Your files were sent',
+        statusMessage: 'Files sent successfully',
       ),
     );
     await sendTransferSource.finish();
     await tester.pumpAndSettle();
 
     expect(find.text('Transfer complete'), findsOneWidget);
-    expect(find.text('Your files were sent'), findsOneWidget);
+    expect(find.text('Files sent successfully'), findsOneWidget);
 
     await tester.tap(find.text('Send more files'));
     await tester.pumpAndSettle();
@@ -377,12 +375,12 @@ void main() {
       sendTransferUpdate(
         phase: SendTransferUpdatePhase.connecting,
         destinationLabel: 'Code AB2 CD3',
-        statusMessage: 'Starting transfer to Code AB2 CD3.',
+        statusMessage: 'Request sent',
       ),
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Connecting'), findsOneWidget);
+    expect(find.text('Sending'), findsOneWidget);
 
     await tester.tap(shellBackButton());
     await tester.pumpAndSettle();
@@ -436,7 +434,7 @@ void main() {
         sendTransferUpdate(
           phase: SendTransferUpdatePhase.connecting,
           destinationLabel: 'Code AB2 CD3',
-          statusMessage: 'Starting transfer to Code AB2 CD3.',
+          statusMessage: 'Request sent',
         ),
       );
       await tester.pumpAndSettle();
@@ -445,7 +443,7 @@ void main() {
         sendTransferUpdate(
           phase: SendTransferUpdatePhase.failed,
           destinationLabel: 'Code AB2 CD3',
-          statusMessage: 'Starting transfer to Code AB2 CD3.',
+          statusMessage: 'Request sent',
           errorMessage:
               'receiver declined the offer: receiver declined the offer',
         ),
@@ -467,6 +465,38 @@ void main() {
       expectNoFlutterError(tester);
     },
   );
+
+  testWidgets('recipient fallback avoids raw unknown device labels', (
+    tester,
+  ) async {
+    final sendTransferSource = FakeSendTransferSource();
+    await pumpUtilityApp(
+      tester,
+      controller: buildTestController(sendTransferSource: sendTransferSource),
+    );
+
+    await tester.tap(chooseFilesButton());
+    await tester.pumpAndSettle();
+    await tester.enterText(sendCodeField(), 'ab2cd3');
+    await tester.pump();
+
+    sendTransferSource.emit(
+      sendTransferUpdate(
+        phase: SendTransferUpdatePhase.waitingForDecision,
+        destinationLabel: 'unknown-device',
+        statusMessage: 'Waiting for Recipient device to confirm.',
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Recipient device'), findsOneWidget);
+    expect(find.text('unknown-device'), findsNothing);
+    expect(
+      find.text('Waiting for Recipient device to confirm.'),
+      findsOneWidget,
+    );
+    expectNoFlutterError(tester);
+  });
 
   testWidgets('after drop state shows only the manual code flow', (
     tester,

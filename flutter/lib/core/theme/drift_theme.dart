@@ -139,7 +139,7 @@ ThemeData buildDriftTheme() {
       elevation: 0,
       margin: EdgeInsets.zero,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(12),
         side: const BorderSide(color: kBorder),
       ),
     ),
@@ -151,23 +151,23 @@ ThemeData buildDriftTheme() {
       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
       hintStyle: driftSans(color: kSubtle, fontSize: 14),
       border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(8),
         borderSide: const BorderSide(color: kBorder),
       ),
       enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(8),
         borderSide: const BorderSide(color: kBorder),
       ),
       focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(8),
         borderSide: const BorderSide(color: kAccentCyanStrong, width: 1.4),
       ),
       errorBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(8),
         borderSide: const BorderSide(color: Color(0xFFCC3333)),
       ),
       focusedErrorBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(8),
         borderSide: const BorderSide(color: Color(0xFFCC3333), width: 1.5),
       ),
     ),
@@ -175,10 +175,10 @@ ThemeData buildDriftTheme() {
       style: FilledButton.styleFrom(
         backgroundColor: kInk,
         foregroundColor: Colors.white,
-        minimumSize: const Size(80, 44),
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-        textStyle: driftSans(fontSize: 14, fontWeight: FontWeight.w600),
+        minimumSize: const Size(80, 38),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        textStyle: driftSans(fontSize: 13.5, fontWeight: FontWeight.w600),
         elevation: 0,
         shadowColor: Colors.transparent,
       ),
@@ -187,10 +187,10 @@ ThemeData buildDriftTheme() {
       style: OutlinedButton.styleFrom(
         foregroundColor: kInk,
         side: const BorderSide(color: kBorder, width: 1.5),
-        minimumSize: const Size(80, 44),
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-        textStyle: driftSans(fontSize: 14, fontWeight: FontWeight.w600),
+        minimumSize: const Size(80, 38),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        textStyle: driftSans(fontSize: 13.5, fontWeight: FontWeight.w600),
       ),
     ),
     textButtonTheme: TextButtonThemeData(

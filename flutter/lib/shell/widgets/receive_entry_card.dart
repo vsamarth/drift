@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import '../../core/theme/drift_theme.dart';
 import '../../state/drift_controller.dart';
 import 'receive_code_field.dart';
-import 'shell_surface_card.dart';
 
 class ReceiveEntryCard extends StatelessWidget {
   const ReceiveEntryCard({
@@ -27,7 +26,8 @@ class ReceiveEntryCard extends StatelessWidget {
 
     return SizedBox(
       height: height,
-      child: ShellSurfaceCard(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(8, 6, 8, 10),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -59,24 +59,12 @@ class ReceiveEntryCard extends StatelessWidget {
             ),
             if (hasError) ...[
               const SizedBox(height: 10),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 10,
-                ),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFFFF0F0),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: const Color(0xFFEECCCC)),
-                ),
-                child: Text(
-                  errorText!,
-                  style: driftSans(
-                    fontSize: 13,
-                    color: const Color(0xFFAA2222),
-                    height: 1.4,
-                  ),
+              Text(
+                errorText!,
+                style: driftSans(
+                  fontSize: 13,
+                  color: const Color(0xFFCC3333),
+                  height: 1.4,
                 ),
               ),
             ],

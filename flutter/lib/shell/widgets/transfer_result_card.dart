@@ -23,62 +23,38 @@ class TransferResultCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isSuccess = tone == TransferResultTone.success;
-    final fgColor = isSuccess
-        ? const Color(0xFF1A6B3A)
-        : const Color(0xFFAA2222);
-    final bgColor = isSuccess
-        ? const Color(0xFFF2FAF5)
-        : const Color(0xFFFFF0F0);
-    final borderColor = isSuccess
-        ? const Color(0xFFCCE8D8)
-        : const Color(0xFFEECCCC);
+    final accentColor =
+        isSuccess ? const Color(0xFF49B36C) : const Color(0xFFCC3333);
     final icon = isSuccess ? Icons.check_circle_rounded : Icons.error_rounded;
 
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: bgColor,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: borderColor),
-      ),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(8, 6, 8, 10),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, size: 28, color: fgColor),
+          Icon(icon, size: 32, color: accentColor),
           const SizedBox(height: 14),
           Text(
             title,
             style: driftSans(
               fontSize: 18,
               fontWeight: FontWeight.w600,
-              color: fgColor,
+              color: kInk,
               letterSpacing: -0.2,
             ),
           ),
-          const SizedBox(height: 5),
+          const SizedBox(height: 4),
           Text(
             message,
             style: driftSans(
               fontSize: 13,
-              color: fgColor.withValues(alpha: 0.70),
+              color: kMuted,
               height: 1.5,
             ),
           ),
           if (primaryLabel != null && onPrimary != null) ...[
-            const SizedBox(height: 20),
-            FilledButton(
-              onPressed: onPrimary,
-              style: FilledButton.styleFrom(
-                backgroundColor: fgColor,
-                foregroundColor: Colors.white,
-                minimumSize: const Size(0, 44),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                textStyle: driftSans(fontSize: 14, fontWeight: FontWeight.w600),
-              ),
-              child: Text(primaryLabel!),
-            ),
+            const SizedBox(height: 24),
+            FilledButton(onPressed: onPrimary, child: Text(primaryLabel!)),
           ],
         ],
       ),
