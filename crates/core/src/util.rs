@@ -3,7 +3,7 @@ use std::io::{self, Write};
 use anyhow::{Context, Result};
 use iroh::TransportAddr;
 
-pub(crate) fn confirm_accept() -> Result<bool> {
+pub fn confirm_accept() -> Result<bool> {
     print!("Accept? [y/N]: ");
     io::stdout().flush().context("flushing prompt")?;
 
@@ -16,7 +16,7 @@ pub(crate) fn confirm_accept() -> Result<bool> {
     Ok(matches!(response.as_str(), "y" | "yes"))
 }
 
-pub(crate) fn describe_remote(
+pub fn describe_remote(
     remote_id: iroh::EndpointId,
     remote: Option<&iroh::endpoint::RemoteInfo>,
 ) -> String {
@@ -32,7 +32,7 @@ pub(crate) fn describe_remote(
     format!("{remote_id}{relay}")
 }
 
-pub(crate) fn human_size(bytes: u64) -> String {
+pub fn human_size(bytes: u64) -> String {
     const UNITS: [&str; 5] = ["B", "KB", "MB", "GB", "TB"];
     let mut value = bytes as f64;
     let mut unit = 0;

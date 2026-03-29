@@ -7,4 +7,7 @@ edition.workspace = true
 anyhow.workspace = true
 clap.workspace = true
 drift-core = { path = "../core" }
+iroh.workspace = true
+rand.workspace = true
+time.workspace = true
 tokio.workspace = true

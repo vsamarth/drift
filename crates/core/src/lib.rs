@@ -1,12 +1,7 @@
-mod fs_plan;
-mod session;
-mod transfer;
-mod util;
-mod wire;
-
+pub mod discovery;
+pub mod fs_plan;
 pub mod rendezvous;
-pub mod server;
-
-pub use transfer::{receive, receive_ticket, send, send_ticket};
-
-pub(crate) use fs_plan::validate_transfer_path;
+pub mod session;
+pub mod transfer;
+pub mod util;
+pub mod wire;

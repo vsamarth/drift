@@ -752,6 +752,9 @@ dependencies = [
  "anyhow",
  "clap",
  "drift-core",
+ "iroh",
+ "rand 0.8.5",
+ "time",
  "tokio",
 ]
 
@@ -760,19 +763,15 @@ name = "drift-core"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "axum",
  "base64",
  "bincode",
  "futures-lite",
- "http-body-util",
  "iroh",
- "rand 0.8.5",
  "reqwest 0.12.28",
  "serde",
  "serde_json",
  "time",
  "tokio",
- "tower",
 ]
 
 [[package]]
@@ -780,9 +779,16 @@ name = "drift-server"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "axum",
  "clap",
  "drift-core",
+ "http-body-util",
+ "rand 0.8.5",
+ "serde",
+ "serde_json",
+ "time",
  "tokio",
+ "tower",
 ]
 
 [[package]]

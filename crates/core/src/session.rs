@@ -14,7 +14,7 @@ use crate::wire::{ALPN, FileHeader, read_header, write_header};
 
 const ACK_OK: &[u8] = b"ok";
 
-pub(crate) async fn bind_endpoint() -> Result<Endpoint> {
+pub async fn bind_endpoint() -> Result<Endpoint> {
     Endpoint::builder()
         .alpns(vec![ALPN.to_vec()])
         .relay_mode(RelayMode::Default)
@@ -23,22 +23,14 @@ pub(crate) async fn bind_endpoint() -> Result<Endpoint> {
         .context("binding iroh endpoint")
 }
 
-pub(crate) async fn receive_from_ticket(
+pub async fn connect_to_ticket(
+    endpoint: &Endpoint,
     ticket: iroh::EndpointAddr,
-    out_dir: PathBuf,
-    expected_files: Option<BTreeMap<String, ExpectedFile>>,
-) -> Result<()> {
-    fs::create_dir_all(&out_dir)
-        .await
-        .with_context(|| format!("creating output directory {}", out_dir.display()))?;
-
-    let endpoint = bind_endpoint()
-        .await
-        .context("binding local iroh endpoint")?;
+) -> Result<iroh::endpoint::Connection> {
     let connection = endpoint
         .connect(ticket, ALPN)
         .await
-        .context("connecting to sender")?;
+        .context("connecting to peer")?;
 
     println!(
         "Connected to {}",
@@ -47,36 +39,11 @@ pub(crate) async fn receive_from_ticket(
             endpoint.remote_info(connection.remote_id()).await.as_ref()
         )
     );
-    receive_files_over_connection(connection, out_dir, expected_files).await?;
-    endpoint.close().await;
-    Ok(())
+
+    Ok(connection)
 }
 
-pub(crate) async fn receive_on_endpoint(
-    endpoint: Endpoint,
-    out_dir: PathBuf,
-    expected_files: Option<BTreeMap<String, ExpectedFile>>,
-) -> Result<()> {
-    fs::create_dir_all(&out_dir)
-        .await
-        .with_context(|| format!("creating output directory {}", out_dir.display()))?;
-
-    let incoming = endpoint
-        .accept()
-        .await
-        .context("receiver stopped before a sender connected")?;
-    let connection = incoming.await.context("accepting sender connection")?;
-    println!(
-        "Connected to {}",
-        describe_remote(
-            connection.remote_id(),
-            endpoint.remote_info(connection.remote_id()).await.as_ref()
-        )
-    );
-    receive_files_over_connection(connection, out_dir, expected_files).await
-}
-
-pub(crate) async fn send_files_over_connection(
+pub async fn send_files_over_connection(
     connection: iroh::endpoint::Connection,
     files: &[PreparedFile],
 ) -> Result<()> {
@@ -120,7 +87,7 @@ pub(crate) async fn send_files_over_connection(
     Ok(())
 }
 
-async fn receive_files_over_connection(
+pub async fn receive_files_over_connection(
     connection: iroh::endpoint::Connection,
     out_dir: PathBuf,
     mut expected_files: Option<BTreeMap<String, ExpectedFile>>,
@@ -224,80 +191,4 @@ async fn receive_file(
         .await
         .with_context(|| format!("flushing {}", destination.display()))?;
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use anyhow::Context;
-    use std::sync::atomic::{AtomicU64, Ordering};
-    use std::time::{Duration, SystemTime, UNIX_EPOCH};
-    use tokio::time::timeout;
-
-    use super::*;
-    use crate::transfer::send_ticket;
-    use crate::wire::make_ticket;
-
-    static NEXT_TEMP_ID: AtomicU64 = AtomicU64::new(0);
-
-    struct TestDir {
-        path: PathBuf,
-    }
-
-    impl TestDir {
-        async fn new(prefix: &str) -> Result<Self> {
-            let unique = format!(
-                "{}-{}-{}",
-                prefix,
-                SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .expect("system time")
-                    .as_nanos(),
-                NEXT_TEMP_ID.fetch_add(1, Ordering::Relaxed)
-            );
-            let path = std::env::temp_dir().join(unique);
-            fs::create_dir_all(&path).await?;
-            Ok(Self { path })
-        }
-    }
-
-    impl Drop for TestDir {
-        fn drop(&mut self) {
-            let _ = std::fs::remove_dir_all(&self.path);
-        }
-    }
-
-    async fn write_test_file(path: &Path, contents: &str) -> Result<()> {
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent).await?;
-        }
-        fs::write(path, contents).await?;
-        Ok(())
-    }
-
-    #[ignore = "requires binding local iroh sockets"]
-    #[tokio::test]
-    async fn send_and_receive_nested_directory_tree() -> Result<()> {
-        let temp = TestDir::new("drift-e2e").await?;
-        let source_dir = temp.path.join("photos");
-        let out_dir = temp.path.join("downloads");
-        write_test_file(&source_dir.join("trip/cat.jpg"), "cat").await?;
-        write_test_file(&source_dir.join("trip/dog.jpg"), "dog").await?;
-
-        let endpoint = bind_endpoint().await?;
-        let ticket = make_ticket(&endpoint).await?;
-        let receiver = tokio::spawn(receive_on_endpoint(endpoint, out_dir.clone(), None));
-
-        send_ticket(ticket, vec![source_dir]).await?;
-        let receiver_result = timeout(Duration::from_secs(30), receiver)
-            .await
-            .context("receiver timed out")?;
-        receiver_result??;
-
-        let cat = fs::read_to_string(out_dir.join("photos/trip/cat.jpg")).await?;
-        let dog = fs::read_to_string(out_dir.join("photos/trip/dog.jpg")).await?;
-        assert_eq!(cat, "cat");
-        assert_eq!(dog, "dog");
-
-        Ok(())
-    }
 }

@@ -21,42 +21,30 @@ pub struct OfferManifest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CreateOfferRequest {
+pub struct RegisterPeerRequest {
     pub ticket: String,
-    #[serde(flatten)]
-    pub manifest: OfferManifest,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CreateOfferResponse {
+pub struct RegisterPeerResponse {
     pub code: String,
     pub expires_at: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct OfferPreviewResponse {
-    #[serde(flatten)]
-    pub manifest: OfferManifest,
-    pub expires_at: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct OfferAcceptResponse {
+pub struct ClaimPeerResponse {
     pub ticket: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
-pub enum OfferStatus {
-    Pending,
-    Accepted,
-    Declined,
-    Expired,
+pub enum PairStatus {
+    Open,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct OfferStatusResponse {
-    pub status: OfferStatus,
+pub struct PairStatusResponse {
+    pub status: PairStatus,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -78,77 +66,43 @@ impl RendezvousClient {
         }
     }
 
-    pub async fn create_offer(
-        &self,
-        ticket: String,
-        manifest: OfferManifest,
-    ) -> Result<CreateOfferResponse> {
-        let request = CreateOfferRequest { ticket, manifest };
+    pub async fn register_peer(&self, ticket: String) -> Result<RegisterPeerResponse> {
+        let request = RegisterPeerRequest { ticket };
         let response = self
             .http
-            .post(self.url("/v1/offers"))
+            .post(self.url("/v1/pairs"))
             .json(&request)
             .send()
             .await
-            .context("creating rendezvous offer")?;
+            .context("registering peer with rendezvous server")?;
         parse_json(response).await
     }
 
-    pub async fn offer_preview(&self, code: &str) -> Result<OfferPreviewResponse> {
+    pub async fn claim_peer(&self, code: &str) -> Result<ClaimPeerResponse> {
         validate_code(code)?;
         let response = self
             .http
-            .get(self.url(&format!("/v1/offers/{code}")))
+            .post(self.url(&format!("/v1/pairs/{code}/claim")))
             .send()
             .await
-            .with_context(|| format!("fetching offer {code}"))?;
+            .with_context(|| format!("claiming peer for code {code}"))?;
         parse_json(response).await
     }
 
-    pub async fn accept_offer(&self, code: &str) -> Result<OfferAcceptResponse> {
+    pub async fn pair_status(&self, code: &str) -> Result<Option<PairStatusResponse>> {
         validate_code(code)?;
         let response = self
             .http
-            .post(self.url(&format!("/v1/offers/{code}/accept")))
+            .get(self.url(&format!("/v1/pairs/{code}/status")))
             .send()
             .await
-            .with_context(|| format!("accepting offer {code}"))?;
-        parse_json(response).await
-    }
-
-    pub async fn decline_offer(&self, code: &str) -> Result<()> {
-        validate_code(code)?;
-        let response = self
-            .http
-            .post(self.url(&format!("/v1/offers/{code}/decline")))
-            .send()
-            .await
-            .with_context(|| format!("declining offer {code}"))?;
-
-        if response.status().is_success() {
-            return Ok(());
-        }
-
-        let message = error_message(response).await;
-        bail!("{message}");
-    }
-
-    pub async fn offer_status(&self, code: &str) -> Result<OfferStatusResponse> {
-        validate_code(code)?;
-        let response = self
-            .http
-            .get(self.url(&format!("/v1/offers/{code}/status")))
-            .send()
-            .await
-            .with_context(|| format!("checking status for offer {code}"))?;
+            .with_context(|| format!("checking status for peer {code}"))?;
 
         if response.status() == StatusCode::NOT_FOUND {
-            return Ok(OfferStatusResponse {
-                status: OfferStatus::Expired,
-            });
+            return Ok(None);
         }
 
-        parse_json(response).await
+        parse_json(response).await.map(Some)
     }
 
     fn url(&self, path: &str) -> String {

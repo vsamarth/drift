@@ -2,10 +2,14 @@ use anyhow::{Context, Result};
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use iroh::{Endpoint, EndpointAddr, TransportAddr, Watcher};
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-pub(crate) const ALPN: &[u8] = b"drift/v0";
+use crate::rendezvous::OfferManifest;
+
+pub const ALPN: &[u8] = b"drift/transfer/v1";
+pub const TRANSFER_PROTOCOL_VERSION: u32 = 1;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct TransferTicket {
@@ -14,12 +18,53 @@ struct TransferTicket {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct FileHeader {
-    pub(crate) path: String,
-    pub(crate) size: u64,
+pub struct Hello {
+    pub version: u32,
+    pub session_id: String,
+    pub role: TransferRole,
+    pub device_name: String,
 }
 
-pub(crate) async fn make_ticket(endpoint: &Endpoint) -> Result<String> {
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum TransferRole {
+    Sender,
+    Receiver,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Offer {
+    pub session_id: String,
+    pub manifest: OfferManifest,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Accept {
+    pub session_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Decline {
+    pub session_id: String,
+    pub reason: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ControlMessage {
+    Hello(Hello),
+    Offer(Offer),
+    Accept(Accept),
+    Decline(Decline),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FileHeader {
+    pub path: String,
+    pub size: u64,
+}
+
+pub async fn make_ticket(endpoint: &Endpoint) -> Result<String> {
     endpoint.online().await;
     let addr = endpoint.watch_addr().get();
 
@@ -32,7 +77,7 @@ pub(crate) async fn make_ticket(endpoint: &Endpoint) -> Result<String> {
     Ok(URL_SAFE_NO_PAD.encode(bytes))
 }
 
-pub(crate) fn decode_ticket(ticket: &str) -> Result<EndpointAddr> {
+pub fn decode_ticket(ticket: &str) -> Result<EndpointAddr> {
     let bytes = URL_SAFE_NO_PAD
         .decode(ticket)
         .context("decoding ticket from base64")?;
@@ -57,33 +102,44 @@ pub(crate) fn decode_ticket(ticket: &str) -> Result<EndpointAddr> {
     Ok(addr.with_addrs(Vec::<TransportAddr>::new()))
 }
 
-pub(crate) async fn read_header(
+pub async fn read_message<T: DeserializeOwned>(
     recv_stream: &mut iroh::endpoint::RecvStream,
-) -> Result<FileHeader> {
-    let header_len = recv_stream
+) -> Result<T> {
+    let message_len = recv_stream
         .read_u32()
         .await
-        .context("reading header length")? as usize;
-    let mut header_buf = vec![0_u8; header_len];
+        .context("reading message length")? as usize;
+    let mut message_buf = vec![0_u8; message_len];
     recv_stream
-        .read_exact(&mut header_buf)
+        .read_exact(&mut message_buf)
         .await
-        .context("reading header bytes")?;
-    serde_json::from_slice(&header_buf).context("parsing file header")
+        .context("reading message bytes")?;
+    serde_json::from_slice(&message_buf).context("parsing message body")
 }
 
-pub(crate) async fn write_header(
+pub async fn write_message<T: Serialize>(
     send_stream: &mut iroh::endpoint::SendStream,
-    header: &FileHeader,
+    value: &T,
 ) -> Result<()> {
-    let bytes = serde_json::to_vec(header).context("serializing file header")?;
+    let bytes = serde_json::to_vec(value).context("serializing message body")?;
     send_stream
         .write_u32(bytes.len() as u32)
         .await
-        .context("writing header length")?;
+        .context("writing message length")?;
     send_stream
         .write_all(&bytes)
         .await
-        .context("writing header bytes")?;
+        .context("writing message bytes")?;
     Ok(())
+}
+
+pub async fn read_header(recv_stream: &mut iroh::endpoint::RecvStream) -> Result<FileHeader> {
+    read_message(recv_stream).await
+}
+
+pub async fn write_header(
+    send_stream: &mut iroh::endpoint::SendStream,
+    header: &FileHeader,
+) -> Result<()> {
+    write_message(send_stream, header).await
 }

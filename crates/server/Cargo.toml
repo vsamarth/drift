@@ -5,6 +5,15 @@ edition.workspace = true
 
 [dependencies]
 anyhow.workspace = true
+axum.workspace = true
 clap.workspace = true
 drift-core = { path = "../core" }
+rand.workspace = true
+serde.workspace = true
+time.workspace = true
 tokio.workspace = true
+
+[dev-dependencies]
+http-body-util.workspace = true
+serde_json.workspace = true
+tower.workspace = true

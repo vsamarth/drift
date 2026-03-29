@@ -7,25 +7,25 @@ use tokio::fs;
 use crate::rendezvous::{OfferFile, OfferManifest};
 
 #[derive(Debug, Clone)]
-pub(crate) struct PreparedFile {
-    pub(crate) source_path: PathBuf,
-    pub(crate) transfer_path: String,
-    pub(crate) size: u64,
+pub struct PreparedFile {
+    pub source_path: PathBuf,
+    pub transfer_path: String,
+    pub size: u64,
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct PreparedFiles {
-    pub(crate) files: Vec<PreparedFile>,
-    pub(crate) manifest: OfferManifest,
+pub struct PreparedFiles {
+    pub files: Vec<PreparedFile>,
+    pub manifest: OfferManifest,
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct ExpectedFile {
-    pub(crate) size: u64,
-    pub(crate) destination: PathBuf,
+pub struct ExpectedFile {
+    pub size: u64,
+    pub destination: PathBuf,
 }
 
-pub(crate) async fn prepare_files(paths: Vec<PathBuf>) -> Result<PreparedFiles> {
+pub async fn prepare_files(paths: Vec<PathBuf>) -> Result<PreparedFiles> {
     if paths.is_empty() {
         bail!("provide at least one file to send");
     }
@@ -120,7 +120,7 @@ pub(crate) async fn prepare_files(paths: Vec<PathBuf>) -> Result<PreparedFiles> 
     })
 }
 
-pub(crate) async fn build_expected_files(
+pub async fn build_expected_files(
     manifest: &OfferManifest,
     out_dir: &Path,
 ) -> Result<BTreeMap<String, ExpectedFile>> {
@@ -171,7 +171,7 @@ pub(crate) async fn build_expected_files(
     Ok(expected)
 }
 
-pub(crate) fn validate_transfer_path(path: &str) -> Result<Vec<&str>> {
+pub fn validate_transfer_path(path: &str) -> Result<Vec<&str>> {
     if path.is_empty() {
         bail!("transfer path must not be empty");
     }
@@ -195,7 +195,7 @@ pub(crate) fn validate_transfer_path(path: &str) -> Result<Vec<&str>> {
     Ok(segments)
 }
 
-pub(crate) fn resolve_transfer_destination(out_dir: &Path, transfer_path: &str) -> Result<PathBuf> {
+pub fn resolve_transfer_destination(out_dir: &Path, transfer_path: &str) -> Result<PathBuf> {
     let segments = validate_transfer_path(transfer_path)?;
     let mut destination = out_dir.to_path_buf();
     for segment in segments {
@@ -204,7 +204,7 @@ pub(crate) fn resolve_transfer_destination(out_dir: &Path, transfer_path: &str) 
     Ok(destination)
 }
 
-pub(crate) async fn ensure_destination_available(out_dir: &Path, destination: &Path) -> Result<()> {
+pub async fn ensure_destination_available(out_dir: &Path, destination: &Path) -> Result<()> {
     if path_exists(destination).await? {
         bail!("destination already exists: {}", destination.display());
     }

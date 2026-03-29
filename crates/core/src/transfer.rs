@@ -1,157 +1,207 @@
-use std::path::PathBuf;
-use std::time::Duration;
+use anyhow::{Result, bail};
 
-use anyhow::{Context, Result, bail};
-use tokio::fs;
-use tokio::signal;
-use tokio::time::{MissedTickBehavior, interval};
+use crate::wire::{Hello, TRANSFER_PROTOCOL_VERSION, TransferRole};
 
-use crate::fs_plan::{build_expected_files, prepare_files};
-use crate::rendezvous::{OfferStatus, RendezvousClient};
-use crate::session::{
-    bind_endpoint, receive_from_ticket, receive_on_endpoint, send_files_over_connection,
-};
-use crate::util::{confirm_accept, human_size};
-use crate::wire::{ALPN, decode_ticket, make_ticket};
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SenderState {
+    Idle,
+    Resolving,
+    Connecting,
+    Connected,
+    Offering,
+    WaitingForDecision,
+    Sending,
+    Completed,
+    Declined,
+    Failed,
+}
 
-pub async fn send(files: Vec<PathBuf>, server_url: Option<String>) -> Result<()> {
-    let prepared = prepare_files(files).await?;
-    let endpoint = bind_endpoint()
-        .await
-        .context("binding local iroh endpoint")?;
-    let ticket = make_ticket(&endpoint).await?;
-    let client =
-        RendezvousClient::new(crate::rendezvous::resolve_server_url(server_url.as_deref()));
-    let offer = client
-        .create_offer(ticket, prepared.manifest.clone())
-        .await?;
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReceiverState {
+    Idle,
+    Discoverable,
+    Connecting,
+    Connected,
+    ReviewingOffer,
+    AwaitingDecision,
+    Approved,
+    Receiving,
+    Completed,
+    Declined,
+    Failed,
+}
 
-    println!("Offer ready");
-    println!("Code: {}", offer.code);
-    println!("Expires: {}", offer.expires_at);
-    println!(
-        "Files: {} ({})",
-        prepared.manifest.file_count,
-        human_size(prepared.manifest.total_size)
-    );
-    println!("Waiting for receiver to accept...");
+#[derive(Debug)]
+pub struct SenderMachine {
+    state: SenderState,
+}
 
-    let mut accept_future = Box::pin(endpoint.accept());
-    let mut poll = interval(Duration::from_secs(2));
-    poll.set_missed_tick_behavior(MissedTickBehavior::Delay);
-    poll.tick().await;
-    let mut ctrl_c = Box::pin(signal::ctrl_c());
-    let mut accepted = false;
-
-    loop {
-        tokio::select! {
-            _ = &mut ctrl_c => {
-                endpoint.close().await;
-                bail!("transfer interrupted");
-            }
-            incoming = &mut accept_future => {
-                let incoming = incoming.context("sender stopped before a receiver connected")?;
-                let connection = incoming.await.context("accepting receiver connection")?;
-                println!(
-                    "Receiver connected from {}",
-                    crate::util::describe_remote(connection.remote_id(), endpoint.remote_info(connection.remote_id()).await.as_ref())
-                );
-                send_files_over_connection(connection, &prepared.files).await?;
-                endpoint.close().await;
-                return Ok(());
-            }
-            _ = poll.tick() => {
-                match client.offer_status(&offer.code).await?.status {
-                    OfferStatus::Pending => {}
-                    OfferStatus::Accepted => {
-                        if !accepted {
-                            accepted = true;
-                            println!("Offer accepted. Waiting for receiver connection...");
-                        }
-                    }
-                    OfferStatus::Declined => {
-                        endpoint.close().await;
-                        bail!("receiver declined the offer");
-                    }
-                    OfferStatus::Expired => {
-                        endpoint.close().await;
-                        bail!("offer expired before the receiver accepted");
-                    }
-                }
-            }
+impl SenderMachine {
+    pub fn new() -> Self {
+        Self {
+            state: SenderState::Idle,
         }
     }
-}
 
-pub async fn receive(code: String, out_dir: PathBuf, server_url: Option<String>) -> Result<()> {
-    crate::rendezvous::validate_code(&code)?;
+    pub fn transition(&mut self, next: SenderState) -> Result<()> {
+        use SenderState::*;
 
-    let client =
-        RendezvousClient::new(crate::rendezvous::resolve_server_url(server_url.as_deref()));
-    let preview = client.offer_preview(&code).await?;
+        let allowed = matches!(
+            (self.state, next),
+            (Idle, Resolving)
+                | (Resolving, Connecting)
+                | (Connecting, Connected)
+                | (Connected, Offering)
+                | (Offering, WaitingForDecision)
+                | (WaitingForDecision, Sending)
+                | (WaitingForDecision, Declined)
+                | (Sending, Completed)
+                | (_, Failed)
+        );
 
-    fs::create_dir_all(&out_dir)
-        .await
-        .with_context(|| format!("creating output directory {}", out_dir.display()))?;
-
-    println!("Incoming offer");
-    println!("Files: {}", preview.manifest.file_count);
-    println!("Total size: {}", human_size(preview.manifest.total_size));
-    println!("Expires: {}", preview.expires_at);
-    for file in &preview.manifest.files {
-        println!("  {} ({})", file.path, human_size(file.size));
-    }
-
-    let expected_files = match build_expected_files(&preview.manifest, &out_dir).await {
-        Ok(expected_files) => expected_files,
-        Err(err) => {
-            client
-                .decline_offer(&code)
-                .await
-                .context("declining offer after receive preflight failed")?;
-            return Err(err);
+        if !allowed {
+            bail!("invalid sender transition: {:?} -> {:?}", self.state, next);
         }
-    };
 
-    if !confirm_accept()? {
-        client.decline_offer(&code).await?;
-        println!("Offer declined");
-        return Ok(());
+        self.state = next;
+        Ok(())
+    }
+}
+
+impl Default for SenderMachine {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[derive(Debug)]
+pub struct ReceiverMachine {
+    state: ReceiverState,
+}
+
+impl ReceiverMachine {
+    pub fn new() -> Self {
+        Self {
+            state: ReceiverState::Idle,
+        }
     }
 
-    let accepted = client.accept_offer(&code).await?;
-    println!("Accepted offer. Connecting to sender...");
-    let ticket = decode_ticket(&accepted.ticket)?;
-    receive_from_ticket(ticket, out_dir, Some(expected_files)).await
+    pub fn transition(&mut self, next: ReceiverState) -> Result<()> {
+        use ReceiverState::*;
+
+        let allowed = matches!(
+            (self.state, next),
+            (Idle, Discoverable)
+                | (Discoverable, Connecting)
+                | (Connecting, Connected)
+                | (Connected, ReviewingOffer)
+                | (ReviewingOffer, AwaitingDecision)
+                | (ReviewingOffer, Declined)
+                | (AwaitingDecision, Approved)
+                | (AwaitingDecision, Declined)
+                | (Approved, Receiving)
+                | (Receiving, Completed)
+                | (_, Failed)
+        );
+
+        if !allowed {
+            bail!(
+                "invalid receiver transition: {:?} -> {:?}",
+                self.state,
+                next
+            );
+        }
+
+        self.state = next;
+        Ok(())
+    }
 }
 
-pub async fn receive_ticket(out_dir: PathBuf) -> Result<()> {
-    fs::create_dir_all(&out_dir)
-        .await
-        .with_context(|| format!("creating output directory {}", out_dir.display()))?;
-
-    let endpoint = bind_endpoint().await?;
-    let ticket = make_ticket(&endpoint).await?;
-
-    println!("Receiver ready");
-    println!("Save directory: {}", out_dir.display());
-    println!("Ticket:");
-    println!("{}", ticket);
-    println!("Waiting for a sender...");
-
-    receive_on_endpoint(endpoint, out_dir, None).await
+impl Default for ReceiverMachine {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
-pub async fn send_ticket(ticket: String, files: Vec<PathBuf>) -> Result<()> {
-    let prepared = prepare_files(files).await?;
-    let endpoint = bind_endpoint()
-        .await
-        .context("binding local iroh endpoint")?;
-    let ticket = decode_ticket(&ticket)?;
-    let connection = endpoint
-        .connect(ticket, ALPN)
-        .await
-        .context("connecting to receiver")?;
+pub fn validate_hello(message: &Hello, expected_role: TransferRole) -> Result<()> {
+    if message.version != TRANSFER_PROTOCOL_VERSION {
+        bail!("unsupported transfer protocol version {}", message.version);
+    }
 
-    send_files_over_connection(connection, &prepared.files).await
+    if message.role != expected_role {
+        bail!(
+            "unexpected transfer role {:?}, expected {:?}",
+            message.role,
+            expected_role
+        );
+    }
+
+    if message.session_id.trim().is_empty() {
+        bail!("transfer session id must not be empty");
+    }
+
+    if message.device_name.trim().is_empty() {
+        bail!("transfer device name must not be empty");
+    }
+
+    Ok(())
+}
+
+pub fn ensure_session_id(actual: &str, expected: &str) -> Result<()> {
+    if actual == expected {
+        Ok(())
+    } else {
+        bail!("session id mismatch: expected {expected}, got {actual}")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sender_machine_allows_happy_path() {
+        let mut machine = SenderMachine::new();
+        machine.transition(SenderState::Resolving).unwrap();
+        machine.transition(SenderState::Connecting).unwrap();
+        machine.transition(SenderState::Connected).unwrap();
+        machine.transition(SenderState::Offering).unwrap();
+        machine.transition(SenderState::WaitingForDecision).unwrap();
+        machine.transition(SenderState::Sending).unwrap();
+        machine.transition(SenderState::Completed).unwrap();
+    }
+
+    #[test]
+    fn receiver_machine_rejects_skipping_review() {
+        let mut machine = ReceiverMachine::new();
+        machine.transition(ReceiverState::Discoverable).unwrap();
+        machine.transition(ReceiverState::Connecting).unwrap();
+        machine.transition(ReceiverState::Connected).unwrap();
+        assert!(machine.transition(ReceiverState::Receiving).is_err());
+    }
+
+    #[test]
+    fn hello_validation_checks_version_and_role() {
+        let hello = Hello {
+            version: TRANSFER_PROTOCOL_VERSION,
+            session_id: "abc123".to_owned(),
+            role: TransferRole::Sender,
+            device_name: "sam-mac".to_owned(),
+        };
+
+        assert!(validate_hello(&hello, TransferRole::Sender).is_ok());
+        assert!(validate_hello(&hello, TransferRole::Receiver).is_err());
+
+        let wrong_version = Hello {
+            version: TRANSFER_PROTOCOL_VERSION + 1,
+            ..hello.clone()
+        };
+        assert!(validate_hello(&wrong_version, TransferRole::Sender).is_err());
+
+        let empty_device_name = Hello {
+            device_name: "   ".to_owned(),
+            ..hello
+        };
+        assert!(validate_hello(&empty_device_name, TransferRole::Sender).is_err());
+    }
 }

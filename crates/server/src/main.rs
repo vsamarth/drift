@@ -2,7 +2,7 @@ use std::net::SocketAddr;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
-use drift_core::server;
+use drift_server::serve;
 
 #[derive(Parser, Debug)]
 #[command(
@@ -28,6 +28,6 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Command::Serve { listen } => server::serve(listen).await,
+        Command::Serve { listen } => serve(listen).await,
     }
 }
