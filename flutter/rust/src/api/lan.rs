@@ -1,7 +1,7 @@
 //! mDNS LAN discovery for Flutter send UI.
 
-use drift_app::NearbyReceiver;
 use super::RUNTIME;
+use drift_app::NearbyReceiver;
 
 #[derive(Debug, Clone)]
 pub struct NearbyReceiverInfo {

@@ -6,57 +6,95 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `display_sender_label`, `format_error_chain`, `idle_receiver_endpoint_id_for_lan_filter`, `is_expired`, `log`, `parse_device_type`, `register_new_idle_receiver`, `replace_idle_receiver`, `run_idle_incoming_loop`, `save_root_display`, `take_idle_receiver`
-// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `IdleReceiver`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`, `fmt`
+// These functions are ignored because they are not marked as `pub`: `current_service`, `ensure_receiver_service`, `existing_service_for_config`, `map_event`, `map_file_row`, `map_pairing_state`, `map_registration`, `pairing_registration`, `replace_pairing_task`, `replace_updates_task`, `scan_nearby_with_receiver`, `set_discoverable`
+// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `BridgeReceiverConfig`, `BridgeReceiverState`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_receiver_is_total_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
 
-Future<IdleReceiverRegistration> registerIdleReceiver({
+Future<ReceiverRegistration> registerReceiver({
   String? serverUrl,
   required String deviceName,
-}) => RustLib.instance.api.crateApiReceiverRegisterIdleReceiver(
+}) => RustLib.instance.api.crateApiReceiverRegisterReceiver(
   serverUrl: serverUrl,
   deviceName: deviceName,
 );
 
-Future<IdleReceiverRegistration> ensureIdleReceiver({
+Future<ReceiverRegistration> ensureReceiverRegistration({
   String? serverUrl,
   required String deviceName,
-}) => RustLib.instance.api.crateApiReceiverEnsureIdleReceiver(
+}) => RustLib.instance.api.crateApiReceiverEnsureReceiverRegistration(
   serverUrl: serverUrl,
   deviceName: deviceName,
 );
 
-Future<IdleReceiverRegistration?> currentIdleReceiverRegistration() =>
-    RustLib.instance.api.crateApiReceiverCurrentIdleReceiverRegistration();
+Future<ReceiverRegistration?> currentReceiverRegistration() =>
+    RustLib.instance.api.crateApiReceiverCurrentReceiverRegistration();
 
-/// Stops LAN mDNS advertisement while the UI runs an outbound send (we are not discoverable as a receiver).
-Future<void> pauseIdleLanAdvertisement() =>
-    RustLib.instance.api.crateApiReceiverPauseIdleLanAdvertisement();
-
-/// Restarts LAN advertisement after a send completes, fails, or is cancelled (no-op if already advertising).
-Future<void> resumeIdleLanAdvertisement() =>
-    RustLib.instance.api.crateApiReceiverResumeIdleLanAdvertisement();
-
-/// Spawns a background task that accepts incoming connections on the idle receiver endpoint
-/// and streams [IdleIncomingEvent] updates. Safe to call once; later calls are no-ops.
-Stream<IdleIncomingEvent> startIdleIncomingListener({
+Stream<ReceiverPairingState> watchReceiverPairing({
   required String downloadRoot,
   required String deviceName,
   required String deviceType,
-}) => RustLib.instance.api.crateApiReceiverStartIdleIncomingListener(
+}) => RustLib.instance.api.crateApiReceiverWatchReceiverPairing(
   downloadRoot: downloadRoot,
   deviceName: deviceName,
   deviceType: deviceType,
 );
 
-/// Completes the pending offer decision from the UI. Call after [IdleIncomingPhase::OfferReady].
-Future<void> respondIdleIncomingOffer({required bool accept}) => RustLib
+Future<void> setReceiverDiscoverable({required bool enabled}) => RustLib
     .instance
     .api
-    .crateApiReceiverRespondIdleIncomingOffer(accept: accept);
+    .crateApiReceiverSetReceiverDiscoverable(enabled: enabled);
 
-class IdleIncomingEvent {
-  final IdleIncomingPhase phase;
+Stream<ReceiverTransferEvent> startReceiverTransferListener({
+  required String downloadRoot,
+  required String deviceName,
+  required String deviceType,
+}) => RustLib.instance.api.crateApiReceiverStartReceiverTransferListener(
+  downloadRoot: downloadRoot,
+  deviceName: deviceName,
+  deviceType: deviceType,
+);
+
+Future<void> respondToReceiverOffer({required bool accept}) =>
+    RustLib.instance.api.crateApiReceiverRespondToReceiverOffer(accept: accept);
+
+class ReceiverPairingState {
+  final String? code;
+  final String? expiresAt;
+
+  const ReceiverPairingState({this.code, this.expiresAt});
+
+  @override
+  int get hashCode => code.hashCode ^ expiresAt.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ReceiverPairingState &&
+          runtimeType == other.runtimeType &&
+          code == other.code &&
+          expiresAt == other.expiresAt;
+}
+
+class ReceiverRegistration {
+  final String code;
+  final String expiresAt;
+
+  const ReceiverRegistration({required this.code, required this.expiresAt});
+
+  @override
+  int get hashCode => code.hashCode ^ expiresAt.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ReceiverRegistration &&
+          runtimeType == other.runtimeType &&
+          code == other.code &&
+          expiresAt == other.expiresAt;
+}
+
+class ReceiverTransferEvent {
+  final ReceiverTransferPhase phase;
   final String senderName;
   final String destinationLabel;
   final String saveRootLabel;
@@ -64,10 +102,10 @@ class IdleIncomingEvent {
   final BigInt itemCount;
   final BigInt totalSizeBytes;
   final String totalSizeLabel;
-  final List<IdleIncomingFileRow> files;
+  final List<ReceiverTransferFile> files;
   final String? errorMessage;
 
-  const IdleIncomingEvent({
+  const ReceiverTransferEvent({
     required this.phase,
     required this.senderName,
     required this.destinationLabel,
@@ -96,7 +134,7 @@ class IdleIncomingEvent {
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-      other is IdleIncomingEvent &&
+      other is ReceiverTransferEvent &&
           runtimeType == other.runtimeType &&
           phase == other.phase &&
           senderName == other.senderName &&
@@ -110,11 +148,11 @@ class IdleIncomingEvent {
           errorMessage == other.errorMessage;
 }
 
-class IdleIncomingFileRow {
+class ReceiverTransferFile {
   final String path;
   final BigInt size;
 
-  const IdleIncomingFileRow({required this.path, required this.size});
+  const ReceiverTransferFile({required this.path, required this.size});
 
   @override
   int get hashCode => path.hashCode ^ size.hashCode;
@@ -122,35 +160,17 @@ class IdleIncomingFileRow {
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-      other is IdleIncomingFileRow &&
+      other is ReceiverTransferFile &&
           runtimeType == other.runtimeType &&
           path == other.path &&
           size == other.size;
 }
 
-enum IdleIncomingPhase {
+enum ReceiverTransferPhase {
   connecting,
   offerReady,
   receiving,
   completed,
   failed,
   declined,
-}
-
-class IdleReceiverRegistration {
-  final String code;
-  final String expiresAt;
-
-  const IdleReceiverRegistration({required this.code, required this.expiresAt});
-
-  @override
-  int get hashCode => code.hashCode ^ expiresAt.hashCode;
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is IdleReceiverRegistration &&
-          runtimeType == other.runtimeType &&
-          code == other.code &&
-          expiresAt == other.expiresAt;
 }

@@ -1,8 +1,8 @@
 use std::path::PathBuf;
 
 use drift_app::{
-    SelectionItem as AppSelectionItem, SelectionPreview as AppSelectionPreview,
-    inspect_paths as app_inspect_paths,
+    inspect_paths as app_inspect_paths, SelectionItem as AppSelectionItem,
+    SelectionPreview as AppSelectionPreview,
 };
 
 #[derive(Debug, Clone)]

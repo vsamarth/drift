@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 
@@ -8,9 +7,9 @@ import '../platform/app_focus.dart';
 import '../platform/receive_registration_source.dart';
 import '../platform/send_item_source.dart';
 import '../platform/send_transfer_source.dart';
-import '../src/rust/api/device.dart' as rust_device;
 import '../src/rust/api/lan.dart' as rust_lan;
 import '../src/rust/api/receiver.dart' as rust_receiver;
+import 'app_identity.dart';
 import 'drift_sample_data.dart';
 
 /// Resolves nearby receivers for the send screen (mDNS). Tests inject a stub; production uses Rust.
@@ -23,9 +22,7 @@ Future<List<SendDestinationViewData>> _rustNearbySendScan() async {
     byFullname[r.fullname] = r;
   }
   final list = byFullname.values.map(_sendDestinationFromNearbyInfo).toList();
-  list.sort(
-    (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
-  );
+  list.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
   return list;
 }
 
@@ -47,6 +44,7 @@ class DriftController extends ChangeNotifier {
     String? deviceType,
     String idleReceiveCode = '......',
     String idleReceiveStatus = 'Registering',
+    bool enableIdleReceiverRegistrationBootstrap = true,
     bool enableIdleReceiverRefresh = true,
     List<SendDestinationViewData>? nearbySendDestinations,
     NearbySendScan? nearbySendScan,
@@ -56,8 +54,10 @@ class DriftController extends ChangeNotifier {
     ReceiveRegistrationSource? receiveRegistrationSource,
     bool animateSendingConnection = true,
     bool enableIdleIncomingListener = true,
-  }) : _deviceName = _normalizeDeviceName(deviceName ?? _defaultDeviceName()),
-       _deviceType = deviceType ?? _inferDeviceType(),
+  }) : _deviceName = normalizeDeviceName(
+         deviceName ?? buildDefaultDriftAppIdentity().deviceName,
+       ),
+       _deviceType = deviceType ?? inferDeviceType(),
        _idleReceiveCode = idleReceiveCode.trim().toUpperCase(),
        _idleReceiveStatus = idleReceiveStatus,
        _defaultDroppedSendItems = List<TransferItemViewData>.unmodifiable(
@@ -88,8 +88,10 @@ class DriftController extends ChangeNotifier {
        _nearbySendScan = nearbySendScan ?? _rustNearbySendScan,
        _animateSendingConnection = animateSendingConnection,
        _enableIdleIncomingListener = enableIdleIncomingListener {
-    unawaited(_ensureIdleReceiver());
-    if (enableIdleReceiverRefresh) {
+    if (enableIdleReceiverRegistrationBootstrap) {
+      unawaited(_ensureIdleReceiver());
+    }
+    if (enableIdleReceiverRegistrationBootstrap && enableIdleReceiverRefresh) {
       _idleReceiverRefreshTimer = Timer.periodic(const Duration(minutes: 1), (
         _,
       ) {
@@ -113,10 +115,12 @@ class DriftController extends ChangeNotifier {
   Timer? _idleReceiverRefreshTimer;
   Timer? _nearbyScanTimer;
   bool _nearbyScanInFlight = false;
+
   /// True after a browse attempt finishes while [canBrowseNearbyReceivers] was satisfied.
   bool _nearbyScanCompletedOnce = false;
   StreamSubscription<SendTransferUpdate>? _sendTransferSubscription;
-  StreamSubscription<rust_receiver.IdleIncomingEvent>? _idleIncomingSubscription;
+  StreamSubscription<rust_receiver.ReceiverTransferEvent>?
+  _idleIncomingSubscription;
   bool _idleIncomingDecisionPending = false;
   int _sendTransferGeneration = 0;
   TransferDirection _mode = TransferDirection.send;
@@ -215,14 +219,8 @@ class DriftController extends ChangeNotifier {
     return [
       if (s.senderName.isNotEmpty)
         TransferMetricRow(label: 'From', value: s.senderName),
-      TransferMetricRow(
-        label: 'Saved to',
-        value: s.destinationLabel,
-      ),
-      TransferMetricRow(
-        label: 'Files',
-        value: '${s.itemCount}',
-      ),
+      TransferMetricRow(label: 'Saved to', value: s.destinationLabel),
+      TransferMetricRow(label: 'Files', value: '${s.itemCount}'),
       TransferMetricRow(label: 'Size', value: s.totalSize),
       if (startedAt != null) ...[
         if (now.difference(startedAt).inMilliseconds >= 200)
@@ -257,6 +255,16 @@ class DriftController extends ChangeNotifier {
       _sendStage != TransferStage.completed &&
       !(_mode == TransferDirection.receive &&
           _receiveStage == TransferStage.waiting);
+
+  void syncReceiverBadge({required String code, required String status}) {
+    final normalizedCode = code.trim().toUpperCase();
+    if (_idleReceiveCode == normalizedCode && _idleReceiveStatus == status) {
+      return;
+    }
+    _idleReceiveCode = normalizedCode;
+    _idleReceiveStatus = status;
+    notifyListeners();
+  }
 
   void setMode(TransferDirection mode) {
     if (_mode == mode) {
@@ -430,7 +438,8 @@ class DriftController extends ChangeNotifier {
   /// Stops an in-flight send (waiting for recipient / connecting) and returns
   /// to the file + code screen. No-op if not in [ready] or [waiting].
   void cancelSendInProgress() {
-    if (_sendStage != TransferStage.ready && _sendStage != TransferStage.waiting) {
+    if (_sendStage != TransferStage.ready &&
+        _sendStage != TransferStage.waiting) {
       return;
     }
     _returnToSendSelection();
@@ -684,8 +693,8 @@ class DriftController extends ChangeNotifier {
     }
     unawaited(_idleIncomingSubscription?.cancel());
     _idleIncomingSubscription = rust_receiver
-        .startIdleIncomingListener(
-          downloadRoot: _defaultReceiveDownloadRoot(),
+        .startReceiverTransferListener(
+          downloadRoot: defaultReceiveDownloadRoot(),
           deviceName: _deviceName,
           deviceType: _deviceType,
         )
@@ -699,14 +708,14 @@ class DriftController extends ChangeNotifier {
         );
   }
 
-  void _onIdleIncomingEvent(rust_receiver.IdleIncomingEvent event) {
+  void _onIdleIncomingEvent(rust_receiver.ReceiverTransferEvent event) {
     switch (event.phase) {
-      case rust_receiver.IdleIncomingPhase.connecting:
+      case rust_receiver.ReceiverTransferPhase.connecting:
         return;
-      case rust_receiver.IdleIncomingPhase.offerReady:
+      case rust_receiver.ReceiverTransferPhase.offerReady:
         _applyIdleOfferReady(event);
         return;
-      case rust_receiver.IdleIncomingPhase.receiving:
+      case rust_receiver.ReceiverTransferPhase.receiving:
         _idleIncomingDecisionPending = false;
         _mode = TransferDirection.receive;
         _receiveEntryExpanded = true;
@@ -716,47 +725,49 @@ class DriftController extends ChangeNotifier {
             (_receivePayloadBytesReceived ?? 0) > 0) {
           _receivePayloadStartedAt = DateTime.now();
         }
-        _receiveSummary = (_receiveSummary ??
-                TransferSummaryViewData(
-                  itemCount: _bigIntToInt(event.itemCount),
-                  totalSize: event.totalSizeLabel,
-                  code: _idleReceiveCode,
-                  expiresAt: '',
-                  destinationLabel: event.destinationLabel,
-                  statusMessage: event.statusMessage,
-                  senderName: event.senderName,
-                ))
-            .copyWith(statusMessage: event.statusMessage);
+        _receiveSummary =
+            (_receiveSummary ??
+                    TransferSummaryViewData(
+                      itemCount: _bigIntToInt(event.itemCount),
+                      totalSize: event.totalSizeLabel,
+                      code: _idleReceiveCode,
+                      expiresAt: '',
+                      destinationLabel: event.destinationLabel,
+                      statusMessage: event.statusMessage,
+                      senderName: event.senderName,
+                    ))
+                .copyWith(statusMessage: event.statusMessage);
         notifyListeners();
         return;
-      case rust_receiver.IdleIncomingPhase.completed:
+      case rust_receiver.ReceiverTransferPhase.completed:
         _idleIncomingDecisionPending = false;
         _mode = TransferDirection.receive;
         _receiveEntryExpanded = true;
         _receiveStage = TransferStage.completed;
         _receivePayloadBytesReceived = _bigIntToInt(event.totalSizeBytes);
         _receivePayloadTotalBytes ??= _receivePayloadBytesReceived;
-        _receiveSummary = (_receiveSummary ??
-                TransferSummaryViewData(
+        _receiveSummary =
+            (_receiveSummary ??
+                    TransferSummaryViewData(
+                      itemCount: _bigIntToInt(event.itemCount),
+                      totalSize: event.totalSizeLabel,
+                      code: _idleReceiveCode,
+                      expiresAt: '',
+                      destinationLabel: event.saveRootLabel,
+                      statusMessage: event.statusMessage,
+                      senderName: event.senderName,
+                    ))
+                .copyWith(
                   itemCount: _bigIntToInt(event.itemCount),
                   totalSize: event.totalSizeLabel,
-                  code: _idleReceiveCode,
-                  expiresAt: '',
                   destinationLabel: event.saveRootLabel,
                   statusMessage: event.statusMessage,
-                  senderName: event.senderName,
-                ))
-            .copyWith(
-              itemCount: _bigIntToInt(event.itemCount),
-              totalSize: event.totalSizeLabel,
-              destinationLabel: event.saveRootLabel,
-              statusMessage: event.statusMessage,
-            );
+                );
         _receiveErrorText = null;
         notifyListeners();
         unawaited(_ensureIdleReceiver());
         return;
-      case rust_receiver.IdleIncomingPhase.failed:
+      case rust_receiver.ReceiverTransferPhase.failed:
         _idleIncomingDecisionPending = false;
         debugPrint(
           '[drift/controller] incoming receive failed: '
@@ -765,7 +776,7 @@ class DriftController extends ChangeNotifier {
         resetShell();
         unawaited(_ensureIdleReceiver());
         return;
-      case rust_receiver.IdleIncomingPhase.declined:
+      case rust_receiver.ReceiverTransferPhase.declined:
         _idleIncomingDecisionPending = false;
         _resetReceiveFlow();
         _mode = TransferDirection.receive;
@@ -775,7 +786,7 @@ class DriftController extends ChangeNotifier {
     }
   }
 
-  void _applyIdleOfferReady(rust_receiver.IdleIncomingEvent event) {
+  void _applyIdleOfferReady(rust_receiver.ReceiverTransferEvent event) {
     final items = event.files.map(_incomingFileToViewData).toList();
     _idleIncomingDecisionPending = true;
     _cancelActiveSendTransfer();
@@ -805,7 +816,9 @@ class DriftController extends ChangeNotifier {
     notifyListeners();
   }
 
-  TransferItemViewData _incomingFileToViewData(rust_receiver.IdleIncomingFileRow f) {
+  TransferItemViewData _incomingFileToViewData(
+    rust_receiver.ReceiverTransferFile f,
+  ) {
     final path = f.path;
     final segments = path.split('/')..removeWhere((s) => s.isEmpty);
     final name = segments.isEmpty ? path : segments.last;
@@ -837,17 +850,11 @@ class DriftController extends ChangeNotifier {
     return '${value.toStringAsFixed(decimals)} ${units[unitIndex]}';
   }
 
-  static String _defaultReceiveDownloadRoot() {
-    // For now, keep Flutter writes confined to a guaranteed-writable directory.
-    // (This avoids macOS App Sandbox issues with `~/Downloads`.)
-    return '${Directory.systemTemp.path}${Platform.pathSeparator}Downloads';
-  }
-
   Future<void> _respondIdleIncoming({required bool accept}) async {
     try {
-      await rust_receiver.respondIdleIncomingOffer(accept: accept);
+      await rust_receiver.respondToReceiverOffer(accept: accept);
     } catch (error, stackTrace) {
-      debugPrint('respondIdleIncomingOffer failed: $error');
+      debugPrint('respondToReceiverOffer failed: $error');
       debugPrintStack(stackTrace: stackTrace);
       _idleIncomingDecisionPending = false;
       resetShell();
@@ -866,9 +873,8 @@ class DriftController extends ChangeNotifier {
     }
 
     try {
-      final registration = await _receiveRegistrationSource.ensureIdleReceiver(
-        deviceName: deviceName,
-      );
+      final registration = await _receiveRegistrationSource
+          .ensureReceiverRegistration(deviceName: deviceName);
       _idleReceiveCode = registration.code.trim().toUpperCase();
       _idleReceiveStatus = 'Ready';
       notifyListeners();
@@ -884,18 +890,18 @@ class DriftController extends ChangeNotifier {
 
   Future<void> _pauseIdleLanAdvertisementForActiveSend() async {
     try {
-      await rust_receiver.pauseIdleLanAdvertisement();
+      await rust_receiver.setReceiverDiscoverable(enabled: false);
     } catch (error, stackTrace) {
-      debugPrint('pauseIdleLanAdvertisement failed: $error');
+      debugPrint('setReceiverDiscoverable(false) failed: $error');
       debugPrintStack(stackTrace: stackTrace);
     }
   }
 
   Future<void> _resumeIdleLanAdvertisementAfterSend() async {
     try {
-      await rust_receiver.resumeIdleLanAdvertisement();
+      await rust_receiver.setReceiverDiscoverable(enabled: true);
     } catch (error, stackTrace) {
-      debugPrint('resumeIdleLanAdvertisement failed: $error');
+      debugPrint('setReceiverDiscoverable(true) failed: $error');
       debugPrintStack(stackTrace: stackTrace);
     }
   }
@@ -1008,8 +1014,7 @@ class DriftController extends ChangeNotifier {
     _listenToSendTransfer(
       generation: generation,
       request: request,
-      errorFallbackDestination:
-          _sendDestinationLabel ?? lanLabel,
+      errorFallbackDestination: _sendDestinationLabel ?? lanLabel,
     );
   }
 
@@ -1141,7 +1146,9 @@ class DriftController extends ChangeNotifier {
     }
   }
 
-  List<TransferMetricRow> _buildSendCompletionMetrics(SendTransferUpdate update) {
+  List<TransferMetricRow> _buildSendCompletionMetrics(
+    SendTransferUpdate update,
+  ) {
     final rows = <TransferMetricRow>[];
     final recipient = update.destinationLabel.trim().isEmpty
         ? 'Recipient device'
@@ -1214,9 +1221,7 @@ class DriftController extends ChangeNotifier {
       if (dtSec >= 0.08 && dBytes >= 0) {
         final inst = dBytes / dtSec;
         final prev = _sendSmoothedBps;
-        _sendSmoothedBps = prev == null
-            ? inst
-            : 0.22 * inst + 0.78 * prev;
+        _sendSmoothedBps = prev == null ? inst : 0.22 * inst + 0.78 * prev;
       }
     }
     _lastSendProgressSampleAt = now;
@@ -1226,8 +1231,7 @@ class DriftController extends ChangeNotifier {
     if (bps != null && bps >= 16) {
       _sendTransferSpeedLabel = _formatBytesPerSecond(bps);
       final left = (totalBytes - bytesSent).clamp(0, totalBytes);
-      _sendTransferEtaLabel =
-          left <= 0 ? null : _formatEtaSeconds(left / bps);
+      _sendTransferEtaLabel = left <= 0 ? null : _formatEtaSeconds(left / bps);
     } else {
       _sendTransferSpeedLabel = null;
       _sendTransferEtaLabel = null;
@@ -1259,27 +1263,5 @@ class DriftController extends ChangeNotifier {
     }
     final h = (seconds / 3600).ceil();
     return h <= 1 ? 'About 1 h left' : 'About $h h left';
-  }
-
-  static String _inferDeviceType() {
-    // Auto-infer based on where the Flutter app is running.
-    if (Platform.isAndroid || Platform.isIOS) {
-      return 'phone';
-    }
-    return 'laptop';
-  }
-
-  static String _defaultDeviceName() => rust_device.randomDeviceName();
-
-  static String _normalizeDeviceName(String value) {
-    final trimmed = value.trim();
-    if (trimmed.isEmpty) {
-      return rust_device.randomDeviceName();
-    }
-
-    final firstSegment = trimmed.split('.').first.trim();
-    return firstSegment.isEmpty
-        ? rust_device.randomDeviceName()
-        : firstSegment;
   }
 }

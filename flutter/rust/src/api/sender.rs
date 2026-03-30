@@ -1,8 +1,8 @@
 use std::path::PathBuf;
 
 use drift_app::{
-    SendEvent as AppSendEvent, SendPhase as AppSendPhase, SendRequest as AppSendRequest,
-    SendTarget, send,
+    send, SendEvent as AppSendEvent, SendPhase as AppSendPhase, SendRequest as AppSendRequest,
+    SendTarget,
 };
 
 use super::RUNTIME;

@@ -115,7 +115,7 @@ class FakeReceiveRegistrationSource implements ReceiveRegistrationSource {
   const FakeReceiveRegistrationSource();
 
   @override
-  Future<ReceiveRegistrationData> ensureIdleReceiver({
+  Future<ReceiveRegistrationData> ensureReceiverRegistration({
     required String deviceName,
   }) async =>
       const ReceiveRegistrationData(code: 'F9P2Q1', expiresAt: 'unused');
@@ -257,10 +257,7 @@ void main() {
     await tester.tap(receiveButton());
     await pumpUiSettled(tester);
 
-    expect(
-      find.text('Wants to send you 4 files (14.9 MB).'),
-      findsOneWidget,
-    );
+    expect(find.text('Wants to send you 4 files (14.9 MB).'), findsOneWidget);
     expect(find.text('Save to Downloads'), findsOneWidget);
     expect(find.text('sample.txt'), findsOneWidget);
     expect(find.text('vacation.jpg'), findsOneWidget);
@@ -503,9 +500,11 @@ void main() {
     expect(find.text('Lab Mac'), findsOneWidget);
 
     await tester.tap(
-      find.byKey(const ValueKey<String>(
-        'nearby-tile-recv-abc123xyz0._drift._udp.local.',
-      )),
+      find.byKey(
+        const ValueKey<String>(
+          'nearby-tile-recv-abc123xyz0._drift._udp.local.',
+        ),
+      ),
     );
     await tester.pump();
 
@@ -613,10 +612,7 @@ void main() {
 
     expect(find.text('Recipient device'), findsNWidgets(2));
     expect(find.text('unknown-device'), findsNothing);
-    expect(
-      find.text('Waiting for confirmation.'),
-      findsOneWidget,
-    );
+    expect(find.text('Waiting for confirmation.'), findsOneWidget);
     expectNoFlutterError(tester);
   });
 
@@ -678,10 +674,7 @@ void main() {
     await tester.tap(receiveButton());
     await pumpUiSettled(tester);
 
-    expect(
-      find.text('Wants to send you 4 files (14.9 MB).'),
-      findsOneWidget,
-    );
+    expect(find.text('Wants to send you 4 files (14.9 MB).'), findsOneWidget);
     expectNoFlutterError(tester);
   });
 
@@ -697,10 +690,7 @@ void main() {
     await tester.tap(receiveButton());
     await pumpUiSettled(tester);
 
-    expect(
-      find.text('Wants to send you 4 files (14.9 MB).'),
-      findsOneWidget,
-    );
+    expect(find.text('Wants to send you 4 files (14.9 MB).'), findsOneWidget);
     expect(shellBackButton(), findsOneWidget);
 
     await tester.tap(shellBackButton());
@@ -708,10 +698,7 @@ void main() {
 
     expect(find.text('Receive files'), findsOneWidget);
     expect(receiveCodeFieldFinder(), findsOneWidget);
-    expect(
-      find.text('Wants to send you 4 files (14.9 MB).'),
-      findsNothing,
-    );
+    expect(find.text('Wants to send you 4 files (14.9 MB).'), findsNothing);
     expectNoFlutterError(tester);
   });
 

@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/theme/drift_theme.dart';
 import '../shell/utility_shell.dart';
 import '../state/drift_controller.dart';
+import '../state/drift_providers.dart';
 
 class DriftApp extends StatefulWidget {
   const DriftApp({super.key, this.controller});
@@ -14,19 +16,13 @@ class DriftApp extends StatefulWidget {
 }
 
 class _DriftAppState extends State<DriftApp> {
-  late final DriftController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = widget.controller ?? DriftController();
-  }
-
   @override
   void dispose() {
-    // Always dispose: tests pass a controller for injection, and the shell owns
-    // its lifecycle while this app is mounted (timers/subscriptions must stop).
-    _controller.dispose();
+    if (widget.controller != null) {
+      // Tests can still inject a controller directly, and this widget remains
+      // responsible for that lifecycle while it is mounted.
+      widget.controller!.dispose();
+    }
     super.dispose();
   }
 
@@ -36,12 +32,36 @@ class _DriftAppState extends State<DriftApp> {
       title: 'Drift',
       debugShowCheckedModeBanner: false,
       theme: buildDriftTheme(),
-      home: AnimatedBuilder(
-        animation: _controller,
-        builder: (context, _) {
-          return UtilityShell(controller: _controller);
-        },
-      ),
+      home: widget.controller == null
+          ? Consumer(
+              builder: (context, ref, _) {
+                final controller = ref.watch(driftControllerProvider);
+                ref.listen(
+                  receiverServiceControllerProvider.select(
+                    (service) => service.badgeState,
+                  ),
+                  (_, next) {
+                    controller.syncReceiverBadge(
+                      code: next.code,
+                      status: next.status,
+                    );
+                  },
+                );
+                ref.watch(receiverServiceControllerProvider);
+                return AnimatedBuilder(
+                  animation: controller,
+                  builder: (context, _) {
+                    return UtilityShell(controller: controller);
+                  },
+                );
+              },
+            )
+          : AnimatedBuilder(
+              animation: widget.controller!,
+              builder: (context, _) {
+                return UtilityShell(controller: widget.controller!);
+              },
+            ),
     );
   }
 }

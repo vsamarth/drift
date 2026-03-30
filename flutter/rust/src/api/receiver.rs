@@ -31,16 +31,23 @@ struct BridgeReceiverState {
     config: BridgeReceiverConfig,
     service: Arc<ReceiverService>,
     updates_task: Option<JoinHandle<()>>,
+    pairing_task: Option<JoinHandle<()>>,
 }
 
 #[derive(Debug, Clone)]
-pub struct IdleReceiverRegistration {
+pub struct ReceiverRegistration {
     pub code: String,
     pub expires_at: String,
 }
 
+#[derive(Debug, Clone)]
+pub struct ReceiverPairingState {
+    pub code: Option<String>,
+    pub expires_at: Option<String>,
+}
+
 #[derive(Clone, Debug)]
-pub enum IdleIncomingPhase {
+pub enum ReceiverTransferPhase {
     Connecting,
     OfferReady,
     Receiving,
@@ -50,14 +57,14 @@ pub enum IdleIncomingPhase {
 }
 
 #[derive(Clone, Debug)]
-pub struct IdleIncomingFileRow {
+pub struct ReceiverTransferFile {
     pub path: String,
     pub size: u64,
 }
 
 #[derive(Clone, Debug)]
-pub struct IdleIncomingEvent {
-    pub phase: IdleIncomingPhase,
+pub struct ReceiverTransferEvent {
+    pub phase: ReceiverTransferPhase,
     pub sender_name: String,
     pub destination_label: String,
     pub save_root_label: String,
@@ -65,21 +72,21 @@ pub struct IdleIncomingEvent {
     pub item_count: u64,
     pub total_size_bytes: u64,
     pub total_size_label: String,
-    pub files: Vec<IdleIncomingFileRow>,
+    pub files: Vec<ReceiverTransferFile>,
     pub error_message: Option<String>,
 }
 
-pub fn register_idle_receiver(
+pub fn register_receiver(
     server_url: Option<String>,
     device_name: String,
-) -> Result<IdleReceiverRegistration, String> {
-    ensure_idle_receiver(server_url, device_name)
+) -> Result<ReceiverRegistration, String> {
+    ensure_receiver_registration(server_url, device_name)
 }
 
-pub fn ensure_idle_receiver(
+pub fn ensure_receiver_registration(
     server_url: Option<String>,
     device_name: String,
-) -> Result<IdleReceiverRegistration, String> {
+) -> Result<ReceiverRegistration, String> {
     RUNTIME.block_on(async move {
         let service = ensure_receiver_service(BridgeReceiverConfig {
             device_name,
@@ -96,25 +103,48 @@ pub fn ensure_idle_receiver(
     })
 }
 
-pub fn current_idle_receiver_registration() -> Option<IdleReceiverRegistration> {
+pub fn current_receiver_registration() -> Option<ReceiverRegistration> {
     current_service()
         .and_then(|service| pairing_registration(&service.pairing_code()))
         .map(map_registration)
 }
 
-pub fn pause_idle_lan_advertisement() -> Result<(), String> {
-    set_discoverable(false)
-}
-
-pub fn resume_idle_lan_advertisement() -> Result<(), String> {
-    set_discoverable(true)
-}
-
-pub fn start_idle_incoming_listener(
+pub fn watch_receiver_pairing(
     download_root: String,
     device_name: String,
     device_type: String,
-    updates: StreamSink<IdleIncomingEvent>,
+    updates: StreamSink<ReceiverPairingState>,
+) -> Result<(), String> {
+    RUNTIME.block_on(async move {
+        let config = BridgeReceiverConfig {
+            device_name,
+            device_type,
+            download_root: PathBuf::from(download_root),
+        };
+        let service = ensure_receiver_service(config.clone()).await?;
+        service
+            .ensure_registered(Some(LOCAL_RENDEZVOUS_URL.to_owned()))
+            .await
+            .map_err(|e| e.to_string())?;
+        service
+            .set_discoverable(true)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        replace_pairing_task(config, service, updates);
+        Ok(())
+    })
+}
+
+pub fn set_receiver_discoverable(enabled: bool) -> Result<(), String> {
+    set_discoverable(enabled)
+}
+
+pub fn start_receiver_transfer_listener(
+    download_root: String,
+    device_name: String,
+    device_type: String,
+    updates: StreamSink<ReceiverTransferEvent>,
 ) -> Result<(), String> {
     RUNTIME.block_on(async move {
         let config = BridgeReceiverConfig {
@@ -137,7 +167,7 @@ pub fn start_idle_incoming_listener(
     })
 }
 
-pub fn respond_idle_incoming_offer(accept: bool) -> Result<(), String> {
+pub fn respond_to_receiver_offer(accept: bool) -> Result<(), String> {
     RUNTIME.block_on(async move {
         let Some(service) = current_service() else {
             return Err("receiver is not running".to_owned());
@@ -153,7 +183,9 @@ pub fn respond_idle_incoming_offer(accept: bool) -> Result<(), String> {
     })
 }
 
-pub(crate) async fn scan_nearby_with_receiver(timeout_secs: u64) -> Result<Vec<crate::api::lan::NearbyReceiverInfo>, String> {
+pub(crate) async fn scan_nearby_with_receiver(
+    timeout_secs: u64,
+) -> Result<Vec<crate::api::lan::NearbyReceiverInfo>, String> {
     let service = match current_service() {
         Some(service) => service,
         None => {
@@ -182,7 +214,12 @@ pub(crate) async fn scan_nearby_with_receiver(timeout_secs: u64) -> Result<Vec<c
         .scan_nearby(timeout_secs)
         .await
         .map_err(|e| e.to_string())
-        .map(|items| items.into_iter().map(crate::api::lan::map_nearby_receiver).collect())
+        .map(|items| {
+            items
+                .into_iter()
+                .map(crate::api::lan::map_nearby_receiver)
+                .collect()
+        })
 }
 
 async fn ensure_receiver_service(
@@ -201,6 +238,9 @@ async fn ensure_receiver_service(
 
     if let Some(old_state) = old_state {
         if let Some(task) = old_state.updates_task {
+            task.abort();
+        }
+        if let Some(task) = old_state.pairing_task {
             task.abort();
         }
         let _ = old_state.service.shutdown().await;
@@ -225,6 +265,7 @@ async fn ensure_receiver_service(
         config,
         service: service.clone(),
         updates_task: None,
+        pairing_task: None,
     });
     Ok(service)
 }
@@ -232,7 +273,7 @@ async fn ensure_receiver_service(
 fn replace_updates_task(
     config: BridgeReceiverConfig,
     service: Arc<ReceiverService>,
-    updates: StreamSink<IdleIncomingEvent>,
+    updates: StreamSink<ReceiverTransferEvent>,
 ) {
     let mut event_rx = service.subscribe_events();
     let task = RUNTIME.spawn(async move {
@@ -255,6 +296,33 @@ fn replace_updates_task(
         if let Some(state) = guard.as_mut() {
             if state.config == config && Arc::ptr_eq(&state.service, &service) {
                 if let Some(old_task) = state.updates_task.replace(task) {
+                    old_task.abort();
+                }
+            }
+        }
+    }
+}
+
+fn replace_pairing_task(
+    config: BridgeReceiverConfig,
+    service: Arc<ReceiverService>,
+    updates: StreamSink<ReceiverPairingState>,
+) {
+    let mut pairing_rx = service.subscribe_pairing_code();
+    let task = RUNTIME.spawn(async move {
+        let _ = updates.add(map_pairing_state(&pairing_rx.borrow().clone()));
+        loop {
+            if pairing_rx.changed().await.is_err() {
+                break;
+            }
+            let _ = updates.add(map_pairing_state(&pairing_rx.borrow().clone()));
+        }
+    });
+
+    if let Ok(mut guard) = RECEIVER_STATE.lock() {
+        if let Some(state) = guard.as_mut() {
+            if state.config == config && Arc::ptr_eq(&state.service, &service) {
+                if let Some(old_task) = state.pairing_task.replace(task) {
                     old_task.abort();
                 }
             }
@@ -294,22 +362,35 @@ fn pairing_registration(state: &PairingCodeState) -> Option<AppReceiverRegistrat
     }
 }
 
-fn map_registration(value: AppReceiverRegistration) -> IdleReceiverRegistration {
-    IdleReceiverRegistration {
+fn map_registration(value: AppReceiverRegistration) -> ReceiverRegistration {
+    ReceiverRegistration {
         code: value.code,
         expires_at: value.expires_at,
     }
 }
 
-fn map_event(event: AppReceiverOfferEvent) -> IdleIncomingEvent {
-    IdleIncomingEvent {
+fn map_pairing_state(state: &PairingCodeState) -> ReceiverPairingState {
+    match state {
+        PairingCodeState::Unavailable => ReceiverPairingState {
+            code: None,
+            expires_at: None,
+        },
+        PairingCodeState::Active(registration) => ReceiverPairingState {
+            code: Some(registration.code.clone()),
+            expires_at: Some(registration.expires_at.clone()),
+        },
+    }
+}
+
+fn map_event(event: AppReceiverOfferEvent) -> ReceiverTransferEvent {
+    ReceiverTransferEvent {
         phase: match event.phase {
-            AppReceiverOfferPhase::Connecting => IdleIncomingPhase::Connecting,
-            AppReceiverOfferPhase::OfferReady => IdleIncomingPhase::OfferReady,
-            AppReceiverOfferPhase::Receiving => IdleIncomingPhase::Receiving,
-            AppReceiverOfferPhase::Completed => IdleIncomingPhase::Completed,
-            AppReceiverOfferPhase::Failed => IdleIncomingPhase::Failed,
-            AppReceiverOfferPhase::Declined => IdleIncomingPhase::Declined,
+            AppReceiverOfferPhase::Connecting => ReceiverTransferPhase::Connecting,
+            AppReceiverOfferPhase::OfferReady => ReceiverTransferPhase::OfferReady,
+            AppReceiverOfferPhase::Receiving => ReceiverTransferPhase::Receiving,
+            AppReceiverOfferPhase::Completed => ReceiverTransferPhase::Completed,
+            AppReceiverOfferPhase::Failed => ReceiverTransferPhase::Failed,
+            AppReceiverOfferPhase::Declined => ReceiverTransferPhase::Declined,
         },
         sender_name: event.sender_name,
         destination_label: event.destination_label,
@@ -323,8 +404,8 @@ fn map_event(event: AppReceiverOfferEvent) -> IdleIncomingEvent {
     }
 }
 
-fn map_file_row(row: AppReceiverOfferFile) -> IdleIncomingFileRow {
-    IdleIncomingFileRow {
+fn map_file_row(row: AppReceiverOfferFile) -> ReceiverTransferFile {
+    ReceiverTransferFile {
         path: row.path,
         size: row.size,
     }

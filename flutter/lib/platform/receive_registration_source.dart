@@ -9,17 +9,19 @@ class ReceiveRegistrationData {
 
 abstract class ReceiveRegistrationSource {
   /// [deviceName] must match the UI / wire identity (used for mDNS `label`).
-  Future<ReceiveRegistrationData> ensureIdleReceiver({required String deviceName});
+  Future<ReceiveRegistrationData> ensureReceiverRegistration({
+    required String deviceName,
+  });
 }
 
 class LocalReceiveRegistrationSource implements ReceiveRegistrationSource {
   const LocalReceiveRegistrationSource();
 
   @override
-  Future<ReceiveRegistrationData> ensureIdleReceiver({
+  Future<ReceiveRegistrationData> ensureReceiverRegistration({
     required String deviceName,
   }) async {
-    final registration = await rust_receiver.ensureIdleReceiver(
+    final registration = await rust_receiver.ensureReceiverRegistration(
       deviceName: deviceName,
     );
     return ReceiveRegistrationData(
