@@ -70,4 +70,5 @@ const TransferSummaryViewData sampleReceiveSummary = TransferSummaryViewData(
   expiresAt: 'Code confirmed',
   destinationLabel: 'Downloads',
   statusMessage: 'Save these files to Downloads',
+  senderName: "Alex's MacBook",
 );

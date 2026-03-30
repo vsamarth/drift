@@ -29,6 +29,11 @@ pub struct SendTransferProgress {
     pub manifest: OfferManifest,
     /// Total payload bytes sent so far (file contents only); `0` until streaming starts.
     pub bytes_sent: u64,
+    /// Index of the currently streaming file in `manifest.files`.
+    /// `None` until file streaming begins (or once the transfer is completed/declined).
+    pub current_file_index: Option<u64>,
+    /// Bytes sent in the currently streaming file so far.
+    pub bytes_sent_in_file: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -58,6 +63,8 @@ where
         SendTransferPhase::Connecting,
         destination_label.clone(),
         &prepared,
+        None,
+        0,
         None,
         0,
     ));
@@ -139,6 +146,8 @@ where
         prepared,
         Some(receiver_hello.device_type),
         0,
+        None,
+        0,
     ));
 
     match read_message::<ControlMessage>(&mut control_recv)
@@ -154,14 +163,18 @@ where
                 prepared,
                 Some(receiver_hello.device_type),
                 0,
+                None,
+                0,
             ));
-            send_files_over_connection(connection, &prepared.files, |sent| {
+            send_files_over_connection(connection, &prepared.files, |p| {
                 on_progress(progress(
                     SendTransferPhase::Sending,
                     receiver_hello.device_name.clone(),
                     prepared,
                     Some(receiver_hello.device_type),
-                    sent,
+                    p.total_bytes_sent,
+                    Some(p.file_index as u64),
+                    p.bytes_sent_in_file,
                 ));
             })
             .await?;
@@ -172,6 +185,8 @@ where
                 prepared,
                 Some(receiver_hello.device_type),
                 prepared.manifest.total_size,
+                None,
+                0,
             ));
         }
         ControlMessage::Decline(message) => {
@@ -200,6 +215,8 @@ fn progress(
     prepared: &PreparedFiles,
     remote_device_type: Option<DeviceType>,
     bytes_sent: u64,
+    current_file_index: Option<u64>,
+    bytes_sent_in_file: u64,
 ) -> SendTransferProgress {
     SendTransferProgress {
         phase,
@@ -207,6 +224,8 @@ fn progress(
         remote_device_type,
         manifest: prepared.manifest.clone(),
         bytes_sent,
+        current_file_index,
+        bytes_sent_in_file,
     }
 }
 

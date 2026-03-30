@@ -61,6 +61,7 @@ class TransferSummaryViewData {
     required this.expiresAt,
     required this.destinationLabel,
     required this.statusMessage,
+    this.senderName = '',
   });
 
   final int itemCount;
@@ -69,6 +70,7 @@ class TransferSummaryViewData {
   final String expiresAt;
   final String destinationLabel;
   final String statusMessage;
+  final String senderName;
 
   TransferSummaryViewData copyWith({
     int? itemCount,
@@ -77,6 +79,7 @@ class TransferSummaryViewData {
     String? expiresAt,
     String? destinationLabel,
     String? statusMessage,
+    String? senderName,
   }) {
     return TransferSummaryViewData(
       itemCount: itemCount ?? this.itemCount,
@@ -85,6 +88,7 @@ class TransferSummaryViewData {
       expiresAt: expiresAt ?? this.expiresAt,
       destinationLabel: destinationLabel ?? this.destinationLabel,
       statusMessage: statusMessage ?? this.statusMessage,
+      senderName: senderName ?? this.senderName,
     );
   }
 }

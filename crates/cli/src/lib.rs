@@ -17,6 +17,7 @@ use tokio::signal;
 use tokio::time::{Duration, Instant, MissedTickBehavior, interval};
 use tracing::{debug, info, warn};
 use tracing_subscriber::EnvFilter;
+use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
 
 const CONNECT_GRACE_PERIOD: Duration = Duration::from_secs(30);
 
@@ -95,6 +96,20 @@ pub async fn send(code: String, files: Vec<PathBuf>, server_url: Option<String>)
     }
 
     let mut last_phase = None;
+
+    // `iroh` transfer progress comes in regularly; use `indicatif` to render a single overall bar.
+    let progress_bar = ProgressBar::new(0);
+    progress_bar.set_draw_target(ProgressDrawTarget::stderr());
+    progress_bar.set_style(
+        ProgressStyle::with_template(
+            "{spinner:.green} [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({percent}%) {msg}",
+        )
+        .expect("valid indicatif template"),
+    );
+    progress_bar.enable_steady_tick(Duration::from_millis(100));
+
+    let mut transfer_done = false;
+    let mut length_set = false;
     let outcome = send_files_with_progress(
         code,
         files,
@@ -102,10 +117,43 @@ pub async fn send(code: String, files: Vec<PathBuf>, server_url: Option<String>)
         device_name,
         device_type,
         |progress| {
-            log_send_progress(&mut last_phase, progress);
+            log_send_progress(&mut last_phase, &progress);
+
+            match progress.phase {
+                SendTransferPhase::Connecting | SendTransferPhase::WaitingForDecision => {}
+                SendTransferPhase::Sending => {
+                    // Set the total once we have it (it comes from the manifest).
+                    if !length_set {
+                        progress_bar.set_length(progress.manifest.total_size);
+                        length_set = true;
+                    }
+                    progress_bar.set_position(progress.bytes_sent);
+
+                    let msg = match progress.current_file_index {
+                        Some(idx) => {
+                            let i = idx as usize;
+                            progress.manifest.files.get(i).map_or_else(
+                                || format!("file {idx}"),
+                                |f| format!("file: {} ({}/{}) bytes", f.path, progress.bytes_sent_in_file, f.size),
+                            )
+                        }
+                        None => "starting...".to_string(),
+                    };
+                    progress_bar.set_message(msg);
+                }
+                SendTransferPhase::Completed => {
+                    transfer_done = true;
+                    progress_bar.finish_and_clear();
+                }
+            }
         },
     )
     .await;
+
+    // If the transfer errors out (e.g. receiver declined), we may never see `Completed`.
+    if !transfer_done {
+        progress_bar.finish_and_clear();
+    }
 
     match &outcome {
         Ok(o) => info!(
@@ -247,7 +295,7 @@ fn local_device_name() -> String {
     random_device_name()
 }
 
-fn log_send_progress(last_phase: &mut Option<SendTransferPhase>, progress: SendTransferProgress) {
+fn log_send_progress(last_phase: &mut Option<SendTransferPhase>, progress: &SendTransferProgress) {
     if last_phase.as_ref() == Some(&progress.phase) {
         return;
     }

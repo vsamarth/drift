@@ -7,6 +7,7 @@ use iroh::{Endpoint, RelayMode};
 use tokio::fs::{self, File};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::time::{Duration, Instant};
+use std::sync::Arc;
 
 use crate::fs_plan::prepare::PreparedFile;
 use crate::fs_plan::receive::{
@@ -28,6 +29,27 @@ const MAX_CHUNK_RETRIES: u32 = 5;
 /// Payload progress: emit at most ~5× per second or every 256 KiB to avoid flooding UI.
 const PROGRESS_EMIT_INTERVAL: Duration = Duration::from_millis(200);
 const PROGRESS_EMIT_MIN_BYTES: u64 = 256 * 1024;
+
+/// Progress updates emitted while sending file chunks.
+///
+/// `total_bytes_sent` is across the entire transfer session, while `bytes_sent_in_file`
+/// is relative to `file_index` within the prepared file list.
+#[derive(Debug, Clone, Copy)]
+pub struct FileSendProgress {
+    pub total_bytes_sent: u64,
+    pub bytes_sent_in_file: u64,
+    pub file_index: usize,
+}
+
+/// Progress updates emitted while receiving file chunks.
+#[derive(Debug, Clone)]
+pub struct FileReceiveProgress {
+    pub total_bytes_received: u64,
+    pub total_bytes_to_receive: u64,
+    pub bytes_received_in_file: u64,
+    pub file_size: u64,
+    pub file_path: Arc<str>,
+}
 
 pub async fn bind_endpoint() -> Result<Endpoint> {
     Endpoint::builder()
@@ -64,13 +86,14 @@ pub async fn send_files_over_connection<F>(
     mut on_progress: F,
 ) -> Result<()>
 where
-    F: FnMut(u64),
+    F: FnMut(FileSendProgress),
 {
     let mut cumulative = 0_u64;
     let mut last_emit = Instant::now();
     let mut bytes_since_emit = 0_u64;
 
-    for prepared in files {
+    for (file_index, prepared) in files.iter().enumerate() {
+        let file_start_total = cumulative;
         let (mut send_stream, mut recv_stream) = connection.open_bi().await.with_context(|| {
             format!(
                 "opening transfer stream for {}",
@@ -94,6 +117,8 @@ where
             &prepared.source_path,
             prepared.size,
             chunk_count,
+            file_index,
+            file_start_total,
             &mut cumulative,
             &mut last_emit,
             &mut bytes_since_emit,
@@ -130,10 +155,46 @@ where
 pub async fn receive_files_over_connection(
     connection: iroh::endpoint::Connection,
     out_dir: PathBuf,
-    mut expected_files: Option<BTreeMap<String, ExpectedFile>>,
+    expected_files: Option<BTreeMap<String, ExpectedFile>>,
 ) -> Result<()> {
+    receive_files_over_connection_with_progress(connection, out_dir, expected_files, |_| {}).await
+}
+
+pub async fn receive_files_over_connection_with_progress<F>(
+    connection: iroh::endpoint::Connection,
+    out_dir: PathBuf,
+    mut expected_files: Option<BTreeMap<String, ExpectedFile>>,
+    mut on_progress: F,
+) -> Result<()>
+where
+    F: FnMut(FileReceiveProgress),
+{
+    let total_bytes_to_receive: u64 = expected_files
+        .as_ref()
+        .and_then(|m| {
+            // `try_fold` returns `Option<u64>` (None on overflow); `and_then` flattens the
+            // resulting `Option<Option<u64>>` into `Option<u64>`.
+            m.values()
+                .try_fold(0_u64, |acc, e| acc.checked_add(e.size))
+        })
+        .unwrap_or(0_u64);
+
     let mut received_any = false;
     let mut seen_paths = HashSet::new();
+    let mut total_bytes_received = 0_u64;
+    let mut last_emit = Instant::now();
+    let mut bytes_since_emit = 0_u64;
+
+    // Initial update so a UI can render immediately.
+    let empty_path: Arc<str> = Arc::from("");
+    on_progress(FileReceiveProgress {
+        total_bytes_received,
+        total_bytes_to_receive,
+        bytes_received_in_file: 0,
+        file_size: 0,
+        file_path: empty_path,
+    });
+
     loop {
         match connection.accept_bi().await {
             Ok((mut send_stream, mut recv_stream)) => {
@@ -186,12 +247,23 @@ pub async fn receive_files_over_connection(
                         .with_context(|| format!("creating directory {}", parent.display()))?;
                 }
 
+                let file_path: Arc<str> = Arc::from(open.path.as_str());
+                let mut bytes_received_in_file = 0_u64;
+
                 receive_file_chunked(
                     &mut recv_stream,
                     &mut send_stream,
                     &target_path,
                     &open,
                     &file_digest,
+                    file_path,
+                    open.size,
+                    total_bytes_to_receive,
+                    &mut total_bytes_received,
+                    &mut bytes_received_in_file,
+                    &mut last_emit,
+                    &mut bytes_since_emit,
+                    &mut on_progress,
                 )
                 .await?;
 
@@ -324,6 +396,8 @@ async fn send_file_chunked<W, R, F>(
     path: &Path,
     size: u64,
     chunk_count: u32,
+    file_index: usize,
+    file_start_total: u64,
     cumulative: &mut u64,
     last_emit: &mut Instant,
     bytes_since_emit: &mut u64,
@@ -332,7 +406,7 @@ async fn send_file_chunked<W, R, F>(
 where
     W: AsyncWrite + Unpin,
     R: AsyncRead + Unpin,
-    F: FnMut(u64),
+    F: FnMut(FileSendProgress),
 {
     let mut file = File::open(path)
         .await
@@ -388,13 +462,21 @@ where
         if last_emit.elapsed() >= PROGRESS_EMIT_INTERVAL
             || *bytes_since_emit >= PROGRESS_EMIT_MIN_BYTES
         {
-            on_progress(*cumulative);
+            on_progress(FileSendProgress {
+                total_bytes_sent: *cumulative,
+                bytes_sent_in_file: *cumulative - file_start_total,
+                file_index,
+            });
             *last_emit = Instant::now();
             *bytes_since_emit = 0;
         }
     }
 
-    on_progress(*cumulative);
+    on_progress(FileSendProgress {
+        total_bytes_sent: *cumulative,
+        bytes_sent_in_file: *cumulative - file_start_total,
+        file_index,
+    });
     *last_emit = Instant::now();
     *bytes_since_emit = 0;
     Ok(())
@@ -406,6 +488,14 @@ async fn receive_file_chunked<R, W>(
     destination: &Path,
     open: &FileOpen,
     expected_digest: &[u8; 32],
+    file_path: Arc<str>,
+    file_size: u64,
+    total_bytes_to_receive: u64,
+    total_bytes_received: &mut u64,
+    bytes_received_in_file: &mut u64,
+    last_emit: &mut Instant,
+    bytes_since_emit: &mut u64,
+    on_progress: &mut impl FnMut(FileReceiveProgress),
 ) -> Result<()>
 where
     R: AsyncRead + Unpin,
@@ -444,6 +534,25 @@ where
             .with_context(|| format!("writing {}", destination.display()))?;
         hasher.update(&payload);
 
+        let payload_len = payload.len() as u64;
+        *total_bytes_received = total_bytes_received.saturating_add(payload_len);
+        *bytes_received_in_file = bytes_received_in_file.saturating_add(payload_len);
+        *bytes_since_emit = bytes_since_emit.saturating_add(payload_len);
+
+        if last_emit.elapsed() >= PROGRESS_EMIT_INTERVAL
+            || *bytes_since_emit >= PROGRESS_EMIT_MIN_BYTES
+        {
+            on_progress(FileReceiveProgress {
+                total_bytes_received: *total_bytes_received,
+                total_bytes_to_receive,
+                bytes_received_in_file: *bytes_received_in_file,
+                file_size,
+                file_path: file_path.clone(),
+            });
+            *last_emit = Instant::now();
+            *bytes_since_emit = 0;
+        }
+
         write_stream_ctrl(ctrl_out, STREAM_CTRL_ACK, chunk_index)
             .await
             .with_context(|| format!("sending ACK for chunk {chunk_index}"))?;
@@ -461,6 +570,13 @@ where
     file.flush()
         .await
         .with_context(|| format!("flushing {}", destination.display()))?;
+    on_progress(FileReceiveProgress {
+        total_bytes_received: *total_bytes_received,
+        total_bytes_to_receive,
+        bytes_received_in_file: *bytes_received_in_file,
+        file_size,
+        file_path: file_path.clone(),
+    });
     Ok(())
 }
 
@@ -540,6 +656,8 @@ mod transfer_tests {
                 &src_clone,
                 size,
                 chunk_count,
+                0_usize,
+                0_u64,
                 &mut cumulative,
                 &mut last_emit,
                 &mut bytes_since_emit,
@@ -565,12 +683,28 @@ mod transfer_tests {
                 .context("reading FileOpen")?;
             assert_eq!(open_r, open);
             let file_digest = blake3_from_hex(&open_r.file_blake3)?;
+            let file_path: Arc<str> = Arc::from(open_r.path.as_str());
+            let file_size = open_r.size;
+
+            let mut total_bytes_received = 0_u64;
+            let mut bytes_received_in_file = 0_u64;
+            let mut last_emit = Instant::now();
+            let mut bytes_since_emit = 0_u64;
+            let mut on_progress = |_p: FileReceiveProgress| {};
             receive_file_chunked(
                 &mut chunk_rx,
                 &mut ctrl_tx,
                 &dst_clone,
                 &open_r,
                 &file_digest,
+                file_path,
+                file_size,
+                file_size,
+                &mut total_bytes_received,
+                &mut bytes_received_in_file,
+                &mut last_emit,
+                &mut bytes_since_emit,
+                &mut on_progress,
             )
             .await
             .context("receive_file_chunked")?;

@@ -39,6 +39,16 @@ DRIFT_RENDEZVOUS_URL=http://127.0.0.1:8787 cargo run -p drift -- send AB2CD3 sam
 - The receive step fails before transfer if any destination path already exists.
 - v1 only transfers regular files. Symbolic links and empty directories are not preserved.
 
+## Makefile helpers
+For quick local testing, the root `Makefile` includes `make send-*` wrappers around the `drift send` CLI:
+- `make server` (start `drift-server`)
+- `make receive` (start receiver)
+- `make send CODE=AB2CD3 FILE=sample.txt` (send one path)
+- `make send-files CODE=AB2CD3 FILES="sample.txt photos/"` (send multiple paths)
+- `make send-dir CODE=AB2CD3 DIR=photos/` (send a directory)
+- `make send-multiple CODE=AB2CD3` (generate 5 x 100MB random files in a temp `tmd/` dir, transfer it, then delete)
+- `make send-large CODE=AB2CD3` (generate a 1GB random file in a temp dir, transfer it, then delete)
+
 ## Server selection
 
 `drift` chooses the pairing server in this order:

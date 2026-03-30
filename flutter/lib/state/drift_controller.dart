@@ -113,6 +113,9 @@ class DriftController extends ChangeNotifier {
   DateTime? _sendPayloadStartedAt;
   List<TransferMetricRow>? _sendCompletionMetrics;
 
+  DateTime? _receivePayloadStartedAt;
+  String? _receiveTransferTimeLabel;
+
   String get deviceName => _deviceName;
   String get deviceType => _deviceType;
   bool get animateSendingConnection => _animateSendingConnection;
@@ -153,6 +156,8 @@ class DriftController extends ChangeNotifier {
     }
     final s = _receiveSummary!;
     return [
+      if (s.senderName.isNotEmpty)
+        TransferMetricRow(label: 'From', value: s.senderName),
       TransferMetricRow(
         label: 'Saved to',
         value: s.destinationLabel,
@@ -305,8 +310,13 @@ class DriftController extends ChangeNotifier {
     _mode = TransferDirection.receive;
     _receiveEntryExpanded = true;
     _receiveStage = TransferStage.completed;
-    _receiveSummary = (_receiveSummary ?? sampleReceiveSummary).copyWith(
-      statusMessage: 'Saved to Downloads',
+    final base = _receiveSummary ?? sampleReceiveSummary;
+    final dest = base.destinationLabel.trim();
+    final sender = base.senderName.trim();
+    final saveRoot = (!dest.isEmpty && dest != sender) ? dest : 'Downloads';
+    _receiveSummary = base.copyWith(
+      destinationLabel: saveRoot,
+      statusMessage: 'Saved to $saveRoot',
     );
     _receiveItems = List<TransferItemViewData>.unmodifiable(
       _receiveItems.isEmpty ? sampleReceiveItems : _receiveItems,
@@ -613,6 +623,7 @@ class DriftController extends ChangeNotifier {
                   expiresAt: '',
                   destinationLabel: event.destinationLabel,
                   statusMessage: event.statusMessage,
+                  senderName: event.senderName,
                 ))
             .copyWith(statusMessage: event.statusMessage);
         notifyListeners();
@@ -630,6 +641,7 @@ class DriftController extends ChangeNotifier {
                   expiresAt: '',
                   destinationLabel: event.saveRootLabel,
                   statusMessage: event.statusMessage,
+                  senderName: event.senderName,
                 ))
             .copyWith(
               itemCount: _bigIntToInt(event.itemCount),
@@ -679,8 +691,11 @@ class DriftController extends ChangeNotifier {
       totalSize: event.totalSizeLabel,
       code: _idleReceiveCode,
       expiresAt: '',
-      destinationLabel: event.destinationLabel,
+      destinationLabel: event.saveRootLabel.isNotEmpty
+          ? event.saveRootLabel
+          : 'Downloads',
       statusMessage: event.statusMessage,
+      senderName: event.senderName,
     );
     unawaited(focusAppForIncomingTransfer());
     notifyListeners();
