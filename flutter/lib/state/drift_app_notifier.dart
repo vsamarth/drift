@@ -102,12 +102,20 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
     unawaited(_pickSendItems());
   }
 
+  void appendSendItemsFromPicker() {
+    unawaited(_appendSendItemsFromPicker());
+  }
+
   void acceptDroppedSendItems(List<String> paths) {
     unawaited(_acceptDroppedSendItems(paths));
   }
 
   void appendDroppedSendItems(List<String> paths) {
     unawaited(_appendDroppedSendItems(paths));
+  }
+
+  void removeSendItem(String path) {
+    unawaited(_removeSendItem(path));
   }
 
   void clearSendFlow() {
@@ -303,13 +311,62 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
       return;
     }
     _beginSendInspection(clearExistingItems: false);
+    _optimisticallyAppendPendingSendItems(paths);
     try {
-      final items = await _sendItemSource.loadPaths(paths);
+      final items = await _sendItemSource.appendPaths(
+        existingPaths: _currentSendSelectionPaths,
+        incomingPaths: paths,
+      );
       if (items.isEmpty) {
         _finishSendInspection();
         return;
       }
-      _applySelectedSendItems(_mergeSendItems(state.sendItems, items));
+      _applySelectedSendItems(items);
+    } catch (error, stackTrace) {
+      _finishSendInspection();
+      _reportSendSelectionError(error, stackTrace);
+    }
+  }
+
+  Future<void> _appendSendItemsFromPicker() async {
+    final paths = await _sendItemSource.pickAdditionalPaths();
+    if (paths.isEmpty) {
+      return;
+    }
+    _beginSendInspection(clearExistingItems: false);
+    _optimisticallyAppendPendingSendItems(paths);
+    try {
+      final items = await _sendItemSource.appendPaths(
+        existingPaths: _currentSendSelectionPaths,
+        incomingPaths: paths,
+      );
+      if (items.isEmpty) {
+        _finishSendInspection();
+        return;
+      }
+      _applySelectedSendItems(items);
+    } catch (error, stackTrace) {
+      _finishSendInspection();
+      _reportSendSelectionError(error, stackTrace);
+    }
+  }
+
+  Future<void> _removeSendItem(String path) async {
+    final draft = _draftSession;
+    if (draft == null || path.trim().isEmpty) {
+      return;
+    }
+    _beginSendInspection(clearExistingItems: false);
+    try {
+      final items = await _sendItemSource.removePath(
+        existingPaths: _currentSendSelectionPaths,
+        removedPath: path,
+      );
+      if (items.isEmpty) {
+        clearSendFlow();
+        return;
+      }
+      _applySelectedSendItems(items);
     } catch (error, stackTrace) {
       _finishSendInspection();
       _reportSendSelectionError(error, stackTrace);
@@ -329,6 +386,48 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
       ),
     );
     _scheduleNearbyScanning();
+  }
+
+  void _optimisticallyAppendPendingSendItems(List<String> incomingPaths) {
+    final draft = _draftSession;
+    if (draft == null || incomingPaths.isEmpty) {
+      return;
+    }
+
+    final seen = draft.items.map((item) => item.path.trim()).toSet();
+    final mergedItems = List<TransferItemViewData>.of(draft.items);
+
+    for (final rawPath in incomingPaths) {
+      final path = rawPath.trim();
+      if (path.isEmpty || !seen.add(path)) {
+        continue;
+      }
+      mergedItems.add(_pendingSendItemForPath(path));
+    }
+
+    _setSession(
+      draft.copyWith(
+        items: List<TransferItemViewData>.unmodifiable(mergedItems),
+      ),
+    );
+  }
+
+  TransferItemViewData _pendingSendItemForPath(String path) {
+    final normalized = path.replaceAll('\\', '/');
+    final trimmed = normalized.endsWith('/')
+        ? normalized.substring(0, normalized.length - 1)
+        : normalized;
+    final segments = trimmed.split('/')
+      ..removeWhere((segment) => segment.isEmpty);
+    final name = segments.isEmpty ? trimmed : segments.last;
+    final isFolder = normalized.endsWith('/');
+
+    return TransferItemViewData(
+      name: name.isEmpty ? path : name,
+      path: path,
+      size: 'Adding...',
+      kind: isFolder ? TransferItemKind.folder : TransferItemKind.file,
+    );
   }
 
   void _beginSendInspection({required bool clearExistingItems}) {
@@ -355,20 +454,6 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
     if (draft.items.isNotEmpty) {
       _scheduleNearbyScanning();
     }
-  }
-
-  List<TransferItemViewData> _mergeSendItems(
-    List<TransferItemViewData> existing,
-    List<TransferItemViewData> incoming,
-  ) {
-    final merged = <TransferItemViewData>[];
-    final seenPaths = <String>{};
-    for (final item in [...existing, ...incoming]) {
-      if (seenPaths.add(item.path)) {
-        merged.add(item);
-      }
-    }
-    return List<TransferItemViewData>.unmodifiable(merged);
   }
 
   void _startReceiverSubscriptions() {
@@ -532,6 +617,7 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
       path: path,
       size: _formatByteSize(bytes),
       kind: TransferItemKind.file,
+      sizeBytes: bytes,
     );
   }
 
@@ -929,6 +1015,9 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
     final session = state.session;
     return session is SendDraftSession ? session : null;
   }
+
+  List<String> get _currentSendSelectionPaths =>
+      state.sendItems.map((item) => item.path).toList(growable: false);
 
   void _reportSendSelectionError(Object error, StackTrace stackTrace) {
     debugPrint('Failed to inspect selected send items: $error');

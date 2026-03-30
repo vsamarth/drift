@@ -2,26 +2,25 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/theme/drift_theme.dart';
-import '../../state/drift_controller.dart';
+import '../../state/drift_providers.dart';
 
-class IdleIdentityZone extends StatefulWidget {
-  const IdleIdentityZone({super.key, required this.controller});
-
-  final DriftController controller;
+class IdleIdentityZone extends ConsumerStatefulWidget {
+  const IdleIdentityZone({super.key});
 
   @override
-  State<IdleIdentityZone> createState() => _IdleIdentityZoneState();
+  ConsumerState<IdleIdentityZone> createState() => _IdleIdentityZoneState();
 }
 
-class _IdleIdentityZoneState extends State<IdleIdentityZone> {
+class _IdleIdentityZoneState extends ConsumerState<IdleIdentityZone> {
   bool _codeHovering = false;
   bool _copied = false;
   Timer? _copiedResetTimer;
 
-  IconData get _deviceIcon {
-    return widget.controller.deviceType.toLowerCase() == 'phone'
+  IconData _deviceIcon(String deviceType) {
+    return deviceType.toLowerCase() == 'phone'
         ? Icons.smartphone_rounded
         : Icons.laptop_mac_rounded;
   }
@@ -31,10 +30,8 @@ class _IdleIdentityZoneState extends State<IdleIdentityZone> {
     return '${raw.substring(0, 3)} ${raw.substring(3)}';
   }
 
-  Future<void> _copyCode() async {
-    await Clipboard.setData(
-      ClipboardData(text: widget.controller.idleReceiveCode),
-    );
+  Future<void> _copyCode(String code) async {
+    await Clipboard.setData(ClipboardData(text: code));
     _copiedResetTimer?.cancel();
     if (mounted) {
       setState(() => _copied = true);
@@ -54,6 +51,8 @@ class _IdleIdentityZoneState extends State<IdleIdentityZone> {
 
   @override
   Widget build(BuildContext context) {
+    final state = ref.watch(driftAppNotifierProvider);
+
     return Padding(
       key: const ValueKey<String>('idle-identity-zone'),
       padding: const EdgeInsets.fromLTRB(6, 0, 6, 1),
@@ -68,7 +67,7 @@ class _IdleIdentityZoneState extends State<IdleIdentityZone> {
                   width: 20,
                   child: Center(
                     child: Icon(
-                      _deviceIcon,
+                      _deviceIcon(state.deviceType),
                       key: const ValueKey<String>('idle-device-icon'),
                       size: 18,
                       color: kInk.withValues(alpha: 0.88),
@@ -82,7 +81,7 @@ class _IdleIdentityZoneState extends State<IdleIdentityZone> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        widget.controller.deviceName,
+                        state.deviceName,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: driftSans(
@@ -114,7 +113,7 @@ class _IdleIdentityZoneState extends State<IdleIdentityZone> {
                           const SizedBox(width: 7),
                           Flexible(
                             child: Text(
-                              widget.controller.idleReceiveStatus,
+                              state.idleReceiveStatus,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: driftSans(
@@ -164,7 +163,7 @@ class _IdleIdentityZoneState extends State<IdleIdentityZone> {
                 onEnter: (_) => setState(() => _codeHovering = true),
                 onExit: (_) => setState(() => _codeHovering = false),
                 child: GestureDetector(
-                  onTap: _copyCode,
+                  onTap: () => _copyCode(state.idleReceiveCode),
                   child: AnimatedContainer(
                     key: const ValueKey<String>('idle-receive-code'),
                     duration: const Duration(milliseconds: 160),
@@ -194,7 +193,7 @@ class _IdleIdentityZoneState extends State<IdleIdentityZone> {
                       ],
                     ),
                     child: Text(
-                      _formatCode(widget.controller.idleReceiveCode),
+                      _formatCode(state.idleReceiveCode),
                       style: driftMono(
                         fontSize: 15,
                         fontWeight: FontWeight.w700,

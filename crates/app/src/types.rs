@@ -102,6 +102,14 @@ pub struct SelectionPreview {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SelectionChange {
+    pub paths: Vec<PathBuf>,
+    pub added_count: u64,
+    pub removed_count: u64,
+    pub changed: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SelectionItem {
     pub name: String,
     pub path: String,

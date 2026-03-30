@@ -1,15 +1,16 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/models/transfer_models.dart';
 import '../../core/theme/drift_theme.dart';
-import '../../state/drift_controller.dart';
+import '../../state/drift_app_state.dart';
+import '../../state/drift_providers.dart';
 import 'preview_list.dart';
 import 'sending_connection_strip.dart';
 
-class SendCodeCard extends StatelessWidget {
+class SendCodeCard extends ConsumerWidget {
   const SendCodeCard({
     super.key,
-    required this.controller,
     required this.title,
     required this.status,
     this.primaryLabel,
@@ -17,24 +18,22 @@ class SendCodeCard extends StatelessWidget {
     this.fillBody = false,
   });
 
-  final DriftController controller;
   final String title;
   final String status;
   final String? primaryLabel;
   final VoidCallback? onPrimary;
-
   final bool fillBody;
 
   @override
-  Widget build(BuildContext context) {
-    final summary = controller.sendSummary;
-    final itemCount = summary?.itemCount ?? controller.sendItems.length;
+  Widget build(BuildContext context, WidgetRef ref) {
+    final state = ref.watch(driftAppNotifierProvider);
+    final summary = state.sendSummary;
+    final itemCount = summary?.itemCount ?? state.sendItems.length;
     final totalSize = summary?.totalSize ?? '';
     final destinationLabel = _displayRecipient(summary?.destinationLabel);
-    final stage = controller.sendStage;
+    final stage = state.sendStage;
     final dotColor = _dotColorFor(stage);
-    final itemSummary =
-        '$itemCount${totalSize.isEmpty ? '' : ' · $totalSize'}';
+    final itemSummary = '$itemCount${totalSize.isEmpty ? '' : ' · $totalSize'}';
 
     if (!fillBody) {
       return Padding(
@@ -56,9 +55,9 @@ class SendCodeCard extends StatelessWidget {
               status,
               style: driftSans(fontSize: 13, color: kMuted, height: 1.45),
             ),
-            if (controller.hasSendPayloadProgress) ...[
+            if (state.hasSendPayloadProgress) ...[
               const SizedBox(height: 14),
-              _SendPayloadLinearBar(controller: controller),
+              const _SendPayloadLinearBar(),
             ],
             const SizedBox(height: 18),
             const Divider(height: 1),
@@ -75,7 +74,7 @@ class SendCodeCard extends StatelessWidget {
               constraints: const BoxConstraints(maxHeight: 360),
               child: SingleChildScrollView(
                 physics: const BouncingScrollPhysics(),
-                child: PreviewList(items: controller.sendItems),
+                child: PreviewList(items: state.sendItems),
               ),
             ),
             if (primaryLabel != null && onPrimary != null) ...[
@@ -87,7 +86,6 @@ class SendCodeCard extends StatelessWidget {
       );
     }
 
-    // Full-body: header at top; middle space shows device link + pulse; table scrolls below.
     return Padding(
       padding: const EdgeInsets.fromLTRB(8, 6, 8, 10),
       child: Column(
@@ -142,13 +140,13 @@ class SendCodeCard extends StatelessWidget {
                     child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 4),
                       child: SendingConnectionStrip(
-                        localLabel: controller.deviceName,
-                        localDeviceType: controller.deviceType,
+                        localLabel: state.deviceName,
+                        localDeviceType: state.deviceType,
                         remoteLabel: destinationLabel,
-                        remoteDeviceType: controller.sendRemoteDeviceType,
-                        animate: controller.animateSendingConnection,
-                        mode: _sendingStripMode(controller),
-                        transferProgress: _transferProgressForStrip(controller),
+                        remoteDeviceType: state.sendRemoteDeviceType,
+                        animate: state.animateSendingConnection,
+                        mode: _sendingStripMode(state),
+                        transferProgress: _transferProgressForStrip(state),
                       ),
                     ),
                   ),
@@ -158,7 +156,7 @@ class SendCodeCard extends StatelessWidget {
                   child: SingleChildScrollView(
                     physics: const BouncingScrollPhysics(),
                     child: PreviewTable(
-                      items: controller.sendItems,
+                      items: state.sendItems,
                       footerSummary: itemSummary,
                     ),
                   ),
@@ -166,12 +164,15 @@ class SendCodeCard extends StatelessWidget {
               ],
             ),
           ),
-          if (stage == TransferStage.ready || stage == TransferStage.waiting) ...[
+          if (stage == TransferStage.ready ||
+              stage == TransferStage.waiting) ...[
             Padding(
               padding: const EdgeInsets.only(top: 6, bottom: 2),
               child: Center(
                 child: TextButton(
-                  onPressed: controller.cancelSendInProgress,
+                  onPressed: ref
+                      .read(driftAppNotifierProvider.notifier)
+                      .cancelSendInProgress,
                   style: TextButton.styleFrom(
                     foregroundColor: kMuted,
                     minimumSize: Size.zero,
@@ -260,15 +261,14 @@ Color _dotColorFor(TransferStage stage) {
   };
 }
 
-class _SendPayloadLinearBar extends StatelessWidget {
-  const _SendPayloadLinearBar({required this.controller});
-
-  final DriftController controller;
+class _SendPayloadLinearBar extends ConsumerWidget {
+  const _SendPayloadLinearBar();
 
   @override
-  Widget build(BuildContext context) {
-    final sent = controller.sendPayloadBytesSent ?? 0;
-    final total = controller.sendPayloadTotalBytes ?? 0;
+  Widget build(BuildContext context, WidgetRef ref) {
+    final state = ref.watch(driftAppNotifierProvider);
+    final sent = state.sendPayloadBytesSent ?? 0;
+    final total = state.sendPayloadTotalBytes ?? 0;
     final progress = total <= 0 ? 0.0 : (sent / total).clamp(0.0, 1.0);
 
     return ClipRRect(
@@ -283,25 +283,25 @@ class _SendPayloadLinearBar extends StatelessWidget {
   }
 }
 
-SendingStripMode _sendingStripMode(DriftController controller) {
-  if (controller.hasSendPayloadProgress) {
+SendingStripMode _sendingStripMode(DriftAppState state) {
+  if (state.hasSendPayloadProgress) {
     return SendingStripMode.transferring;
   }
-  if (controller.sendStage == TransferStage.waiting) {
+  if (state.sendStage == TransferStage.waiting) {
     return SendingStripMode.waitingOnRecipient;
   }
   return SendingStripMode.looping;
 }
 
-double _transferProgressForStrip(DriftController controller) {
-  if (!controller.hasSendPayloadProgress) {
+double _transferProgressForStrip(DriftAppState state) {
+  if (!state.hasSendPayloadProgress) {
     return 0;
   }
-  final total = controller.sendPayloadTotalBytes ?? 0;
+  final total = state.sendPayloadTotalBytes ?? 0;
   if (total <= 0) {
     return 0;
   }
-  final sent = controller.sendPayloadBytesSent ?? 0;
+  final sent = state.sendPayloadBytesSent ?? 0;
   return (sent / total).clamp(0.0, 1.0);
 }
 

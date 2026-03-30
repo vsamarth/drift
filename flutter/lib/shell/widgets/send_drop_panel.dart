@@ -54,14 +54,10 @@ class _SendDropPanelState extends State<SendDropPanel> {
             curve: Curves.easeOutCubic,
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
             decoration: BoxDecoration(
-              color: isInteractive
-                  ? const Color(0xFFECEDED)
-                  : kBg,
+              color: isInteractive ? const Color(0xFFECEDED) : kBg,
               borderRadius: BorderRadius.circular(16),
               border: Border.all(
-                color: isInteractive
-                    ? const Color(0xFFCED3D4)
-                    : kBorder,
+                color: isInteractive ? const Color(0xFFCED3D4) : kBorder,
               ),
             ),
             child: Padding(

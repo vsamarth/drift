@@ -1,16 +1,20 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/models/transfer_models.dart';
 import '../../core/theme/drift_theme.dart';
-import '../../state/drift_controller.dart';
+import '../../state/drift_providers.dart';
 
-class ModeTabs extends StatelessWidget {
-  const ModeTabs({super.key, required this.controller});
-
-  final DriftController controller;
+class ModeTabs extends ConsumerWidget {
+  const ModeTabs({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final mode = ref.watch(
+      driftAppNotifierProvider.select((state) => state.mode),
+    );
+    final notifier = ref.read(driftAppNotifierProvider.notifier);
+
     return Container(
       height: 36,
       padding: const EdgeInsets.all(3),
@@ -25,16 +29,16 @@ class ModeTabs extends StatelessWidget {
             child: ModeTabButton(
               buttonKey: const ValueKey<String>('send-tab'),
               label: 'Send',
-              selected: controller.mode == TransferDirection.send,
-              onPressed: () => controller.setMode(TransferDirection.send),
+              selected: mode == TransferDirection.send,
+              onPressed: () => notifier.setMode(TransferDirection.send),
             ),
           ),
           Expanded(
             child: ModeTabButton(
               buttonKey: const ValueKey<String>('receive-tab'),
               label: 'Receive',
-              selected: controller.mode == TransferDirection.receive,
-              onPressed: () => controller.setMode(TransferDirection.receive),
+              selected: mode == TransferDirection.receive,
+              onPressed: () => notifier.setMode(TransferDirection.receive),
             ),
           ),
         ],

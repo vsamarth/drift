@@ -1,5 +1,5 @@
 import '../core/models/transfer_models.dart';
-import '../state/drift_controller.dart';
+import '../state/drift_app_state.dart';
 
 /// Maps controller state to a single shell “screen” for layout and transitions.
 enum ShellView {
@@ -16,9 +16,9 @@ enum ShellView {
   receiveError,
 }
 
-ShellView shellViewFor(DriftController c) {
-  if (c.mode == TransferDirection.receive) {
-    return switch (c.receiveStage) {
+ShellView shellViewFor(DriftAppState state) {
+  if (state.mode == TransferDirection.receive) {
+    return switch (state.receiveStage) {
       TransferStage.review => ShellView.receiveReview,
       TransferStage.waiting => ShellView.receiveReceiving,
       TransferStage.completed => ShellView.receiveCompleted,
@@ -26,7 +26,7 @@ ShellView shellViewFor(DriftController c) {
       _ => ShellView.receiveEntry,
     };
   }
-  return switch (c.sendStage) {
+  return switch (state.sendStage) {
     TransferStage.collecting => ShellView.sendSelected,
     TransferStage.ready => ShellView.sendReady,
     TransferStage.waiting => ShellView.sendWaiting,

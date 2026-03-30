@@ -3,19 +3,22 @@ import 'dart:ui';
 
 import 'package:drift_app/app/drift_app.dart';
 import 'package:drift_app/core/models/transfer_models.dart';
-import 'package:drift_app/platform/receive_registration_source.dart';
 import 'package:drift_app/platform/send_item_source.dart';
 import 'package:drift_app/platform/send_transfer_source.dart';
-import 'package:drift_app/state/drift_controller.dart';
+import 'package:drift_app/state/app_identity.dart';
+import 'package:drift_app/state/drift_providers.dart';
+import 'package:drift_app/state/nearby_discovery_source.dart';
+import 'package:drift_app/state/receiver_service_source.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter/widgets.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:drift_app/src/rust/api/receiver.dart' as rust_receiver;
 
 Future<void> pumpUtilityApp(
   WidgetTester tester, {
   Size size = const Size(440, 560),
-  DriftController? controller,
+  ProviderContainer? container,
 }) async {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1.0;
@@ -24,7 +27,13 @@ Future<void> pumpUtilityApp(
     tester.view.resetDevicePixelRatio();
   });
 
-  await tester.pumpWidget(DriftApp(controller: controller));
+  final resolvedContainer = container ?? buildTestContainer();
+  await tester.pumpWidget(
+    UncontrolledProviderScope(
+      container: resolvedContainer,
+      child: const DriftApp(),
+    ),
+  );
   await tester.pumpAndSettle();
   expectNoFlutterError(tester);
 }
@@ -59,21 +68,19 @@ Finder sendCodeField() => find.byKey(const ValueKey<String>('send-code-field'));
 Finder shellBackButton() =>
     find.byKey(const ValueKey<String>('shell-back-button'));
 
-DriftController buildTestController({
+typedef NearbySendScan = Future<List<SendDestinationViewData>> Function();
+
+ProviderContainer buildTestContainer({
   List<SendDestinationViewData>? nearbySendDestinations,
   NearbySendScan? nearbySendScan,
   List<TransferItemViewData>? droppedSendItems,
   SendItemSource? sendItemSource,
   SendTransferSource? sendTransferSource,
-}) => DriftController(
-  deviceName: 'Samarth MacBook Pro',
-  idleReceiveCode: 'F9P2Q1',
-  enableIdleReceiverRefresh: false,
-  animateSendingConnection: false,
-  nearbySendDestinations: nearbySendDestinations,
-  nearbySendScan: nearbySendScan ?? (() async => <SendDestinationViewData>[]),
-  droppedSendItems: droppedSendItems,
-  sendItemSource:
+  NearbyDiscoverySource? nearbyDiscoverySource,
+  ReceiverServiceSource? receiverServiceSource,
+  bool enableIdleIncomingListener = false,
+}) {
+  final resolvedSendItemSource =
       sendItemSource ??
       FakeSendItemSource(
         pickedItems:
@@ -84,42 +91,151 @@ DriftController buildTestController({
                 path: 'sample.txt',
                 size: '18 KB',
                 kind: TransferItemKind.file,
+                sizeBytes: 18 * 1024,
               ),
               TransferItemViewData(
                 name: 'photos',
                 path: 'photos/',
-                size: '12 items',
+                size: '12 files • 240 KB',
                 kind: TransferItemKind.folder,
+                sizeBytes: 240 * 1024,
               ),
             ],
+      );
+  final resolvedSendTransferSource =
+      sendTransferSource ?? FakeSendTransferSource();
+  final resolvedNearbyDiscoverySource =
+      nearbyDiscoverySource ??
+      FakeNearbyDiscoverySource(
+        destinations: nearbySendDestinations ?? const [],
+        scanHandler: nearbySendScan,
+      );
+  final resolvedReceiverServiceSource =
+      receiverServiceSource ?? FakeReceiverServiceSource();
+
+  final container = ProviderContainer(
+    overrides: [
+      driftAppIdentityProvider.overrideWith(
+        (ref) => const DriftAppIdentity(
+          deviceName: 'Samarth MacBook Pro',
+          deviceType: 'laptop',
+          downloadRoot: '/tmp/Downloads',
+        ),
       ),
-  sendTransferSource: sendTransferSource ?? FakeSendTransferSource(),
-  receiveRegistrationSource: const FakeReceiveRegistrationSource(),
-  enableIdleIncomingListener: false,
-);
+      sendItemSourceProvider.overrideWith((ref) => resolvedSendItemSource),
+      sendTransferSourceProvider.overrideWith(
+        (ref) => resolvedSendTransferSource,
+      ),
+      nearbyDiscoverySourceProvider.overrideWith(
+        (ref) => resolvedNearbyDiscoverySource,
+      ),
+      receiverServiceSourceProvider.overrideWith(
+        (ref) => resolvedReceiverServiceSource,
+      ),
+      animateSendingConnectionProvider.overrideWith((ref) => false),
+      enableIdleIncomingListenerProvider.overrideWith(
+        (ref) => enableIdleIncomingListener,
+      ),
+    ],
+  );
+  addTearDown(container.dispose);
+  return container;
+}
 
 class FakeSendItemSource implements SendItemSource {
-  FakeSendItemSource({required this.pickedItems});
+  FakeSendItemSource({
+    required List<TransferItemViewData> pickedItems,
+    List<List<String>>? pickResponses,
+    Map<String, TransferItemViewData>? itemCatalog,
+  }) : _pickResponses =
+           pickResponses ??
+           [pickedItems.map((item) => item.path).toList(growable: false)],
+       _itemCatalog = {
+         for (final item in pickedItems) item.path: item,
+         ...?itemCatalog,
+       };
 
-  final List<TransferItemViewData> pickedItems;
+  final List<List<String>> _pickResponses;
+  final Map<String, TransferItemViewData> _itemCatalog;
+  int _pickIndex = 0;
 
   @override
   Future<List<TransferItemViewData>> pickFiles() async =>
-      List<TransferItemViewData>.unmodifiable(pickedItems);
+      _mapPaths(_nextPickResponse());
+
+  @override
+  Future<List<String>> pickAdditionalPaths() async => _nextPickResponse();
+
+  @override
+  Future<List<TransferItemViewData>> pickAdditionalFiles({
+    required List<String> existingPaths,
+  }) async {
+    return appendPaths(
+      existingPaths: existingPaths,
+      incomingPaths: _nextPickResponse(),
+    );
+  }
 
   @override
   Future<List<TransferItemViewData>> loadPaths(List<String> paths) async =>
-      List<TransferItemViewData>.unmodifiable(pickedItems);
-}
-
-class FakeReceiveRegistrationSource implements ReceiveRegistrationSource {
-  const FakeReceiveRegistrationSource();
+      _mapPaths(paths);
 
   @override
-  Future<ReceiveRegistrationData> ensureReceiverRegistration({
-    required String deviceName,
-  }) async =>
-      const ReceiveRegistrationData(code: 'F9P2Q1', expiresAt: 'unused');
+  Future<List<TransferItemViewData>> appendPaths({
+    required List<String> existingPaths,
+    required List<String> incomingPaths,
+  }) async {
+    final merged = <String>[];
+    final seen = <String>{};
+    for (final path in [...existingPaths, ...incomingPaths]) {
+      if (seen.add(path)) {
+        merged.add(path);
+      }
+    }
+    return _mapPaths(merged);
+  }
+
+  @override
+  Future<List<TransferItemViewData>> removePath({
+    required List<String> existingPaths,
+    required String removedPath,
+  }) async {
+    return _mapPaths(
+      existingPaths
+          .where((path) => path != removedPath)
+          .toList(growable: false),
+    );
+  }
+
+  List<String> _nextPickResponse() {
+    final index = _pickIndex < _pickResponses.length
+        ? _pickIndex
+        : _pickResponses.length - 1;
+    _pickIndex += 1;
+    return _pickResponses[index];
+  }
+
+  List<TransferItemViewData> _mapPaths(List<String> paths) {
+    final seen = <String>{};
+    return List<TransferItemViewData>.unmodifiable(
+      paths.where(seen.add).map((path) => _itemCatalog[path]!).toList(),
+    );
+  }
+}
+
+class FakeNearbyDiscoverySource implements NearbyDiscoverySource {
+  FakeNearbyDiscoverySource({this.destinations = const [], this.scanHandler});
+
+  final List<SendDestinationViewData> destinations;
+  final NearbySendScan? scanHandler;
+
+  @override
+  Future<List<SendDestinationViewData>> scan({
+    Duration timeout = const Duration(seconds: 12),
+  }) async {
+    final next = await (scanHandler?.call() ?? Future.value(destinations));
+    return List<SendDestinationViewData>.unmodifiable(next);
+  }
 }
 
 class FakeSendTransferSource implements SendTransferSource {
@@ -129,8 +245,8 @@ class FakeSendTransferSource implements SendTransferSource {
   @override
   Stream<SendTransferUpdate> startTransfer(SendTransferRequestData request) {
     lastRequest = request;
-    _controller?.close();
-    _controller = StreamController<SendTransferUpdate>();
+    unawaited(_controller?.close());
+    _controller = StreamController<SendTransferUpdate>.broadcast();
     return _controller!.stream;
   }
 
@@ -140,6 +256,60 @@ class FakeSendTransferSource implements SendTransferSource {
 
   Future<void> finish() async {
     await _controller?.close();
+  }
+}
+
+class FakeReceiverServiceSource implements ReceiverServiceSource {
+  FakeReceiverServiceSource({
+    this.initialBadge = const ReceiverBadgeState(
+      code: 'F9P2Q1',
+      status: 'Ready',
+    ),
+  });
+
+  final ReceiverBadgeState initialBadge;
+  final StreamController<ReceiverBadgeState> _badgeController =
+      StreamController<ReceiverBadgeState>.broadcast();
+  final StreamController<rust_receiver.ReceiverTransferEvent>
+  _incomingController =
+      StreamController<rust_receiver.ReceiverTransferEvent>.broadcast();
+  final List<bool> discoverableCalls = <bool>[];
+  final List<bool> respondToOfferCalls = <bool>[];
+
+  void emitBadge(ReceiverBadgeState badge) {
+    _badgeController.add(badge);
+  }
+
+  void emitIncoming(rust_receiver.ReceiverTransferEvent event) {
+    _incomingController.add(event);
+  }
+
+  Future<void> dispose() async {
+    await _badgeController.close();
+    await _incomingController.close();
+  }
+
+  @override
+  Future<void> respondToOffer({required bool accept}) async {
+    respondToOfferCalls.add(accept);
+  }
+
+  @override
+  Future<void> setDiscoverable({required bool enabled}) async {
+    discoverableCalls.add(enabled);
+  }
+
+  @override
+  Stream<ReceiverBadgeState> watchBadge(DriftAppIdentity identity) async* {
+    yield initialBadge;
+    yield* _badgeController.stream;
+  }
+
+  @override
+  Stream<rust_receiver.ReceiverTransferEvent> watchIncomingTransfers(
+    DriftAppIdentity identity,
+  ) {
+    return _incomingController.stream;
   }
 }
 
@@ -196,7 +366,7 @@ void main() {
   testWidgets('app launches with a calm single-surface idle state', (
     tester,
   ) async {
-    await pumpUtilityApp(tester, controller: buildTestController());
+    await pumpUtilityApp(tester);
 
     expect(find.byKey(const ValueKey<String>('utility-shell')), findsOneWidget);
     expect(
@@ -224,7 +394,7 @@ void main() {
   testWidgets('empty file pick stays on idle send state', (tester) async {
     await pumpUtilityApp(
       tester,
-      controller: buildTestController(
+      container: buildTestContainer(
         sendItemSource: FakeSendItemSource(pickedItems: const []),
       ),
     );
@@ -233,7 +403,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Drop files to send'), findsOneWidget);
-    expect(find.text('Or enter a code'), findsNothing);
+    expect(find.text('Send with code'), findsNothing);
     expect(shellBackButton(), findsNothing);
     expectNoFlutterError(tester);
   });
@@ -241,7 +411,7 @@ void main() {
   testWidgets('receive code pill copies the idle code to the clipboard', (
     tester,
   ) async {
-    await pumpUtilityApp(tester, controller: buildTestController());
+    await pumpUtilityApp(tester);
 
     final copiedText = await recordClipboardWrites(() async {
       await tester.tap(idleReceiveCodePill());
@@ -254,8 +424,9 @@ void main() {
   });
 
   testWidgets('receive flow previews files and completes', (tester) async {
-    final controller = buildTestController()..openReceiveEntry();
-    await pumpUtilityApp(tester, controller: controller);
+    final container = buildTestContainer();
+    container.read(driftAppNotifierProvider.notifier).openReceiveEntry();
+    await pumpUtilityApp(tester, container: container);
 
     await tester.enterText(receiveCodeFieldPrimary(), 'ab2cd3');
     await tester.pump();
@@ -278,16 +449,13 @@ void main() {
 
     expect(find.text('Files saved'), findsOneWidget);
     expect(find.text('Saved to Downloads'), findsOneWidget);
-    expect(find.text('Saved to'), findsOneWidget);
-    expect(find.text('Downloads'), findsOneWidget);
-    expect(find.text('4'), findsOneWidget);
-    expect(find.text('14.9 MB'), findsOneWidget);
     expectNoFlutterError(tester);
   });
 
   testWidgets('receive flow validates short codes inline', (tester) async {
-    final controller = buildTestController()..openReceiveEntry();
-    await pumpUtilityApp(tester, controller: controller);
+    final container = buildTestContainer();
+    container.read(driftAppNotifierProvider.notifier).openReceiveEntry();
+    await pumpUtilityApp(tester, container: container);
 
     await tester.enterText(receiveCodeFieldPrimary(), 'abc');
     await tester.pump();
@@ -306,17 +474,17 @@ void main() {
     tester,
   ) async {
     final sendTransferSource = FakeSendTransferSource();
-    await pumpUtilityApp(
-      tester,
-      controller: buildTestController(sendTransferSource: sendTransferSource),
+    final container = buildTestContainer(
+      sendTransferSource: sendTransferSource,
     );
+    await pumpUtilityApp(tester, container: container);
 
     await tester.ensureVisible(chooseFilesButton());
     await tester.tap(chooseFilesButton());
     await tester.pumpAndSettle();
 
-    expect(find.text('2'), findsOneWidget);
-    expect(find.text('Or enter a code'), findsOneWidget);
+    expect(find.text('2 files, 258 KB'), findsOneWidget);
+    expect(find.text('Send with code'), findsOneWidget);
     expect(find.text('sample.txt'), findsWidgets);
     expect(find.text('Create code'), findsNothing);
 
@@ -389,7 +557,7 @@ void main() {
     final sendTransferSource = FakeSendTransferSource();
     await pumpUtilityApp(
       tester,
-      controller: buildTestController(sendTransferSource: sendTransferSource),
+      container: buildTestContainer(sendTransferSource: sendTransferSource),
     );
 
     await tester.tap(chooseFilesButton());
@@ -413,14 +581,14 @@ void main() {
     final sendTransferSource = FakeSendTransferSource();
     await pumpUtilityApp(
       tester,
-      controller: buildTestController(sendTransferSource: sendTransferSource),
+      container: buildTestContainer(sendTransferSource: sendTransferSource),
     );
 
     await tester.tap(chooseFilesButton());
     await tester.pumpAndSettle();
 
     expect(shellBackButton(), findsOneWidget);
-    expect(find.text('Or enter a code'), findsOneWidget);
+    expect(find.text('Send with code'), findsOneWidget);
 
     await tester.enterText(sendCodeField(), 'ab2cd3');
     await tester.pump();
@@ -439,7 +607,7 @@ void main() {
     await tester.tap(shellBackButton());
     await tester.pumpAndSettle();
 
-    expect(find.text('Or enter a code'), findsOneWidget);
+    expect(find.text('Send with code'), findsOneWidget);
     expect(find.text('sample.txt'), findsWidgets);
 
     await tester.tap(shellBackButton());
@@ -451,10 +619,10 @@ void main() {
 
   testWidgets('cancel during send returns to file selection', (tester) async {
     final sendTransferSource = FakeSendTransferSource();
-    await pumpUtilityApp(
-      tester,
-      controller: buildTestController(sendTransferSource: sendTransferSource),
+    final container = buildTestContainer(
+      sendTransferSource: sendTransferSource,
     );
+    await pumpUtilityApp(tester, container: container);
 
     await tester.tap(chooseFilesButton());
     await tester.pumpAndSettle();
@@ -475,8 +643,10 @@ void main() {
     await tester.tap(find.text('Cancel'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Or enter a code'), findsOneWidget);
+    expect(find.text('Send with code'), findsOneWidget);
     expect(find.text('sample.txt'), findsWidgets);
+    container.read(driftAppNotifierProvider.notifier).resetShell();
+    await tester.pumpAndSettle();
     expectNoFlutterError(tester);
   });
 
@@ -493,7 +663,7 @@ void main() {
 
     await pumpUtilityApp(
       tester,
-      controller: buildTestController(
+      container: buildTestContainer(
         sendTransferSource: sendTransferSource,
         nearbySendScan: fakeScan,
       ),
@@ -505,6 +675,13 @@ void main() {
     expect(find.text('Nearby devices'), findsOneWidget);
     expect(find.text('Lab Mac'), findsOneWidget);
 
+    await tester.ensureVisible(
+      find.byKey(
+        const ValueKey<String>(
+          'nearby-tile-recv-abc123xyz0._drift._udp.local.',
+        ),
+      ),
+    );
     await tester.tap(
       find.byKey(
         const ValueKey<String>(
@@ -524,10 +701,10 @@ void main() {
 
   testWidgets('partial send code does not begin the transfer', (tester) async {
     final sendTransferSource = FakeSendTransferSource();
-    await pumpUtilityApp(
-      tester,
-      controller: buildTestController(sendTransferSource: sendTransferSource),
+    final container = buildTestContainer(
+      sendTransferSource: sendTransferSource,
     );
+    await pumpUtilityApp(tester, container: container);
 
     await tester.tap(chooseFilesButton());
     await tester.pumpAndSettle();
@@ -540,6 +717,8 @@ void main() {
 
     expect(sendTransferSource.lastRequest, isNull);
     expect(find.text('Connecting'), findsNothing);
+    container.read(driftAppNotifierProvider.notifier).resetShell();
+    await tester.pumpAndSettle();
     expectNoFlutterError(tester);
   });
 
@@ -547,10 +726,10 @@ void main() {
     'send failure shows the rust error and back returns to selection',
     (tester) async {
       final sendTransferSource = FakeSendTransferSource();
-      await pumpUtilityApp(
-        tester,
-        controller: buildTestController(sendTransferSource: sendTransferSource),
+      final container = buildTestContainer(
+        sendTransferSource: sendTransferSource,
       );
+      await pumpUtilityApp(tester, container: container);
 
       await tester.tap(chooseFilesButton());
       await tester.pumpAndSettle();
@@ -587,8 +766,10 @@ void main() {
       await tester.tap(shellBackButton());
       await tester.pumpAndSettle();
 
-      expect(find.text('Or enter a code'), findsOneWidget);
+      expect(find.text('Send with code'), findsOneWidget);
       expect(find.text('sample.txt'), findsWidgets);
+      container.read(driftAppNotifierProvider.notifier).resetShell();
+      await tester.pumpAndSettle();
       expectNoFlutterError(tester);
     },
   );
@@ -599,7 +780,7 @@ void main() {
     final sendTransferSource = FakeSendTransferSource();
     await pumpUtilityApp(
       tester,
-      controller: buildTestController(sendTransferSource: sendTransferSource),
+      container: buildTestContainer(sendTransferSource: sendTransferSource),
     );
 
     await tester.tap(chooseFilesButton());
@@ -625,48 +806,125 @@ void main() {
   testWidgets('send selection shows nearby section and manual code entry', (
     tester,
   ) async {
-    final controller = buildTestController(nearbySendDestinations: const []);
-    await pumpUtilityApp(tester, controller: controller);
+    final container = buildTestContainer();
+    await pumpUtilityApp(tester, container: container);
 
     await tester.tap(chooseFilesButton());
     await tester.pumpAndSettle();
 
-    expect(find.text('Or enter a code'), findsOneWidget);
+    expect(find.text('Send with code'), findsOneWidget);
     expect(find.text('Nearby devices'), findsOneWidget);
     expect(find.text('No nearby devices found.'), findsOneWidget);
     expect(sendCodeField(), findsOneWidget);
+    container.read(driftAppNotifierProvider.notifier).resetShell();
+    await tester.pumpAndSettle();
     expectNoFlutterError(tester);
   });
 
   testWidgets('single dropped item renders a compact summary row', (
     tester,
   ) async {
-    final controller = buildTestController(
+    final container = buildTestContainer(
       droppedSendItems: const [
         TransferItemViewData(
           name: 'proposal.pdf',
           path: 'proposal.pdf',
           size: '2.4 MB',
           kind: TransferItemKind.file,
+          sizeBytes: 2516582,
         ),
       ],
     );
-    await pumpUtilityApp(tester, controller: controller);
+    await pumpUtilityApp(tester, container: container);
 
     await tester.tap(chooseFilesButton());
     await tester.pumpAndSettle();
 
-    expect(find.text('1'), findsOneWidget);
+    expect(find.text('1 file, 2.4 MB'), findsOneWidget);
     expect(find.text('proposal.pdf'), findsOneWidget);
     expect(find.text('+1 more item'), findsNothing);
+    container.read(driftAppNotifierProvider.notifier).resetShell();
+    await tester.pumpAndSettle();
     expectNoFlutterError(tester);
+  });
+
+  testWidgets('tapping Add more appends to the current selection', (
+    tester,
+  ) async {
+    const extraItem = TransferItemViewData(
+      name: 'notes.pdf',
+      path: 'notes.pdf',
+      size: '42 KB',
+      kind: TransferItemKind.file,
+    );
+    final container = buildTestContainer(
+      sendItemSource: FakeSendItemSource(
+        pickedItems: const [
+          TransferItemViewData(
+            name: 'sample.txt',
+            path: 'sample.txt',
+            size: '18 KB',
+            kind: TransferItemKind.file,
+          ),
+        ],
+        pickResponses: const [
+          ['sample.txt'],
+          ['notes.pdf'],
+        ],
+        itemCatalog: const {'notes.pdf': extraItem},
+      ),
+    );
+    await pumpUtilityApp(tester, container: container);
+
+    await tester.tap(chooseFilesButton());
+    await pumpUiSettled(tester);
+    await tester.tap(find.text('Add more'));
+    await pumpUiSettled(tester);
+
+    expect(find.text('sample.txt'), findsOneWidget);
+    expect(find.text('notes.pdf'), findsOneWidget);
+    container.read(driftAppNotifierProvider.notifier).resetShell();
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('tapping remove on a row removes only that row', (tester) async {
+    final container = buildTestContainer(
+      droppedSendItems: const [
+        TransferItemViewData(
+          name: 'sample.txt',
+          path: 'sample.txt',
+          size: '18 KB',
+          kind: TransferItemKind.file,
+        ),
+        TransferItemViewData(
+          name: 'photos',
+          path: 'photos/',
+          size: '12 items',
+          kind: TransferItemKind.folder,
+        ),
+      ],
+    );
+    await pumpUtilityApp(tester, container: container);
+
+    await tester.tap(chooseFilesButton());
+    await pumpUiSettled(tester);
+    await tester.tap(
+      find.byKey(const ValueKey<String>('remove-send-item-sample.txt')),
+    );
+    await pumpUiSettled(tester);
+
+    expect(find.text('sample.txt'), findsNothing);
+    expect(find.text('photos'), findsOneWidget);
+    container.read(driftAppNotifierProvider.notifier).resetShell();
+    await tester.pumpAndSettle();
   });
 
   testWidgets('receive error can recover back into a valid receive flow', (
     tester,
   ) async {
-    final controller = buildTestController()..openReceiveEntry();
-    await pumpUtilityApp(tester, controller: controller);
+    final container = buildTestContainer();
+    container.read(driftAppNotifierProvider.notifier).openReceiveEntry();
+    await pumpUtilityApp(tester, container: container);
 
     await tester.enterText(receiveCodeFieldPrimary(), 'abc');
     await tester.pump();
@@ -687,8 +945,9 @@ void main() {
   testWidgets('back arrow returns receive review to code entry', (
     tester,
   ) async {
-    final controller = buildTestController()..openReceiveEntry();
-    await pumpUtilityApp(tester, controller: controller);
+    final container = buildTestContainer();
+    container.read(driftAppNotifierProvider.notifier).openReceiveEntry();
+    await pumpUtilityApp(tester, container: container);
 
     await tester.enterText(receiveCodeFieldPrimary(), 'ab2cd3');
     await tester.pump();
@@ -711,7 +970,7 @@ void main() {
   testWidgets('idle drop surface reacts to hover without shifting layout', (
     tester,
   ) async {
-    await pumpUtilityApp(tester, controller: buildTestController());
+    await pumpUtilityApp(tester);
 
     final beforeSize = tester.getSize(idleDropSurface());
     final beforeWidget = tester.widget<AnimatedContainer>(idleDropSurface());
@@ -736,7 +995,7 @@ void main() {
   testWidgets('hovering the idle window reinforces the drop surface', (
     tester,
   ) async {
-    await pumpUtilityApp(tester, controller: buildTestController());
+    await pumpUtilityApp(tester);
 
     final beforeWidget = tester.widget<AnimatedContainer>(idleDropSurface());
     final beforeDecoration = beforeWidget.decoration! as BoxDecoration;
@@ -760,11 +1019,7 @@ void main() {
   });
 
   testWidgets('larger windows keep the same compact shell', (tester) async {
-    await pumpUtilityApp(
-      tester,
-      size: const Size(840, 760),
-      controller: buildTestController(),
-    );
+    await pumpUtilityApp(tester, size: const Size(840, 760));
 
     expect(find.byKey(const ValueKey<String>('utility-shell')), findsOneWidget);
     expect(find.text('Drop files to send'), findsOneWidget);

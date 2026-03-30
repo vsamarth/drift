@@ -1,51 +1,82 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../platform/receive_registration_source.dart';
-import '../platform/send_item_source.dart';
-import '../platform/send_transfer_source.dart';
-import 'app_identity.dart';
-import 'drift_controller.dart';
-import 'receiver_service_controller.dart';
+import '../shell/shell_routing.dart';
+import 'drift_app_notifier.dart';
+import 'drift_app_state.dart';
+import 'receiver_service_source.dart';
 
-final driftAppIdentityProvider = Provider<DriftAppIdentity>(
-  (ref) => buildDefaultDriftAppIdentity(),
+export 'drift_dependencies.dart';
+
+final driftAppNotifierProvider =
+    NotifierProvider<DriftAppNotifier, DriftAppState>(DriftAppNotifier.new);
+
+final shellViewProvider = Provider<ShellView>(
+  (ref) =>
+      ref.watch(driftAppNotifierProvider.select((state) => state.shellView)),
 );
 
-final sendItemSourceProvider = Provider<SendItemSource>(
-  (ref) => const LocalSendItemSource(),
+final showShellBackButtonProvider = Provider<bool>(
+  (ref) => ref.watch(
+    driftAppNotifierProvider.select((state) => state.showShellBackButton),
+  ),
 );
 
-final sendTransferSourceProvider = Provider<SendTransferSource>(
-  (ref) => const LocalSendTransferSource(),
+final canGoBackProvider = Provider<bool>(
+  (ref) =>
+      ref.watch(driftAppNotifierProvider.select((state) => state.canGoBack)),
 );
 
-final receiveRegistrationSourceProvider = Provider<ReceiveRegistrationSource>(
-  (ref) => const LocalReceiveRegistrationSource(),
+final idleBadgeProvider = Provider<ReceiverBadgeState>(
+  (ref) => ref.watch(
+    driftAppNotifierProvider.select((state) => state.receiverBadge),
+  ),
 );
 
-final driftControllerProvider =
-    ChangeNotifierProvider.autoDispose<DriftController>((ref) {
-      final identity = ref.watch(driftAppIdentityProvider);
-      final controller = DriftController(
-        deviceName: identity.deviceName,
-        deviceType: identity.deviceType,
-        sendItemSource: ref.watch(sendItemSourceProvider),
-        sendTransferSource: ref.watch(sendTransferSourceProvider),
-        receiveRegistrationSource: ref.watch(receiveRegistrationSourceProvider),
-        enableIdleReceiverRegistrationBootstrap: false,
-      );
-      ref.onDispose(controller.dispose);
-      return controller;
-    });
+final sendDraftSessionProvider = Provider<SendDraftSession?>((ref) {
+  final session = ref.watch(
+    driftAppNotifierProvider.select((state) => state.session),
+  );
+  return session is SendDraftSession ? session : null;
+});
 
-final receiverServiceControllerProvider =
-    ChangeNotifierProvider.autoDispose<ReceiverServiceController>((ref) {
-      final identity = ref.watch(driftAppIdentityProvider);
-      final controller = ReceiverServiceController(
-        deviceName: identity.deviceName,
-        deviceType: identity.deviceType,
-        downloadRoot: identity.downloadRoot,
-      );
-      ref.onDispose(controller.dispose);
-      return controller;
-    });
+final sendTransferSessionProvider = Provider<SendTransferSession?>((ref) {
+  final session = ref.watch(
+    driftAppNotifierProvider.select((state) => state.session),
+  );
+  return session is SendTransferSession ? session : null;
+});
+
+final sendResultSessionProvider = Provider<SendResultSession?>((ref) {
+  final session = ref.watch(
+    driftAppNotifierProvider.select((state) => state.session),
+  );
+  return session is SendResultSession ? session : null;
+});
+
+final receiveEntrySessionProvider = Provider<ReceiveEntrySession?>((ref) {
+  final session = ref.watch(
+    driftAppNotifierProvider.select((state) => state.session),
+  );
+  return session is ReceiveEntrySession ? session : null;
+});
+
+final receiveOfferSessionProvider = Provider<ReceiveOfferSession?>((ref) {
+  final session = ref.watch(
+    driftAppNotifierProvider.select((state) => state.session),
+  );
+  return session is ReceiveOfferSession ? session : null;
+});
+
+final receiveTransferSessionProvider = Provider<ReceiveTransferSession?>((ref) {
+  final session = ref.watch(
+    driftAppNotifierProvider.select((state) => state.session),
+  );
+  return session is ReceiveTransferSession ? session : null;
+});
+
+final receiveResultSessionProvider = Provider<ReceiveResultSession?>((ref) {
+  final session = ref.watch(
+    driftAppNotifierProvider.select((state) => state.session),
+  );
+  return session is ReceiveResultSession ? session : null;
+});

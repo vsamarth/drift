@@ -1,27 +1,28 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/theme/drift_theme.dart';
-import '../../state/drift_controller.dart';
+import '../../state/drift_providers.dart';
 import 'receive_code_field.dart';
 
-class ReceiveEntryCard extends StatelessWidget {
+class ReceiveEntryCard extends ConsumerWidget {
   const ReceiveEntryCard({
     super.key,
-    required this.controller,
     required this.title,
     this.helper,
     this.errorText,
     this.height,
   });
 
-  final DriftController controller;
   final String title;
   final String? helper;
   final String? errorText;
   final double? height;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final state = ref.watch(driftAppNotifierProvider);
+    final notifier = ref.read(driftAppNotifierProvider.notifier);
     final hasError = errorText != null;
 
     return SizedBox(
@@ -43,16 +44,16 @@ class ReceiveEntryCard extends StatelessWidget {
                 Expanded(
                   child: ReceiveCodeField(
                     key: const ValueKey<String>('receive-code-field'),
-                    code: controller.receiveCode,
-                    onChanged: controller.updateReceiveCode,
-                    onSubmitted: (_) => controller.previewReceiveOffer(),
+                    code: state.receiveCode,
+                    onChanged: notifier.updateReceiveCode,
+                    onSubmitted: (_) => notifier.previewReceiveOffer(),
                     hasError: hasError,
                   ),
                 ),
                 const SizedBox(width: 8),
                 FilledButton(
                   key: const ValueKey<String>('receive-submit'),
-                  onPressed: controller.previewReceiveOffer,
+                  onPressed: notifier.previewReceiveOffer,
                   child: const Text('Receive'),
                 ),
               ],

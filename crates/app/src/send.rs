@@ -1,10 +1,12 @@
-use std::path::PathBuf;
+use std::collections::HashSet;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Result, bail};
 
 use crate::error::format_error_chain;
 use crate::types::{
-    NearbyReceiver, SelectionItem, SelectionPreview, SendConfig, SendEvent, SendPhase,
+    NearbyReceiver, SelectionChange, SelectionItem, SelectionPreview, SendConfig, SendEvent,
+    SendPhase,
 };
 use drift_core::fs_plan::preview::{
     SelectedPathKind, SelectedPathPreview, SelectionPreview as CoreSelectionPreview,
@@ -25,7 +27,12 @@ pub struct SendSession {
 
 impl SendSession {
     pub fn new(config: SendConfig, paths: Vec<PathBuf>) -> Self {
-        Self { config, paths }
+        let mut session = Self {
+            config,
+            paths: Vec::new(),
+        };
+        session.replace_paths(paths);
+        session
     }
 
     pub fn config(&self) -> &SendConfig {
@@ -34,6 +41,58 @@ impl SendSession {
 
     pub fn paths(&self) -> &[PathBuf] {
         &self.paths
+    }
+
+    pub fn replace_paths(&mut self, paths: Vec<PathBuf>) {
+        let mut seen = HashSet::new();
+        self.paths = paths
+            .into_iter()
+            .filter(|path| seen.insert(selection_path_key(path)))
+            .collect();
+    }
+
+    pub fn add_paths(&mut self, paths: Vec<PathBuf>) -> SelectionChange {
+        let before = self.paths.len();
+        let mut seen = self
+            .paths
+            .iter()
+            .map(|path| selection_path_key(path))
+            .collect::<HashSet<_>>();
+
+        for path in paths {
+            if seen.insert(selection_path_key(&path)) {
+                self.paths.push(path);
+            }
+        }
+
+        let added = self.paths.len().saturating_sub(before) as u64;
+        SelectionChange {
+            paths: self.paths.clone(),
+            added_count: added,
+            removed_count: 0,
+            changed: added > 0,
+        }
+    }
+
+    pub fn remove_path(&mut self, path: &Path) -> SelectionChange {
+        let key = selection_path_key(path);
+        let before = self.paths.len();
+        self.paths.retain(|item| selection_path_key(item) != key);
+        let removed = before.saturating_sub(self.paths.len()) as u64;
+        SelectionChange {
+            paths: self.paths.clone(),
+            added_count: 0,
+            removed_count: removed,
+            changed: removed > 0,
+        }
+    }
+
+    pub fn clear_paths(&mut self) {
+        self.paths.clear();
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.paths.is_empty()
     }
 
     pub fn inspect(&self) -> Result<SelectionPreview> {
@@ -239,13 +298,17 @@ fn display_destination_label(value: &str) -> String {
     normalized
 }
 
+fn selection_path_key(path: &Path) -> String {
+    path.to_string_lossy().trim().to_owned()
+}
+
 #[cfg(test)]
 mod tests {
     use super::{SendSession, display_destination_label, map_progress};
     use crate::types::{SendConfig, SendPhase};
     use drift_core::rendezvous::{OfferFile, OfferManifest};
     use drift_core::sender::{SendTransferPhase, SendTransferProgress};
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
 
     #[test]
     fn destination_label_falls_back_for_unknown_values() {
@@ -291,5 +354,123 @@ mod tests {
         );
         assert_eq!(session.config().device_name, "Laptop");
         assert_eq!(session.paths(), [PathBuf::from("sample.txt")]);
+    }
+
+    #[test]
+    fn session_constructor_preserves_order_and_dedupes() {
+        let session = SendSession::new(
+            SendConfig {
+                device_name: "Laptop".to_owned(),
+                device_type: "laptop".to_owned(),
+            },
+            vec![
+                PathBuf::from("a.txt"),
+                PathBuf::from("b.txt"),
+                PathBuf::from("a.txt"),
+            ],
+        );
+        assert_eq!(
+            session.paths(),
+            [PathBuf::from("a.txt"), PathBuf::from("b.txt")]
+        );
+    }
+
+    #[test]
+    fn add_paths_appends_unique_items_only() {
+        let mut session = SendSession::new(
+            SendConfig {
+                device_name: "Laptop".to_owned(),
+                device_type: "laptop".to_owned(),
+            },
+            vec![PathBuf::from("a.txt")],
+        );
+
+        let change = session.add_paths(vec![
+            PathBuf::from("a.txt"),
+            PathBuf::from("b.txt"),
+            PathBuf::from("c.txt"),
+        ]);
+
+        assert!(change.changed);
+        assert_eq!(change.added_count, 2);
+        assert_eq!(change.removed_count, 0);
+        assert_eq!(
+            change.paths,
+            vec![
+                PathBuf::from("a.txt"),
+                PathBuf::from("b.txt"),
+                PathBuf::from("c.txt"),
+            ]
+        );
+        assert_eq!(session.paths(), change.paths);
+    }
+
+    #[test]
+    fn add_paths_is_noop_for_duplicates() {
+        let mut session = SendSession::new(
+            SendConfig {
+                device_name: "Laptop".to_owned(),
+                device_type: "laptop".to_owned(),
+            },
+            vec![PathBuf::from("a.txt")],
+        );
+
+        let change = session.add_paths(vec![PathBuf::from("a.txt")]);
+
+        assert!(!change.changed);
+        assert_eq!(change.added_count, 0);
+        assert_eq!(change.removed_count, 0);
+        assert_eq!(session.paths(), [PathBuf::from("a.txt")]);
+    }
+
+    #[test]
+    fn remove_path_removes_matching_item() {
+        let mut session = SendSession::new(
+            SendConfig {
+                device_name: "Laptop".to_owned(),
+                device_type: "laptop".to_owned(),
+            },
+            vec![PathBuf::from("a.txt"), PathBuf::from("b.txt")],
+        );
+
+        let change = session.remove_path(Path::new("a.txt"));
+
+        assert!(change.changed);
+        assert_eq!(change.added_count, 0);
+        assert_eq!(change.removed_count, 1);
+        assert_eq!(session.paths(), [PathBuf::from("b.txt")]);
+    }
+
+    #[test]
+    fn remove_path_is_noop_when_missing() {
+        let mut session = SendSession::new(
+            SendConfig {
+                device_name: "Laptop".to_owned(),
+                device_type: "laptop".to_owned(),
+            },
+            vec![PathBuf::from("a.txt")],
+        );
+
+        let change = session.remove_path(Path::new("missing.txt"));
+
+        assert!(!change.changed);
+        assert_eq!(change.removed_count, 0);
+        assert_eq!(session.paths(), [PathBuf::from("a.txt")]);
+    }
+
+    #[test]
+    fn clear_paths_empties_selection() {
+        let mut session = SendSession::new(
+            SendConfig {
+                device_name: "Laptop".to_owned(),
+                device_type: "laptop".to_owned(),
+            },
+            vec![PathBuf::from("a.txt")],
+        );
+
+        session.clear_paths();
+
+        assert!(session.is_empty());
+        assert!(session.paths().is_empty());
     }
 }
