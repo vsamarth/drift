@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use drift_core::fs_plan::{
+use drift_core::fs_plan::preview::{
     inspect_selected_paths, SelectedPathKind, SelectedPathPreview,
     SelectionPreview as CoreSelectionPreview,
 };

@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use anyhow::{Context, Result, bail};
 use rand::random;
 
-use crate::fs_plan::{PreparedFiles, prepare_files};
+use crate::fs_plan::prepare::{PreparedFiles, prepare_files};
 use crate::rendezvous::{OfferManifest, RendezvousClient, resolve_server_url, validate_code};
 use crate::session::{bind_endpoint, connect_to_ticket, send_files_over_connection};
 use crate::transfer::{SenderMachine, SenderState, ensure_session_id, validate_hello};

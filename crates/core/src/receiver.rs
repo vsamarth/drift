@@ -6,7 +6,7 @@ use std::time::Duration;
 use anyhow::{Context, Result, bail};
 use tokio::time::timeout;
 
-use crate::fs_plan::{ExpectedFile, build_expected_files};
+use crate::fs_plan::receive::{ExpectedFile, build_expected_files};
 use crate::rendezvous::OfferManifest;
 use crate::session::receive_files_over_connection;
 use crate::transfer::{ReceiverMachine, ReceiverState, ensure_session_id, validate_hello};

@@ -8,8 +8,9 @@ use tokio::fs::{self, File};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::time::{Duration, Instant};
 
-use crate::fs_plan::{
-    ExpectedFile, PreparedFile, ensure_destination_available, resolve_transfer_destination,
+use crate::fs_plan::prepare::PreparedFile;
+use crate::fs_plan::receive::{
+    ExpectedFile, ensure_destination_available, resolve_transfer_destination,
 };
 use crate::util::{describe_remote, human_size};
 use crate::wire::{
