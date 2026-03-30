@@ -1,8 +1,7 @@
 use std::path::PathBuf;
 
 use drift_app::{
-    send, SendEvent as AppSendEvent, SendPhase as AppSendPhase, SendRequest as AppSendRequest,
-    SendTarget,
+    SendConfig, SendEvent as AppSendEvent, SendPhase as AppSendPhase, SendSession,
 };
 
 use super::RUNTIME;
@@ -46,34 +45,46 @@ pub fn start_send_transfer(
     request: SendTransferRequest,
     updates: StreamSink<SendTransferEvent>,
 ) -> Result<(), String> {
-    let app_request = AppSendRequest {
-        paths: request.paths.into_iter().map(PathBuf::from).collect(),
-        device_name: request.device_name,
-        device_type: request.device_type,
-        target: match request
+    let session = SendSession::new(
+        SendConfig {
+            device_name: request.device_name,
+            device_type: request.device_type,
+        },
+        request.paths.into_iter().map(PathBuf::from).collect(),
+    );
+
+    RUNTIME.block_on(async move {
+        let result = match request
             .ticket
             .as_deref()
             .map(str::trim)
             .filter(|s| !s.is_empty())
         {
-            Some(ticket) => SendTarget::Lan {
-                ticket: ticket.to_owned(),
-                destination_label: request
-                    .lan_destination_label
-                    .unwrap_or_else(|| "Nearby receiver".to_owned()),
-            },
-            None => SendTarget::Code {
-                code: request.code,
-                server_url: request.server_url.or(Some(LOCAL_RENDEZVOUS_URL.to_owned())),
-            },
-        },
-    };
-
-    RUNTIME.block_on(async move {
-        let result = send(app_request, |event| {
-            let _ = updates.add(map_event(event));
-        })
-        .await;
+            Some(ticket) => {
+                session
+                    .send_to_nearby(
+                        ticket.to_owned(),
+                        request
+                            .lan_destination_label
+                            .unwrap_or_else(|| "Nearby receiver".to_owned()),
+                        |event| {
+                            let _ = updates.add(map_event(event));
+                        },
+                    )
+                    .await
+            }
+            None => {
+                session
+                    .send_to_code(
+                        request.code,
+                        request.server_url.or(Some(LOCAL_RENDEZVOUS_URL.to_owned())),
+                        |event| {
+                            let _ = updates.add(map_event(event));
+                        },
+                    )
+                    .await
+            }
+        };
 
         result.map(|_| ()).map_err(|e| e.to_string())
     })

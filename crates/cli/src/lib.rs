@@ -5,12 +5,11 @@ use anyhow::{Context, Result, bail};
 use clap::{Args, ValueEnum};
 use drift_app::{
     ConflictPolicy, OfferDecision, ReceiverConfig, ReceiverEvent, ReceiverOfferEvent,
-    ReceiverOfferPhase, ReceiverService, SendEvent, SendPhase, SendRequest, SendTarget,
-    send as app_send,
+    ReceiverOfferPhase, ReceiverService, SendConfig, SendEvent, SendPhase, SendSession,
 };
 use drift_core::util::{confirm_accept, human_size, process_display_device_name};
-use iroh::SecretKey;
 use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
+use iroh::SecretKey;
 use tokio::time::Duration;
 use tracing::{debug, info, warn};
 use tracing_subscriber::EnvFilter;
@@ -75,29 +74,31 @@ fn log_env_filter(verbose: u8) -> EnvFilter {
 
 pub async fn send(code: String, files: Vec<PathBuf>, server_url: Option<String>) -> Result<()> {
     let device_name = process_display_device_name();
+    let session = SendSession::new(
+        SendConfig {
+            device_name: device_name.clone(),
+            device_type: "laptop".to_owned(),
+        },
+        files,
+    );
     info!(
         code = %code.trim().to_uppercase(),
-        file_count = files.len(),
+        file_count = session.paths().len(),
         device = %device_name,
         rendezvous_override = ?server_url,
         "send.started"
     );
-    for (i, path) in files.iter().enumerate() {
+    for (i, path) in session.paths().iter().enumerate() {
         debug!(index = i, path = %path.display(), "send.input_path");
     }
 
     let mut progress_bar = None;
     let mut last_phase = None;
-    let outcome = app_send(
-        SendRequest {
-            paths: files,
-            device_name,
-            device_type: "laptop".to_owned(),
-            target: SendTarget::Code { code, server_url },
-        },
-        |event| render_send_event(&mut last_phase, &mut progress_bar, &event),
-    )
-    .await;
+    let outcome = session
+        .send_to_code(code, server_url, |event| {
+            render_send_event(&mut last_phase, &mut progress_bar, &event)
+        })
+        .await;
     finish_progress_bar(&mut progress_bar);
 
     match &outcome {
@@ -114,23 +115,21 @@ pub async fn send_nearby(
     _server_url: Option<String>,
 ) -> Result<()> {
     let device_name = process_display_device_name();
+    let session = SendSession::new(
+        SendConfig {
+            device_name: device_name.clone(),
+            device_type: "laptop".to_owned(),
+        },
+        files,
+    );
     info!(
-        file_count = files.len(),
+        file_count = session.paths().len(),
         device = %device_name,
         scan_secs = nearby_timeout_secs.max(1),
         "send.nearby_started"
     );
 
-    let receiver = ReceiverService::start(ReceiverConfig {
-        device_name: device_name.clone(),
-        device_type: "laptop".to_owned(),
-        download_root: PathBuf::from("."),
-        conflict_policy: ConflictPolicy::Reject,
-        secret_key: SecretKey::from_bytes(&rand::random()),
-    })
-    .await?;
-    let receivers = receiver.scan_nearby(nearby_timeout_secs).await?;
-    let _ = receiver.shutdown().await;
+    let receivers = session.scan_nearby(nearby_timeout_secs).await?;
 
     if receivers.is_empty() {
         bail!(
@@ -165,19 +164,13 @@ pub async fn send_nearby(
 
     let mut progress_bar = None;
     let mut last_phase = None;
-    let outcome = app_send(
-        SendRequest {
-            paths: files,
-            device_name,
-            device_type: "laptop".to_owned(),
-            target: SendTarget::Lan {
-                ticket: picked.ticket.clone(),
-                destination_label: format!("Nearby: {}", picked.label),
-            },
-        },
-        |event| render_send_event(&mut last_phase, &mut progress_bar, &event),
-    )
-    .await;
+    let outcome = session
+        .send_to_nearby(
+            picked.ticket.clone(),
+            format!("Nearby: {}", picked.label),
+            |event| render_send_event(&mut last_phase, &mut progress_bar, &event),
+        )
+        .await;
     finish_progress_bar(&mut progress_bar);
 
     match &outcome {
@@ -274,7 +267,9 @@ pub async fn receive(out_dir: PathBuf, server_url: Option<String>) -> Result<()>
 
     match &outcome {
         Ok(()) => info!("receive.session_finished_ok"),
-        Err(e) => warn!(error = %e, error_chain = %format!("{e:#}"), "receive.session_finished_err"),
+        Err(e) => {
+            warn!(error = %e, error_chain = %format!("{e:#}"), "receive.session_finished_err")
+        }
     }
 
     outcome
@@ -368,9 +363,9 @@ fn render_receive_event(
             pb.set_position(event.total_size_bytes);
             pb.set_message(event.status_message.clone());
         }
-        ReceiverOfferPhase::Completed | ReceiverOfferPhase::Declined | ReceiverOfferPhase::Failed => {
-            finish_progress_bar(progress_bar)
-        }
+        ReceiverOfferPhase::Completed
+        | ReceiverOfferPhase::Declined
+        | ReceiverOfferPhase::Failed => finish_progress_bar(progress_bar),
         ReceiverOfferPhase::OfferReady | ReceiverOfferPhase::Connecting => {}
     }
 }

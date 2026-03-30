@@ -1,8 +1,8 @@
 use std::path::PathBuf;
 
 use drift_app::{
-    inspect_paths as app_inspect_paths, SelectionItem as AppSelectionItem,
-    SelectionPreview as AppSelectionPreview,
+    SelectionItem as AppSelectionItem, SelectionPreview as AppSelectionPreview, SendConfig,
+    SendSession,
 };
 
 #[derive(Debug, Clone)]
@@ -23,7 +23,15 @@ pub struct SelectionItem {
 
 pub fn inspect_paths(paths: Vec<String>) -> Result<SelectionPreview, String> {
     let raw_paths = paths.into_iter().map(PathBuf::from).collect::<Vec<_>>();
-    let preview = app_inspect_paths(&raw_paths).map_err(|err| err.to_string())?;
+    let preview = SendSession::new(
+        SendConfig {
+            device_name: String::new(),
+            device_type: "laptop".to_owned(),
+        },
+        raw_paths,
+    )
+    .inspect()
+    .map_err(|err| err.to_string())?;
     Ok(map_preview(preview))
 }
 

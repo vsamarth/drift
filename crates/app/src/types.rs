@@ -12,23 +12,9 @@ pub enum SendPhase {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum SendTarget {
-    Code {
-        code: String,
-        server_url: Option<String>,
-    },
-    Lan {
-        ticket: String,
-        destination_label: String,
-    },
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SendRequest {
-    pub paths: Vec<PathBuf>,
+pub struct SendConfig {
     pub device_name: String,
     pub device_type: String,
-    pub target: SendTarget,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
