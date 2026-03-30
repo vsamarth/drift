@@ -158,6 +158,7 @@ pub fn ensure_session_id(actual: &str, expected: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::wire::DeviceType;
 
     #[test]
     fn sender_machine_allows_happy_path() {
@@ -187,6 +188,7 @@ mod tests {
             session_id: "abc123".to_owned(),
             role: TransferRole::Sender,
             device_name: "sam-mac".to_owned(),
+            device_type: DeviceType::Laptop,
         };
 
         assert!(validate_hello(&hello, TransferRole::Sender).is_ok());

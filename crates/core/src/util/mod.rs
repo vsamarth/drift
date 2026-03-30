@@ -1,3 +1,7 @@
+mod device_name;
+
+pub use device_name::random_device_name;
+
 use std::io::{self, Write};
 
 use anyhow::{Context, Result};

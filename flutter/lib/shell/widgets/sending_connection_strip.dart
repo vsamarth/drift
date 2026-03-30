@@ -25,15 +25,27 @@ class SendingConnectionStrip extends StatefulWidget {
   const SendingConnectionStrip({
     super.key,
     required this.localLabel,
+    required this.localDeviceType,
+    required this.remoteLabel,
     this.animate = true,
     required this.mode,
+    this.remoteDeviceType,
     this.transferProgress = 0.0,
   });
 
   final String localLabel;
+  /// `"phone"` or `"laptop"`.
+  final String localDeviceType;
+
+  /// Shown under the phone icon (e.g. the receiver’s device name).
+  final String remoteLabel;
   final bool animate;
 
   final SendingStripMode mode;
+
+  /// `"phone"` or `"laptop"`.
+  /// When null (early phases), defaults to `"phone"`.
+  final String? remoteDeviceType;
 
   /// Meaningful when [mode] is [SendingStripMode.transferring].
   final double transferProgress;
@@ -104,6 +116,10 @@ class _SendingConnectionStripState extends State<SendingConnectionStrip>
         ? widget.transferProgress.clamp(0.0, 1.0)
         : 0.0;
 
+    final localIsPhone = widget.localDeviceType.toLowerCase() == 'phone';
+    final remoteIsPhone =
+        (widget.remoteDeviceType ?? 'phone').toLowerCase() == 'phone';
+
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
@@ -113,7 +129,7 @@ class _SendingConnectionStripState extends State<SendingConnectionStrip>
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(
-                Icons.laptop_mac_rounded,
+                localIsPhone ? Icons.smartphone_rounded : Icons.laptop_mac_rounded,
                 size: _iconSize,
                 color: kInk.withValues(alpha: 0.88),
               ),
@@ -153,14 +169,16 @@ class _SendingConnectionStripState extends State<SendingConnectionStrip>
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(
-                Icons.smartphone_rounded,
+                remoteIsPhone ? Icons.smartphone_rounded : Icons.laptop_mac_rounded,
                 size: _iconSize,
                 color: kInk.withValues(alpha: 0.88),
               ),
               const SizedBox(height: 6),
               Text(
-                'Recipient',
+                widget.remoteLabel,
                 textAlign: TextAlign.center,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 style: captionStyle,
               ),
             ],

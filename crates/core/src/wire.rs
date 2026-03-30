@@ -11,6 +11,13 @@ use crate::rendezvous::OfferManifest;
 pub const ALPN: &[u8] = b"drift/transfer/v1";
 pub const TRANSFER_PROTOCOL_VERSION: u32 = 1;
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum DeviceType {
+    Phone,
+    Laptop,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct TransferTicket {
     node_id: String,
@@ -23,6 +30,7 @@ pub struct Hello {
     pub session_id: String,
     pub role: TransferRole,
     pub device_name: String,
+    pub device_type: DeviceType,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

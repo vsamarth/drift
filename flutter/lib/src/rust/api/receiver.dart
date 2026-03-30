@@ -6,7 +6,7 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `display_sender_label`, `format_error_chain`, `is_expired`, `log`, `register_new_idle_receiver`, `replace_idle_receiver`, `run_idle_incoming_loop`, `save_root_display`, `take_idle_receiver`
+// These functions are ignored because they are not marked as `pub`: `display_sender_label`, `format_error_chain`, `is_expired`, `log`, `parse_device_type`, `register_new_idle_receiver`, `replace_idle_receiver`, `run_idle_incoming_loop`, `save_root_display`, `take_idle_receiver`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `IdleReceiver`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`, `fmt`
 
@@ -28,9 +28,11 @@ Future<IdleReceiverRegistration?> currentIdleReceiverRegistration() =>
 Stream<IdleIncomingEvent> startIdleIncomingListener({
   required String downloadRoot,
   required String deviceName,
+  required String deviceType,
 }) => RustLib.instance.api.crateApiReceiverStartIdleIncomingListener(
   downloadRoot: downloadRoot,
   deviceName: deviceName,
+  deviceType: deviceType,
 );
 
 /// Completes the pending offer decision from the UI. Call after [IdleIncomingPhase::OfferReady].

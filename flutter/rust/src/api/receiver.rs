@@ -6,7 +6,7 @@ use drift_core::rendezvous::{resolve_server_url, RegisterPeerResponse, Rendezvou
 use drift_core::session::bind_endpoint;
 use drift_core::transfer::{ReceiverMachine, ReceiverState};
 use drift_core::util::human_size;
-use drift_core::wire::make_ticket_now;
+use drift_core::wire::{make_ticket_now, DeviceType};
 use iroh::Endpoint;
 use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
@@ -149,14 +149,23 @@ pub fn current_idle_receiver_registration() -> Option<IdleReceiverRegistration> 
 pub fn start_idle_incoming_listener(
     download_root: String,
     device_name: String,
+    device_type: String,
     updates: StreamSink<IdleIncomingEvent>,
 ) -> Result<(), String> {
     if IDLE_INCOMING_STARTED.set(()).is_err() {
         return Ok(());
     }
 
+    let device_type = parse_device_type(&device_type)?;
+
     RUNTIME.spawn(async move {
-        run_idle_incoming_loop(PathBuf::from(download_root), device_name, updates).await;
+        run_idle_incoming_loop(
+            PathBuf::from(download_root),
+            device_name,
+            device_type,
+            updates,
+        )
+        .await;
     });
 
     Ok(())
@@ -178,6 +187,7 @@ pub fn respond_idle_incoming_offer(accept: bool) -> Result<(), String> {
 async fn run_idle_incoming_loop(
     out_dir: PathBuf,
     device_name: String,
+    device_type: DeviceType,
     updates: StreamSink<IdleIncomingEvent>,
 ) {
     let save_root_label = save_root_display(&out_dir);
@@ -272,6 +282,7 @@ async fn run_idle_incoming_loop(
             connection,
             out_dir.clone(),
             &device_name,
+            device_type,
             &mut machine,
         )
         .await
@@ -430,6 +441,16 @@ fn display_sender_label(value: &str) -> String {
     }
 
     normalized
+}
+
+fn parse_device_type(value: &str) -> Result<DeviceType, String> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "phone" => Ok(DeviceType::Phone),
+        "laptop" => Ok(DeviceType::Laptop),
+        other => Err(format!(
+            "invalid device_type {other:?} (expected \"phone\" or \"laptop\")"
+        )),
+    }
 }
 
 fn format_error_chain(error: &anyhow::Error) -> String {

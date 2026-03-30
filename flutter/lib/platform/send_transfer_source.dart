@@ -7,12 +7,15 @@ class SendTransferRequestData {
     required this.code,
     required this.paths,
     required this.deviceName,
+    required this.deviceType,
     this.serverUrl,
   });
 
   final String code;
   final List<String> paths;
   final String deviceName;
+  /// `"phone"` or `"laptop"`.
+  final String deviceType;
   final String? serverUrl;
 }
 
@@ -33,6 +36,7 @@ class SendTransferUpdate {
     required this.totalSize,
     required this.bytesSent,
     required this.totalBytes,
+    this.remoteDeviceType,
     this.errorMessage,
   });
 
@@ -43,6 +47,8 @@ class SendTransferUpdate {
   final String totalSize;
   final int bytesSent;
   final int totalBytes;
+  /// `"phone"` or `"laptop"`, when known yet.
+  final String? remoteDeviceType;
   final String? errorMessage;
 }
 
@@ -66,6 +72,7 @@ class LocalSendTransferSource implements SendTransferSource {
             paths: request.paths,
             serverUrl: request.serverUrl,
             deviceName: request.deviceName,
+            deviceType: request.deviceType,
           ),
         )
         .map((event) {
@@ -100,6 +107,7 @@ class LocalSendTransferSource implements SendTransferSource {
       totalSize: _formatBytes(event.totalSize.toInt()),
       bytesSent: _asDartInt(event.bytesSent),
       totalBytes: _asDartInt(event.totalSize),
+      remoteDeviceType: event.remoteDeviceType,
       errorMessage: event.errorMessage,
     );
   }

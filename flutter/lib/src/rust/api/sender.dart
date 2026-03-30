@@ -6,7 +6,7 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `display_destination_label`, `format_error_chain`, `log`, `map_progress`
+// These functions are ignored because they are not marked as `pub`: `device_type_to_str`, `display_destination_label`, `format_error_chain`, `log`, `map_progress`, `parse_device_type`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_receiver_is_total_eq`, `clone`, `clone`, `clone`, `eq`, `fmt`, `fmt`, `fmt`
 
 Stream<SendTransferEvent> startSendTransfer({
@@ -20,6 +20,9 @@ class SendTransferEvent {
   final BigInt itemCount;
   final BigInt totalSize;
   final BigInt bytesSent;
+
+  /// `"phone"` or `"laptop"`.
+  final String? remoteDeviceType;
   final String? errorMessage;
 
   const SendTransferEvent({
@@ -29,6 +32,7 @@ class SendTransferEvent {
     required this.itemCount,
     required this.totalSize,
     required this.bytesSent,
+    this.remoteDeviceType,
     this.errorMessage,
   });
 
@@ -40,6 +44,7 @@ class SendTransferEvent {
       itemCount.hashCode ^
       totalSize.hashCode ^
       bytesSent.hashCode ^
+      remoteDeviceType.hashCode ^
       errorMessage.hashCode;
 
   @override
@@ -53,6 +58,7 @@ class SendTransferEvent {
           itemCount == other.itemCount &&
           totalSize == other.totalSize &&
           bytesSent == other.bytesSent &&
+          remoteDeviceType == other.remoteDeviceType &&
           errorMessage == other.errorMessage;
 }
 
@@ -70,16 +76,24 @@ class SendTransferRequest {
   final String? serverUrl;
   final String deviceName;
 
+  /// `"phone"` or `"laptop"`.
+  final String deviceType;
+
   const SendTransferRequest({
     required this.code,
     required this.paths,
     this.serverUrl,
     required this.deviceName,
+    required this.deviceType,
   });
 
   @override
   int get hashCode =>
-      code.hashCode ^ paths.hashCode ^ serverUrl.hashCode ^ deviceName.hashCode;
+      code.hashCode ^
+      paths.hashCode ^
+      serverUrl.hashCode ^
+      deviceName.hashCode ^
+      deviceType.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -89,5 +103,6 @@ class SendTransferRequest {
           code == other.code &&
           paths == other.paths &&
           serverUrl == other.serverUrl &&
-          deviceName == other.deviceName;
+          deviceName == other.deviceName &&
+          deviceType == other.deviceType;
 }

@@ -7,7 +7,8 @@ use drift_core::rendezvous::RendezvousClient;
 use drift_core::sender::{SendTransferPhase, SendTransferProgress, send_files_with_progress};
 use drift_core::session::bind_endpoint;
 use drift_core::transfer::{ReceiverMachine, ReceiverState};
-use drift_core::util::{confirm_accept, describe_remote, human_size};
+use drift_core::util::{confirm_accept, describe_remote, human_size, random_device_name};
+use drift_core::wire::DeviceType;
 use drift_core::wire::make_ticket;
 use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
@@ -81,6 +82,7 @@ fn log_env_filter(verbose: u8) -> EnvFilter {
 pub async fn send(code: String, files: Vec<PathBuf>, server_url: Option<String>) -> Result<()> {
     let code_normalized = code.trim().to_uppercase();
     let device_name = local_device_name();
+    let device_type = DeviceType::Laptop;
     info!(
         code = %code_normalized,
         file_count = files.len(),
@@ -93,9 +95,16 @@ pub async fn send(code: String, files: Vec<PathBuf>, server_url: Option<String>)
     }
 
     let mut last_phase = None;
-    let outcome = send_files_with_progress(code, files, server_url, device_name, |progress| {
-        log_send_progress(&mut last_phase, progress);
-    })
+    let outcome = send_files_with_progress(
+        code,
+        files,
+        server_url,
+        device_name,
+        device_type,
+        |progress| {
+            log_send_progress(&mut last_phase, progress);
+        },
+    )
     .await;
 
     match &outcome {
@@ -133,6 +142,7 @@ pub async fn receive(out_dir: PathBuf, server_url: Option<String>) -> Result<()>
     let expires_at = OffsetDateTime::parse(&registration.expires_at, &Rfc3339)
         .context("parsing discovery expiry")?;
     let device_name = local_device_name();
+    let device_type = DeviceType::Laptop;
 
     let mut machine = ReceiverMachine::new();
     machine.transition(ReceiverState::Discoverable)?;
@@ -179,6 +189,7 @@ pub async fn receive(out_dir: PathBuf, server_url: Option<String>) -> Result<()>
                     connection,
                     out_dir.clone(),
                     &device_name,
+                    device_type,
                     &mut machine,
                     async {
                         tokio::task::spawn_blocking(|| confirm_accept())
@@ -233,7 +244,7 @@ fn local_device_name() -> String {
         }
     }
 
-    "Recipient device".to_owned()
+    random_device_name()
 }
 
 fn log_send_progress(last_phase: &mut Option<SendTransferPhase>, progress: SendTransferProgress) {

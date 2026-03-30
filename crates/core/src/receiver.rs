@@ -12,8 +12,8 @@ use crate::session::receive_files_over_connection;
 use crate::transfer::{ReceiverMachine, ReceiverState, ensure_session_id, validate_hello};
 use crate::util::human_size;
 use crate::wire::{
-    Accept, ControlMessage, Decline, Hello, TRANSFER_PROTOCOL_VERSION, TransferRole, read_message,
-    write_message,
+    Accept, ControlMessage, Decline, DeviceType, Hello, TRANSFER_PROTOCOL_VERSION,
+    TransferRole, read_message, write_message,
 };
 
 const CONTROL_STREAM_FINISH_TIMEOUT: Duration = Duration::from_secs(2);
@@ -51,6 +51,7 @@ pub async fn receiver_run_until_decision(
     connection: iroh::endpoint::Connection,
     out_dir: PathBuf,
     device_name: &str,
+    device_type: DeviceType,
     machine: &mut ReceiverMachine,
 ) -> Result<ReceiverPendingDecision> {
     let (mut control_send, mut control_recv) = connection
@@ -79,6 +80,7 @@ pub async fn receiver_run_until_decision(
         &hello.session_id,
         TransferRole::Receiver,
         device_name,
+        device_type,
     )
     .await?;
 
@@ -169,13 +171,21 @@ pub async fn handle_receiver_connection<A>(
     connection: iroh::endpoint::Connection,
     out_dir: PathBuf,
     device_name: &str,
+    device_type: DeviceType,
     machine: &mut ReceiverMachine,
     approve: A,
 ) -> Result<()>
 where
     A: Future<Output = Result<bool>>,
 {
-    let pending = receiver_run_until_decision(connection, out_dir, device_name, machine).await?;
+    let pending = receiver_run_until_decision(
+        connection,
+        out_dir,
+        device_name,
+        device_type,
+        machine,
+    )
+    .await?;
     let approved = approve.await?;
     receiver_finish_after_decision(pending, machine, approved).await
 }
@@ -216,6 +226,7 @@ async fn send_hello(
     session_id: &str,
     role: TransferRole,
     device_name: &str,
+    device_type: DeviceType,
 ) -> Result<()> {
     write_message(
         send_stream,
@@ -224,6 +235,7 @@ async fn send_hello(
             session_id: session_id.to_owned(),
             role,
             device_name: device_name.to_owned(),
+            device_type,
         }),
     )
     .await

@@ -8,12 +8,14 @@ import '../platform/app_focus.dart';
 import '../platform/receive_registration_source.dart';
 import '../platform/send_item_source.dart';
 import '../platform/send_transfer_source.dart';
+import '../src/rust/api/device.dart' as rust_device;
 import '../src/rust/api/receiver.dart' as rust_receiver;
 import 'drift_sample_data.dart';
 
 class DriftController extends ChangeNotifier {
   DriftController({
     String? deviceName,
+    String? deviceType,
     String idleReceiveCode = '......',
     String idleReceiveStatus = 'Registering',
     bool enableIdleReceiverRefresh = true,
@@ -25,6 +27,7 @@ class DriftController extends ChangeNotifier {
     bool animateSendingConnection = true,
     bool enableIdleIncomingListener = true,
   }) : _deviceName = _normalizeDeviceName(deviceName ?? _defaultDeviceName()),
+       _deviceType = deviceType ?? _inferDeviceType(),
        _idleReceiveCode = idleReceiveCode.trim().toUpperCase(),
        _idleReceiveStatus = idleReceiveStatus,
        _defaultDroppedSendItems = List<TransferItemViewData>.unmodifiable(
@@ -66,6 +69,7 @@ class DriftController extends ChangeNotifier {
   }
 
   final String _deviceName;
+  final String _deviceType;
   String _idleReceiveCode;
   String _idleReceiveStatus;
   final List<TransferItemViewData> _defaultDroppedSendItems;
@@ -88,6 +92,7 @@ class DriftController extends ChangeNotifier {
   bool _receiveEntryExpanded = false;
   String _sendDestinationCode = '';
   String? _sendDestinationLabel;
+  String? _sendRemoteDeviceType;
   String _receiveCode = '';
   String? _receiveErrorText;
   List<TransferItemViewData> _sendItems = const [];
@@ -109,6 +114,7 @@ class DriftController extends ChangeNotifier {
   List<TransferMetricRow>? _sendCompletionMetrics;
 
   String get deviceName => _deviceName;
+  String get deviceType => _deviceType;
   bool get animateSendingConnection => _animateSendingConnection;
   String get idleReceiveCode => _idleReceiveCode;
   String get idleReceiveStatus => _idleReceiveStatus;
@@ -119,6 +125,7 @@ class DriftController extends ChangeNotifier {
   bool get receiveEntryExpanded => _receiveEntryExpanded;
   String get sendDestinationCode => _sendDestinationCode;
   String? get sendDestinationLabel => _sendDestinationLabel;
+  String? get sendRemoteDeviceType => _sendRemoteDeviceType;
   String get receiveCode => _receiveCode;
   String? get receiveErrorText => _receiveErrorText;
   List<TransferItemViewData> get sendItems => _sendItems;
@@ -232,6 +239,7 @@ class DriftController extends ChangeNotifier {
     _isInspectingSendItems = false;
     _sendDestinationCode = '';
     _sendDestinationLabel = null;
+    _sendRemoteDeviceType = null;
     _nearbySendDestinations = const [];
     _sendItems = const [];
     _sendSummary = null;
@@ -427,6 +435,7 @@ class DriftController extends ChangeNotifier {
     _applySendTransferMetrics(update);
     _sendDropActive = false;
     _sendDestinationLabel = update.destinationLabel;
+    _sendRemoteDeviceType = update.remoteDeviceType;
     _nearbySendDestinations = _defaultSendDestinations;
     _sendItems = List<TransferItemViewData>.unmodifiable(
       _sendItems.isEmpty ? sampleSendItems : _sendItems,
@@ -504,6 +513,7 @@ class DriftController extends ChangeNotifier {
     _sendDropActive = true;
     _sendDestinationCode = '';
     _sendDestinationLabel = null;
+    _sendRemoteDeviceType = null;
     _nearbySendDestinations = _defaultSendDestinations;
     _sendItems = List<TransferItemViewData>.unmodifiable(items);
     _isInspectingSendItems = false;
@@ -518,6 +528,7 @@ class DriftController extends ChangeNotifier {
     _sendDropActive = true;
     _sendDestinationCode = '';
     _sendDestinationLabel = null;
+    _sendRemoteDeviceType = null;
     _nearbySendDestinations = _defaultSendDestinations;
     _isInspectingSendItems = true;
     if (clearExistingItems) {
@@ -570,6 +581,7 @@ class DriftController extends ChangeNotifier {
         .startIdleIncomingListener(
           downloadRoot: _defaultReceiveDownloadRoot(),
           deviceName: _deviceName,
+          deviceType: _deviceType,
         )
         .listen(
           _onIdleIncomingEvent,
@@ -758,6 +770,7 @@ class DriftController extends ChangeNotifier {
     _isInspectingSendItems = false;
     _sendDestinationCode = '';
     _sendDestinationLabel = null;
+    _sendRemoteDeviceType = null;
     _nearbySendDestinations = _defaultSendDestinations;
     _sendSummary = null;
     _clearSendTransferMetrics();
@@ -779,6 +792,7 @@ class DriftController extends ChangeNotifier {
       code: normalizedCode,
       paths: _sendItems.map((item) => item.path).toList(growable: false),
       deviceName: _deviceName,
+      deviceType: _deviceType,
     );
 
     _sendTransferSubscription = _sendTransferSource
@@ -993,25 +1007,25 @@ class DriftController extends ChangeNotifier {
     return h <= 1 ? 'About 1 h left' : 'About $h h left';
   }
 
-  static String _defaultDeviceName() {
-    try {
-      final hostname = Platform.localHostname.trim();
-      if (hostname.isNotEmpty) {
-        return hostname;
-      }
-    } catch (_) {
-      // Fall back to a calm, user-friendly desktop label when hostname is unavailable.
+  static String _inferDeviceType() {
+    // Auto-infer based on where the Flutter app is running.
+    if (Platform.isAndroid || Platform.isIOS) {
+      return 'phone';
     }
-    return 'This Mac';
+    return 'laptop';
   }
+
+  static String _defaultDeviceName() => rust_device.randomDeviceName();
 
   static String _normalizeDeviceName(String value) {
     final trimmed = value.trim();
     if (trimmed.isEmpty) {
-      return 'This Mac';
+      return rust_device.randomDeviceName();
     }
 
     final firstSegment = trimmed.split('.').first.trim();
-    return firstSegment.isEmpty ? 'This Mac' : firstSegment;
+    return firstSegment.isEmpty
+        ? rust_device.randomDeviceName()
+        : firstSegment;
   }
 }

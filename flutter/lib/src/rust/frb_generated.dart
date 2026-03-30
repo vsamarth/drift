@@ -3,6 +3,7 @@
 
 // ignore_for_file: unused_import, unused_element, unnecessary_import, duplicate_ignore, invalid_use_of_internal_member, annotate_overrides, non_constant_identifier_names, curly_braces_in_flow_control_structures, prefer_const_literals_to_create_immutables, unused_field
 
+import 'api/device.dart';
 import 'api/preview.dart';
 import 'api/receiver.dart';
 import 'api/sender.dart';
@@ -69,7 +70,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.11.1';
 
   @override
-  int get rustContentHash => 1511764207;
+  int get rustContentHash => -1645834733;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -95,6 +96,8 @@ abstract class RustLibApi extends BaseApi {
     required List<String> paths,
   });
 
+  String crateApiDeviceRandomDeviceName();
+
   Future<IdleReceiverRegistration> crateApiReceiverRegisterIdleReceiver({
     String? serverUrl,
   });
@@ -104,6 +107,7 @@ abstract class RustLibApi extends BaseApi {
   Stream<IdleIncomingEvent> crateApiReceiverStartIdleIncomingListener({
     required String downloadRoot,
     required String deviceName,
+    required String deviceType,
   });
 
   Stream<SendTransferEvent> crateApiSenderStartSendTransfer({
@@ -265,6 +269,28 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(debugName: "inspect_paths", argNames: ["paths"]);
 
   @override
+  String crateApiDeviceRandomDeviceName() {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 6)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_String,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiDeviceRandomDeviceNameConstMeta,
+        argValues: [],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiDeviceRandomDeviceNameConstMeta =>
+      const TaskConstMeta(debugName: "random_device_name", argNames: []);
+
+  @override
   Future<IdleReceiverRegistration> crateApiReceiverRegisterIdleReceiver({
     String? serverUrl,
   }) {
@@ -276,7 +302,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 6,
+            funcId: 7,
             port: port_,
           );
         },
@@ -309,7 +335,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 7,
+            funcId: 8,
             port: port_,
           );
         },
@@ -334,6 +360,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   Stream<IdleIncomingEvent> crateApiReceiverStartIdleIncomingListener({
     required String downloadRoot,
     required String deviceName,
+    required String deviceType,
   }) {
     final updates = RustStreamSink<IdleIncomingEvent>();
     unawaited(
@@ -343,11 +370,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             final serializer = SseSerializer(generalizedFrbRustBinding);
             sse_encode_String(downloadRoot, serializer);
             sse_encode_String(deviceName, serializer);
+            sse_encode_String(deviceType, serializer);
             sse_encode_StreamSink_idle_incoming_event_Sse(updates, serializer);
             pdeCallFfi(
               generalizedFrbRustBinding,
               serializer,
-              funcId: 8,
+              funcId: 9,
               port: port_,
             );
           },
@@ -356,7 +384,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             decodeErrorData: sse_decode_String,
           ),
           constMeta: kCrateApiReceiverStartIdleIncomingListenerConstMeta,
-          argValues: [downloadRoot, deviceName, updates],
+          argValues: [downloadRoot, deviceName, deviceType, updates],
           apiImpl: this,
         ),
       ),
@@ -367,7 +395,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateApiReceiverStartIdleIncomingListenerConstMeta =>
       const TaskConstMeta(
         debugName: "start_idle_incoming_listener",
-        argNames: ["downloadRoot", "deviceName", "updates"],
+        argNames: ["downloadRoot", "deviceName", "deviceType", "updates"],
       );
 
   @override
@@ -385,7 +413,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             pdeCallFfi(
               generalizedFrbRustBinding,
               serializer,
-              funcId: 9,
+              funcId: 10,
               port: port_,
             );
           },
@@ -587,8 +615,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   SendTransferEvent dco_decode_send_transfer_event(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 7)
-      throw Exception('unexpected arr length: expect 7 but see ${arr.length}');
+    if (arr.length != 8)
+      throw Exception('unexpected arr length: expect 8 but see ${arr.length}');
     return SendTransferEvent(
       phase: dco_decode_send_transfer_phase(arr[0]),
       destinationLabel: dco_decode_String(arr[1]),
@@ -596,7 +624,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       itemCount: dco_decode_u_64(arr[3]),
       totalSize: dco_decode_u_64(arr[4]),
       bytesSent: dco_decode_u_64(arr[5]),
-      errorMessage: dco_decode_opt_String(arr[6]),
+      remoteDeviceType: dco_decode_opt_String(arr[6]),
+      errorMessage: dco_decode_opt_String(arr[7]),
     );
   }
 
@@ -610,13 +639,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   SendTransferRequest dco_decode_send_transfer_request(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 4)
-      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
+    if (arr.length != 5)
+      throw Exception('unexpected arr length: expect 5 but see ${arr.length}');
     return SendTransferRequest(
       code: dco_decode_String(arr[0]),
       paths: dco_decode_list_String(arr[1]),
       serverUrl: dco_decode_opt_String(arr[2]),
       deviceName: dco_decode_String(arr[3]),
+      deviceType: dco_decode_String(arr[4]),
     );
   }
 
@@ -865,6 +895,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_itemCount = sse_decode_u_64(deserializer);
     var var_totalSize = sse_decode_u_64(deserializer);
     var var_bytesSent = sse_decode_u_64(deserializer);
+    var var_remoteDeviceType = sse_decode_opt_String(deserializer);
     var var_errorMessage = sse_decode_opt_String(deserializer);
     return SendTransferEvent(
       phase: var_phase,
@@ -873,6 +904,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       itemCount: var_itemCount,
       totalSize: var_totalSize,
       bytesSent: var_bytesSent,
+      remoteDeviceType: var_remoteDeviceType,
       errorMessage: var_errorMessage,
     );
   }
@@ -895,11 +927,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_paths = sse_decode_list_String(deserializer);
     var var_serverUrl = sse_decode_opt_String(deserializer);
     var var_deviceName = sse_decode_String(deserializer);
+    var var_deviceType = sse_decode_String(deserializer);
     return SendTransferRequest(
       code: var_code,
       paths: var_paths,
       serverUrl: var_serverUrl,
       deviceName: var_deviceName,
+      deviceType: var_deviceType,
     );
   }
 
@@ -1145,6 +1179,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_u_64(self.itemCount, serializer);
     sse_encode_u_64(self.totalSize, serializer);
     sse_encode_u_64(self.bytesSent, serializer);
+    sse_encode_opt_String(self.remoteDeviceType, serializer);
     sse_encode_opt_String(self.errorMessage, serializer);
   }
 
@@ -1167,6 +1202,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_list_String(self.paths, serializer);
     sse_encode_opt_String(self.serverUrl, serializer);
     sse_encode_String(self.deviceName, serializer);
+    sse_encode_String(self.deviceType, serializer);
   }
 
   @protected

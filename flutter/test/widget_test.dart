@@ -318,7 +318,7 @@ void main() {
 
     expect(find.text('Sending'), findsWidgets);
     expect(find.text('Request sent'), findsOneWidget);
-    expect(find.text('Code AB2 CD3'), findsOneWidget);
+    expect(find.text('Code AB2 CD3'), findsNWidgets(2));
 
     sendTransferSource.emit(
       sendTransferUpdate(
@@ -558,7 +558,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Recipient device'), findsOneWidget);
+    expect(find.text('Recipient device'), findsNWidgets(2));
     expect(find.text('unknown-device'), findsNothing);
     expect(
       find.text('Waiting for confirmation.'),

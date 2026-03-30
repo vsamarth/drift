@@ -143,6 +143,9 @@ class SendCodeCard extends StatelessWidget {
                       padding: const EdgeInsets.symmetric(horizontal: 4),
                       child: SendingConnectionStrip(
                         localLabel: controller.deviceName,
+                        localDeviceType: controller.deviceType,
+                        remoteLabel: destinationLabel,
+                        remoteDeviceType: controller.sendRemoteDeviceType,
                         animate: controller.animateSendingConnection,
                         mode: _sendingStripMode(controller),
                         transferProgress: _transferProgressForStrip(controller),

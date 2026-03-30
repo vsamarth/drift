@@ -5,6 +5,7 @@ use drift_core::sender::{
     format_code_label, send_files_with_progress, SendTransferPhase as CoreSendTransferPhase,
     SendTransferProgress,
 };
+use drift_core::wire::DeviceType;
 
 use super::RUNTIME;
 use crate::frb_generated::StreamSink;
@@ -26,6 +27,8 @@ pub struct SendTransferRequest {
     pub paths: Vec<String>,
     pub server_url: Option<String>,
     pub device_name: String,
+    /// `"phone"` or `"laptop"`.
+    pub device_type: String,
 }
 
 #[derive(Debug, Clone)]
@@ -36,6 +39,8 @@ pub struct SendTransferEvent {
     pub item_count: u64,
     pub total_size: u64,
     pub bytes_sent: u64,
+    /// `"phone"` or `"laptop"`.
+    pub remote_device_type: Option<String>,
     pub error_message: Option<String>,
 }
 
@@ -43,6 +48,7 @@ pub fn start_send_transfer(
     request: SendTransferRequest,
     updates: StreamSink<SendTransferEvent>,
 ) -> Result<(), String> {
+    let local_device_type = parse_device_type(&request.device_type)?;
     let fallback_destination_label = format_code_label(&request.code);
     let resolved_server_url =
         resolve_server_url(request.server_url.as_deref().or(Some(LOCAL_RENDEZVOUS_URL)));
@@ -61,6 +67,7 @@ pub fn start_send_transfer(
             request.paths.into_iter().map(PathBuf::from).collect(),
             Some(resolved_server_url.clone()),
             request.device_name.clone(),
+            local_device_type,
             |progress| {
                 let event = map_progress(progress);
                 log(&format!(
@@ -87,6 +94,7 @@ pub fn start_send_transfer(
                 item_count: 0,
                 total_size: 0,
                 bytes_sent: 0,
+                remote_device_type: None,
                 error_message: Some(error_message.clone()),
             });
 
@@ -97,6 +105,7 @@ pub fn start_send_transfer(
                 item_count: failed.item_count,
                 total_size: failed.total_size,
                 bytes_sent: failed.bytes_sent,
+                remote_device_type: failed.remote_device_type,
                 error_message: Some(error_message),
             });
         } else {
@@ -134,7 +143,27 @@ fn map_progress(progress: SendTransferProgress) -> SendTransferEvent {
         item_count: progress.manifest.file_count,
         total_size: progress.manifest.total_size,
         bytes_sent: progress.bytes_sent,
+        remote_device_type: progress
+            .remote_device_type
+            .map(device_type_to_str),
         error_message: None,
+    }
+}
+
+fn parse_device_type(value: &str) -> Result<DeviceType, String> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "phone" => Ok(DeviceType::Phone),
+        "laptop" => Ok(DeviceType::Laptop),
+        other => Err(format!(
+            "invalid device_type {other:?} (expected \"phone\" or \"laptop\")"
+        )),
+    }
+}
+
+fn device_type_to_str(value: DeviceType) -> String {
+    match value {
+        DeviceType::Phone => "phone".to_owned(),
+        DeviceType::Laptop => "laptop".to_owned(),
     }
 }
 

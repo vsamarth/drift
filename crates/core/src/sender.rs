@@ -8,8 +8,8 @@ use crate::rendezvous::{OfferManifest, RendezvousClient, resolve_server_url, val
 use crate::session::{bind_endpoint, connect_to_ticket, send_files_over_connection};
 use crate::transfer::{SenderMachine, SenderState, ensure_session_id, validate_hello};
 use crate::wire::{
-    ControlMessage, Hello, Offer, TRANSFER_PROTOCOL_VERSION, TransferRole, decode_ticket,
-    read_message, write_message,
+    ControlMessage, DeviceType, Hello, Offer, TRANSFER_PROTOCOL_VERSION, TransferRole,
+    decode_ticket, read_message, write_message,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -24,6 +24,8 @@ pub enum SendTransferPhase {
 pub struct SendTransferProgress {
     pub phase: SendTransferPhase,
     pub destination_label: String,
+    /// The receiver device type (if known yet).
+    pub remote_device_type: Option<DeviceType>,
     pub manifest: OfferManifest,
     /// Total payload bytes sent so far (file contents only); `0` until streaming starts.
     pub bytes_sent: u64,
@@ -40,6 +42,7 @@ pub async fn send_files_with_progress<F>(
     files: Vec<PathBuf>,
     server_url: Option<String>,
     device_name: String,
+    device_type: DeviceType,
     mut on_progress: F,
 ) -> Result<SendTransferOutcome>
 where
@@ -55,6 +58,7 @@ where
         SendTransferPhase::Connecting,
         destination_label.clone(),
         &prepared,
+        None,
         0,
     ));
 
@@ -62,6 +66,7 @@ where
         &code,
         server_url.as_deref(),
         &device_name,
+        device_type,
         &session_id,
         &prepared,
         &mut machine,
@@ -76,6 +81,7 @@ async fn send_prepared_files<F>(
     code: &str,
     server_url: Option<&str>,
     device_name: &str,
+    device_type: DeviceType,
     session_id: &str,
     prepared: &PreparedFiles,
     machine: &mut SenderMachine,
@@ -106,6 +112,7 @@ where
         session_id,
         TransferRole::Sender,
         device_name,
+        device_type,
     )
     .await?;
     let receiver_hello = match read_message::<ControlMessage>(&mut control_recv)
@@ -130,6 +137,7 @@ where
         SendTransferPhase::WaitingForDecision,
         receiver_hello.device_name.clone(),
         prepared,
+        Some(receiver_hello.device_type),
         0,
     ));
 
@@ -144,6 +152,7 @@ where
                 SendTransferPhase::Sending,
                 receiver_hello.device_name.clone(),
                 prepared,
+                Some(receiver_hello.device_type),
                 0,
             ));
             send_files_over_connection(connection, &prepared.files, |sent| {
@@ -151,6 +160,7 @@ where
                     SendTransferPhase::Sending,
                     receiver_hello.device_name.clone(),
                     prepared,
+                    Some(receiver_hello.device_type),
                     sent,
                 ));
             })
@@ -160,6 +170,7 @@ where
                 SendTransferPhase::Completed,
                 receiver_hello.device_name.clone(),
                 prepared,
+                Some(receiver_hello.device_type),
                 prepared.manifest.total_size,
             ));
         }
@@ -187,11 +198,13 @@ fn progress(
     phase: SendTransferPhase,
     destination_label: String,
     prepared: &PreparedFiles,
+    remote_device_type: Option<DeviceType>,
     bytes_sent: u64,
 ) -> SendTransferProgress {
     SendTransferProgress {
         phase,
         destination_label,
+        remote_device_type,
         manifest: prepared.manifest.clone(),
         bytes_sent,
     }
@@ -202,6 +215,7 @@ async fn send_hello(
     session_id: &str,
     role: TransferRole,
     device_name: &str,
+    device_type: DeviceType,
 ) -> Result<()> {
     write_message(
         send_stream,
@@ -210,6 +224,7 @@ async fn send_hello(
             session_id: session_id.to_owned(),
             role,
             device_name: device_name.to_owned(),
+            device_type,
         }),
     )
     .await

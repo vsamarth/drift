@@ -6,6 +6,7 @@
 // Static analysis wrongly picks the IO variant, thus ignore this
 // ignore_for_file: argument_type_not_assignable
 
+import 'api/device.dart';
 import 'api/preview.dart';
 import 'api/receiver.dart';
 import 'api/sender.dart';
