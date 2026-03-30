@@ -6,22 +6,36 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `display_sender_label`, `format_error_chain`, `is_expired`, `log`, `parse_device_type`, `register_new_idle_receiver`, `replace_idle_receiver`, `run_idle_incoming_loop`, `save_root_display`, `take_idle_receiver`
+// These functions are ignored because they are not marked as `pub`: `display_sender_label`, `format_error_chain`, `idle_receiver_endpoint_id_for_lan_filter`, `is_expired`, `log`, `parse_device_type`, `register_new_idle_receiver`, `replace_idle_receiver`, `run_idle_incoming_loop`, `save_root_display`, `take_idle_receiver`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `IdleReceiver`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`, `fmt`
 
-Future<IdleReceiverRegistration> registerIdleReceiver({String? serverUrl}) =>
-    RustLib.instance.api.crateApiReceiverRegisterIdleReceiver(
-      serverUrl: serverUrl,
-    );
+Future<IdleReceiverRegistration> registerIdleReceiver({
+  String? serverUrl,
+  required String deviceName,
+}) => RustLib.instance.api.crateApiReceiverRegisterIdleReceiver(
+  serverUrl: serverUrl,
+  deviceName: deviceName,
+);
 
-Future<IdleReceiverRegistration> ensureIdleReceiver({String? serverUrl}) =>
-    RustLib.instance.api.crateApiReceiverEnsureIdleReceiver(
-      serverUrl: serverUrl,
-    );
+Future<IdleReceiverRegistration> ensureIdleReceiver({
+  String? serverUrl,
+  required String deviceName,
+}) => RustLib.instance.api.crateApiReceiverEnsureIdleReceiver(
+  serverUrl: serverUrl,
+  deviceName: deviceName,
+);
 
 Future<IdleReceiverRegistration?> currentIdleReceiverRegistration() =>
     RustLib.instance.api.crateApiReceiverCurrentIdleReceiverRegistration();
+
+/// Stops LAN mDNS advertisement while the UI runs an outbound send (we are not discoverable as a receiver).
+Future<void> pauseIdleLanAdvertisement() =>
+    RustLib.instance.api.crateApiReceiverPauseIdleLanAdvertisement();
+
+/// Restarts LAN advertisement after a send completes, fails, or is cancelled (no-op if already advertising).
+Future<void> resumeIdleLanAdvertisement() =>
+    RustLib.instance.api.crateApiReceiverResumeIdleLanAdvertisement();
 
 /// Spawns a background task that accepts incoming connections on the idle receiver endpoint
 /// and streams [IdleIncomingEvent] updates. Safe to call once; later calls are no-ops.

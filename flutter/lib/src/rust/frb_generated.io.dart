@@ -4,6 +4,7 @@
 // ignore_for_file: unused_import, unused_element, unnecessary_import, duplicate_ignore, invalid_use_of_internal_member, annotate_overrides, non_constant_identifier_names, curly_braces_in_flow_control_structures, prefer_const_literals_to_create_immutables, unused_field
 
 import 'api/device.dart';
+import 'api/lan.dart';
 import 'api/preview.dart';
 import 'api/receiver.dart';
 import 'api/sender.dart';
@@ -69,10 +70,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<IdleIncomingFileRow> dco_decode_list_idle_incoming_file_row(dynamic raw);
 
   @protected
+  List<NearbyReceiverInfo> dco_decode_list_nearby_receiver_info(dynamic raw);
+
+  @protected
   Uint8List dco_decode_list_prim_u_8_strict(dynamic raw);
 
   @protected
   List<SelectionItem> dco_decode_list_selection_item(dynamic raw);
+
+  @protected
+  NearbyReceiverInfo dco_decode_nearby_receiver_info(dynamic raw);
 
   @protected
   String? dco_decode_opt_String(dynamic raw);
@@ -164,10 +171,20 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  List<NearbyReceiverInfo> sse_decode_list_nearby_receiver_info(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   Uint8List sse_decode_list_prim_u_8_strict(SseDeserializer deserializer);
 
   @protected
   List<SelectionItem> sse_decode_list_selection_item(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  NearbyReceiverInfo sse_decode_nearby_receiver_info(
     SseDeserializer deserializer,
   );
 
@@ -283,6 +300,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_nearby_receiver_info(
+    List<NearbyReceiverInfo> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_prim_u_8_strict(
     Uint8List self,
     SseSerializer serializer,
@@ -291,6 +314,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_list_selection_item(
     List<SelectionItem> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_nearby_receiver_info(
+    NearbyReceiverInfo self,
     SseSerializer serializer,
   );
 

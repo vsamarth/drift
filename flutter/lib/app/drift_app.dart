@@ -24,9 +24,9 @@ class _DriftAppState extends State<DriftApp> {
 
   @override
   void dispose() {
-    if (widget.controller == null) {
-      _controller.dispose();
-    }
+    // Always dispose: tests pass a controller for injection, and the shell owns
+    // its lifecycle while this app is mounted (timers/subscriptions must stop).
+    _controller.dispose();
     super.dispose();
   }
 

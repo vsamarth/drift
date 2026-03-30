@@ -79,12 +79,20 @@ class SendTransferRequest {
   /// `"phone"` or `"laptop"`.
   final String deviceType;
 
+  /// When set, send via LAN ticket (mDNS); `code` is ignored for rendezvous.
+  final String? ticket;
+
+  /// Display label for progress when using `ticket` (e.g. `"Quiet River (ABC123)"`).
+  final String? lanDestinationLabel;
+
   const SendTransferRequest({
     required this.code,
     required this.paths,
     this.serverUrl,
     required this.deviceName,
     required this.deviceType,
+    this.ticket,
+    this.lanDestinationLabel,
   });
 
   @override
@@ -93,7 +101,9 @@ class SendTransferRequest {
       paths.hashCode ^
       serverUrl.hashCode ^
       deviceName.hashCode ^
-      deviceType.hashCode;
+      deviceType.hashCode ^
+      ticket.hashCode ^
+      lanDestinationLabel.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -104,5 +114,7 @@ class SendTransferRequest {
           paths == other.paths &&
           serverUrl == other.serverUrl &&
           deviceName == other.deviceName &&
-          deviceType == other.deviceType;
+          deviceType == other.deviceType &&
+          ticket == other.ticket &&
+          lanDestinationLabel == other.lanDestinationLabel;
 }

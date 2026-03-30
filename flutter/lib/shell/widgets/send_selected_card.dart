@@ -59,6 +59,12 @@ class _SendScreenState extends State<SendScreen> {
                   ),
                 ),
                 const SizedBox(height: 18),
+                ListenableBuilder(
+                  listenable: controller,
+                  builder: (context, _) {
+                    return NearbyDevicesSection(controller: controller);
+                  },
+                ),
                 ManualCodeSection(controller: controller),
               ],
             ),
@@ -235,6 +241,119 @@ class _SelectedItemSkeleton extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+
+class NearbyDevicesSection extends StatelessWidget {
+  const NearbyDevicesSection({super.key, required this.controller});
+
+  final DriftController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final destinations = controller.nearbySendDestinations;
+    final canScan = controller.canBrowseNearbyReceivers;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Nearby devices',
+            style: driftSans(
+              fontSize: 12.5,
+              fontWeight: FontWeight.w500,
+              color: kInk.withValues(alpha: 0.56),
+            ),
+          ),
+          const SizedBox(height: 8),
+          if (destinations.isNotEmpty)
+            ..._nearbyTiles(controller, destinations)
+          else if (!canScan)
+            Text(
+              controller.isInspectingSendItems
+                  ? 'Nearby receivers appear here when you finish choosing files.'
+                  : 'Add files to look for devices on your network.',
+              style: driftSans(fontSize: 13, color: kMuted, height: 1.45),
+            )
+          else if (controller.nearbyScanInProgress ||
+              !controller.nearbyScanHasCompletedOnce)
+            Text(
+              'Looking for devices…',
+              style: driftSans(fontSize: 13, color: kMuted, height: 1.45),
+            )
+          else
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'No nearby devices found.',
+                  style: driftSans(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                    color: kInk.withValues(alpha: 0.72),
+                    height: 1.45,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Enter a code below or wait—we scan every 12 seconds.',
+                  style: driftSans(fontSize: 12.5, color: kMuted, height: 1.45),
+                ),
+              ],
+            ),
+        ],
+      ),
+    );
+  }
+
+  static List<Widget> _nearbyTiles(
+    DriftController controller,
+    List<SendDestinationViewData> destinations,
+  ) {
+    final out = <Widget>[];
+    for (var i = 0; i < destinations.length; i++) {
+      final d = destinations[i];
+      out.add(
+        Material(
+          color: Colors.transparent,
+          child: InkWell(
+            key: ValueKey<String>('nearby-tile-${d.lanFullname ?? d.name}'),
+            borderRadius: BorderRadius.circular(10),
+            onTap: () => controller.selectNearbyDestination(d),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 10),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.devices_other_outlined,
+                    size: 17,
+                    color: kMuted,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      d.name,
+                      style: driftSans(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                        color: kInk,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+      if (i < destinations.length - 1) {
+        out.add(const Divider(height: 1, thickness: 1, indent: 36));
+      }
+    }
+    return out;
   }
 }
 

@@ -1,6 +1,6 @@
 mod device_name;
 
-pub use device_name::random_device_name;
+pub use device_name::{normalize_hostname_label, process_display_device_name, random_device_name};
 
 use std::io::{self, Write};
 

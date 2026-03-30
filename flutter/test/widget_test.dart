@@ -32,6 +32,18 @@ void expectNoFlutterError(WidgetTester tester) {
   expect(tester.takeException(), isNull);
 }
 
+/// [WidgetTester.pumpAndSettle] never finishes while a [TextField] caret is
+/// blinking; use this after receive/send code interactions instead.
+Future<void> pumpUiSettled(WidgetTester tester) async {
+  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 500));
+}
+
+Finder receiveCodeFieldFinder() =>
+    find.byKey(const ValueKey<String>('receive-code-field'));
+
+Finder receiveCodeFieldPrimary() => receiveCodeFieldFinder().at(0);
+
 Finder receiveButton() =>
     find.byKey(const ValueKey<String>('receive-submit')).last;
 Finder chooseFilesButton() => find.text('Select files');
@@ -48,6 +60,7 @@ Finder shellBackButton() =>
 
 DriftController buildTestController({
   List<SendDestinationViewData>? nearbySendDestinations,
+  NearbySendScan? nearbySendScan,
   List<TransferItemViewData>? droppedSendItems,
   SendItemSource? sendItemSource,
   SendTransferSource? sendTransferSource,
@@ -57,6 +70,7 @@ DriftController buildTestController({
   enableIdleReceiverRefresh: false,
   animateSendingConnection: false,
   nearbySendDestinations: nearbySendDestinations,
+  nearbySendScan: nearbySendScan ?? (() async => <SendDestinationViewData>[]),
   droppedSendItems: droppedSendItems,
   sendItemSource:
       sendItemSource ??
@@ -101,7 +115,9 @@ class FakeReceiveRegistrationSource implements ReceiveRegistrationSource {
   const FakeReceiveRegistrationSource();
 
   @override
-  Future<ReceiveRegistrationData> ensureIdleReceiver() async =>
+  Future<ReceiveRegistrationData> ensureIdleReceiver({
+    required String deviceName,
+  }) async =>
       const ReceiveRegistrationData(code: 'F9P2Q1', expiresAt: 'unused');
 }
 
@@ -235,16 +251,16 @@ void main() {
     final controller = buildTestController()..openReceiveEntry();
     await pumpUtilityApp(tester, controller: controller);
 
-    await tester.enterText(
-      find.byKey(const ValueKey<String>('receive-code-field')),
-      'ab2cd3',
-    );
+    await tester.enterText(receiveCodeFieldPrimary(), 'ab2cd3');
     await tester.pump();
     await tester.ensureVisible(receiveButton());
     await tester.tap(receiveButton());
-    await tester.pumpAndSettle();
+    await pumpUiSettled(tester);
 
-    expect(find.text('Save these files?'), findsOneWidget);
+    expect(
+      find.text('Wants to send you 4 files (14.9 MB).'),
+      findsOneWidget,
+    );
     expect(find.text('Save to Downloads'), findsOneWidget);
     expect(find.text('sample.txt'), findsOneWidget);
     expect(find.text('vacation.jpg'), findsOneWidget);
@@ -255,7 +271,7 @@ void main() {
 
     await tester.ensureVisible(saveToDownloadsButton());
     await tester.tap(saveToDownloadsButton());
-    await tester.pumpAndSettle();
+    await pumpUiSettled(tester);
 
     expect(find.text('Files saved'), findsOneWidget);
     expect(find.text('Saved to Downloads'), findsOneWidget);
@@ -270,14 +286,11 @@ void main() {
     final controller = buildTestController()..openReceiveEntry();
     await pumpUtilityApp(tester, controller: controller);
 
-    await tester.enterText(
-      find.byKey(const ValueKey<String>('receive-code-field')),
-      'abc',
-    );
+    await tester.enterText(receiveCodeFieldPrimary(), 'abc');
     await tester.pump();
     await tester.ensureVisible(receiveButton());
     await tester.tap(receiveButton());
-    await tester.pumpAndSettle();
+    await pumpUiSettled(tester);
 
     expect(
       find.text('Enter the 6-character code from the sender.'),
@@ -464,6 +477,46 @@ void main() {
     expectNoFlutterError(tester);
   });
 
+  testWidgets('nearby device row starts send with LAN ticket', (tester) async {
+    final sendTransferSource = FakeSendTransferSource();
+    Future<List<SendDestinationViewData>> fakeScan() async => [
+      const SendDestinationViewData(
+        name: 'Lab Mac',
+        kind: SendDestinationKind.laptop,
+        lanTicket: 'ticket-abc',
+        lanFullname: 'recv-abc123xyz0._drift._udp.local.',
+      ),
+    ];
+
+    await pumpUtilityApp(
+      tester,
+      controller: buildTestController(
+        sendTransferSource: sendTransferSource,
+        nearbySendScan: fakeScan,
+      ),
+    );
+
+    await tester.tap(chooseFilesButton());
+    await tester.pumpAndSettle();
+
+    expect(find.text('Nearby devices'), findsOneWidget);
+    expect(find.text('Lab Mac'), findsOneWidget);
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>(
+        'nearby-tile-recv-abc123xyz0._drift._udp.local.',
+      )),
+    );
+    await tester.pump();
+
+    expect(sendTransferSource.lastRequest, isNotNull);
+    expect(sendTransferSource.lastRequest?.ticket, 'ticket-abc');
+    expect(sendTransferSource.lastRequest?.lanDestinationLabel, 'Lab Mac');
+    expect(sendTransferSource.lastRequest?.code, '');
+    expect(sendTransferSource.lastRequest?.paths, ['sample.txt', 'photos/']);
+    expectNoFlutterError(tester);
+  });
+
   testWidgets('partial send code does not begin the transfer', (tester) async {
     final sendTransferSource = FakeSendTransferSource();
     await pumpUtilityApp(
@@ -474,8 +527,8 @@ void main() {
     await tester.tap(chooseFilesButton());
     await tester.pumpAndSettle();
 
-    expect(find.text('Nearby devices'), findsNothing);
-    expect(find.text('No nearby devices right now'), findsNothing);
+    expect(find.text('Nearby devices'), findsOneWidget);
+    expect(find.text('No nearby devices found.'), findsOneWidget);
 
     await tester.enterText(sendCodeField(), 'ab2');
     await tester.pump();
@@ -567,7 +620,7 @@ void main() {
     expectNoFlutterError(tester);
   });
 
-  testWidgets('after drop state shows only the manual code flow', (
+  testWidgets('send selection shows nearby section and manual code entry', (
     tester,
   ) async {
     final controller = buildTestController(nearbySendDestinations: const []);
@@ -577,8 +630,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Or enter a code'), findsOneWidget);
-    expect(find.text('Nearby devices'), findsNothing);
-    expect(find.text('No nearby devices right now'), findsNothing);
+    expect(find.text('Nearby devices'), findsOneWidget);
+    expect(find.text('No nearby devices found.'), findsOneWidget);
     expect(sendCodeField(), findsOneWidget);
     expectNoFlutterError(tester);
   });
@@ -613,25 +666,22 @@ void main() {
     final controller = buildTestController()..openReceiveEntry();
     await pumpUtilityApp(tester, controller: controller);
 
-    await tester.enterText(
-      find.byKey(const ValueKey<String>('receive-code-field')),
-      'abc',
-    );
+    await tester.enterText(receiveCodeFieldPrimary(), 'abc');
     await tester.pump();
     await tester.ensureVisible(receiveButton());
     await tester.tap(receiveButton());
-    await tester.pumpAndSettle();
+    await pumpUiSettled(tester);
 
-    await tester.enterText(
-      find.byKey(const ValueKey<String>('receive-code-field')),
-      'ab2cd3',
-    );
+    await tester.enterText(receiveCodeFieldPrimary(), 'ab2cd3');
     await tester.pump();
     await tester.ensureVisible(receiveButton());
     await tester.tap(receiveButton());
-    await tester.pumpAndSettle();
+    await pumpUiSettled(tester);
 
-    expect(find.text('Save these files?'), findsOneWidget);
+    expect(
+      find.text('Wants to send you 4 files (14.9 MB).'),
+      findsOneWidget,
+    );
     expectNoFlutterError(tester);
   });
 
@@ -641,27 +691,27 @@ void main() {
     final controller = buildTestController()..openReceiveEntry();
     await pumpUtilityApp(tester, controller: controller);
 
-    await tester.enterText(
-      find.byKey(const ValueKey<String>('receive-code-field')),
-      'ab2cd3',
-    );
+    await tester.enterText(receiveCodeFieldPrimary(), 'ab2cd3');
     await tester.pump();
     await tester.ensureVisible(receiveButton());
     await tester.tap(receiveButton());
-    await tester.pumpAndSettle();
+    await pumpUiSettled(tester);
 
-    expect(find.text('Save these files?'), findsOneWidget);
+    expect(
+      find.text('Wants to send you 4 files (14.9 MB).'),
+      findsOneWidget,
+    );
     expect(shellBackButton(), findsOneWidget);
 
     await tester.tap(shellBackButton());
-    await tester.pumpAndSettle();
+    await pumpUiSettled(tester);
 
     expect(find.text('Receive files'), findsOneWidget);
+    expect(receiveCodeFieldFinder(), findsOneWidget);
     expect(
-      find.byKey(const ValueKey<String>('receive-code-field')),
-      findsOneWidget,
+      find.text('Wants to send you 4 files (14.9 MB).'),
+      findsNothing,
     );
-    expect(find.text('Save these files?'), findsNothing);
     expectNoFlutterError(tester);
   });
 

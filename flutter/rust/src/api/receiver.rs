@@ -5,12 +5,13 @@ use drift_core::receiver::{
     receiver_finish_after_decision_with_progress, receiver_run_until_decision,
     ReceiveTransferPhase, ReceiveTransferProgress,
 };
+use drift_core::lan::LanReceiveAdvertisement;
 use drift_core::rendezvous::{resolve_server_url, RegisterPeerResponse, RendezvousClient};
 use drift_core::session::bind_endpoint;
 use drift_core::transfer::{ReceiverMachine, ReceiverState};
 use drift_core::util::human_size;
 use drift_core::wire::{make_ticket_now, DeviceType};
-use iroh::Endpoint;
+use iroh::{Endpoint, EndpointId};
 use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
 use tokio::sync::oneshot;
@@ -21,6 +22,14 @@ use crate::frb_generated::StreamSink;
 const LOCAL_RENDEZVOUS_URL: &str = "http://127.0.0.1:8787";
 
 static IDLE_RECEIVER: Mutex<Option<IdleReceiver>> = Mutex::new(None);
+
+/// iroh endpoint id of the active idle receiver, for filtering our own LAN advert from browse.
+pub(crate) fn idle_receiver_endpoint_id_for_lan_filter() -> Option<EndpointId> {
+    IDLE_RECEIVER
+        .lock()
+        .ok()
+        .and_then(|g| g.as_ref().map(|r| r.endpoint.addr().id))
+}
 static IDLE_INCOMING_DECISION: Mutex<Option<oneshot::Sender<bool>>> = Mutex::new(None);
 static IDLE_INCOMING_STARTED: OnceLock<()> = OnceLock::new();
 
@@ -28,6 +37,10 @@ struct IdleReceiver {
     endpoint: Endpoint,
     server_url: String,
     registration: RegisterPeerResponse,
+    /// Label used for mDNS TXT `label` when (re)starting LAN advertisement.
+    device_label: String,
+    /// mDNS publish for LAN discovery; dropped while sending or when idle receiver is replaced.
+    _lan_advertisement: Option<LanReceiveAdvertisement>,
 }
 
 #[derive(Debug, Clone)]
@@ -68,16 +81,18 @@ pub struct IdleIncomingEvent {
 
 pub fn register_idle_receiver(
     server_url: Option<String>,
+    device_name: String,
 ) -> Result<IdleReceiverRegistration, String> {
     RUNTIME.block_on(async move {
         let resolved_url = resolve_server_url(server_url.as_deref().or(Some(LOCAL_RENDEZVOUS_URL)));
         log(&format!("registering idle receiver against {resolved_url}"));
-        replace_idle_receiver(register_new_idle_receiver(resolved_url).await).await
+        replace_idle_receiver(register_new_idle_receiver(resolved_url, device_name).await).await
     })
 }
 
 pub fn ensure_idle_receiver(
     server_url: Option<String>,
+    device_name: String,
 ) -> Result<IdleReceiverRegistration, String> {
     RUNTIME.block_on(async move {
         let resolved_url = resolve_server_url(server_url.as_deref().or(Some(LOCAL_RENDEZVOUS_URL)));
@@ -95,19 +110,28 @@ pub fn ensure_idle_receiver(
 
         match snapshot {
             None => {
-                replace_idle_receiver(register_new_idle_receiver(resolved_url).await).await
+                replace_idle_receiver(
+                    register_new_idle_receiver(resolved_url, device_name.clone()).await,
+                )
+                .await
             }
             Some((stored_url, registration)) => {
                 if stored_url != resolved_url {
                     if let Some(old) = take_idle_receiver()? {
                         old.endpoint.close().await;
                     }
-                    replace_idle_receiver(register_new_idle_receiver(resolved_url).await).await
+                    replace_idle_receiver(
+                        register_new_idle_receiver(resolved_url, device_name.clone()).await,
+                    )
+                    .await
                 } else if is_expired(&registration)? {
                     if let Some(old) = take_idle_receiver()? {
                         old.endpoint.close().await;
                     }
-                    replace_idle_receiver(register_new_idle_receiver(resolved_url).await).await
+                    replace_idle_receiver(
+                        register_new_idle_receiver(resolved_url, device_name.clone()).await,
+                    )
+                    .await
                 } else {
                     match RendezvousClient::new(stored_url.clone())
                         .pair_status(&registration.code)
@@ -128,8 +152,10 @@ pub fn ensure_idle_receiver(
                             if let Some(old) = take_idle_receiver()? {
                                 old.endpoint.close().await;
                             }
-                            replace_idle_receiver(register_new_idle_receiver(resolved_url).await)
-                                .await
+                            replace_idle_receiver(
+                                register_new_idle_receiver(resolved_url, device_name.clone()).await,
+                            )
+                            .await
                         }
                     }
                 }
@@ -145,6 +171,42 @@ pub fn current_idle_receiver_registration() -> Option<IdleReceiverRegistration> 
             expires_at: receiver.registration.expires_at.clone(),
         })
     })
+}
+
+/// Stops LAN mDNS advertisement while the UI runs an outbound send (we are not discoverable as a receiver).
+pub fn pause_idle_lan_advertisement() -> Result<(), String> {
+    let mut guard = IDLE_RECEIVER
+        .lock()
+        .map_err(|_| "idle receiver mutex poisoned".to_owned())?;
+    if let Some(idle) = guard.as_mut() {
+        if idle._lan_advertisement.take().is_some() {
+            log("paused LAN mDNS advertisement for send flow");
+        }
+    }
+    Ok(())
+}
+
+/// Restarts LAN advertisement after a send completes, fails, or is cancelled (no-op if already advertising).
+pub fn resume_idle_lan_advertisement() -> Result<(), String> {
+    let mut guard = IDLE_RECEIVER
+        .lock()
+        .map_err(|_| "idle receiver mutex poisoned".to_owned())?;
+    let Some(idle) = guard.as_mut() else {
+        return Ok(());
+    };
+    if idle._lan_advertisement.is_some() {
+        return Ok(());
+    }
+    let ticket = make_ticket_now(&idle.endpoint).map_err(|e| e.to_string())?;
+    match LanReceiveAdvertisement::start(&ticket, &idle.device_label) {
+        Ok(Some(ad)) => {
+            idle._lan_advertisement = Some(ad);
+            log("resumed LAN mDNS advertisement after send flow");
+        }
+        Ok(None) => log("LAN advertisement resume skipped (no IPv4 route)"),
+        Err(e) => log(&format!("LAN advertisement resume failed: {e}")),
+    }
+    Ok(())
 }
 
 /// Spawns a background task that accepts incoming connections on the idle receiver endpoint
@@ -467,9 +529,13 @@ fn format_error_chain(error: &anyhow::Error) -> String {
         .join(": ")
 }
 
-async fn register_new_idle_receiver(server_url: String) -> Result<IdleReceiver, String> {
+async fn register_new_idle_receiver(
+    server_url: String,
+    device_label: String,
+) -> Result<IdleReceiver, String> {
     let endpoint = bind_endpoint().await.map_err(|err| err.to_string())?;
     let ticket = make_ticket_now(&endpoint).map_err(|err| err.to_string())?;
+    let ticket_for_mdns = ticket.clone();
     let registration = RendezvousClient::new(server_url.clone())
         .register_peer(ticket)
         .await
@@ -479,10 +545,25 @@ async fn register_new_idle_receiver(server_url: String) -> Result<IdleReceiver, 
         registration.code, server_url
     ));
 
+    let device_label = if device_label.trim().is_empty() {
+        drift_core::util::process_display_device_name()
+    } else {
+        device_label.trim().to_owned()
+    };
+    let lan_advertisement = match LanReceiveAdvertisement::start(&ticket_for_mdns, &device_label) {
+        Ok(ad) => ad,
+        Err(e) => {
+            log(&format!("mDNS advertise skipped: {e}"));
+            None
+        }
+    };
+
     Ok(IdleReceiver {
         endpoint,
         server_url,
         registration,
+        device_label,
+        _lan_advertisement: lan_advertisement,
     })
 }
 

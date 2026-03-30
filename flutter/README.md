@@ -34,6 +34,16 @@ From `flutter/`:
 flutter run -d macos
 ```
 
+## LAN discovery (nearby receivers)
+
+The send screen browses mDNS for `_drift._udp` (same as the CLI `--nearby` path). Receivers also answer a **UDP presence ping** on port **47474** (the SRV port in the advertisement); browsers only list peers that respond, so mDNS-only ghosts are dropped. **Dev builds** on desktop often work without extra setup. **Store / hardened** builds may need platform permissions:
+
+- **macOS**: Enable the Local Network capability where required; add a usage string if the system prompts for local network access.
+- **iOS**: Set `NSLocalNetworkUsageDescription` in `Info.plist`; declare the Bonjour service type `_drift._udp` (and related) per Apple’s Bonjour browsing rules.
+- **Android**: Multicast/Wi‑Fi may require `CHANGE_WIFI_MULTICAST_STATE` and holding a multicast lock where the OS requires it.
+
+Simulators, VPNs, and split tunnels can hide LAN peers; the UI falls back to manual code entry.
+
 ## Edit The Rust API
 
 1. Update Rust functions under `flutter/rust/src/api/`

@@ -9,6 +9,8 @@ class SendTransferRequestData {
     required this.deviceName,
     required this.deviceType,
     this.serverUrl,
+    this.ticket,
+    this.lanDestinationLabel,
   });
 
   final String code;
@@ -17,6 +19,12 @@ class SendTransferRequestData {
   /// `"phone"` or `"laptop"`.
   final String deviceType;
   final String? serverUrl;
+
+  /// When set, Rust uses LAN ticket path; [code] is only for UI / labels.
+  final String? ticket;
+
+  /// Progress label when sending via [ticket].
+  final String? lanDestinationLabel;
 }
 
 enum SendTransferUpdatePhase {
@@ -63,6 +71,7 @@ class LocalSendTransferSource implements SendTransferSource {
   Stream<SendTransferUpdate> startTransfer(SendTransferRequestData request) {
     debugPrint(
       '[drift/send] startTransfer code=${request.code} '
+      'ticket=${request.ticket == null ? 'no' : 'yes'} '
       'files=${request.paths.length} server=${request.serverUrl ?? '(default)'}',
     );
     return rust_sender
@@ -73,6 +82,8 @@ class LocalSendTransferSource implements SendTransferSource {
             serverUrl: request.serverUrl,
             deviceName: request.deviceName,
             deviceType: request.deviceType,
+            ticket: request.ticket,
+            lanDestinationLabel: request.lanDestinationLabel,
           ),
         )
         .map((event) {

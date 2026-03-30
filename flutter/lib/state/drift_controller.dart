@@ -9,8 +9,37 @@ import '../platform/receive_registration_source.dart';
 import '../platform/send_item_source.dart';
 import '../platform/send_transfer_source.dart';
 import '../src/rust/api/device.dart' as rust_device;
+import '../src/rust/api/lan.dart' as rust_lan;
 import '../src/rust/api/receiver.dart' as rust_receiver;
 import 'drift_sample_data.dart';
+
+/// Resolves nearby receivers for the send screen (mDNS). Tests inject a stub; production uses Rust.
+typedef NearbySendScan = Future<List<SendDestinationViewData>> Function();
+
+Future<List<SendDestinationViewData>> _rustNearbySendScan() async {
+  final raw = await rust_lan.scanNearbyReceivers(timeoutSecs: BigInt.from(12));
+  final byFullname = <String, rust_lan.NearbyReceiverInfo>{};
+  for (final r in raw) {
+    byFullname[r.fullname] = r;
+  }
+  final list = byFullname.values.map(_sendDestinationFromNearbyInfo).toList();
+  list.sort(
+    (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
+  );
+  return list;
+}
+
+SendDestinationViewData _sendDestinationFromNearbyInfo(
+  rust_lan.NearbyReceiverInfo r,
+) {
+  final name = r.label.trim().isEmpty ? 'Nearby device' : r.label;
+  return SendDestinationViewData(
+    name: name,
+    kind: SendDestinationKind.laptop,
+    lanTicket: r.ticket,
+    lanFullname: r.fullname,
+  );
+}
 
 class DriftController extends ChangeNotifier {
   DriftController({
@@ -20,6 +49,7 @@ class DriftController extends ChangeNotifier {
     String idleReceiveStatus = 'Registering',
     bool enableIdleReceiverRefresh = true,
     List<SendDestinationViewData>? nearbySendDestinations,
+    NearbySendScan? nearbySendScan,
     List<TransferItemViewData>? droppedSendItems,
     SendItemSource? sendItemSource,
     SendTransferSource? sendTransferSource,
@@ -55,6 +85,7 @@ class DriftController extends ChangeNotifier {
            sendTransferSource ?? const LocalSendTransferSource(),
        _receiveRegistrationSource =
            receiveRegistrationSource ?? const LocalReceiveRegistrationSource(),
+       _nearbySendScan = nearbySendScan ?? _rustNearbySendScan,
        _animateSendingConnection = animateSendingConnection,
        _enableIdleIncomingListener = enableIdleIncomingListener {
     unawaited(_ensureIdleReceiver());
@@ -77,8 +108,13 @@ class DriftController extends ChangeNotifier {
   final SendItemSource _sendItemSource;
   final SendTransferSource _sendTransferSource;
   final ReceiveRegistrationSource _receiveRegistrationSource;
+  final NearbySendScan _nearbySendScan;
   final bool _enableIdleIncomingListener;
   Timer? _idleReceiverRefreshTimer;
+  Timer? _nearbyScanTimer;
+  bool _nearbyScanInFlight = false;
+  /// True after a browse attempt finishes while [canBrowseNearbyReceivers] was satisfied.
+  bool _nearbyScanCompletedOnce = false;
   StreamSubscription<SendTransferUpdate>? _sendTransferSubscription;
   StreamSubscription<rust_receiver.IdleIncomingEvent>? _idleIncomingSubscription;
   bool _idleIncomingDecisionPending = false;
@@ -136,6 +172,14 @@ class DriftController extends ChangeNotifier {
   List<TransferItemViewData> get receiveItems => _receiveItems;
   List<SendDestinationViewData> get nearbySendDestinations =>
       List<SendDestinationViewData>.unmodifiable(_nearbySendDestinations);
+
+  /// Whether LAN browse is active (files chosen and not in the inspection overlay).
+  bool get canBrowseNearbyReceivers => _shouldScanNearby;
+
+  bool get nearbyScanInProgress => _nearbyScanInFlight;
+
+  /// After the first browse in this send-selection session (see empty vs loading UI).
+  bool get nearbyScanHasCompletedOnce => _nearbyScanCompletedOnce;
   TransferSummaryViewData? get sendSummary => _sendSummary;
   TransferSummaryViewData? get receiveSummary => _receiveSummary;
 
@@ -264,6 +308,7 @@ class DriftController extends ChangeNotifier {
   }
 
   void clearSendFlow() {
+    _cancelNearbyScanTimer();
     _cancelActiveSendTransfer();
     _mode = TransferDirection.send;
     _sendStage = TransferStage.idle;
@@ -328,6 +373,14 @@ class DriftController extends ChangeNotifier {
 
   void acceptReceiveOffer() {
     if (!_idleIncomingDecisionPending) {
+      // Preview flow with sample data (no idle incoming listener).
+      if (_receiveStage == TransferStage.review) {
+        _receiveStage = TransferStage.completed;
+        _receiveSummary = (_receiveSummary ?? sampleReceiveSummary).copyWith(
+          statusMessage: 'Saved to Downloads',
+        );
+        notifyListeners();
+      }
       return;
     }
 
@@ -385,6 +438,7 @@ class DriftController extends ChangeNotifier {
   }
 
   void resetShell() {
+    _cancelNearbyScanTimer();
     _cancelActiveSendTransfer();
     _mode = TransferDirection.send;
     _sendStage = TransferStage.idle;
@@ -464,6 +518,7 @@ class DriftController extends ChangeNotifier {
   }
 
   void _beginSend(SendTransferUpdate update) {
+    _cancelNearbyScanTimer();
     _resetReceiveFlow();
     _mode = TransferDirection.send;
     _sendStage = switch (update.phase) {
@@ -492,6 +547,10 @@ class DriftController extends ChangeNotifier {
       _sendCompletionMetrics = _buildSendCompletionMetrics(update);
     } else {
       _sendCompletionMetrics = null;
+    }
+    if (update.phase == SendTransferUpdatePhase.completed ||
+        update.phase == SendTransferUpdatePhase.failed) {
+      unawaited(_resumeIdleLanAdvertisementAfterSend());
     }
   }
 
@@ -559,9 +618,11 @@ class DriftController extends ChangeNotifier {
     _sendItems = List<TransferItemViewData>.unmodifiable(items);
     _isInspectingSendItems = false;
     notifyListeners();
+    _scheduleNearbyScanning();
   }
 
   void _beginSendInspection({required bool clearExistingItems}) {
+    _cancelNearbyScanTimer();
     _cancelActiveSendTransfer();
     _resetReceiveFlow();
     _mode = TransferDirection.send;
@@ -581,6 +642,9 @@ class DriftController extends ChangeNotifier {
   void _finishSendInspection() {
     _isInspectingSendItems = false;
     notifyListeners();
+    if (_sendItems.isNotEmpty) {
+      _scheduleNearbyScanning();
+    }
   }
 
   List<TransferItemViewData> _mergeSendItems(
@@ -606,6 +670,7 @@ class DriftController extends ChangeNotifier {
 
   @override
   void dispose() {
+    _cancelNearbyScanTimer();
     _cancelActiveSendTransfer();
     _idleReceiverRefreshTimer?.cancel();
     unawaited(_idleIncomingSubscription?.cancel());
@@ -801,8 +866,9 @@ class DriftController extends ChangeNotifier {
     }
 
     try {
-      final registration = await _receiveRegistrationSource
-          .ensureIdleReceiver();
+      final registration = await _receiveRegistrationSource.ensureIdleReceiver(
+        deviceName: deviceName,
+      );
       _idleReceiveCode = registration.code.trim().toUpperCase();
       _idleReceiveStatus = 'Ready';
       notifyListeners();
@@ -812,6 +878,24 @@ class DriftController extends ChangeNotifier {
         notifyListeners();
       }
       debugPrint('Failed to ensure idle receiver: $error');
+      debugPrintStack(stackTrace: stackTrace);
+    }
+  }
+
+  Future<void> _pauseIdleLanAdvertisementForActiveSend() async {
+    try {
+      await rust_receiver.pauseIdleLanAdvertisement();
+    } catch (error, stackTrace) {
+      debugPrint('pauseIdleLanAdvertisement failed: $error');
+      debugPrintStack(stackTrace: stackTrace);
+    }
+  }
+
+  Future<void> _resumeIdleLanAdvertisementAfterSend() async {
+    try {
+      await rust_receiver.resumeIdleLanAdvertisement();
+    } catch (error, stackTrace) {
+      debugPrint('resumeIdleLanAdvertisement failed: $error');
       debugPrintStack(stackTrace: stackTrace);
     }
   }
@@ -831,24 +915,110 @@ class DriftController extends ChangeNotifier {
     _sendPayloadStartedAt = null;
     _sendCompletionMetrics = null;
     _resetReceiveFlow();
+    _scheduleNearbyScanning();
   }
 
-  void _startSendTransfer(String normalizedCode) {
+  bool get _shouldScanNearby =>
+      _sendStage == TransferStage.collecting &&
+      _sendItems.isNotEmpty &&
+      !_isInspectingSendItems;
+
+  void _cancelNearbyScanTimer() {
+    _nearbyScanTimer?.cancel();
+    _nearbyScanTimer = null;
+  }
+
+  void _scheduleNearbyScanning() {
+    _cancelNearbyScanTimer();
+    _nearbyScanCompletedOnce = false;
+    notifyListeners();
+    if (!_shouldScanNearby) {
+      return;
+    }
+    unawaited(_runNearbyScanOnce());
+    _nearbyScanTimer = Timer.periodic(const Duration(seconds: 12), (_) {
+      if (!_shouldScanNearby) {
+        _cancelNearbyScanTimer();
+        return;
+      }
+      unawaited(_runNearbyScanOnce());
+    });
+  }
+
+  Future<void> _runNearbyScanOnce() async {
+    if (!_shouldScanNearby || _nearbyScanInFlight) {
+      return;
+    }
+    _nearbyScanInFlight = true;
+    notifyListeners();
+    try {
+      final next = await _nearbySendScan();
+      if (!_shouldScanNearby) {
+        return;
+      }
+      _nearbySendDestinations = List<SendDestinationViewData>.unmodifiable(
+        next,
+      );
+      notifyListeners();
+    } catch (error, stackTrace) {
+      debugPrint('[drift/controller] nearby scan failed: $error');
+      debugPrintStack(stackTrace: stackTrace);
+    } finally {
+      _nearbyScanInFlight = false;
+      _nearbyScanCompletedOnce = true;
+      notifyListeners();
+    }
+  }
+
+  /// Starts a send using the LAN ticket from mDNS (see [SendDestinationViewData.lanTicket]).
+  void selectNearbyDestination(SendDestinationViewData destination) {
+    final ticket = destination.lanTicket?.trim();
+    if (ticket == null || ticket.isEmpty) {
+      return;
+    }
+    if (!_shouldScanNearby) {
+      return;
+    }
+    _startSendTransferWithTicket(destination, ticket);
+  }
+
+  void _startSendTransferWithTicket(
+    SendDestinationViewData destination,
+    String ticket,
+  ) {
+    _cancelNearbyScanTimer();
     _cancelActiveSendTransfer();
     _sendPayloadStartedAt = null;
     _sendCompletionMetrics = null;
     final generation = ++_sendTransferGeneration;
+    final lanLabel = destination.name;
+    _sendDestinationCode = '';
     debugPrint(
-      '[drift/controller] starting send transfer '
-      'generation=$generation code=$normalizedCode items=${_sendItems.length}',
+      '[drift/controller] starting LAN send transfer '
+      'generation=$generation label=$lanLabel items=${_sendItems.length}',
     );
     final request = SendTransferRequestData(
-      code: normalizedCode,
+      code: '',
+      ticket: ticket,
+      lanDestinationLabel: lanLabel,
       paths: _sendItems.map((item) => item.path).toList(growable: false),
       deviceName: _deviceName,
       deviceType: _deviceType,
     );
+    _listenToSendTransfer(
+      generation: generation,
+      request: request,
+      errorFallbackDestination:
+          _sendDestinationLabel ?? lanLabel,
+    );
+  }
 
+  void _listenToSendTransfer({
+    required int generation,
+    required SendTransferRequestData request,
+    required String errorFallbackDestination,
+  }) {
+    unawaited(_pauseIdleLanAdvertisementForActiveSend());
     _sendTransferSubscription = _sendTransferSource
         .startTransfer(request)
         .listen(
@@ -878,8 +1048,7 @@ class DriftController extends ChangeNotifier {
               SendTransferUpdate(
                 phase: SendTransferUpdatePhase.failed,
                 destinationLabel:
-                    _sendDestinationLabel ??
-                    _formatCodeAsDestination(normalizedCode),
+                    _sendDestinationLabel ?? errorFallbackDestination,
                 statusMessage: 'Request sent',
                 itemCount: _sendItems.length,
                 totalSize: sampleSendSummary.totalSize,
@@ -893,6 +1062,30 @@ class DriftController extends ChangeNotifier {
         );
   }
 
+  void _startSendTransfer(String normalizedCode) {
+    _cancelNearbyScanTimer();
+    _cancelActiveSendTransfer();
+    _sendPayloadStartedAt = null;
+    _sendCompletionMetrics = null;
+    final generation = ++_sendTransferGeneration;
+    debugPrint(
+      '[drift/controller] starting send transfer '
+      'generation=$generation code=$normalizedCode items=${_sendItems.length}',
+    );
+    final request = SendTransferRequestData(
+      code: normalizedCode,
+      paths: _sendItems.map((item) => item.path).toList(growable: false),
+      deviceName: _deviceName,
+      deviceType: _deviceType,
+    );
+    _listenToSendTransfer(
+      generation: generation,
+      request: request,
+      errorFallbackDestination:
+          _sendDestinationLabel ?? _formatCodeAsDestination(normalizedCode),
+    );
+  }
+
   void _cancelActiveSendTransfer() {
     if (_sendTransferSubscription != null) {
       debugPrint(
@@ -903,6 +1096,7 @@ class DriftController extends ChangeNotifier {
     _sendTransferGeneration += 1;
     unawaited(_sendTransferSubscription?.cancel());
     _sendTransferSubscription = null;
+    unawaited(_resumeIdleLanAdvertisementAfterSend());
   }
 
   static String _formatCodeAsDestination(String code) {

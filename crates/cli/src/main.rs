@@ -52,7 +52,7 @@ async fn main() -> Result<()> {
             server,
         } => match (nearby, code.as_ref()) {
             (true, None) => drift::send_nearby(files, nearby_timeout_secs, server).await,
-                (false, Some(c)) => send(c.clone(), files, server).await,
+            (false, Some(c)) => send(c.clone(), files, server).await,
             (true, Some(_)) => {
                 anyhow::bail!("pass either CODE or --nearby, not both");
             }

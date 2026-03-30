@@ -37,11 +37,19 @@ class SendDestinationViewData {
     required this.name,
     required this.kind,
     this.hint,
+    this.lanTicket,
+    this.lanFullname,
   });
 
   final String name;
   final SendDestinationKind kind;
   final String? hint;
+
+  /// LAN send ticket from mDNS (`drift_core::lan`); when set, tap uses ticket send.
+  final String? lanTicket;
+
+  /// mDNS fullname for deduplication while scanning.
+  final String? lanFullname;
 }
 
 @immutable

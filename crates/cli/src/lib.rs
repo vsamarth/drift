@@ -14,7 +14,7 @@ use drift_core::sender::{
 };
 use drift_core::session::bind_endpoint;
 use drift_core::transfer::{ReceiverMachine, ReceiverState};
-use drift_core::util::{confirm_accept, describe_remote, human_size, random_device_name};
+use drift_core::util::{confirm_accept, describe_remote, human_size, process_display_device_name};
 use drift_core::wire::DeviceType;
 use drift_core::wire::make_ticket;
 use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
@@ -89,7 +89,7 @@ fn log_env_filter(verbose: u8) -> EnvFilter {
 
 pub async fn send(code: String, files: Vec<PathBuf>, server_url: Option<String>) -> Result<()> {
     let code_normalized = code.trim().to_uppercase();
-    let device_name = local_device_name();
+    let device_name = process_display_device_name();
     let device_type = DeviceType::Laptop;
     info!(
         code = %code_normalized,
@@ -193,7 +193,7 @@ pub async fn send_nearby(
     _server_url: Option<String>,
 ) -> Result<()> {
     let scan = Duration::from_secs(nearby_timeout_secs.max(1));
-    let device_name = local_device_name();
+    let device_name = process_display_device_name();
     let device_type = DeviceType::Laptop;
 
     info!(
@@ -203,7 +203,7 @@ pub async fn send_nearby(
         "send.nearby_started"
     );
 
-    let receivers = tokio::task::spawn_blocking(move || lan::browse_nearby_receivers(scan))
+    let receivers = tokio::task::spawn_blocking(move || lan::browse_nearby_receivers(scan, None))
         .await
         .context("mdns browse task")??;
 
@@ -216,12 +216,7 @@ pub async fn send_nearby(
 
     eprintln!("Nearby receivers:");
     for (i, r) in receivers.iter().enumerate() {
-        let code_display = if r.code.is_empty() {
-            "—".to_owned()
-        } else {
-            r.code.clone()
-        };
-        eprintln!("  {}. {}  (code {})", i + 1, r.label, code_display);
+        eprintln!("  {}. {}", i + 1, r.label);
     }
 
     let upper = receivers.len();
@@ -242,17 +237,9 @@ pub async fn send_nearby(
     }
 
     let picked = &receivers[idx - 1];
-    let destination_label = if picked.code.is_empty() {
-        format!("Nearby: {}", picked.label)
-    } else {
-        format!("Nearby: {} ({})", picked.label, picked.code)
-    };
+    let destination_label = format!("Nearby: {}", picked.label);
 
-    info!(
-        label = %picked.label,
-        code = %picked.code,
-        "send.nearby_picked"
-    );
+    info!(label = %picked.label, "send.nearby_picked");
 
     let mut last_phase = None;
     let mut progress_bar: Option<ProgressBar> = None;
@@ -338,10 +325,11 @@ pub async fn send_nearby(
 
 pub async fn receive(out_dir: PathBuf, server_url: Option<String>) -> Result<()> {
     let resolved_url = drift_core::rendezvous::resolve_server_url(server_url.as_deref());
+    let device_name = process_display_device_name();
     info!(
         out_dir = %out_dir.display(),
         server = %resolved_url,
-        device = %local_device_name(),
+        device = %device_name,
         "receive.started"
     );
 
@@ -357,7 +345,6 @@ pub async fn receive(out_dir: PathBuf, server_url: Option<String>) -> Result<()>
     let registration = client.register_peer(ticket.clone()).await?;
     let expires_at = OffsetDateTime::parse(&registration.expires_at, &Rfc3339)
         .context("parsing discovery expiry")?;
-    let device_name = local_device_name();
     let device_type = DeviceType::Laptop;
 
     let mut machine = ReceiverMachine::new();
@@ -372,25 +359,24 @@ pub async fn receive(out_dir: PathBuf, server_url: Option<String>) -> Result<()>
     );
     info!(code = %registration.code, "receive.waiting_for_sender");
 
-    let _lan_advertise =
-        match lan::LanReceiveAdvertisement::start(&ticket, &device_name, &registration.code) {
-            Ok(Some(guard)) => {
-                info!("receive.lan_mdns_publishing");
-                Some(guard)
-            }
-            Ok(None) => {
-                info!("receive.lan_mdns_skipped_no_ipv4");
-                None
-            }
-            Err(e) => {
-                warn!(
-                    error = %e,
-                    error_chain = %format!("{e:#}"),
-                    "receive.lan_mdns_publish_failed"
-                );
-                None
-            }
-        };
+    let _lan_advertise = match lan::LanReceiveAdvertisement::start(&ticket, &device_name) {
+        Ok(Some(guard)) => {
+            info!("receive.lan_mdns_publishing");
+            Some(guard)
+        }
+        Ok(None) => {
+            info!("receive.lan_mdns_skipped_no_ipv4");
+            None
+        }
+        Err(e) => {
+            warn!(
+                error = %e,
+                error_chain = %format!("{e:#}"),
+                "receive.lan_mdns_publish_failed"
+            );
+            None
+        }
+    };
 
     let mut accept_future = Box::pin(endpoint.accept());
     let mut poll = interval(Duration::from_secs(2));
@@ -580,19 +566,6 @@ pub async fn receive(out_dir: PathBuf, server_url: Option<String>) -> Result<()>
             }
         }
     }
-}
-
-fn local_device_name() -> String {
-    for key in ["DRIFT_DEVICE_NAME", "HOSTNAME", "COMPUTERNAME"] {
-        if let Ok(value) = std::env::var(key) {
-            let trimmed = value.trim();
-            if !trimmed.is_empty() {
-                return trimmed.to_owned();
-            }
-        }
-    }
-
-    random_device_name()
 }
 
 fn log_send_progress(last_phase: &mut Option<SendTransferPhase>, progress: &SendTransferProgress) {

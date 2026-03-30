@@ -37,7 +37,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.11.1";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -1645834733;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -1395063831;
 
 // Section: executor
 
@@ -102,10 +102,14 @@ fn wire__crate__api__receiver__ensure_idle_receiver_impl(
             let mut deserializer =
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             let api_server_url = <Option<String>>::sse_decode(&mut deserializer);
+            let api_device_name = <String>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, String>((move || {
-                    let output_ok = crate::api::receiver::ensure_idle_receiver(api_server_url)?;
+                    let output_ok = crate::api::receiver::ensure_idle_receiver(
+                        api_server_url,
+                        api_device_name,
+                    )?;
                     Ok(output_ok)
                 })())
             }
@@ -209,6 +213,38 @@ fn wire__crate__api__preview__inspect_paths_impl(
         },
     )
 }
+fn wire__crate__api__receiver__pause_idle_lan_advertisement_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "pause_idle_lan_advertisement",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok = crate::api::receiver::pause_idle_lan_advertisement()?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
 fn wire__crate__api__device__random_device_name_impl(
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
     rust_vec_len_: i32,
@@ -261,10 +297,14 @@ fn wire__crate__api__receiver__register_idle_receiver_impl(
             let mut deserializer =
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             let api_server_url = <Option<String>>::sse_decode(&mut deserializer);
+            let api_device_name = <String>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, String>((move || {
-                    let output_ok = crate::api::receiver::register_idle_receiver(api_server_url)?;
+                    let output_ok = crate::api::receiver::register_idle_receiver(
+                        api_server_url,
+                        api_device_name,
+                    )?;
                     Ok(output_ok)
                 })())
             }
@@ -298,6 +338,71 @@ fn wire__crate__api__receiver__respond_idle_incoming_offer_impl(
             move |context| {
                 transform_result_sse::<_, String>((move || {
                     let output_ok = crate::api::receiver::respond_idle_incoming_offer(api_accept)?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__api__receiver__resume_idle_lan_advertisement_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "resume_idle_lan_advertisement",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok = crate::api::receiver::resume_idle_lan_advertisement()?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__api__lan__scan_nearby_receivers_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "scan_nearby_receivers",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_timeout_secs = <u64>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok = crate::api::lan::scan_nearby_receivers(api_timeout_secs)?;
                     Ok(output_ok)
                 })())
             }
@@ -541,6 +646,20 @@ impl SseDecode for Vec<crate::api::receiver::IdleIncomingFileRow> {
     }
 }
 
+impl SseDecode for Vec<crate::api::lan::NearbyReceiverInfo> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = vec![];
+        for idx_ in 0..len_ {
+            ans_.push(<crate::api::lan::NearbyReceiverInfo>::sse_decode(
+                deserializer,
+            ));
+        }
+        return ans_;
+    }
+}
+
 impl SseDecode for Vec<u8> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -564,6 +683,22 @@ impl SseDecode for Vec<crate::api::preview::SelectionItem> {
             ));
         }
         return ans_;
+    }
+}
+
+impl SseDecode for crate::api::lan::NearbyReceiverInfo {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_fullname = <String>::sse_decode(deserializer);
+        let mut var_label = <String>::sse_decode(deserializer);
+        let mut var_code = <String>::sse_decode(deserializer);
+        let mut var_ticket = <String>::sse_decode(deserializer);
+        return crate::api::lan::NearbyReceiverInfo {
+            fullname: var_fullname,
+            label: var_label,
+            code: var_code,
+            ticket: var_ticket,
+        };
     }
 }
 
@@ -670,12 +805,16 @@ impl SseDecode for crate::api::sender::SendTransferRequest {
         let mut var_serverUrl = <Option<String>>::sse_decode(deserializer);
         let mut var_deviceName = <String>::sse_decode(deserializer);
         let mut var_deviceType = <String>::sse_decode(deserializer);
+        let mut var_ticket = <Option<String>>::sse_decode(deserializer);
+        let mut var_lanDestinationLabel = <Option<String>>::sse_decode(deserializer);
         return crate::api::sender::SendTransferRequest {
             code: var_code,
             paths: var_paths,
             server_url: var_serverUrl,
             device_name: var_deviceName,
             device_type: var_deviceType,
+            ticket: var_ticket,
+            lan_destination_label: var_lanDestinationLabel,
         };
     }
 }
@@ -719,25 +858,38 @@ fn pde_ffi_dispatcher_primary_impl(
         }
         4 => wire__crate__api__simple__init_app_impl(port, ptr, rust_vec_len, data_len),
         5 => wire__crate__api__preview__inspect_paths_impl(port, ptr, rust_vec_len, data_len),
-        7 => wire__crate__api__receiver__register_idle_receiver_impl(
+        6 => wire__crate__api__receiver__pause_idle_lan_advertisement_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        8 => wire__crate__api__receiver__respond_idle_incoming_offer_impl(
+        8 => wire__crate__api__receiver__register_idle_receiver_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        9 => wire__crate__api__receiver__start_idle_incoming_listener_impl(
+        9 => wire__crate__api__receiver__respond_idle_incoming_offer_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        10 => wire__crate__api__sender__start_send_transfer_impl(port, ptr, rust_vec_len, data_len),
+        10 => wire__crate__api__receiver__resume_idle_lan_advertisement_impl(
+            port,
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        11 => wire__crate__api__lan__scan_nearby_receivers_impl(port, ptr, rust_vec_len, data_len),
+        12 => wire__crate__api__receiver__start_idle_incoming_listener_impl(
+            port,
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        13 => wire__crate__api__sender__start_send_transfer_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -751,7 +903,7 @@ fn pde_ffi_dispatcher_sync_impl(
     // Codec=Pde (Serialization + dispatch), see doc to use other codecs
     match func_id {
         3 => wire__crate__api__simple__greet_impl(ptr, rust_vec_len, data_len),
-        6 => wire__crate__api__device__random_device_name_impl(ptr, rust_vec_len, data_len),
+        7 => wire__crate__api__device__random_device_name_impl(ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -851,6 +1003,29 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::receiver::IdleReceiverRegistr
     for crate::api::receiver::IdleReceiverRegistration
 {
     fn into_into_dart(self) -> crate::api::receiver::IdleReceiverRegistration {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::lan::NearbyReceiverInfo {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.fullname.into_into_dart().into_dart(),
+            self.label.into_into_dart().into_dart(),
+            self.code.into_into_dart().into_dart(),
+            self.ticket.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::lan::NearbyReceiverInfo
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::lan::NearbyReceiverInfo>
+    for crate::api::lan::NearbyReceiverInfo
+{
+    fn into_into_dart(self) -> crate::api::lan::NearbyReceiverInfo {
         self
     }
 }
@@ -960,6 +1135,8 @@ impl flutter_rust_bridge::IntoDart for crate::api::sender::SendTransferRequest {
             self.server_url.into_into_dart().into_dart(),
             self.device_name.into_into_dart().into_dart(),
             self.device_type.into_into_dart().into_dart(),
+            self.ticket.into_into_dart().into_dart(),
+            self.lan_destination_label.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -1100,6 +1277,16 @@ impl SseEncode for Vec<crate::api::receiver::IdleIncomingFileRow> {
     }
 }
 
+impl SseEncode for Vec<crate::api::lan::NearbyReceiverInfo> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::lan::NearbyReceiverInfo>::sse_encode(item, serializer);
+        }
+    }
+}
+
 impl SseEncode for Vec<u8> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -1117,6 +1304,16 @@ impl SseEncode for Vec<crate::api::preview::SelectionItem> {
         for item in self {
             <crate::api::preview::SelectionItem>::sse_encode(item, serializer);
         }
+    }
+}
+
+impl SseEncode for crate::api::lan::NearbyReceiverInfo {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.fullname, serializer);
+        <String>::sse_encode(self.label, serializer);
+        <String>::sse_encode(self.code, serializer);
+        <String>::sse_encode(self.ticket, serializer);
     }
 }
 
@@ -1201,6 +1398,8 @@ impl SseEncode for crate::api::sender::SendTransferRequest {
         <Option<String>>::sse_encode(self.server_url, serializer);
         <String>::sse_encode(self.device_name, serializer);
         <String>::sse_encode(self.device_type, serializer);
+        <Option<String>>::sse_encode(self.ticket, serializer);
+        <Option<String>>::sse_encode(self.lan_destination_label, serializer);
     }
 }
 
