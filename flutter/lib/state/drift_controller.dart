@@ -626,6 +626,7 @@ class DriftController extends ChangeNotifier {
     _nearbySendDestinations = _defaultSendDestinations;
     _sendItems = List<TransferItemViewData>.unmodifiable(items);
     _isInspectingSendItems = false;
+    unawaited(_pauseIdleLanAdvertisementForActiveSend());
     notifyListeners();
     _scheduleNearbyScanning();
   }
