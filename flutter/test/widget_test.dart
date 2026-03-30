@@ -7,6 +7,7 @@ import 'package:drift_app/platform/receive_registration_source.dart';
 import 'package:drift_app/platform/send_item_source.dart';
 import 'package:drift_app/platform/send_transfer_source.dart';
 import 'package:drift_app/state/drift_controller.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -202,6 +203,11 @@ void main() {
       find.byKey(const ValueKey<String>('idle-identity-zone')),
       findsOneWidget,
     );
+    expect(
+      find.byKey(const ValueKey<String>('idle-device-icon')),
+      findsOneWidget,
+    );
+    expect(find.byIcon(Icons.laptop_mac_rounded), findsOneWidget);
     expect(find.text('Samarth MacBook Pro'), findsOneWidget);
     expect(find.text('F9P 2Q1'), findsOneWidget);
     expect(find.text('Ready'), findsOneWidget);

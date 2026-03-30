@@ -137,8 +137,11 @@ impl ReceiverService {
         &self,
         server_url: Option<String>,
     ) -> Result<ReceiverRegistration> {
-        self.call_registration_command(|reply| ReceiverCommand::EnsureRegistered { server_url, reply })
-            .await
+        self.call_registration_command(|reply| ReceiverCommand::EnsureRegistered {
+            server_url,
+            reply,
+        })
+        .await
     }
 
     pub async fn set_discoverable(&self, enabled: bool) -> Result<()> {
@@ -213,8 +216,6 @@ pub(super) fn parse_device_type(value: &str) -> Result<drift_core::wire::DeviceT
     match value.trim().to_ascii_lowercase().as_str() {
         "phone" => Ok(drift_core::wire::DeviceType::Phone),
         "laptop" => Ok(drift_core::wire::DeviceType::Laptop),
-        other => anyhow::bail!(
-            "invalid device_type {other:?} (expected \"phone\" or \"laptop\")"
-        ),
+        other => anyhow::bail!("invalid device_type {other:?} (expected \"phone\" or \"laptop\")"),
     }
 }

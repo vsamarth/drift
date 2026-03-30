@@ -1,8 +1,8 @@
 use std::collections::BTreeMap;
 use std::time::Duration;
 
-use anyhow::{Context, Result};
 use crate::types::NearbyReceiver;
+use anyhow::{Context, Result};
 
 pub async fn scan_nearby_receivers(timeout_secs: u64) -> Result<Vec<NearbyReceiver>> {
     let secs = timeout_secs.max(1);

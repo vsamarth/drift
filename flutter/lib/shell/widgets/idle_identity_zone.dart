@@ -20,6 +20,12 @@ class _IdleIdentityZoneState extends State<IdleIdentityZone> {
   bool _copied = false;
   Timer? _copiedResetTimer;
 
+  IconData get _deviceIcon {
+    return widget.controller.deviceType.toLowerCase() == 'phone'
+        ? Icons.smartphone_rounded
+        : Icons.laptop_mac_rounded;
+  }
+
   String _formatCode(String raw) {
     if (raw.length != 6) return raw;
     return '${raw.substring(0, 3)} ${raw.substring(3)}';
@@ -55,54 +61,73 @@ class _IdleIdentityZoneState extends State<IdleIdentityZone> {
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Expanded(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                Text(
-                  widget.controller.deviceName,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: driftSans(
-                    fontSize: 13.5,
-                    fontWeight: FontWeight.w600,
-                    color: kInk,
-                    letterSpacing: -0.25,
+                SizedBox(
+                  width: 20,
+                  child: Center(
+                    child: Icon(
+                      _deviceIcon,
+                      key: const ValueKey<String>('idle-device-icon'),
+                      size: 18,
+                      color: kInk.withValues(alpha: 0.88),
+                    ),
                   ),
                 ),
-                const SizedBox(height: 2),
-                Row(
-                  children: [
-                    Container(
-                      width: 7,
-                      height: 7,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF49B36C),
-                        shape: BoxShape.circle,
-                        boxShadow: [
-                          BoxShadow(
-                            color: const Color(
-                              0xFF49B36C,
-                            ).withValues(alpha: 0.22),
-                            blurRadius: 6,
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 7),
-                    Flexible(
-                      child: Text(
-                        widget.controller.idleReceiveStatus,
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        widget.controller.deviceName,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: driftSans(
-                          fontSize: 11.5,
-                          fontWeight: FontWeight.w500,
-                          color: kMuted,
+                          fontSize: 13.5,
+                          fontWeight: FontWeight.w600,
+                          color: kInk,
+                          letterSpacing: -0.25,
                         ),
                       ),
-                    ),
-                  ],
+                      const SizedBox(height: 2),
+                      Row(
+                        children: [
+                          Container(
+                            width: 7,
+                            height: 7,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF49B36C),
+                              shape: BoxShape.circle,
+                              boxShadow: [
+                                BoxShadow(
+                                  color: const Color(
+                                    0xFF49B36C,
+                                  ).withValues(alpha: 0.22),
+                                  blurRadius: 6,
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 7),
+                          Flexible(
+                            child: Text(
+                              widget.controller.idleReceiveStatus,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: driftSans(
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w500,
+                                color: kMuted,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
               ],
             ),
