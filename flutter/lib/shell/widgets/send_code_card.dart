@@ -33,7 +33,8 @@ class SendCodeCard extends ConsumerWidget {
     final destinationLabel = _displayRecipient(summary?.destinationLabel);
     final stage = state.sendStage;
     final dotColor = _dotColorFor(stage);
-    final itemSummary = '$itemCount${totalSize.isEmpty ? '' : ' · $totalSize'}';
+    final itemSummary =
+        '${_fileCountLabel(itemCount)}${totalSize.isEmpty ? '' : ' · $totalSize'}';
 
     if (!fillBody) {
       return Padding(
@@ -321,4 +322,8 @@ String _displayRecipient(String? rawValue) {
     return 'Recipient device';
   }
   return normalized;
+}
+
+String _fileCountLabel(int itemCount) {
+  return itemCount == 1 ? '1 file' : '$itemCount files';
 }

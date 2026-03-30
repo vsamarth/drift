@@ -16,7 +16,8 @@ class ReceiveReviewCard extends ConsumerWidget {
     final senderName = _displaySender(summary?.senderName);
     final itemCount = summary?.itemCount ?? state.receiveItems.length;
     final totalSize = summary?.totalSize ?? '';
-    final itemSummary = '$itemCount${totalSize.isEmpty ? '' : ' · $totalSize'}';
+    final itemSummary =
+        '${_fileCountLabel(itemCount)}${totalSize.isEmpty ? '' : ' · $totalSize'}';
     final saveRoot = summary?.destinationLabel.trim() ?? 'Downloads';
     final notifier = ref.read(driftAppNotifierProvider.notifier);
 
@@ -133,4 +134,8 @@ String _subtitle(int itemCount, String totalSize, String saveRoot) {
   final fileWord = itemCount == 1 ? 'file' : 'files';
   final sizePart = totalSize.isEmpty ? '' : ' ($totalSize)';
   return 'Wants to send you $itemCount $fileWord$sizePart.';
+}
+
+String _fileCountLabel(int itemCount) {
+  return itemCount == 1 ? '1 file' : '$itemCount files';
 }

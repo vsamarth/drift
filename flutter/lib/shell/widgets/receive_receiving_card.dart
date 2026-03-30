@@ -17,7 +17,8 @@ class ReceiveReceivingCard extends ConsumerWidget {
     final senderName = _displaySender(summary?.senderName);
     final itemCount = summary?.itemCount ?? state.receiveItems.length;
     final totalSize = summary?.totalSize ?? '';
-    final itemSummary = '$itemCount${totalSize.isEmpty ? '' : ' · $totalSize'}';
+    final itemSummary =
+        '${_fileCountLabel(itemCount)}${totalSize.isEmpty ? '' : ' · $totalSize'}';
 
     final transferProgress = _transferProgressForStrip(state);
     final mode = _receivingStripMode(state);
@@ -129,4 +130,8 @@ String _displaySender(String? rawValue) {
   final trimmed = rawValue?.trim() ?? '';
   if (trimmed.isEmpty) return 'Unknown sender';
   return trimmed;
+}
+
+String _fileCountLabel(int itemCount) {
+  return itemCount == 1 ? '1 file' : '$itemCount files';
 }
