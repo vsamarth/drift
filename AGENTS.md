@@ -23,12 +23,14 @@ Instructions for Codex and other coding agents working in this repository.
 
 ## Commands
 
+- Makefile overview: `make help`
 - Build: `cargo check`
 - Test: `cargo test`
 - Format: `cargo fmt`
 - Run server: `cargo run --bin drift-server -- serve --listen 127.0.0.1:8787`
-- Send file: `DRIFT_RENDEZVOUS_URL=http://127.0.0.1:8787 cargo run -- send sample.txt`
+- Send file: `DRIFT_RENDEZVOUS_URL=http://127.0.0.1:8787 cargo run -- send -c <CODE> sample.txt`
 - Receive file: `DRIFT_RENDEZVOUS_URL=http://127.0.0.1:8787 cargo run -- receive <CODE> --out downloads`
+- Send on LAN (mDNS picker): `cargo run -- send --nearby sample.txt` or `make send-nearby FILE=sample.txt`
 
 ## When Making Changes
 

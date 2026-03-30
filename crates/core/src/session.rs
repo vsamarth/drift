@@ -4,10 +4,10 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, anyhow, bail};
 use iroh::{Endpoint, RelayMode};
+use std::sync::Arc;
 use tokio::fs::{self, File};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::time::{Duration, Instant};
-use std::sync::Arc;
 
 use crate::fs_plan::prepare::PreparedFile;
 use crate::fs_plan::receive::{
@@ -174,8 +174,7 @@ where
         .and_then(|m| {
             // `try_fold` returns `Option<u64>` (None on overflow); `and_then` flattens the
             // resulting `Option<Option<u64>>` into `Option<u64>`.
-            m.values()
-                .try_fold(0_u64, |acc, e| acc.checked_add(e.size))
+            m.values().try_fold(0_u64, |acc, e| acc.checked_add(e.size))
         })
         .unwrap_or(0_u64);
 

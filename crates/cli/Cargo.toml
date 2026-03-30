@@ -8,6 +8,10 @@ anyhow.workspace = true
 clap.workspace = true
 drift-core = { path = "../core" }
 iroh.workspace = true
+mdns-sd.workspace = true
+rand.workspace = true
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
 time.workspace = true
 tokio.workspace = true
 tracing.workspace = true

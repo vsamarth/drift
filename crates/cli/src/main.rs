@@ -16,7 +16,15 @@ struct Cli {
 #[derive(Subcommand, Debug)]
 enum Command {
     Send {
-        code: String,
+        /// Rendezvous short code from the receiver (required unless `--nearby`).
+        #[arg(short = 'c', long = "code")]
+        code: Option<String>,
+        /// Discover receivers on the local network via mDNS instead of using a short code.
+        #[arg(long)]
+        nearby: bool,
+        /// How long to scan for LAN receivers when using `--nearby`.
+        #[arg(long, default_value_t = 15)]
+        nearby_timeout_secs: u64,
         #[arg(required = true)]
         files: Vec<PathBuf>,
         #[arg(long)]
@@ -38,9 +46,20 @@ async fn main() -> Result<()> {
     match cli.command {
         Command::Send {
             code,
+            nearby,
+            nearby_timeout_secs,
             files,
             server,
-        } => send(code, files, server).await,
+        } => match (nearby, code.as_ref()) {
+            (true, None) => drift::send_nearby(files, nearby_timeout_secs, server).await,
+                (false, Some(c)) => send(c.clone(), files, server).await,
+            (true, Some(_)) => {
+                anyhow::bail!("pass either CODE or --nearby, not both");
+            }
+            (false, None) => {
+                anyhow::bail!("pass a short CODE or use --nearby to discover receivers on the LAN");
+            }
+        },
         Command::Receive { out, server } => receive(out, server).await,
     }
 }

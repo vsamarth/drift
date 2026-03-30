@@ -1,17 +1,23 @@
+use std::io::{self, Write};
 use std::path::PathBuf;
 
 use anyhow::{Context, Result, bail};
 use clap::{Args, ValueEnum};
+use drift_core::lan;
 use drift_core::receiver::{
-    handle_receiver_connection_with_progress, ReceiveTransferPhase, ReceiveTransferProgress,
+    ReceiveTransferPhase, ReceiveTransferProgress, handle_receiver_connection_with_progress,
 };
 use drift_core::rendezvous::RendezvousClient;
-use drift_core::sender::{SendTransferPhase, SendTransferProgress, send_files_with_progress};
+use drift_core::sender::{
+    SendTransferPhase, SendTransferProgress, send_files_with_progress,
+    send_files_with_progress_via_lan_ticket,
+};
 use drift_core::session::bind_endpoint;
 use drift_core::transfer::{ReceiverMachine, ReceiverState};
 use drift_core::util::{confirm_accept, describe_remote, human_size, random_device_name};
 use drift_core::wire::DeviceType;
 use drift_core::wire::make_ticket;
+use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
 use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
 use tokio::fs;
@@ -19,7 +25,6 @@ use tokio::signal;
 use tokio::time::{Duration, Instant, MissedTickBehavior, interval};
 use tracing::{debug, info, warn};
 use tracing_subscriber::EnvFilter;
-use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
 
 const CONNECT_GRACE_PERIOD: Duration = Duration::from_secs(30);
 
@@ -181,6 +186,156 @@ pub async fn send(code: String, files: Vec<PathBuf>, server_url: Option<String>)
     outcome.map(|_| ())
 }
 
+/// Send after picking a receiver discovered via mDNS (`--nearby`).
+pub async fn send_nearby(
+    files: Vec<PathBuf>,
+    nearby_timeout_secs: u64,
+    _server_url: Option<String>,
+) -> Result<()> {
+    let scan = Duration::from_secs(nearby_timeout_secs.max(1));
+    let device_name = local_device_name();
+    let device_type = DeviceType::Laptop;
+
+    info!(
+        file_count = files.len(),
+        device = %device_name,
+        scan_secs = scan.as_secs(),
+        "send.nearby_started"
+    );
+
+    let receivers = tokio::task::spawn_blocking(move || lan::browse_nearby_receivers(scan))
+        .await
+        .context("mdns browse task")??;
+
+    if receivers.is_empty() {
+        bail!(
+            "no Drift receivers found on the LAN. \
+             On the other machine run `drift receive` (same Wi‑Fi / LAN), then try again."
+        );
+    }
+
+    eprintln!("Nearby receivers:");
+    for (i, r) in receivers.iter().enumerate() {
+        let code_display = if r.code.is_empty() {
+            "—".to_owned()
+        } else {
+            r.code.clone()
+        };
+        eprintln!("  {}. {}  (code {})", i + 1, r.label, code_display);
+    }
+
+    let upper = receivers.len();
+    eprint!("Enter number (1–{upper}), or q to quit: ");
+    io::stdout().flush().context("flushing prompt")?;
+
+    let mut line = String::new();
+    io::stdin().read_line(&mut line).context("reading choice")?;
+    let trimmed = line.trim();
+    if trimmed.eq_ignore_ascii_case("q") {
+        bail!("cancelled");
+    }
+    let idx: usize = trimmed
+        .parse()
+        .with_context(|| format!("expected a number 1–{upper}, got {trimmed:?}"))?;
+    if idx == 0 || idx > upper {
+        bail!("choice must be between 1 and {upper}");
+    }
+
+    let picked = &receivers[idx - 1];
+    let destination_label = if picked.code.is_empty() {
+        format!("Nearby: {}", picked.label)
+    } else {
+        format!("Nearby: {} ({})", picked.label, picked.code)
+    };
+
+    info!(
+        label = %picked.label,
+        code = %picked.code,
+        "send.nearby_picked"
+    );
+
+    let mut last_phase = None;
+    let mut progress_bar: Option<ProgressBar> = None;
+    let mut transfer_done = false;
+    let mut length_set = false;
+
+    let outcome = send_files_with_progress_via_lan_ticket(
+        picked.ticket.clone(),
+        destination_label,
+        files,
+        device_name,
+        device_type,
+        |progress| {
+            log_send_progress(&mut last_phase, &progress);
+
+            match progress.phase {
+                SendTransferPhase::Connecting | SendTransferPhase::WaitingForDecision => {}
+                SendTransferPhase::Sending => {
+                    if progress_bar.is_none() {
+                        let pb = ProgressBar::new(0);
+                        pb.set_draw_target(ProgressDrawTarget::stderr());
+                        pb.set_style(
+                            ProgressStyle::with_template(
+                                "{spinner:.green} [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({percent}%) {msg}",
+                            )
+                            .expect("valid indicatif template"),
+                        );
+                        pb.enable_steady_tick(Duration::from_millis(100));
+                        progress_bar = Some(pb);
+                    }
+                    let pb = progress_bar.as_ref().expect("progress bar set");
+
+                    if !length_set {
+                        pb.set_length(progress.manifest.total_size);
+                        length_set = true;
+                    }
+                    pb.set_position(progress.bytes_sent);
+
+                    let msg = match progress.current_file_index {
+                        Some(idx) => {
+                            let i = idx as usize;
+                            progress.manifest.files.get(i).map_or_else(
+                                || format!("file {idx}"),
+                                |f| format!(
+                                    "file: {} ({}/{}) bytes",
+                                    f.path, progress.bytes_sent_in_file, f.size
+                                ),
+                            )
+                        }
+                        None => "starting...".to_string(),
+                    };
+                    pb.set_message(msg);
+                }
+                SendTransferPhase::Completed => {
+                    transfer_done = true;
+                    if let Some(pb) = progress_bar.take() {
+                        pb.finish_and_clear();
+                    }
+                }
+            }
+        },
+    )
+    .await;
+
+    if let Some(pb) = progress_bar.take() {
+        if !transfer_done {
+            pb.finish_and_clear();
+        }
+    }
+
+    match &outcome {
+        Ok(o) => info!(
+            receiver = %o.receiver_device_name,
+            file_count = o.manifest.file_count,
+            total_bytes = o.manifest.total_size,
+            "send.completed"
+        ),
+        Err(e) => warn!(error = %e, error_chain = %format!("{e:#}"), "send.failed"),
+    }
+
+    outcome.map(|_| ())
+}
+
 pub async fn receive(out_dir: PathBuf, server_url: Option<String>) -> Result<()> {
     let resolved_url = drift_core::rendezvous::resolve_server_url(server_url.as_deref());
     info!(
@@ -199,7 +354,7 @@ pub async fn receive(out_dir: PathBuf, server_url: Option<String>) -> Result<()>
         .await
         .context("binding local iroh endpoint")?;
     let ticket = make_ticket(&endpoint).await?;
-    let registration = client.register_peer(ticket).await?;
+    let registration = client.register_peer(ticket.clone()).await?;
     let expires_at = OffsetDateTime::parse(&registration.expires_at, &Rfc3339)
         .context("parsing discovery expiry")?;
     let device_name = local_device_name();
@@ -216,6 +371,26 @@ pub async fn receive(out_dir: PathBuf, server_url: Option<String>) -> Result<()>
         "receive.registered"
     );
     info!(code = %registration.code, "receive.waiting_for_sender");
+
+    let _lan_advertise =
+        match lan::LanReceiveAdvertisement::start(&ticket, &device_name, &registration.code) {
+            Ok(Some(guard)) => {
+                info!("receive.lan_mdns_publishing");
+                Some(guard)
+            }
+            Ok(None) => {
+                info!("receive.lan_mdns_skipped_no_ipv4");
+                None
+            }
+            Err(e) => {
+                warn!(
+                    error = %e,
+                    error_chain = %format!("{e:#}"),
+                    "receive.lan_mdns_publish_failed"
+                );
+                None
+            }
+        };
 
     let mut accept_future = Box::pin(endpoint.accept());
     let mut poll = interval(Duration::from_secs(2));

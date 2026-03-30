@@ -8,13 +8,8 @@ use tokio::time::timeout;
 
 use crate::fs_plan::receive::{ExpectedFile, build_expected_files};
 use crate::rendezvous::OfferManifest;
-use crate::session::{
-    FileReceiveProgress,
-    receive_files_over_connection_with_progress,
-};
-use crate::transfer::{
-    ReceiverMachine, ReceiverState, ensure_session_id, validate_hello,
-};
+use crate::session::{FileReceiveProgress, receive_files_over_connection_with_progress};
+use crate::transfer::{ReceiverMachine, ReceiverState, ensure_session_id, validate_hello};
 use crate::util::human_size;
 use crate::wire::{
     Accept, ControlMessage, Decline, DeviceType, Hello, TRANSFER_PROTOCOL_VERSION, TransferRole,
@@ -254,8 +249,7 @@ pub async fn receiver_finish_after_decision(
     approved: bool,
 ) -> Result<()> {
     let mut noop = |_| {};
-    receiver_finish_after_decision_with_progress(pending, machine, approved, &mut noop)
-        .await
+    receiver_finish_after_decision_with_progress(pending, machine, approved, &mut noop).await
 }
 
 /// Like [handle_receiver_connection], but also reports receiving progress.
@@ -272,7 +266,8 @@ where
     A: Future<Output = Result<bool>>,
     F: FnMut(ReceiveTransferProgress),
 {
-    let pending = receiver_run_until_decision(connection, out_dir, device_name, device_type, machine).await?;
+    let pending =
+        receiver_run_until_decision(connection, out_dir, device_name, device_type, machine).await?;
 
     let sender_device_name = pending.sender_device_name.clone();
     let file_count = pending.manifest.file_count;
@@ -293,13 +288,9 @@ where
 
     let approved = approve.await?;
 
-    let res = receiver_finish_after_decision_with_progress(
-        pending,
-        machine,
-        approved,
-        &mut on_progress,
-    )
-    .await;
+    let res =
+        receiver_finish_after_decision_with_progress(pending, machine, approved, &mut on_progress)
+            .await;
 
     if let Err(err) = &res {
         on_progress(ReceiveTransferProgress {

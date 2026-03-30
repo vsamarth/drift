@@ -5,6 +5,14 @@ use rand::random;
 
 use crate::fs_plan::prepare::{PreparedFiles, prepare_files};
 use crate::rendezvous::{OfferManifest, RendezvousClient, resolve_server_url, validate_code};
+
+enum PeerResolution {
+    Rendezvous {
+        code: String,
+        server_url: Option<String>,
+    },
+    LanTicket(String),
+}
 use crate::session::{bind_endpoint, connect_to_ticket, send_files_over_connection};
 use crate::transfer::{SenderMachine, SenderState, ensure_session_id, validate_hello};
 use crate::wire::{
@@ -70,8 +78,7 @@ where
     ));
 
     let result = send_prepared_files(
-        &code,
-        server_url.as_deref(),
+        PeerResolution::Rendezvous { code, server_url },
         &device_name,
         device_type,
         &session_id,
@@ -84,9 +91,46 @@ where
     result
 }
 
+/// Send after resolving the receiver via LAN (mDNS ticket); skips rendezvous claim.
+pub async fn send_files_with_progress_via_lan_ticket<F>(
+    ticket: String,
+    destination_label: String,
+    files: Vec<PathBuf>,
+    device_name: String,
+    device_type: DeviceType,
+    mut on_progress: F,
+) -> Result<SendTransferOutcome>
+where
+    F: FnMut(SendTransferProgress),
+{
+    let prepared = prepare_files(files).await?;
+    let session_id = make_session_id();
+    let mut machine = SenderMachine::new();
+
+    on_progress(progress(
+        SendTransferPhase::Connecting,
+        destination_label.clone(),
+        &prepared,
+        None,
+        0,
+        None,
+        0,
+    ));
+
+    send_prepared_files(
+        PeerResolution::LanTicket(ticket),
+        &device_name,
+        device_type,
+        &session_id,
+        &prepared,
+        &mut machine,
+        &mut on_progress,
+    )
+    .await
+}
+
 async fn send_prepared_files<F>(
-    code: &str,
-    server_url: Option<&str>,
+    resolution: PeerResolution,
     device_name: &str,
     device_type: DeviceType,
     session_id: &str,
@@ -98,9 +142,14 @@ where
     F: FnMut(SendTransferProgress),
 {
     machine.transition(SenderState::Resolving)?;
-    let client = RendezvousClient::new(resolve_server_url(server_url));
-    let resolved = client.claim_peer(code).await?;
-    let endpoint_addr = decode_ticket(&resolved.ticket)?;
+    let endpoint_addr = match resolution {
+        PeerResolution::Rendezvous { code, server_url } => {
+            let client = RendezvousClient::new(resolve_server_url(server_url.as_deref()));
+            let resolved = client.claim_peer(&code).await?;
+            decode_ticket(&resolved.ticket)?
+        }
+        PeerResolution::LanTicket(ticket) => decode_ticket(ticket.trim())?,
+    };
 
     machine.transition(SenderState::Connecting)?;
     let endpoint = bind_endpoint()
