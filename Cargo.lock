@@ -766,6 +766,7 @@ dependencies = [
  "anyhow",
  "base64",
  "bincode",
+ "blake3",
  "futures-lite",
  "iroh",
  "rand 0.8.5",

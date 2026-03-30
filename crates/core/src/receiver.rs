@@ -12,8 +12,8 @@ use crate::session::receive_files_over_connection;
 use crate::transfer::{ReceiverMachine, ReceiverState, ensure_session_id, validate_hello};
 use crate::util::human_size;
 use crate::wire::{
-    Accept, ControlMessage, Decline, DeviceType, Hello, TRANSFER_PROTOCOL_VERSION,
-    TransferRole, read_message, write_message,
+    Accept, ControlMessage, Decline, DeviceType, Hello, TRANSFER_PROTOCOL_VERSION, TransferRole,
+    read_message, write_message,
 };
 
 const CONTROL_STREAM_FINISH_TIMEOUT: Duration = Duration::from_secs(2);
@@ -178,14 +178,8 @@ pub async fn handle_receiver_connection<A>(
 where
     A: Future<Output = Result<bool>>,
 {
-    let pending = receiver_run_until_decision(
-        connection,
-        out_dir,
-        device_name,
-        device_type,
-        machine,
-    )
-    .await?;
+    let pending =
+        receiver_run_until_decision(connection, out_dir, device_name, device_type, machine).await?;
     let approved = approve.await?;
     receiver_finish_after_decision(pending, machine, approved).await
 }

@@ -1,15 +1,18 @@
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use iroh::{Endpoint, EndpointAddr, TransportAddr};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
 use crate::rendezvous::OfferManifest;
 
 pub const ALPN: &[u8] = b"drift/transfer/v1";
 pub const TRANSFER_PROTOCOL_VERSION: u32 = 1;
+
+/// Maximum payload bytes per chunk on the file transfer stream (4 MiB).
+pub const TRANSFER_CHUNK_SIZE: u32 = 4 * 1024 * 1024;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
@@ -66,10 +69,40 @@ pub enum ControlMessage {
     Decline(Decline),
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FileHeader {
+/// Opens a chunked file transfer on a bidi stream (JSON preamble, then binary chunk frames).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct FileOpen {
     pub path: String,
     pub size: u64,
+    pub chunk_size: u32,
+    pub chunk_count: u32,
+    /// Lowercase hex encoding of 32-byte BLAKE3 digest of the full file.
+    pub file_blake3: String,
+}
+
+pub fn chunk_count_for_transfer_size(size: u64) -> Result<u32> {
+    if size == 0 {
+        return Ok(1);
+    }
+    let chunks = size.div_ceil(TRANSFER_CHUNK_SIZE as u64);
+    u32::try_from(chunks).map_err(|_| anyhow!("file is too large for chunk protocol"))
+}
+
+pub fn blake3_to_hex(digest: &[u8; 32]) -> String {
+    digest.iter().map(|b| format!("{:02x}", b)).collect()
+}
+
+pub fn blake3_from_hex(s: &str) -> Result<[u8; 32]> {
+    if s.len() != 64 || !s.bytes().all(|b| b.is_ascii_hexdigit()) {
+        bail!("file_blake3 must be 64 hex characters");
+    }
+    let mut out = [0_u8; 32];
+    for i in 0..32 {
+        let byte = u8::from_str_radix(&s[i * 2..i * 2 + 2], 16)
+            .map_err(|_| anyhow!("invalid file_blake3 hex"))?;
+        out[i] = byte;
+    }
+    Ok(out)
 }
 
 pub async fn make_ticket(endpoint: &Endpoint) -> Result<String> {
@@ -116,44 +149,92 @@ pub fn decode_ticket(ticket: &str) -> Result<EndpointAddr> {
     Ok(addr.with_addrs(Vec::<TransportAddr>::new()))
 }
 
-pub async fn read_message<T: DeserializeOwned>(
-    recv_stream: &mut iroh::endpoint::RecvStream,
+const MAX_JSON_FRAME_BYTES: usize = 16 * 1024 * 1024;
+
+/// Length-prefixed JSON frame (same encoding as control messages), for any async reader.
+pub async fn read_json_frame<R: AsyncRead + Unpin, T: DeserializeOwned>(
+    reader: &mut R,
 ) -> Result<T> {
-    let message_len = recv_stream
-        .read_u32()
-        .await
-        .context("reading message length")? as usize;
+    let message_len = reader.read_u32().await.context("reading message length")? as usize;
+    if message_len > MAX_JSON_FRAME_BYTES {
+        bail!(
+            "message length {} exceeds maximum {}",
+            message_len,
+            MAX_JSON_FRAME_BYTES
+        );
+    }
     let mut message_buf = vec![0_u8; message_len];
-    recv_stream
+    reader
         .read_exact(&mut message_buf)
         .await
         .context("reading message bytes")?;
     serde_json::from_slice(&message_buf).context("parsing message body")
 }
 
+/// Length-prefixed JSON frame (same encoding as control messages), for any async writer.
+pub async fn write_json_frame<W: AsyncWrite + Unpin, T: Serialize>(
+    writer: &mut W,
+    value: &T,
+) -> Result<()> {
+    let bytes = serde_json::to_vec(value).context("serializing message body")?;
+    writer
+        .write_u32(bytes.len() as u32)
+        .await
+        .context("writing message length")?;
+    writer
+        .write_all(&bytes)
+        .await
+        .context("writing message bytes")?;
+    writer.flush().await.context("flushing message")?;
+    Ok(())
+}
+
+pub async fn read_message<T: DeserializeOwned>(
+    recv_stream: &mut iroh::endpoint::RecvStream,
+) -> Result<T> {
+    read_json_frame(recv_stream).await
+}
+
 pub async fn write_message<T: Serialize>(
     send_stream: &mut iroh::endpoint::SendStream,
     value: &T,
 ) -> Result<()> {
-    let bytes = serde_json::to_vec(value).context("serializing message body")?;
-    send_stream
-        .write_u32(bytes.len() as u32)
-        .await
-        .context("writing message length")?;
-    send_stream
-        .write_all(&bytes)
-        .await
-        .context("writing message bytes")?;
-    Ok(())
+    write_json_frame(send_stream, value).await
 }
 
-pub async fn read_header(recv_stream: &mut iroh::endpoint::RecvStream) -> Result<FileHeader> {
-    read_message(recv_stream).await
+pub async fn read_file_open(recv_stream: &mut iroh::endpoint::RecvStream) -> Result<FileOpen> {
+    read_json_frame(recv_stream).await
 }
 
-pub async fn write_header(
+pub async fn write_file_open(
     send_stream: &mut iroh::endpoint::SendStream,
-    header: &FileHeader,
+    open: &FileOpen,
 ) -> Result<()> {
-    write_message(send_stream, header).await
+    write_json_frame(send_stream, open).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn chunk_count_edge_cases() {
+        assert_eq!(chunk_count_for_transfer_size(0).unwrap(), 1);
+        assert_eq!(chunk_count_for_transfer_size(1).unwrap(), 1);
+        assert_eq!(
+            chunk_count_for_transfer_size(TRANSFER_CHUNK_SIZE as u64).unwrap(),
+            1
+        );
+        assert_eq!(
+            chunk_count_for_transfer_size(TRANSFER_CHUNK_SIZE as u64 + 1).unwrap(),
+            2
+        );
+    }
+
+    #[test]
+    fn blake3_hex_roundtrip() {
+        let d = *blake3::hash(b"hello").as_bytes();
+        let h = blake3_to_hex(&d);
+        assert_eq!(blake3_from_hex(&h).unwrap(), d);
+    }
 }

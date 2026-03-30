@@ -13,6 +13,7 @@ version = "0.1.0"
 
 [workspace.dependencies]
 anyhow = "1.0"
+blake3 = "1.5"
 axum = "0.8"
 base64 = "0.22"
 bincode = "1.3"
