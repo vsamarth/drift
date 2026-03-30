@@ -118,8 +118,8 @@ class SelectedItemsSection extends ConsumerWidget {
         ? 'Preparing files'
         : 'Selected files';
     final helper = isInspecting && count == 0
-        ? 'We are checking your selection before receivers become available.'
-        : 'Everything in this set will be sent together.';
+        ? 'Checking your selection before receivers become available.'
+        : 'Everything in this selection will be sent together.';
 
     return ShellSurfaceCard(
       child: Column(
@@ -165,7 +165,7 @@ class SelectedItemsSection extends ConsumerWidget {
                   border: Border.all(color: kBorder),
                 ),
                 child: Text(
-                  isInspecting && count == 0 ? 'Working' : itemLabel,
+                  isInspecting && count == 0 ? 'Preparing' : itemLabel,
                   style: driftSans(
                     fontSize: 11.5,
                     fontWeight: FontWeight.w600,
@@ -204,7 +204,7 @@ class SelectedItemsSection extends ConsumerWidget {
                   if (isInspecting && count > 0) ...[
                     const SizedBox(height: 10),
                     Text(
-                      'Inspecting added files...',
+                      'Checking added files...',
                       style: driftSans(fontSize: 12.5, color: kMuted),
                     ),
                     const SizedBox(height: 10),
@@ -219,7 +219,7 @@ class SelectedItemsSection extends ConsumerWidget {
             children: [
               Expanded(
                 child: Text(
-                  'Tip: drag more files anywhere in this view to add them.',
+                  'Drag more files anywhere in this view to add them.',
                   style: driftSans(fontSize: 12, color: kMuted, height: 1.35),
                 ),
               ),
@@ -349,11 +349,6 @@ class NearbyDevicesSection extends ConsumerWidget {
             letterSpacing: 0.2,
           ),
         ),
-        const SizedBox(height: 4),
-        Text(
-          'Pick a receiver on your local network.',
-          style: driftSans(fontSize: 13, color: kInk.withValues(alpha: 0.74)),
-        ),
         const SizedBox(height: 12),
         if (destinations.isNotEmpty)
           SizedBox(
@@ -371,17 +366,18 @@ class NearbyDevicesSection extends ConsumerWidget {
           _NearbyStatusPanel(
             icon: Icons.folder_outlined,
             title: state.isInspectingSendItems
-                ? 'Finishing file prep'
+                ? 'Preparing selection'
                 : 'Add files to discover receivers',
             message: state.isInspectingSendItems
-                ? 'Nearby receivers appear here once your items are ready.'
-                : 'Choose files first, then nearby devices will appear here.',
+                ? 'Nearby devices will appear here once your files are ready.'
+                : 'Nearby devices will appear here after you add files.',
           )
         else
           const _NearbyStatusPanel(
             icon: Icons.radar_outlined,
             title: 'No nearby devices found.',
-            message: 'Try again in a moment, or send with a code below.',
+            message:
+                'Ensure that your device is on the same network, or send with a code below.',
           ),
       ],
     );
@@ -410,7 +406,7 @@ class ManualCodeSection extends ConsumerWidget {
         ),
         const SizedBox(height: 4),
         Text(
-          'Enter the 6-character code from the receiving device.',
+          'Enter the 6-character code shown on the receiving device.',
           style: driftSans(fontSize: 13, color: kInk.withValues(alpha: 0.74)),
         ),
         const SizedBox(height: 10),
