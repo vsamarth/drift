@@ -752,6 +752,7 @@ dependencies = [
  "anyhow",
  "drift-core",
  "iroh",
+ "rand 0.8.5",
  "time",
  "tokio",
 ]
@@ -785,6 +786,7 @@ dependencies = [
  "drift-core",
  "flutter_rust_bridge",
  "iroh",
+ "rand 0.8.5",
  "time",
  "tokio",
 ]

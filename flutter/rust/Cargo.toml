@@ -12,6 +12,7 @@ drift-app = { path = "../../crates/app" }
 drift-core = { path = "../../crates/core" }
 flutter_rust_bridge = "=2.11.1"
 iroh = "0.96"
+rand = "0.8"
 time = { version = "0.3", features = ["formatting", "parsing"] }
 tokio = { version = "1.50", features = ["fs", "rt-multi-thread", "sync", "time"] }
 
