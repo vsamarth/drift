@@ -2,33 +2,36 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/theme/drift_theme.dart';
-import '../../state/drift_controller.dart';
+import '../../state/drift_providers.dart';
 
-class IdleIdentityZone extends StatefulWidget {
-  const IdleIdentityZone({super.key, required this.controller});
-
-  final DriftController controller;
+class IdleIdentityZone extends ConsumerStatefulWidget {
+  const IdleIdentityZone({super.key});
 
   @override
-  State<IdleIdentityZone> createState() => _IdleIdentityZoneState();
+  ConsumerState<IdleIdentityZone> createState() => _IdleIdentityZoneState();
 }
 
-class _IdleIdentityZoneState extends State<IdleIdentityZone> {
+class _IdleIdentityZoneState extends ConsumerState<IdleIdentityZone> {
   bool _codeHovering = false;
   bool _copied = false;
   Timer? _copiedResetTimer;
+
+  IconData _deviceIcon(String deviceType) {
+    return deviceType.toLowerCase() == 'phone'
+        ? Icons.smartphone_rounded
+        : Icons.laptop_mac_rounded;
+  }
 
   String _formatCode(String raw) {
     if (raw.length != 6) return raw;
     return '${raw.substring(0, 3)} ${raw.substring(3)}';
   }
 
-  Future<void> _copyCode() async {
-    await Clipboard.setData(
-      ClipboardData(text: widget.controller.idleReceiveCode),
-    );
+  Future<void> _copyCode(String code) async {
+    await Clipboard.setData(ClipboardData(text: code));
     _copiedResetTimer?.cancel();
     if (mounted) {
       setState(() => _copied = true);
@@ -48,6 +51,8 @@ class _IdleIdentityZoneState extends State<IdleIdentityZone> {
 
   @override
   Widget build(BuildContext context) {
+    final state = ref.watch(driftAppNotifierProvider);
+
     return Padding(
       key: const ValueKey<String>('idle-identity-zone'),
       padding: const EdgeInsets.fromLTRB(6, 0, 6, 1),
@@ -55,54 +60,73 @@ class _IdleIdentityZoneState extends State<IdleIdentityZone> {
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Expanded(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                Text(
-                  widget.controller.deviceName,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: driftSans(
-                    fontSize: 13.5,
-                    fontWeight: FontWeight.w600,
-                    color: kInk,
-                    letterSpacing: -0.25,
+                SizedBox(
+                  width: 20,
+                  child: Center(
+                    child: Icon(
+                      _deviceIcon(state.deviceType),
+                      key: const ValueKey<String>('idle-device-icon'),
+                      size: 18,
+                      color: kInk.withValues(alpha: 0.88),
+                    ),
                   ),
                 ),
-                const SizedBox(height: 2),
-                Row(
-                  children: [
-                    Container(
-                      width: 7,
-                      height: 7,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF49B36C),
-                        shape: BoxShape.circle,
-                        boxShadow: [
-                          BoxShadow(
-                            color: const Color(
-                              0xFF49B36C,
-                            ).withValues(alpha: 0.22),
-                            blurRadius: 6,
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 7),
-                    Flexible(
-                      child: Text(
-                        widget.controller.idleReceiveStatus,
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        state.deviceName,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: driftSans(
-                          fontSize: 11.5,
-                          fontWeight: FontWeight.w500,
-                          color: kMuted,
+                          fontSize: 13.5,
+                          fontWeight: FontWeight.w600,
+                          color: kInk,
+                          letterSpacing: -0.25,
                         ),
                       ),
-                    ),
-                  ],
+                      const SizedBox(height: 2),
+                      Row(
+                        children: [
+                          Container(
+                            width: 7,
+                            height: 7,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF49B36C),
+                              shape: BoxShape.circle,
+                              boxShadow: [
+                                BoxShadow(
+                                  color: const Color(
+                                    0xFF49B36C,
+                                  ).withValues(alpha: 0.22),
+                                  blurRadius: 6,
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 7),
+                          Flexible(
+                            child: Text(
+                              state.idleReceiveStatus,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: driftSans(
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w500,
+                                color: kMuted,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
               ],
             ),
@@ -139,7 +163,7 @@ class _IdleIdentityZoneState extends State<IdleIdentityZone> {
                 onEnter: (_) => setState(() => _codeHovering = true),
                 onExit: (_) => setState(() => _codeHovering = false),
                 child: GestureDetector(
-                  onTap: _copyCode,
+                  onTap: () => _copyCode(state.idleReceiveCode),
                   child: AnimatedContainer(
                     key: const ValueKey<String>('idle-receive-code'),
                     duration: const Duration(milliseconds: 160),
@@ -169,7 +193,7 @@ class _IdleIdentityZoneState extends State<IdleIdentityZone> {
                       ],
                     ),
                     child: Text(
-                      _formatCode(widget.controller.idleReceiveCode),
+                      _formatCode(state.idleReceiveCode),
                       style: driftMono(
                         fontSize: 15,
                         fontWeight: FontWeight.w700,

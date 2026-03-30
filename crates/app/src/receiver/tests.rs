@@ -2,7 +2,9 @@ use std::path::PathBuf;
 
 use iroh::SecretKey;
 
-use super::runtime::{OfferResolution, ReceiverRuntime, registration_needs_refresh, should_advertise};
+use super::runtime::{
+    OfferResolution, ReceiverRuntime, registration_needs_refresh, should_advertise,
+};
 use super::{
     OfferDecision, PairingCodeState, ReceiverLifecycle, ReceiverRegistration, ReceiverService,
 };

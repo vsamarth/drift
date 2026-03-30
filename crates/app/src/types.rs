@@ -12,23 +12,9 @@ pub enum SendPhase {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum SendTarget {
-    Code {
-        code: String,
-        server_url: Option<String>,
-    },
-    Lan {
-        ticket: String,
-        destination_label: String,
-    },
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SendRequest {
-    pub paths: Vec<PathBuf>,
+pub struct SendConfig {
     pub device_name: String,
     pub device_type: String,
-    pub target: SendTarget,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -113,6 +99,14 @@ pub struct SelectionPreview {
     pub items: Vec<SelectionItem>,
     pub file_count: u64,
     pub total_size: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SelectionChange {
+    pub paths: Vec<PathBuf>,
+    pub added_count: u64,
+    pub removed_count: u64,
+    pub changed: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

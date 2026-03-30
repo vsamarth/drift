@@ -1,9 +1,6 @@
 use std::path::PathBuf;
 
-use drift_app::{
-    SendEvent as AppSendEvent, SendPhase as AppSendPhase, SendRequest as AppSendRequest,
-    SendTarget, send,
-};
+use drift_app::{SendConfig, SendEvent as AppSendEvent, SendPhase as AppSendPhase, SendSession};
 
 use super::RUNTIME;
 use crate::frb_generated::StreamSink;
@@ -46,37 +43,96 @@ pub fn start_send_transfer(
     request: SendTransferRequest,
     updates: StreamSink<SendTransferEvent>,
 ) -> Result<(), String> {
-    let app_request = AppSendRequest {
-        paths: request.paths.into_iter().map(PathBuf::from).collect(),
-        device_name: request.device_name,
-        device_type: request.device_type,
-        target: match request
+    let fallback_destination = fallback_destination_label(&request);
+    let session = SendSession::new(
+        SendConfig {
+            device_name: request.device_name,
+            device_type: request.device_type,
+        },
+        request.paths.into_iter().map(PathBuf::from).collect(),
+    );
+
+    RUNTIME.block_on(async move {
+        let mut emitted_failed_event = false;
+        let result = match request
             .ticket
             .as_deref()
             .map(str::trim)
             .filter(|s| !s.is_empty())
         {
-            Some(ticket) => SendTarget::Lan {
-                ticket: ticket.to_owned(),
-                destination_label: request
-                    .lan_destination_label
-                    .unwrap_or_else(|| "Nearby receiver".to_owned()),
-            },
-            None => SendTarget::Code {
-                code: request.code,
-                server_url: request.server_url.or(Some(LOCAL_RENDEZVOUS_URL.to_owned())),
-            },
-        },
-    };
+            Some(ticket) => {
+                session
+                    .send_to_nearby(
+                        ticket.to_owned(),
+                        request
+                            .lan_destination_label
+                            .unwrap_or_else(|| "Nearby receiver".to_owned()),
+                        |event| {
+                            if matches!(event.phase, AppSendPhase::Failed) {
+                                emitted_failed_event = true;
+                            }
+                            let _ = updates.add(map_event(event));
+                        },
+                    )
+                    .await
+            }
+            None => {
+                session
+                    .send_to_code(
+                        request.code,
+                        request.server_url.or(Some(LOCAL_RENDEZVOUS_URL.to_owned())),
+                        |event| {
+                            if matches!(event.phase, AppSendPhase::Failed) {
+                                emitted_failed_event = true;
+                            }
+                            let _ = updates.add(map_event(event));
+                        },
+                    )
+                    .await
+            }
+        };
 
-    RUNTIME.block_on(async move {
-        let result = send(app_request, |event| {
-            let _ = updates.add(map_event(event));
-        })
-        .await;
-
-        result.map(|_| ()).map_err(|e| e.to_string())
+        match result {
+            Ok(()) => Ok(()),
+            Err(error) => {
+                if !emitted_failed_event {
+                    let _ = updates.add(SendTransferEvent {
+                        phase: SendTransferPhase::Failed,
+                        destination_label: fallback_destination,
+                        status_message: "Transfer failed.".to_owned(),
+                        item_count: 0,
+                        total_size: 0,
+                        bytes_sent: 0,
+                        remote_device_type: None,
+                        error_message: Some(error.to_string()),
+                    });
+                }
+                Ok(())
+            }
+        }
     })
+}
+
+fn fallback_destination_label(request: &SendTransferRequest) -> String {
+    request
+        .lan_destination_label
+        .as_deref()
+        .map(str::trim)
+        .filter(|label| !label.is_empty())
+        .map(str::to_owned)
+        .or_else(|| format_code_label(&request.code))
+        .unwrap_or_else(|| "Nearby receiver".to_owned())
+}
+
+fn format_code_label(code: &str) -> Option<String> {
+    let normalized = code.trim().to_ascii_uppercase();
+    if normalized.len() == 6 {
+        Some(format!("Code {} {}", &normalized[..3], &normalized[3..]))
+    } else if normalized.is_empty() {
+        None
+    } else {
+        Some(format!("Code {normalized}"))
+    }
 }
 
 fn map_event(event: AppSendEvent) -> SendTransferEvent {

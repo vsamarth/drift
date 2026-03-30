@@ -6,7 +6,7 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `device_type_to_str`, `display_destination_label`, `format_error_chain`, `log`, `map_progress`, `parse_device_type`
+// These functions are ignored because they are not marked as `pub`: `fallback_destination_label`, `format_code_label`, `map_event`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_receiver_is_total_eq`, `clone`, `clone`, `clone`, `eq`, `fmt`, `fmt`, `fmt`
 
 Stream<SendTransferEvent> startSendTransfer({
@@ -20,8 +20,6 @@ class SendTransferEvent {
   final BigInt itemCount;
   final BigInt totalSize;
   final BigInt bytesSent;
-
-  /// `"phone"` or `"laptop"`.
   final String? remoteDeviceType;
   final String? errorMessage;
 
@@ -75,14 +73,8 @@ class SendTransferRequest {
   final List<String> paths;
   final String? serverUrl;
   final String deviceName;
-
-  /// `"phone"` or `"laptop"`.
   final String deviceType;
-
-  /// When set, send via LAN ticket (mDNS); `code` is ignored for rendezvous.
   final String? ticket;
-
-  /// Display label for progress when using `ticket` (e.g. `"Quiet River (ABC123)"`).
   final String? lanDestinationLabel;
 
   const SendTransferRequest({

@@ -23,12 +23,14 @@ class TransferItemViewData {
     required this.path,
     required this.size,
     required this.kind,
+    this.sizeBytes,
   });
 
   final String name;
   final String path;
   final String size;
   final TransferItemKind kind;
+  final int? sizeBytes;
 }
 
 @immutable

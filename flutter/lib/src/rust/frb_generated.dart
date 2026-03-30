@@ -71,7 +71,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.11.1';
 
   @override
-  int get rustContentHash => -1395063831;
+  int get rustContentHash => 497836589;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -82,10 +82,14 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
 }
 
 abstract class RustLibApi extends BaseApi {
-  Future<IdleReceiverRegistration?>
-  crateApiReceiverCurrentIdleReceiverRegistration();
+  Future<SelectionPreview> crateApiPreviewAppendPaths({
+    required List<String> existingPaths,
+    required List<String> newPaths,
+  });
 
-  Future<IdleReceiverRegistration> crateApiReceiverEnsureIdleReceiver({
+  Future<ReceiverRegistration?> crateApiReceiverCurrentReceiverRegistration();
+
+  Future<ReceiverRegistration> crateApiReceiverEnsureReceiverRegistration({
     String? serverUrl,
     required String deviceName,
   });
@@ -98,24 +102,27 @@ abstract class RustLibApi extends BaseApi {
     required List<String> paths,
   });
 
-  Future<void> crateApiReceiverPauseIdleLanAdvertisement();
-
   String crateApiDeviceRandomDeviceName();
 
-  Future<IdleReceiverRegistration> crateApiReceiverRegisterIdleReceiver({
+  Future<ReceiverRegistration> crateApiReceiverRegisterReceiver({
     String? serverUrl,
     required String deviceName,
   });
 
-  Future<void> crateApiReceiverRespondIdleIncomingOffer({required bool accept});
+  Future<SelectionPreview> crateApiPreviewRemovePath({
+    required List<String> existingPaths,
+    required String removedPath,
+  });
 
-  Future<void> crateApiReceiverResumeIdleLanAdvertisement();
+  Future<void> crateApiReceiverRespondToReceiverOffer({required bool accept});
 
   Future<List<NearbyReceiverInfo>> crateApiLanScanNearbyReceivers({
     required BigInt timeoutSecs,
   });
 
-  Stream<IdleIncomingEvent> crateApiReceiverStartIdleIncomingListener({
+  Future<void> crateApiReceiverSetReceiverDiscoverable({required bool enabled});
+
+  Stream<ReceiverTransferEvent> crateApiReceiverStartReceiverTransferListener({
     required String downloadRoot,
     required String deviceName,
     required String deviceType,
@@ -123,6 +130,12 @@ abstract class RustLibApi extends BaseApi {
 
   Stream<SendTransferEvent> crateApiSenderStartSendTransfer({
     required SendTransferRequest request,
+  });
+
+  Stream<ReceiverPairingState> crateApiReceiverWatchReceiverPairing({
+    required String downloadRoot,
+    required String deviceName,
+    required String deviceType,
   });
 }
 
@@ -135,12 +148,16 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   });
 
   @override
-  Future<IdleReceiverRegistration?>
-  crateApiReceiverCurrentIdleReceiverRegistration() {
+  Future<SelectionPreview> crateApiPreviewAppendPaths({
+    required List<String> existingPaths,
+    required List<String> newPaths,
+  }) {
     return handler.executeNormal(
       NormalTask(
         callFfi: (port_) {
           final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_list_String(existingPaths, serializer);
+          sse_encode_list_String(newPaths, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -149,25 +166,53 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           );
         },
         codec: SseCodec(
-          decodeSuccessData:
-              sse_decode_opt_box_autoadd_idle_receiver_registration,
+          decodeSuccessData: sse_decode_selection_preview,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiPreviewAppendPathsConstMeta,
+        argValues: [existingPaths, newPaths],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiPreviewAppendPathsConstMeta => const TaskConstMeta(
+    debugName: "append_paths",
+    argNames: ["existingPaths", "newPaths"],
+  );
+
+  @override
+  Future<ReceiverRegistration?> crateApiReceiverCurrentReceiverRegistration() {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 2,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_opt_box_autoadd_receiver_registration,
           decodeErrorData: null,
         ),
-        constMeta: kCrateApiReceiverCurrentIdleReceiverRegistrationConstMeta,
+        constMeta: kCrateApiReceiverCurrentReceiverRegistrationConstMeta,
         argValues: [],
         apiImpl: this,
       ),
     );
   }
 
-  TaskConstMeta get kCrateApiReceiverCurrentIdleReceiverRegistrationConstMeta =>
+  TaskConstMeta get kCrateApiReceiverCurrentReceiverRegistrationConstMeta =>
       const TaskConstMeta(
-        debugName: "current_idle_receiver_registration",
+        debugName: "current_receiver_registration",
         argNames: [],
       );
 
   @override
-  Future<IdleReceiverRegistration> crateApiReceiverEnsureIdleReceiver({
+  Future<ReceiverRegistration> crateApiReceiverEnsureReceiverRegistration({
     String? serverUrl,
     required String deviceName,
   }) {
@@ -180,24 +225,24 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 2,
+            funcId: 3,
             port: port_,
           );
         },
         codec: SseCodec(
-          decodeSuccessData: sse_decode_idle_receiver_registration,
+          decodeSuccessData: sse_decode_receiver_registration,
           decodeErrorData: sse_decode_String,
         ),
-        constMeta: kCrateApiReceiverEnsureIdleReceiverConstMeta,
+        constMeta: kCrateApiReceiverEnsureReceiverRegistrationConstMeta,
         argValues: [serverUrl, deviceName],
         apiImpl: this,
       ),
     );
   }
 
-  TaskConstMeta get kCrateApiReceiverEnsureIdleReceiverConstMeta =>
+  TaskConstMeta get kCrateApiReceiverEnsureReceiverRegistrationConstMeta =>
       const TaskConstMeta(
-        debugName: "ensure_idle_receiver",
+        debugName: "ensure_receiver_registration",
         argNames: ["serverUrl", "deviceName"],
       );
 
@@ -208,7 +253,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(name, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 3)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 4)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_String,
@@ -233,7 +278,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 4,
+            funcId: 5,
             port: port_,
           );
         },
@@ -263,7 +308,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 5,
+            funcId: 6,
             port: port_,
           );
         },
@@ -280,36 +325,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   TaskConstMeta get kCrateApiPreviewInspectPathsConstMeta =>
       const TaskConstMeta(debugName: "inspect_paths", argNames: ["paths"]);
-
-  @override
-  Future<void> crateApiReceiverPauseIdleLanAdvertisement() {
-    return handler.executeNormal(
-      NormalTask(
-        callFfi: (port_) {
-          final serializer = SseSerializer(generalizedFrbRustBinding);
-          pdeCallFfi(
-            generalizedFrbRustBinding,
-            serializer,
-            funcId: 6,
-            port: port_,
-          );
-        },
-        codec: SseCodec(
-          decodeSuccessData: sse_decode_unit,
-          decodeErrorData: sse_decode_String,
-        ),
-        constMeta: kCrateApiReceiverPauseIdleLanAdvertisementConstMeta,
-        argValues: [],
-        apiImpl: this,
-      ),
-    );
-  }
-
-  TaskConstMeta get kCrateApiReceiverPauseIdleLanAdvertisementConstMeta =>
-      const TaskConstMeta(
-        debugName: "pause_idle_lan_advertisement",
-        argNames: [],
-      );
 
   @override
   String crateApiDeviceRandomDeviceName() {
@@ -334,7 +349,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(debugName: "random_device_name", argNames: []);
 
   @override
-  Future<IdleReceiverRegistration> crateApiReceiverRegisterIdleReceiver({
+  Future<ReceiverRegistration> crateApiReceiverRegisterReceiver({
     String? serverUrl,
     required String deviceName,
   }) {
@@ -352,31 +367,33 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           );
         },
         codec: SseCodec(
-          decodeSuccessData: sse_decode_idle_receiver_registration,
+          decodeSuccessData: sse_decode_receiver_registration,
           decodeErrorData: sse_decode_String,
         ),
-        constMeta: kCrateApiReceiverRegisterIdleReceiverConstMeta,
+        constMeta: kCrateApiReceiverRegisterReceiverConstMeta,
         argValues: [serverUrl, deviceName],
         apiImpl: this,
       ),
     );
   }
 
-  TaskConstMeta get kCrateApiReceiverRegisterIdleReceiverConstMeta =>
+  TaskConstMeta get kCrateApiReceiverRegisterReceiverConstMeta =>
       const TaskConstMeta(
-        debugName: "register_idle_receiver",
+        debugName: "register_receiver",
         argNames: ["serverUrl", "deviceName"],
       );
 
   @override
-  Future<void> crateApiReceiverRespondIdleIncomingOffer({
-    required bool accept,
+  Future<SelectionPreview> crateApiPreviewRemovePath({
+    required List<String> existingPaths,
+    required String removedPath,
   }) {
     return handler.executeNormal(
       NormalTask(
         callFfi: (port_) {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          sse_encode_bool(accept, serializer);
+          sse_encode_list_String(existingPaths, serializer);
+          sse_encode_String(removedPath, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -385,28 +402,28 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           );
         },
         codec: SseCodec(
-          decodeSuccessData: sse_decode_unit,
+          decodeSuccessData: sse_decode_selection_preview,
           decodeErrorData: sse_decode_String,
         ),
-        constMeta: kCrateApiReceiverRespondIdleIncomingOfferConstMeta,
-        argValues: [accept],
+        constMeta: kCrateApiPreviewRemovePathConstMeta,
+        argValues: [existingPaths, removedPath],
         apiImpl: this,
       ),
     );
   }
 
-  TaskConstMeta get kCrateApiReceiverRespondIdleIncomingOfferConstMeta =>
-      const TaskConstMeta(
-        debugName: "respond_idle_incoming_offer",
-        argNames: ["accept"],
-      );
+  TaskConstMeta get kCrateApiPreviewRemovePathConstMeta => const TaskConstMeta(
+    debugName: "remove_path",
+    argNames: ["existingPaths", "removedPath"],
+  );
 
   @override
-  Future<void> crateApiReceiverResumeIdleLanAdvertisement() {
+  Future<void> crateApiReceiverRespondToReceiverOffer({required bool accept}) {
     return handler.executeNormal(
       NormalTask(
         callFfi: (port_) {
           final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_bool(accept, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -418,17 +435,17 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeSuccessData: sse_decode_unit,
           decodeErrorData: sse_decode_String,
         ),
-        constMeta: kCrateApiReceiverResumeIdleLanAdvertisementConstMeta,
-        argValues: [],
+        constMeta: kCrateApiReceiverRespondToReceiverOfferConstMeta,
+        argValues: [accept],
         apiImpl: this,
       ),
     );
   }
 
-  TaskConstMeta get kCrateApiReceiverResumeIdleLanAdvertisementConstMeta =>
+  TaskConstMeta get kCrateApiReceiverRespondToReceiverOfferConstMeta =>
       const TaskConstMeta(
-        debugName: "resume_idle_lan_advertisement",
-        argNames: [],
+        debugName: "respond_to_receiver_offer",
+        argNames: ["accept"],
       );
 
   @override
@@ -465,12 +482,45 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
-  Stream<IdleIncomingEvent> crateApiReceiverStartIdleIncomingListener({
+  Future<void> crateApiReceiverSetReceiverDiscoverable({
+    required bool enabled,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_bool(enabled, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 12,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiReceiverSetReceiverDiscoverableConstMeta,
+        argValues: [enabled],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiReceiverSetReceiverDiscoverableConstMeta =>
+      const TaskConstMeta(
+        debugName: "set_receiver_discoverable",
+        argNames: ["enabled"],
+      );
+
+  @override
+  Stream<ReceiverTransferEvent> crateApiReceiverStartReceiverTransferListener({
     required String downloadRoot,
     required String deviceName,
     required String deviceType,
   }) {
-    final updates = RustStreamSink<IdleIncomingEvent>();
+    final updates = RustStreamSink<ReceiverTransferEvent>();
     unawaited(
       handler.executeNormal(
         NormalTask(
@@ -479,11 +529,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             sse_encode_String(downloadRoot, serializer);
             sse_encode_String(deviceName, serializer);
             sse_encode_String(deviceType, serializer);
-            sse_encode_StreamSink_idle_incoming_event_Sse(updates, serializer);
+            sse_encode_StreamSink_receiver_transfer_event_Sse(
+              updates,
+              serializer,
+            );
             pdeCallFfi(
               generalizedFrbRustBinding,
               serializer,
-              funcId: 12,
+              funcId: 13,
               port: port_,
             );
           },
@@ -491,7 +544,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             decodeSuccessData: sse_decode_unit,
             decodeErrorData: sse_decode_String,
           ),
-          constMeta: kCrateApiReceiverStartIdleIncomingListenerConstMeta,
+          constMeta: kCrateApiReceiverStartReceiverTransferListenerConstMeta,
           argValues: [downloadRoot, deviceName, deviceType, updates],
           apiImpl: this,
         ),
@@ -500,9 +553,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     return updates.stream;
   }
 
-  TaskConstMeta get kCrateApiReceiverStartIdleIncomingListenerConstMeta =>
+  TaskConstMeta get kCrateApiReceiverStartReceiverTransferListenerConstMeta =>
       const TaskConstMeta(
-        debugName: "start_idle_incoming_listener",
+        debugName: "start_receiver_transfer_listener",
         argNames: ["downloadRoot", "deviceName", "deviceType", "updates"],
       );
 
@@ -521,7 +574,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             pdeCallFfi(
               generalizedFrbRustBinding,
               serializer,
-              funcId: 13,
+              funcId: 14,
               port: port_,
             );
           },
@@ -544,6 +597,51 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         argNames: ["request", "updates"],
       );
 
+  @override
+  Stream<ReceiverPairingState> crateApiReceiverWatchReceiverPairing({
+    required String downloadRoot,
+    required String deviceName,
+    required String deviceType,
+  }) {
+    final updates = RustStreamSink<ReceiverPairingState>();
+    unawaited(
+      handler.executeNormal(
+        NormalTask(
+          callFfi: (port_) {
+            final serializer = SseSerializer(generalizedFrbRustBinding);
+            sse_encode_String(downloadRoot, serializer);
+            sse_encode_String(deviceName, serializer);
+            sse_encode_String(deviceType, serializer);
+            sse_encode_StreamSink_receiver_pairing_state_Sse(
+              updates,
+              serializer,
+            );
+            pdeCallFfi(
+              generalizedFrbRustBinding,
+              serializer,
+              funcId: 15,
+              port: port_,
+            );
+          },
+          codec: SseCodec(
+            decodeSuccessData: sse_decode_unit,
+            decodeErrorData: sse_decode_String,
+          ),
+          constMeta: kCrateApiReceiverWatchReceiverPairingConstMeta,
+          argValues: [downloadRoot, deviceName, deviceType, updates],
+          apiImpl: this,
+        ),
+      ),
+    );
+    return updates.stream;
+  }
+
+  TaskConstMeta get kCrateApiReceiverWatchReceiverPairingConstMeta =>
+      const TaskConstMeta(
+        debugName: "watch_receiver_pairing",
+        argNames: ["downloadRoot", "deviceName", "deviceType", "updates"],
+      );
+
   @protected
   AnyhowException dco_decode_AnyhowException(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
@@ -551,8 +649,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  RustStreamSink<IdleIncomingEvent>
-  dco_decode_StreamSink_idle_incoming_event_Sse(dynamic raw) {
+  RustStreamSink<ReceiverPairingState>
+  dco_decode_StreamSink_receiver_pairing_state_Sse(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    throw UnimplementedError();
+  }
+
+  @protected
+  RustStreamSink<ReceiverTransferEvent>
+  dco_decode_StreamSink_receiver_transfer_event_Sse(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     throw UnimplementedError();
   }
@@ -577,11 +682,11 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  IdleReceiverRegistration dco_decode_box_autoadd_idle_receiver_registration(
+  ReceiverRegistration dco_decode_box_autoadd_receiver_registration(
     dynamic raw,
   ) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
-    return dco_decode_idle_receiver_registration(raw);
+    return dco_decode_receiver_registration(raw);
   }
 
   @protected
@@ -599,69 +704,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  IdleIncomingEvent dco_decode_idle_incoming_event(dynamic raw) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    final arr = raw as List<dynamic>;
-    if (arr.length != 10)
-      throw Exception('unexpected arr length: expect 10 but see ${arr.length}');
-    return IdleIncomingEvent(
-      phase: dco_decode_idle_incoming_phase(arr[0]),
-      senderName: dco_decode_String(arr[1]),
-      destinationLabel: dco_decode_String(arr[2]),
-      saveRootLabel: dco_decode_String(arr[3]),
-      statusMessage: dco_decode_String(arr[4]),
-      itemCount: dco_decode_u_64(arr[5]),
-      totalSizeBytes: dco_decode_u_64(arr[6]),
-      totalSizeLabel: dco_decode_String(arr[7]),
-      files: dco_decode_list_idle_incoming_file_row(arr[8]),
-      errorMessage: dco_decode_opt_String(arr[9]),
-    );
-  }
-
-  @protected
-  IdleIncomingFileRow dco_decode_idle_incoming_file_row(dynamic raw) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    final arr = raw as List<dynamic>;
-    if (arr.length != 2)
-      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
-    return IdleIncomingFileRow(
-      path: dco_decode_String(arr[0]),
-      size: dco_decode_u_64(arr[1]),
-    );
-  }
-
-  @protected
-  IdleIncomingPhase dco_decode_idle_incoming_phase(dynamic raw) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    return IdleIncomingPhase.values[raw as int];
-  }
-
-  @protected
-  IdleReceiverRegistration dco_decode_idle_receiver_registration(dynamic raw) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    final arr = raw as List<dynamic>;
-    if (arr.length != 2)
-      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
-    return IdleReceiverRegistration(
-      code: dco_decode_String(arr[0]),
-      expiresAt: dco_decode_String(arr[1]),
-    );
-  }
-
-  @protected
   List<String> dco_decode_list_String(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return (raw as List<dynamic>).map(dco_decode_String).toList();
-  }
-
-  @protected
-  List<IdleIncomingFileRow> dco_decode_list_idle_incoming_file_row(
-    dynamic raw,
-  ) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    return (raw as List<dynamic>)
-        .map(dco_decode_idle_incoming_file_row)
-        .toList();
   }
 
   @protected
@@ -674,6 +719,16 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   Uint8List dco_decode_list_prim_u_8_strict(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw as Uint8List;
+  }
+
+  @protected
+  List<ReceiverTransferFile> dco_decode_list_receiver_transfer_file(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>)
+        .map(dco_decode_receiver_transfer_file)
+        .toList();
   }
 
   @protected
@@ -703,12 +758,75 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  IdleReceiverRegistration?
-  dco_decode_opt_box_autoadd_idle_receiver_registration(dynamic raw) {
+  ReceiverRegistration? dco_decode_opt_box_autoadd_receiver_registration(
+    dynamic raw,
+  ) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw == null
         ? null
-        : dco_decode_box_autoadd_idle_receiver_registration(raw);
+        : dco_decode_box_autoadd_receiver_registration(raw);
+  }
+
+  @protected
+  ReceiverPairingState dco_decode_receiver_pairing_state(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 2)
+      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    return ReceiverPairingState(
+      code: dco_decode_opt_String(arr[0]),
+      expiresAt: dco_decode_opt_String(arr[1]),
+    );
+  }
+
+  @protected
+  ReceiverRegistration dco_decode_receiver_registration(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 2)
+      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    return ReceiverRegistration(
+      code: dco_decode_String(arr[0]),
+      expiresAt: dco_decode_String(arr[1]),
+    );
+  }
+
+  @protected
+  ReceiverTransferEvent dco_decode_receiver_transfer_event(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 10)
+      throw Exception('unexpected arr length: expect 10 but see ${arr.length}');
+    return ReceiverTransferEvent(
+      phase: dco_decode_receiver_transfer_phase(arr[0]),
+      senderName: dco_decode_String(arr[1]),
+      destinationLabel: dco_decode_String(arr[2]),
+      saveRootLabel: dco_decode_String(arr[3]),
+      statusMessage: dco_decode_String(arr[4]),
+      itemCount: dco_decode_u_64(arr[5]),
+      totalSizeBytes: dco_decode_u_64(arr[6]),
+      totalSizeLabel: dco_decode_String(arr[7]),
+      files: dco_decode_list_receiver_transfer_file(arr[8]),
+      errorMessage: dco_decode_opt_String(arr[9]),
+    );
+  }
+
+  @protected
+  ReceiverTransferFile dco_decode_receiver_transfer_file(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 2)
+      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    return ReceiverTransferFile(
+      path: dco_decode_String(arr[0]),
+      size: dco_decode_u_64(arr[1]),
+    );
+  }
+
+  @protected
+  ReceiverTransferPhase dco_decode_receiver_transfer_phase(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return ReceiverTransferPhase.values[raw as int];
   }
 
   @protected
@@ -806,8 +924,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  RustStreamSink<IdleIncomingEvent>
-  sse_decode_StreamSink_idle_incoming_event_Sse(SseDeserializer deserializer) {
+  RustStreamSink<ReceiverPairingState>
+  sse_decode_StreamSink_receiver_pairing_state_Sse(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    throw UnimplementedError('Unreachable ()');
+  }
+
+  @protected
+  RustStreamSink<ReceiverTransferEvent>
+  sse_decode_StreamSink_receiver_transfer_event_Sse(
+    SseDeserializer deserializer,
+  ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     throw UnimplementedError('Unreachable ()');
   }
@@ -833,11 +962,11 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  IdleReceiverRegistration sse_decode_box_autoadd_idle_receiver_registration(
+  ReceiverRegistration sse_decode_box_autoadd_receiver_registration(
     SseDeserializer deserializer,
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
-    return (sse_decode_idle_receiver_registration(deserializer));
+    return (sse_decode_receiver_registration(deserializer));
   }
 
   @protected
@@ -855,64 +984,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  IdleIncomingEvent sse_decode_idle_incoming_event(
-    SseDeserializer deserializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    var var_phase = sse_decode_idle_incoming_phase(deserializer);
-    var var_senderName = sse_decode_String(deserializer);
-    var var_destinationLabel = sse_decode_String(deserializer);
-    var var_saveRootLabel = sse_decode_String(deserializer);
-    var var_statusMessage = sse_decode_String(deserializer);
-    var var_itemCount = sse_decode_u_64(deserializer);
-    var var_totalSizeBytes = sse_decode_u_64(deserializer);
-    var var_totalSizeLabel = sse_decode_String(deserializer);
-    var var_files = sse_decode_list_idle_incoming_file_row(deserializer);
-    var var_errorMessage = sse_decode_opt_String(deserializer);
-    return IdleIncomingEvent(
-      phase: var_phase,
-      senderName: var_senderName,
-      destinationLabel: var_destinationLabel,
-      saveRootLabel: var_saveRootLabel,
-      statusMessage: var_statusMessage,
-      itemCount: var_itemCount,
-      totalSizeBytes: var_totalSizeBytes,
-      totalSizeLabel: var_totalSizeLabel,
-      files: var_files,
-      errorMessage: var_errorMessage,
-    );
-  }
-
-  @protected
-  IdleIncomingFileRow sse_decode_idle_incoming_file_row(
-    SseDeserializer deserializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    var var_path = sse_decode_String(deserializer);
-    var var_size = sse_decode_u_64(deserializer);
-    return IdleIncomingFileRow(path: var_path, size: var_size);
-  }
-
-  @protected
-  IdleIncomingPhase sse_decode_idle_incoming_phase(
-    SseDeserializer deserializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    var inner = sse_decode_i_32(deserializer);
-    return IdleIncomingPhase.values[inner];
-  }
-
-  @protected
-  IdleReceiverRegistration sse_decode_idle_receiver_registration(
-    SseDeserializer deserializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    var var_code = sse_decode_String(deserializer);
-    var var_expiresAt = sse_decode_String(deserializer);
-    return IdleReceiverRegistration(code: var_code, expiresAt: var_expiresAt);
-  }
-
-  @protected
   List<String> sse_decode_list_String(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
 
@@ -920,20 +991,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var ans_ = <String>[];
     for (var idx_ = 0; idx_ < len_; ++idx_) {
       ans_.add(sse_decode_String(deserializer));
-    }
-    return ans_;
-  }
-
-  @protected
-  List<IdleIncomingFileRow> sse_decode_list_idle_incoming_file_row(
-    SseDeserializer deserializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-
-    var len_ = sse_decode_i_32(deserializer);
-    var ans_ = <IdleIncomingFileRow>[];
-    for (var idx_ = 0; idx_ < len_; ++idx_) {
-      ans_.add(sse_decode_idle_incoming_file_row(deserializer));
     }
     return ans_;
   }
@@ -957,6 +1014,20 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var len_ = sse_decode_i_32(deserializer);
     return deserializer.buffer.getUint8List(len_);
+  }
+
+  @protected
+  List<ReceiverTransferFile> sse_decode_list_receiver_transfer_file(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <ReceiverTransferFile>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_receiver_transfer_file(deserializer));
+    }
+    return ans_;
   }
 
   @protected
@@ -1002,17 +1073,84 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  IdleReceiverRegistration?
-  sse_decode_opt_box_autoadd_idle_receiver_registration(
+  ReceiverRegistration? sse_decode_opt_box_autoadd_receiver_registration(
     SseDeserializer deserializer,
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
 
     if (sse_decode_bool(deserializer)) {
-      return (sse_decode_box_autoadd_idle_receiver_registration(deserializer));
+      return (sse_decode_box_autoadd_receiver_registration(deserializer));
     } else {
       return null;
     }
+  }
+
+  @protected
+  ReceiverPairingState sse_decode_receiver_pairing_state(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_code = sse_decode_opt_String(deserializer);
+    var var_expiresAt = sse_decode_opt_String(deserializer);
+    return ReceiverPairingState(code: var_code, expiresAt: var_expiresAt);
+  }
+
+  @protected
+  ReceiverRegistration sse_decode_receiver_registration(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_code = sse_decode_String(deserializer);
+    var var_expiresAt = sse_decode_String(deserializer);
+    return ReceiverRegistration(code: var_code, expiresAt: var_expiresAt);
+  }
+
+  @protected
+  ReceiverTransferEvent sse_decode_receiver_transfer_event(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_phase = sse_decode_receiver_transfer_phase(deserializer);
+    var var_senderName = sse_decode_String(deserializer);
+    var var_destinationLabel = sse_decode_String(deserializer);
+    var var_saveRootLabel = sse_decode_String(deserializer);
+    var var_statusMessage = sse_decode_String(deserializer);
+    var var_itemCount = sse_decode_u_64(deserializer);
+    var var_totalSizeBytes = sse_decode_u_64(deserializer);
+    var var_totalSizeLabel = sse_decode_String(deserializer);
+    var var_files = sse_decode_list_receiver_transfer_file(deserializer);
+    var var_errorMessage = sse_decode_opt_String(deserializer);
+    return ReceiverTransferEvent(
+      phase: var_phase,
+      senderName: var_senderName,
+      destinationLabel: var_destinationLabel,
+      saveRootLabel: var_saveRootLabel,
+      statusMessage: var_statusMessage,
+      itemCount: var_itemCount,
+      totalSizeBytes: var_totalSizeBytes,
+      totalSizeLabel: var_totalSizeLabel,
+      files: var_files,
+      errorMessage: var_errorMessage,
+    );
+  }
+
+  @protected
+  ReceiverTransferFile sse_decode_receiver_transfer_file(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_path = sse_decode_String(deserializer);
+    var var_size = sse_decode_u_64(deserializer);
+    return ReceiverTransferFile(path: var_path, size: var_size);
+  }
+
+  @protected
+  ReceiverTransferPhase sse_decode_receiver_transfer_phase(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var inner = sse_decode_i_32(deserializer);
+    return ReceiverTransferPhase.values[inner];
   }
 
   @protected
@@ -1129,15 +1267,32 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  void sse_encode_StreamSink_idle_incoming_event_Sse(
-    RustStreamSink<IdleIncomingEvent> self,
+  void sse_encode_StreamSink_receiver_pairing_state_Sse(
+    RustStreamSink<ReceiverPairingState> self,
     SseSerializer serializer,
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_String(
       self.setupAndSerialize(
         codec: SseCodec(
-          decodeSuccessData: sse_decode_idle_incoming_event,
+          decodeSuccessData: sse_decode_receiver_pairing_state,
+          decodeErrorData: sse_decode_AnyhowException,
+        ),
+      ),
+      serializer,
+    );
+  }
+
+  @protected
+  void sse_encode_StreamSink_receiver_transfer_event_Sse(
+    RustStreamSink<ReceiverTransferEvent> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(
+      self.setupAndSerialize(
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_receiver_transfer_event,
           decodeErrorData: sse_decode_AnyhowException,
         ),
       ),
@@ -1175,12 +1330,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  void sse_encode_box_autoadd_idle_receiver_registration(
-    IdleReceiverRegistration self,
+  void sse_encode_box_autoadd_receiver_registration(
+    ReceiverRegistration self,
     SseSerializer serializer,
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_idle_receiver_registration(self, serializer);
+    sse_encode_receiver_registration(self, serializer);
   }
 
   @protected
@@ -1199,70 +1354,11 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  void sse_encode_idle_incoming_event(
-    IdleIncomingEvent self,
-    SseSerializer serializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_idle_incoming_phase(self.phase, serializer);
-    sse_encode_String(self.senderName, serializer);
-    sse_encode_String(self.destinationLabel, serializer);
-    sse_encode_String(self.saveRootLabel, serializer);
-    sse_encode_String(self.statusMessage, serializer);
-    sse_encode_u_64(self.itemCount, serializer);
-    sse_encode_u_64(self.totalSizeBytes, serializer);
-    sse_encode_String(self.totalSizeLabel, serializer);
-    sse_encode_list_idle_incoming_file_row(self.files, serializer);
-    sse_encode_opt_String(self.errorMessage, serializer);
-  }
-
-  @protected
-  void sse_encode_idle_incoming_file_row(
-    IdleIncomingFileRow self,
-    SseSerializer serializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_String(self.path, serializer);
-    sse_encode_u_64(self.size, serializer);
-  }
-
-  @protected
-  void sse_encode_idle_incoming_phase(
-    IdleIncomingPhase self,
-    SseSerializer serializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_i_32(self.index, serializer);
-  }
-
-  @protected
-  void sse_encode_idle_receiver_registration(
-    IdleReceiverRegistration self,
-    SseSerializer serializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_String(self.code, serializer);
-    sse_encode_String(self.expiresAt, serializer);
-  }
-
-  @protected
   void sse_encode_list_String(List<String> self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_i_32(self.length, serializer);
     for (final item in self) {
       sse_encode_String(item, serializer);
-    }
-  }
-
-  @protected
-  void sse_encode_list_idle_incoming_file_row(
-    List<IdleIncomingFileRow> self,
-    SseSerializer serializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_i_32(self.length, serializer);
-    for (final item in self) {
-      sse_encode_idle_incoming_file_row(item, serializer);
     }
   }
 
@@ -1286,6 +1382,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_i_32(self.length, serializer);
     serializer.buffer.putUint8List(self);
+  }
+
+  @protected
+  void sse_encode_list_receiver_transfer_file(
+    List<ReceiverTransferFile> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_receiver_transfer_file(item, serializer);
+    }
   }
 
   @protected
@@ -1323,16 +1431,73 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  void sse_encode_opt_box_autoadd_idle_receiver_registration(
-    IdleReceiverRegistration? self,
+  void sse_encode_opt_box_autoadd_receiver_registration(
+    ReceiverRegistration? self,
     SseSerializer serializer,
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
 
     sse_encode_bool(self != null, serializer);
     if (self != null) {
-      sse_encode_box_autoadd_idle_receiver_registration(self, serializer);
+      sse_encode_box_autoadd_receiver_registration(self, serializer);
     }
+  }
+
+  @protected
+  void sse_encode_receiver_pairing_state(
+    ReceiverPairingState self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_opt_String(self.code, serializer);
+    sse_encode_opt_String(self.expiresAt, serializer);
+  }
+
+  @protected
+  void sse_encode_receiver_registration(
+    ReceiverRegistration self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.code, serializer);
+    sse_encode_String(self.expiresAt, serializer);
+  }
+
+  @protected
+  void sse_encode_receiver_transfer_event(
+    ReceiverTransferEvent self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_receiver_transfer_phase(self.phase, serializer);
+    sse_encode_String(self.senderName, serializer);
+    sse_encode_String(self.destinationLabel, serializer);
+    sse_encode_String(self.saveRootLabel, serializer);
+    sse_encode_String(self.statusMessage, serializer);
+    sse_encode_u_64(self.itemCount, serializer);
+    sse_encode_u_64(self.totalSizeBytes, serializer);
+    sse_encode_String(self.totalSizeLabel, serializer);
+    sse_encode_list_receiver_transfer_file(self.files, serializer);
+    sse_encode_opt_String(self.errorMessage, serializer);
+  }
+
+  @protected
+  void sse_encode_receiver_transfer_file(
+    ReceiverTransferFile self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.path, serializer);
+    sse_encode_u_64(self.size, serializer);
+  }
+
+  @protected
+  void sse_encode_receiver_transfer_phase(
+    ReceiverTransferPhase self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.index, serializer);
   }
 
   @protected

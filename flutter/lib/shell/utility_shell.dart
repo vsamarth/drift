@@ -1,23 +1,21 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/theme/drift_theme.dart';
-import '../state/drift_controller.dart';
-import 'shell_routing.dart';
+import '../state/drift_providers.dart';
 import 'widgets/idle_identity_zone.dart';
 import 'widgets/shell_header.dart';
 import 'widgets/shell_state_content.dart';
 
 /// Primary window layout: a calm idle identity zone plus the active state panel.
-class UtilityShell extends StatefulWidget {
-  const UtilityShell({super.key, required this.controller});
-
-  final DriftController controller;
+class UtilityShell extends ConsumerStatefulWidget {
+  const UtilityShell({super.key});
 
   @override
-  State<UtilityShell> createState() => _UtilityShellState();
+  ConsumerState<UtilityShell> createState() => _UtilityShellState();
 }
 
-class _UtilityShellState extends State<UtilityShell> {
+class _UtilityShellState extends ConsumerState<UtilityShell> {
   bool _idleWindowHovering = false;
 
   void _setIdleWindowHovering(bool value) {
@@ -29,9 +27,8 @@ class _UtilityShellState extends State<UtilityShell> {
 
   @override
   Widget build(BuildContext context) {
-    final controller = widget.controller;
-    final view = shellViewFor(controller);
-    final isIdle = view == ShellView.sendIdle;
+    final view = ref.watch(shellViewProvider);
+    final isIdle = view.name == 'sendIdle';
 
     return Scaffold(
       backgroundColor: kBg,
@@ -66,10 +63,10 @@ class _UtilityShellState extends State<UtilityShell> {
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
                             if (isIdle) ...[
-                              IdleIdentityZone(controller: controller),
+                              const IdleIdentityZone(),
                               const SizedBox(height: 8),
                             ] else ...[
-                              ShellHeader(controller: controller),
+                              const ShellHeader(),
                               const SizedBox(height: 6),
                             ],
                             Expanded(
@@ -85,7 +82,6 @@ class _UtilityShellState extends State<UtilityShell> {
                                       ),
                                   child: ShellStateContent(
                                     key: ValueKey<String>('state-${view.name}'),
-                                    controller: controller,
                                     view: view,
                                     availableHeight: constraints.maxHeight,
                                     idleWindowHovering: _idleWindowHovering,

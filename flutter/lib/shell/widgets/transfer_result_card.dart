@@ -31,8 +31,9 @@ class TransferResultCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isSuccess = tone == TransferResultTone.success;
-    final accentColor =
-        isSuccess ? const Color(0xFF49B36C) : const Color(0xFFCC3333);
+    final accentColor = isSuccess
+        ? const Color(0xFF49B36C)
+        : const Color(0xFFCC3333);
     final icon = isSuccess ? Icons.check_circle_rounded : Icons.error_rounded;
 
     final titleStyle = driftSans(
@@ -41,16 +42,13 @@ class TransferResultCard extends StatelessWidget {
       color: kInk,
       letterSpacing: -0.2,
     );
-    final messageStyle = driftSans(
-      fontSize: 13,
-      color: kMuted,
-      height: 1.5,
-    );
+    final messageStyle = driftSans(fontSize: 13, color: kMuted, height: 1.5);
 
     final statusBlock = Column(
       mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment:
-          fillBody ? CrossAxisAlignment.center : CrossAxisAlignment.start,
+      crossAxisAlignment: fillBody
+          ? CrossAxisAlignment.center
+          : CrossAxisAlignment.start,
       children: [
         Icon(icon, size: 32, color: accentColor),
         const SizedBox(height: 14),
@@ -106,8 +104,9 @@ class TransferResultCard extends StatelessWidget {
                 return SingleChildScrollView(
                   physics: const BouncingScrollPhysics(),
                   child: ConstrainedBox(
-                    constraints:
-                        BoxConstraints(minHeight: constraints.maxHeight),
+                    constraints: BoxConstraints(
+                      minHeight: constraints.maxHeight,
+                    ),
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       crossAxisAlignment: CrossAxisAlignment.center,
@@ -120,10 +119,7 @@ class TransferResultCard extends StatelessWidget {
           ),
           if (primaryLabel != null && onPrimary != null) ...[
             const SizedBox(height: 16),
-            FilledButton(
-              onPressed: onPrimary,
-              child: Text(primaryLabel!),
-            ),
+            FilledButton(onPressed: onPrimary, child: Text(primaryLabel!)),
           ],
         ],
       ),

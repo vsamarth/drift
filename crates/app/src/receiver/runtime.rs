@@ -3,10 +3,11 @@ use drift_core::lan::LanReceiveAdvertisement;
 use drift_core::rendezvous::{RendezvousClient, resolve_server_url};
 use drift_core::wire::make_ticket_now;
 use iroh::{Endpoint, EndpointId};
-use tokio::sync::{broadcast, oneshot, watch};
-use tokio::task::JoinHandle;
 use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
+use tokio::sync::{broadcast, oneshot, watch};
+use tokio::task::JoinHandle;
+use tracing::warn;
 
 use crate::types::{PairingCodeState, ReceiverConfig, ReceiverRegistration};
 
@@ -43,7 +44,11 @@ pub(super) struct PendingOfferState {
 }
 
 impl ReceiverRuntime {
-    pub(super) fn new(config: ReceiverConfig, endpoint: Endpoint, listener_task: JoinHandle<()>) -> Self {
+    pub(super) fn new(
+        config: ReceiverConfig,
+        endpoint: Endpoint,
+        listener_task: JoinHandle<()>,
+    ) -> Self {
         Self {
             config,
             endpoint,
@@ -200,7 +205,10 @@ impl ReceiverRuntime {
             return Ok(());
         }
 
-        match RendezvousClient::new(server_url).pair_status(&existing.code).await? {
+        match RendezvousClient::new(server_url)
+            .pair_status(&existing.code)
+            .await?
+        {
             Some(_) => Ok(()),
             None => {
                 let was_active = self.advertising_active();
@@ -236,9 +244,7 @@ impl ReceiverRuntime {
         pending_offer
             .decision_tx
             .send(resolution)
-            .map_err(|_| {
-                anyhow::anyhow!("offer is no longer active")
-            })?;
+            .map_err(|_| anyhow::anyhow!("offer is no longer active"))?;
         Ok(())
     }
 
@@ -269,9 +275,9 @@ impl ReceiverRuntime {
                 self.offer_state = OfferState::Receiving { offer_id };
                 true
             }
-            OfferState::Receiving { offer_id: active_offer_id } if *active_offer_id == offer_id => {
-                true
-            }
+            OfferState::Receiving {
+                offer_id: active_offer_id,
+            } if *active_offer_id == offer_id => true,
             _ => false,
         }
     }
@@ -288,7 +294,9 @@ impl ReceiverRuntime {
                 self.offer_state = OfferState::Idle;
                 true
             }
-            OfferState::Receiving { offer_id: active_offer_id } if *active_offer_id == offer_id => {
+            OfferState::Receiving {
+                offer_id: active_offer_id,
+            } if *active_offer_id == offer_id => {
                 self.offer_state = OfferState::Idle;
                 true
             }
@@ -325,9 +333,36 @@ impl ReceiverRuntime {
         }
 
         self.clear_advertising();
-        if let Ok(ticket) = make_ticket_now(&self.endpoint) {
-            if let Ok(advertising) = LanReceiveAdvertisement::start(&ticket, &self.config.device_name) {
-                self.advertising = advertising;
+        let ticket = match make_ticket_now(&self.endpoint) {
+            Ok(ticket) => ticket,
+            Err(error) => {
+                warn!(
+                    device = %self.config.device_name,
+                    error = %error,
+                    error_chain = %format!("{error:#}"),
+                    "receiver.lan_advertising_unavailable"
+                );
+                return;
+            }
+        };
+
+        match LanReceiveAdvertisement::start(&ticket, &self.config.device_name) {
+            Ok(Some(advertising)) => {
+                self.advertising = Some(advertising);
+            }
+            Ok(None) => {
+                warn!(
+                    device = %self.config.device_name,
+                    "receiver.lan_advertising_unavailable_no_ipv4_route"
+                );
+            }
+            Err(error) => {
+                warn!(
+                    device = %self.config.device_name,
+                    error = %error,
+                    error_chain = %format!("{error:#}"),
+                    "receiver.lan_advertising_unavailable"
+                );
             }
         }
     }

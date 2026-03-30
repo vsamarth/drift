@@ -1,30 +1,30 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/theme/drift_theme.dart';
-import '../../state/drift_controller.dart';
+import '../../state/drift_providers.dart';
 import 'preview_list.dart';
 import 'sending_connection_strip.dart';
 
-class ReceiveReviewCard extends StatelessWidget {
-  const ReceiveReviewCard({super.key, required this.controller});
-
-  final DriftController controller;
+class ReceiveReviewCard extends ConsumerWidget {
+  const ReceiveReviewCard({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    final summary = controller.receiveSummary;
+  Widget build(BuildContext context, WidgetRef ref) {
+    final state = ref.watch(driftAppNotifierProvider);
+    final summary = state.receiveSummary;
     final senderName = _displaySender(summary?.senderName);
-    final itemCount = summary?.itemCount ?? controller.receiveItems.length;
+    final itemCount = summary?.itemCount ?? state.receiveItems.length;
     final totalSize = summary?.totalSize ?? '';
     final itemSummary = '$itemCount${totalSize.isEmpty ? '' : ' · $totalSize'}';
     final saveRoot = summary?.destinationLabel.trim() ?? 'Downloads';
+    final notifier = ref.read(driftAppNotifierProvider.notifier);
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(8, 6, 8, 10),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // ── Status pill ────────────────────────────────────────────────
           Row(
             children: [
               Container(
@@ -48,7 +48,6 @@ class ReceiveReviewCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 18),
-          // ── Sender name ────────────────────────────────────────────────
           Text(
             senderName,
             maxLines: 1,
@@ -67,7 +66,6 @@ class ReceiveReviewCard extends StatelessWidget {
             style: driftSans(fontSize: 13, color: kMuted, height: 1.5),
           ),
           const SizedBox(height: 18),
-          // ── Middle: connection strip + file table ──────────────────────
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -78,11 +76,10 @@ class ReceiveReviewCard extends StatelessWidget {
                     child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 4),
                       child: SendingConnectionStrip(
-                        // Sender on left, local receiver on right — data flows →
                         localLabel: senderName,
                         localDeviceType: 'laptop',
-                        remoteLabel: controller.deviceName,
-                        remoteDeviceType: controller.deviceType,
+                        remoteLabel: state.deviceName,
+                        remoteDeviceType: state.deviceType,
                         animate: true,
                         mode: SendingStripMode.waitingOnRecipient,
                       ),
@@ -94,7 +91,7 @@ class ReceiveReviewCard extends StatelessWidget {
                   child: SingleChildScrollView(
                     physics: const BouncingScrollPhysics(),
                     child: PreviewTable(
-                      items: controller.receiveItems,
+                      items: state.receiveItems,
                       footerSummary: itemSummary,
                     ),
                   ),
@@ -102,20 +99,19 @@ class ReceiveReviewCard extends StatelessWidget {
               ],
             ),
           ),
-          // ── Actions row ────────────────────────────────────────────────
           Padding(
             padding: const EdgeInsets.only(top: 6),
             child: Row(
               children: [
                 Expanded(
                   child: FilledButton(
-                    onPressed: controller.acceptReceiveOffer,
+                    onPressed: notifier.acceptReceiveOffer,
                     child: Text('Save to $saveRoot'),
                   ),
                 ),
                 const SizedBox(width: 10),
                 OutlinedButton(
-                  onPressed: controller.declineReceiveOffer,
+                  onPressed: notifier.declineReceiveOffer,
                   child: const Text('Decline'),
                 ),
               ],

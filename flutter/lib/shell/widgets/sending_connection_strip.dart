@@ -34,6 +34,7 @@ class SendingConnectionStrip extends StatefulWidget {
   });
 
   final String localLabel;
+
   /// `"phone"` or `"laptop"`.
   final String localDeviceType;
 
@@ -129,7 +130,9 @@ class _SendingConnectionStripState extends State<SendingConnectionStrip>
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(
-                localIsPhone ? Icons.smartphone_rounded : Icons.laptop_mac_rounded,
+                localIsPhone
+                    ? Icons.smartphone_rounded
+                    : Icons.laptop_mac_rounded,
                 size: _iconSize,
                 color: kInk.withValues(alpha: 0.88),
               ),
@@ -169,7 +172,9 @@ class _SendingConnectionStripState extends State<SendingConnectionStrip>
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(
-                remoteIsPhone ? Icons.smartphone_rounded : Icons.laptop_mac_rounded,
+                remoteIsPhone
+                    ? Icons.smartphone_rounded
+                    : Icons.laptop_mac_rounded,
                 size: _iconSize,
                 color: kInk.withValues(alpha: 0.88),
               ),
@@ -196,7 +201,8 @@ class _SendingConnectionStripState extends State<SendingConnectionStrip>
         builder: (context, child) => _buildStrip(_loopController!.value),
       );
     }
-    final loopPhase = !widget.animate &&
+    final loopPhase =
+        !widget.animate &&
             (widget.mode == SendingStripMode.looping ||
                 widget.mode == SendingStripMode.waitingOnRecipient)
         ? 0.41
@@ -245,8 +251,7 @@ class _LaptopPhoneLanePainter extends CustomPainter {
     for (var i = 0; i < packetCount; i++) {
       final t = ((loopPhase + i / packetCount) % 1.0 + 1.0) % 1.0;
       final px = margin + t * travel;
-      final headBoost =
-          (1.0 - ((t - 0.15).abs() * 1.1).clamp(0.0, 1.0)) * 0.25;
+      final headBoost = (1.0 - ((t - 0.15).abs() * 1.1).clamp(0.0, 1.0)) * 0.25;
       final alpha = (0.22 + 0.5 * headBoost + 0.26 * (1 - i / packetCount))
           .clamp(0.12, 0.85);
       final r = 2.9 - i * 0.42;
@@ -275,8 +280,7 @@ class _LaptopPhoneLanePainter extends CustomPainter {
     if (travel <= 0 || transferProgress <= 0) {
       return;
     }
-    final fillW =
-        max(3.0, min(transferProgress * travel, travel));
+    final fillW = max(3.0, min(transferProgress * travel, travel));
     final rect = RRect.fromRectAndRadius(
       Rect.fromLTWH(margin, y - 2.5, fillW, 5),
       const Radius.circular(2.5),

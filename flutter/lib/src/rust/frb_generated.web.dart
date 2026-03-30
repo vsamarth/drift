@@ -29,8 +29,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   AnyhowException dco_decode_AnyhowException(dynamic raw);
 
   @protected
-  RustStreamSink<IdleIncomingEvent>
-  dco_decode_StreamSink_idle_incoming_event_Sse(dynamic raw);
+  RustStreamSink<ReceiverPairingState>
+  dco_decode_StreamSink_receiver_pairing_state_Sse(dynamic raw);
+
+  @protected
+  RustStreamSink<ReceiverTransferEvent>
+  dco_decode_StreamSink_receiver_transfer_event_Sse(dynamic raw);
 
   @protected
   RustStreamSink<SendTransferEvent>
@@ -43,7 +47,7 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   bool dco_decode_bool(dynamic raw);
 
   @protected
-  IdleReceiverRegistration dco_decode_box_autoadd_idle_receiver_registration(
+  ReceiverRegistration dco_decode_box_autoadd_receiver_registration(
     dynamic raw,
   );
 
@@ -54,28 +58,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   int dco_decode_i_32(dynamic raw);
 
   @protected
-  IdleIncomingEvent dco_decode_idle_incoming_event(dynamic raw);
-
-  @protected
-  IdleIncomingFileRow dco_decode_idle_incoming_file_row(dynamic raw);
-
-  @protected
-  IdleIncomingPhase dco_decode_idle_incoming_phase(dynamic raw);
-
-  @protected
-  IdleReceiverRegistration dco_decode_idle_receiver_registration(dynamic raw);
-
-  @protected
   List<String> dco_decode_list_String(dynamic raw);
-
-  @protected
-  List<IdleIncomingFileRow> dco_decode_list_idle_incoming_file_row(dynamic raw);
 
   @protected
   List<NearbyReceiverInfo> dco_decode_list_nearby_receiver_info(dynamic raw);
 
   @protected
   Uint8List dco_decode_list_prim_u_8_strict(dynamic raw);
+
+  @protected
+  List<ReceiverTransferFile> dco_decode_list_receiver_transfer_file(
+    dynamic raw,
+  );
 
   @protected
   List<SelectionItem> dco_decode_list_selection_item(dynamic raw);
@@ -87,8 +81,24 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   String? dco_decode_opt_String(dynamic raw);
 
   @protected
-  IdleReceiverRegistration?
-  dco_decode_opt_box_autoadd_idle_receiver_registration(dynamic raw);
+  ReceiverRegistration? dco_decode_opt_box_autoadd_receiver_registration(
+    dynamic raw,
+  );
+
+  @protected
+  ReceiverPairingState dco_decode_receiver_pairing_state(dynamic raw);
+
+  @protected
+  ReceiverRegistration dco_decode_receiver_registration(dynamic raw);
+
+  @protected
+  ReceiverTransferEvent dco_decode_receiver_transfer_event(dynamic raw);
+
+  @protected
+  ReceiverTransferFile dco_decode_receiver_transfer_file(dynamic raw);
+
+  @protected
+  ReceiverTransferPhase dco_decode_receiver_transfer_phase(dynamic raw);
 
   @protected
   SelectionItem dco_decode_selection_item(dynamic raw);
@@ -118,8 +128,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   AnyhowException sse_decode_AnyhowException(SseDeserializer deserializer);
 
   @protected
-  RustStreamSink<IdleIncomingEvent>
-  sse_decode_StreamSink_idle_incoming_event_Sse(SseDeserializer deserializer);
+  RustStreamSink<ReceiverPairingState>
+  sse_decode_StreamSink_receiver_pairing_state_Sse(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  RustStreamSink<ReceiverTransferEvent>
+  sse_decode_StreamSink_receiver_transfer_event_Sse(
+    SseDeserializer deserializer,
+  );
 
   @protected
   RustStreamSink<SendTransferEvent>
@@ -132,7 +150,7 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   bool sse_decode_bool(SseDeserializer deserializer);
 
   @protected
-  IdleReceiverRegistration sse_decode_box_autoadd_idle_receiver_registration(
+  ReceiverRegistration sse_decode_box_autoadd_receiver_registration(
     SseDeserializer deserializer,
   );
 
@@ -145,32 +163,7 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   int sse_decode_i_32(SseDeserializer deserializer);
 
   @protected
-  IdleIncomingEvent sse_decode_idle_incoming_event(
-    SseDeserializer deserializer,
-  );
-
-  @protected
-  IdleIncomingFileRow sse_decode_idle_incoming_file_row(
-    SseDeserializer deserializer,
-  );
-
-  @protected
-  IdleIncomingPhase sse_decode_idle_incoming_phase(
-    SseDeserializer deserializer,
-  );
-
-  @protected
-  IdleReceiverRegistration sse_decode_idle_receiver_registration(
-    SseDeserializer deserializer,
-  );
-
-  @protected
   List<String> sse_decode_list_String(SseDeserializer deserializer);
-
-  @protected
-  List<IdleIncomingFileRow> sse_decode_list_idle_incoming_file_row(
-    SseDeserializer deserializer,
-  );
 
   @protected
   List<NearbyReceiverInfo> sse_decode_list_nearby_receiver_info(
@@ -179,6 +172,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   Uint8List sse_decode_list_prim_u_8_strict(SseDeserializer deserializer);
+
+  @protected
+  List<ReceiverTransferFile> sse_decode_list_receiver_transfer_file(
+    SseDeserializer deserializer,
+  );
 
   @protected
   List<SelectionItem> sse_decode_list_selection_item(
@@ -194,8 +192,32 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   String? sse_decode_opt_String(SseDeserializer deserializer);
 
   @protected
-  IdleReceiverRegistration?
-  sse_decode_opt_box_autoadd_idle_receiver_registration(
+  ReceiverRegistration? sse_decode_opt_box_autoadd_receiver_registration(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ReceiverPairingState sse_decode_receiver_pairing_state(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ReceiverRegistration sse_decode_receiver_registration(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ReceiverTransferEvent sse_decode_receiver_transfer_event(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ReceiverTransferFile sse_decode_receiver_transfer_file(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ReceiverTransferPhase sse_decode_receiver_transfer_phase(
     SseDeserializer deserializer,
   );
 
@@ -236,8 +258,14 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  void sse_encode_StreamSink_idle_incoming_event_Sse(
-    RustStreamSink<IdleIncomingEvent> self,
+  void sse_encode_StreamSink_receiver_pairing_state_Sse(
+    RustStreamSink<ReceiverPairingState> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_StreamSink_receiver_transfer_event_Sse(
+    RustStreamSink<ReceiverTransferEvent> self,
     SseSerializer serializer,
   );
 
@@ -254,8 +282,8 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_bool(bool self, SseSerializer serializer);
 
   @protected
-  void sse_encode_box_autoadd_idle_receiver_registration(
-    IdleReceiverRegistration self,
+  void sse_encode_box_autoadd_receiver_registration(
+    ReceiverRegistration self,
     SseSerializer serializer,
   );
 
@@ -269,37 +297,7 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_i_32(int self, SseSerializer serializer);
 
   @protected
-  void sse_encode_idle_incoming_event(
-    IdleIncomingEvent self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void sse_encode_idle_incoming_file_row(
-    IdleIncomingFileRow self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void sse_encode_idle_incoming_phase(
-    IdleIncomingPhase self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void sse_encode_idle_receiver_registration(
-    IdleReceiverRegistration self,
-    SseSerializer serializer,
-  );
-
-  @protected
   void sse_encode_list_String(List<String> self, SseSerializer serializer);
-
-  @protected
-  void sse_encode_list_idle_incoming_file_row(
-    List<IdleIncomingFileRow> self,
-    SseSerializer serializer,
-  );
 
   @protected
   void sse_encode_list_nearby_receiver_info(
@@ -310,6 +308,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_list_prim_u_8_strict(
     Uint8List self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_receiver_transfer_file(
+    List<ReceiverTransferFile> self,
     SseSerializer serializer,
   );
 
@@ -329,8 +333,38 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_opt_String(String? self, SseSerializer serializer);
 
   @protected
-  void sse_encode_opt_box_autoadd_idle_receiver_registration(
-    IdleReceiverRegistration? self,
+  void sse_encode_opt_box_autoadd_receiver_registration(
+    ReceiverRegistration? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_receiver_pairing_state(
+    ReceiverPairingState self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_receiver_registration(
+    ReceiverRegistration self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_receiver_transfer_event(
+    ReceiverTransferEvent self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_receiver_transfer_file(
+    ReceiverTransferFile self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_receiver_transfer_phase(
+    ReceiverTransferPhase self,
     SseSerializer serializer,
   );
 

@@ -16,6 +16,7 @@ class SendTransferRequestData {
   final String code;
   final List<String> paths;
   final String deviceName;
+
   /// `"phone"` or `"laptop"`.
   final String deviceType;
   final String? serverUrl;
@@ -55,6 +56,7 @@ class SendTransferUpdate {
   final String totalSize;
   final int bytesSent;
   final int totalBytes;
+
   /// `"phone"` or `"laptop"`, when known yet.
   final String? remoteDeviceType;
   final String? errorMessage;

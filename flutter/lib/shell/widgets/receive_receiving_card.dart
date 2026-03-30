@@ -1,26 +1,26 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/theme/drift_theme.dart';
-import '../../state/drift_controller.dart';
+import '../../state/drift_app_state.dart';
+import '../../state/drift_providers.dart';
 import 'preview_list.dart';
 import 'sending_connection_strip.dart';
 
-class ReceiveReceivingCard extends StatelessWidget {
-  const ReceiveReceivingCard({super.key, required this.controller});
-
-  final DriftController controller;
+class ReceiveReceivingCard extends ConsumerWidget {
+  const ReceiveReceivingCard({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    final summary = controller.receiveSummary;
+  Widget build(BuildContext context, WidgetRef ref) {
+    final state = ref.watch(driftAppNotifierProvider);
+    final summary = state.receiveSummary;
     final senderName = _displaySender(summary?.senderName);
-    final itemCount = summary?.itemCount ?? controller.receiveItems.length;
+    final itemCount = summary?.itemCount ?? state.receiveItems.length;
     final totalSize = summary?.totalSize ?? '';
-    final itemSummary =
-        '$itemCount${totalSize.isEmpty ? '' : ' · $totalSize'}';
+    final itemSummary = '$itemCount${totalSize.isEmpty ? '' : ' · $totalSize'}';
 
-    final transferProgress = _transferProgressForStrip(controller);
-    final mode = _receivingStripMode(controller);
+    final transferProgress = _transferProgressForStrip(state);
+    final mode = _receivingStripMode(state);
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(8, 6, 8, 10),
@@ -62,7 +62,7 @@ class ReceiveReceivingCard extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            controller.receiveSummary?.statusMessage ?? 'Receiving files…',
+            state.receiveSummary?.statusMessage ?? 'Receiving files...',
             style: driftSans(fontSize: 13, color: kMuted, height: 1.5),
           ),
           const SizedBox(height: 18),
@@ -78,8 +78,8 @@ class ReceiveReceivingCard extends StatelessWidget {
                       child: SendingConnectionStrip(
                         localLabel: senderName,
                         localDeviceType: 'laptop',
-                        remoteLabel: controller.deviceName,
-                        remoteDeviceType: controller.deviceType,
+                        remoteLabel: state.deviceName,
+                        remoteDeviceType: state.deviceType,
                         animate: true,
                         mode: mode,
                         transferProgress: transferProgress,
@@ -92,7 +92,7 @@ class ReceiveReceivingCard extends StatelessWidget {
                   child: SingleChildScrollView(
                     physics: const BouncingScrollPhysics(),
                     child: PreviewTable(
-                      items: controller.receiveItems,
+                      items: state.receiveItems,
                       footerSummary: itemSummary,
                     ),
                   ),
@@ -106,19 +106,19 @@ class ReceiveReceivingCard extends StatelessWidget {
   }
 }
 
-SendingStripMode _receivingStripMode(DriftController controller) {
-  if (!controller.hasReceivePayloadProgress) {
+SendingStripMode _receivingStripMode(DriftAppState state) {
+  if (!state.hasReceivePayloadProgress) {
     return SendingStripMode.waitingOnRecipient;
   }
   return SendingStripMode.transferring;
 }
 
-double _transferProgressForStrip(DriftController controller) {
-  if (!controller.hasReceivePayloadProgress) {
+double _transferProgressForStrip(DriftAppState state) {
+  if (!state.hasReceivePayloadProgress) {
     return 0.0;
   }
-  final total = controller.receivePayloadTotalBytes ?? 0;
-  final received = controller.receivePayloadBytesReceived ?? 0;
+  final total = state.receivePayloadTotalBytes ?? 0;
+  final received = state.receivePayloadBytesReceived ?? 0;
   if (total <= 0) {
     return 0.0;
   }
@@ -130,4 +130,3 @@ String _displaySender(String? rawValue) {
   if (trimmed.isEmpty) return 'Unknown sender';
   return trimmed;
 }
-

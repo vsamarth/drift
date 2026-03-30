@@ -111,10 +111,7 @@ class _PreviewTableRow extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          SizedBox(
-            width: 28,
-            child: Icon(icon, size: 18, color: kMuted),
-          ),
+          SizedBox(width: 28, child: Icon(icon, size: 18, color: kMuted)),
           Expanded(
             child: Text(
               item.name,
@@ -144,10 +141,7 @@ class _PreviewTableRow extends StatelessWidget {
 }
 
 class PreviewList extends StatelessWidget {
-  const PreviewList({
-    super.key,
-    required this.items,
-  });
+  const PreviewList({super.key, required this.items});
 
   final List<TransferItemViewData> items;
 

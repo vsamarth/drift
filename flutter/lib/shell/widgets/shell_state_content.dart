@@ -1,65 +1,64 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../state/drift_controller.dart';
+import '../../state/drift_providers.dart';
 import '../shell_routing.dart';
 import 'receive_entry_card.dart';
-import 'receive_review_card.dart';
 import 'receive_receiving_card.dart';
+import 'receive_review_card.dart';
 import 'send_code_card.dart';
 import 'send_drop_panel.dart';
 import 'send_selected_card.dart';
 import 'transfer_result_card.dart';
 
 /// Picks the main body for the current [ShellView] (full-height vs scrollable).
-class ShellStateContent extends StatelessWidget {
+class ShellStateContent extends ConsumerWidget {
   const ShellStateContent({
     super.key,
-    required this.controller,
     required this.view,
     required this.availableHeight,
     this.idleWindowHovering = false,
   });
 
-  final DriftController controller;
   final ShellView view;
   final double availableHeight;
   final bool idleWindowHovering;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final state = ref.watch(driftAppNotifierProvider);
+    final notifier = ref.read(driftAppNotifierProvider.notifier);
+
     return switch (view) {
       ShellView.sendIdle => SendDropPanel(
-        onChooseFiles: controller.pickSendItems,
-        onDropPaths: controller.acceptDroppedSendItems,
+        onChooseFiles: notifier.pickSendItems,
+        onDropPaths: notifier.acceptDroppedSendItems,
         height: availableHeight,
         windowHovering: idleWindowHovering,
       ),
       ShellView.receiveEntry => ReceiveEntryCard(
-        controller: controller,
         title: 'Receive files',
         helper: 'Enter the code from the sending device',
         height: availableHeight,
       ),
       ShellView.receiveError => ReceiveEntryCard(
-        controller: controller,
         title: 'Receive files',
         helper: 'Enter a valid code to continue',
-        errorText: controller.receiveErrorText,
+        errorText: state.receiveErrorText,
         height: availableHeight,
       ),
       ShellView.sendSelected => SizedBox(
         height: availableHeight,
         width: double.infinity,
-        child: SendSelectedCard(controller: controller),
+        child: const SendSelectedCard(),
       ),
       ShellView.sendReady => SizedBox(
         height: availableHeight,
         width: double.infinity,
         child: SendCodeCard(
           fillBody: true,
-          controller: controller,
           title: 'Sending',
-          status: controller.sendSummary?.statusMessage ?? 'Request sent',
+          status: state.sendSummary?.statusMessage ?? 'Request sent',
         ),
       ),
       ShellView.sendWaiting => SizedBox(
@@ -67,11 +66,9 @@ class ShellStateContent extends StatelessWidget {
         width: double.infinity,
         child: SendCodeCard(
           fillBody: true,
-          controller: controller,
           title: 'Sending',
           status:
-              controller.sendSummary?.statusMessage ??
-              'Waiting for confirmation.',
+              state.sendSummary?.statusMessage ?? 'Waiting for confirmation.',
         ),
       ),
       ShellView.sendCompleted => SizedBox(
@@ -82,11 +79,10 @@ class ShellStateContent extends StatelessWidget {
           tone: TransferResultTone.success,
           title: 'Transfer complete',
           message:
-              controller.sendSummary?.statusMessage ??
-              'Files sent successfully',
-          metrics: controller.sendCompletionMetrics,
+              state.sendSummary?.statusMessage ?? 'Files sent successfully',
+          metrics: state.sendCompletionMetrics,
           primaryLabel: 'Send more files',
-          onPrimary: controller.resetShell,
+          onPrimary: notifier.resetShell,
         ),
       ),
       ShellView.sendError => SizedBox(
@@ -97,19 +93,19 @@ class ShellStateContent extends StatelessWidget {
           tone: TransferResultTone.error,
           title: 'Transfer failed',
           message:
-              controller.sendSummary?.statusMessage ??
+              state.sendSummary?.statusMessage ??
               'This transfer did not finish.',
         ),
       ),
       ShellView.receiveReview => SizedBox(
         height: availableHeight,
         width: double.infinity,
-        child: ReceiveReviewCard(controller: controller),
+        child: const ReceiveReviewCard(),
       ),
       ShellView.receiveReceiving => SizedBox(
         height: availableHeight,
         width: double.infinity,
-        child: ReceiveReceivingCard(controller: controller),
+        child: const ReceiveReceivingCard(),
       ),
       ShellView.receiveCompleted => SizedBox(
         height: availableHeight,
@@ -118,11 +114,10 @@ class ShellStateContent extends StatelessWidget {
           fillBody: true,
           tone: TransferResultTone.success,
           title: 'Files saved',
-          message:
-              controller.receiveSummary?.statusMessage ?? 'Saved to Downloads',
-          metrics: controller.receiveCompletionMetrics,
+          message: state.receiveSummary?.statusMessage ?? 'Saved to Downloads',
+          metrics: state.receiveCompletionMetrics,
           primaryLabel: 'Done',
-          onPrimary: controller.resetShell,
+          onPrimary: notifier.resetShell,
         ),
       ),
     };
