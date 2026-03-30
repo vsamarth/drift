@@ -82,8 +82,6 @@ class DriftController extends ChangeNotifier {
   StreamSubscription<SendTransferUpdate>? _sendTransferSubscription;
   StreamSubscription<rust_receiver.IdleIncomingEvent>? _idleIncomingSubscription;
   bool _idleIncomingDecisionPending = false;
-  /// After a dummy "Save", Rust still completes with [IdleIncomingPhase.declined]; skip that reset once.
-  bool _skipNextIncomingDeclinedReset = false;
   int _sendTransferGeneration = 0;
   TransferDirection _mode = TransferDirection.send;
   TransferStage _sendStage = TransferStage.idle;
@@ -112,9 +110,6 @@ class DriftController extends ChangeNotifier {
   double? _sendSmoothedBps;
   DateTime? _sendPayloadStartedAt;
   List<TransferMetricRow>? _sendCompletionMetrics;
-
-  DateTime? _receivePayloadStartedAt;
-  String? _receiveTransferTimeLabel;
 
   String get deviceName => _deviceName;
   String get deviceType => _deviceType;
@@ -300,32 +295,31 @@ class DriftController extends ChangeNotifier {
   }
 
   void acceptReceiveOffer() {
-    if (_idleIncomingDecisionPending) {
-      // Demo: decline on the wire so the listener unblocks without writing files.
-      // UI still shows a placeholder success until real save is wired.
-      _skipNextIncomingDeclinedReset = true;
-      unawaited(_respondIdleIncoming(accept: false));
-      _idleIncomingDecisionPending = false;
+    if (!_idleIncomingDecisionPending) {
+      return;
     }
+
+    // Approve the pending offer over the wire; Rust will then emit
+    // `IdleIncomingPhase.receiving` and `IdleIncomingPhase.completed`.
+    _idleIncomingDecisionPending = false;
     _mode = TransferDirection.receive;
     _receiveEntryExpanded = true;
-    _receiveStage = TransferStage.completed;
-    final base = _receiveSummary ?? sampleReceiveSummary;
-    final dest = base.destinationLabel.trim();
-    final sender = base.senderName.trim();
-    final saveRoot = (!dest.isEmpty && dest != sender) ? dest : 'Downloads';
-    _receiveSummary = base.copyWith(
-      destinationLabel: saveRoot,
-      statusMessage: 'Saved to $saveRoot',
+    _receiveStage = TransferStage.waiting;
+    _receiveErrorText = null;
+
+    // Keep current summary (sender/files/destination) but switch message until
+    // the Rust listener reports the real phase transitions.
+    _receiveSummary = (_receiveSummary ?? sampleReceiveSummary).copyWith(
+      statusMessage: 'Receiving files…',
     );
-    _receiveItems = List<TransferItemViewData>.unmodifiable(
-      _receiveItems.isEmpty ? sampleReceiveItems : _receiveItems,
-    );
+
+    unawaited(_respondIdleIncoming(accept: true));
     notifyListeners();
   }
 
   void declineReceiveOffer() {
     if (_idleIncomingDecisionPending) {
+      _idleIncomingDecisionPending = false;
       unawaited(_respondIdleIncoming(accept: false));
       return;
     }
@@ -429,7 +423,6 @@ class DriftController extends ChangeNotifier {
     _receiveItems = const [];
     _receiveSummary = null;
     _idleIncomingDecisionPending = false;
-    _skipNextIncomingDeclinedReset = false;
   }
 
   void _beginSend(SendTransferUpdate update) {
@@ -664,11 +657,6 @@ class DriftController extends ChangeNotifier {
         return;
       case rust_receiver.IdleIncomingPhase.declined:
         _idleIncomingDecisionPending = false;
-        if (_skipNextIncomingDeclinedReset) {
-          _skipNextIncomingDeclinedReset = false;
-          unawaited(_ensureIdleReceiver());
-          return;
-        }
         _resetReceiveFlow();
         _mode = TransferDirection.receive;
         notifyListeners();
@@ -734,19 +722,9 @@ class DriftController extends ChangeNotifier {
   }
 
   static String _defaultReceiveDownloadRoot() {
-    if (Platform.isMacOS || Platform.isLinux) {
-      final home = Platform.environment['HOME'];
-      if (home != null && home.isNotEmpty) {
-        return '$home/Downloads';
-      }
-    }
-    if (Platform.isWindows) {
-      final profile = Platform.environment['USERPROFILE'];
-      if (profile != null && profile.isNotEmpty) {
-        return '$profile\\Downloads';
-      }
-    }
-    return Directory.systemTemp.path;
+    // For now, keep Flutter writes confined to a guaranteed-writable directory.
+    // (This avoids macOS App Sandbox issues with `~/Downloads`.)
+    return '${Directory.systemTemp.path}${Platform.pathSeparator}Downloads';
   }
 
   Future<void> _respondIdleIncoming({required bool accept}) async {

@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../../core/models/transfer_models.dart';
 import '../../core/theme/drift_theme.dart';
 import '../../state/drift_controller.dart';
 import 'preview_list.dart';
