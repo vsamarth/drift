@@ -4,6 +4,7 @@ import '../../state/drift_controller.dart';
 import '../shell_routing.dart';
 import 'receive_entry_card.dart';
 import 'receive_review_card.dart';
+import 'receive_receiving_card.dart';
 import 'send_code_card.dart';
 import 'send_drop_panel.dart';
 import 'send_selected_card.dart';
@@ -108,15 +109,7 @@ class ShellStateContent extends StatelessWidget {
       ShellView.receiveReceiving => SizedBox(
         height: availableHeight,
         width: double.infinity,
-        child: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Text(
-              controller.receiveSummary?.statusMessage ?? 'Receiving files…',
-              textAlign: TextAlign.center,
-            ),
-          ),
-        ),
+        child: ReceiveReceivingCard(controller: controller),
       ),
       ShellView.receiveCompleted => SizedBox(
         height: availableHeight,

@@ -8,8 +8,13 @@ use tokio::time::timeout;
 
 use crate::fs_plan::receive::{ExpectedFile, build_expected_files};
 use crate::rendezvous::OfferManifest;
-use crate::session::receive_files_over_connection;
-use crate::transfer::{ReceiverMachine, ReceiverState, ensure_session_id, validate_hello};
+use crate::session::{
+    FileReceiveProgress,
+    receive_files_over_connection_with_progress,
+};
+use crate::transfer::{
+    ReceiverMachine, ReceiverState, ensure_session_id, validate_hello,
+};
 use crate::util::human_size;
 use crate::wire::{
     Accept, ControlMessage, Decline, DeviceType, Hello, TRANSFER_PROTOCOL_VERSION, TransferRole,
@@ -44,6 +49,34 @@ impl ReceiverPendingDecision {
     pub fn out_dir(&self) -> &Path {
         &self.out_dir
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReceiveTransferPhase {
+    WaitingForDecision,
+    Receiving,
+    Completed,
+    Declined,
+    Failed,
+}
+
+/// High-level receiving metrics suitable for CLI/UI progress rendering.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReceiveTransferProgress {
+    pub phase: ReceiveTransferPhase,
+    pub sender_device_name: String,
+    pub file_count: u64,
+    pub total_bytes: u64,
+
+    /// Payload bytes received so far (file contents only).
+    pub bytes_received: u64,
+    pub bytes_to_receive: u64,
+
+    pub current_file_path: Option<String>,
+    pub bytes_received_in_file: u64,
+    pub current_file_size: u64,
+
+    pub error_message: Option<String>,
 }
 
 /// Hello, our hello, read offer, validate destinations — stops at [ReceiverState::AwaitingDecision].
@@ -129,38 +162,161 @@ pub async fn receiver_run_until_decision(
     })
 }
 
-/// Send accept/decline and optionally receive payload.
-pub async fn receiver_finish_after_decision(
+pub async fn receiver_finish_after_decision_with_progress<F>(
     mut pending: ReceiverPendingDecision,
     machine: &mut ReceiverMachine,
     approved: bool,
-) -> Result<()> {
-    let session_id = pending.session_id.clone();
+    on_progress: &mut F,
+) -> Result<()>
+where
+    F: FnMut(ReceiveTransferProgress),
+{
+    let sender_device_name = pending.sender_device_name.clone();
+    let file_count = pending.manifest.file_count;
+    let total_bytes = pending.manifest.total_size;
+
     if !approved {
         machine.transition(ReceiverState::Declined)?;
         send_decline(
             &mut pending.control_send,
-            &session_id,
+            &pending.session_id,
             "receiver declined the offer".to_owned(),
         )
         .await?;
         println!("Offer declined");
+        on_progress(ReceiveTransferProgress {
+            phase: ReceiveTransferPhase::Declined,
+            sender_device_name,
+            file_count,
+            total_bytes,
+            bytes_received: 0,
+            bytes_to_receive: total_bytes,
+            current_file_path: None,
+            bytes_received_in_file: 0,
+            current_file_size: 0,
+            error_message: None,
+        });
         return Ok(());
     }
 
+    let session_id = pending.session_id.clone();
     send_accept(&mut pending.control_send, &session_id).await?;
     machine.transition(ReceiverState::Approved)?;
     println!("Accepted offer. Receiving files...");
 
     machine.transition(ReceiverState::Receiving)?;
-    receive_files_over_connection(
+    receive_files_over_connection_with_progress(
         pending.connection,
         pending.out_dir,
         Some(pending.expected_files),
+        |p: FileReceiveProgress| {
+            let current_file_path = if p.file_path.is_empty() {
+                None
+            } else {
+                Some(p.file_path.to_string())
+            };
+            on_progress(ReceiveTransferProgress {
+                phase: ReceiveTransferPhase::Receiving,
+                sender_device_name: sender_device_name.clone(),
+                file_count,
+                total_bytes,
+                bytes_received: p.total_bytes_received,
+                bytes_to_receive: p.total_bytes_to_receive,
+                current_file_path,
+                bytes_received_in_file: p.bytes_received_in_file,
+                current_file_size: p.file_size,
+                error_message: None,
+            });
+        },
     )
     .await?;
+
     machine.transition(ReceiverState::Completed)?;
+    on_progress(ReceiveTransferProgress {
+        phase: ReceiveTransferPhase::Completed,
+        sender_device_name,
+        file_count,
+        total_bytes,
+        bytes_received: total_bytes,
+        bytes_to_receive: total_bytes,
+        current_file_path: None,
+        bytes_received_in_file: 0,
+        current_file_size: 0,
+        error_message: None,
+    });
     Ok(())
+}
+
+/// Send accept/decline and optionally receive payload.
+pub async fn receiver_finish_after_decision(
+    pending: ReceiverPendingDecision,
+    machine: &mut ReceiverMachine,
+    approved: bool,
+) -> Result<()> {
+    let mut noop = |_| {};
+    receiver_finish_after_decision_with_progress(pending, machine, approved, &mut noop)
+        .await
+}
+
+/// Like [handle_receiver_connection], but also reports receiving progress.
+pub async fn handle_receiver_connection_with_progress<A, F>(
+    connection: iroh::endpoint::Connection,
+    out_dir: PathBuf,
+    device_name: &str,
+    device_type: DeviceType,
+    machine: &mut ReceiverMachine,
+    approve: A,
+    mut on_progress: F,
+) -> Result<()>
+where
+    A: Future<Output = Result<bool>>,
+    F: FnMut(ReceiveTransferProgress),
+{
+    let pending = receiver_run_until_decision(connection, out_dir, device_name, device_type, machine).await?;
+
+    let sender_device_name = pending.sender_device_name.clone();
+    let file_count = pending.manifest.file_count;
+    let total_bytes = pending.manifest.total_size;
+
+    on_progress(ReceiveTransferProgress {
+        phase: ReceiveTransferPhase::WaitingForDecision,
+        sender_device_name: sender_device_name.clone(),
+        file_count,
+        total_bytes,
+        bytes_received: 0,
+        bytes_to_receive: total_bytes,
+        current_file_path: None,
+        bytes_received_in_file: 0,
+        current_file_size: 0,
+        error_message: None,
+    });
+
+    let approved = approve.await?;
+
+    let res = receiver_finish_after_decision_with_progress(
+        pending,
+        machine,
+        approved,
+        &mut on_progress,
+    )
+    .await;
+
+    if let Err(err) = &res {
+        on_progress(ReceiveTransferProgress {
+            phase: ReceiveTransferPhase::Failed,
+            sender_device_name,
+            file_count,
+            total_bytes,
+            bytes_received: 0,
+            bytes_to_receive: total_bytes,
+            current_file_path: None,
+            bytes_received_in_file: 0,
+            current_file_size: 0,
+            error_message: Some(err.to_string()),
+        });
+    }
+
+    res
 }
 
 /// Run the receiver-side transfer protocol after the iroh connection is established.
@@ -178,10 +334,16 @@ pub async fn handle_receiver_connection<A>(
 where
     A: Future<Output = Result<bool>>,
 {
-    let pending =
-        receiver_run_until_decision(connection, out_dir, device_name, device_type, machine).await?;
-    let approved = approve.await?;
-    receiver_finish_after_decision(pending, machine, approved).await
+    handle_receiver_connection_with_progress(
+        connection,
+        out_dir,
+        device_name,
+        device_type,
+        machine,
+        approve,
+        |_| {},
+    )
+    .await
 }
 
 async fn send_accept(send_stream: &mut iroh::endpoint::SendStream, session_id: &str) -> Result<()> {

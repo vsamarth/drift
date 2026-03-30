@@ -2,7 +2,9 @@ use std::path::PathBuf;
 
 use anyhow::{Context, Result, bail};
 use clap::{Args, ValueEnum};
-use drift_core::receiver::handle_receiver_connection;
+use drift_core::receiver::{
+    handle_receiver_connection_with_progress, ReceiveTransferPhase, ReceiveTransferProgress,
+};
 use drift_core::rendezvous::RendezvousClient;
 use drift_core::sender::{SendTransferPhase, SendTransferProgress, send_files_with_progress};
 use drift_core::session::bind_endpoint;
@@ -97,16 +99,9 @@ pub async fn send(code: String, files: Vec<PathBuf>, server_url: Option<String>)
 
     let mut last_phase = None;
 
-    // `iroh` transfer progress comes in regularly; use `indicatif` to render a single overall bar.
-    let progress_bar = ProgressBar::new(0);
-    progress_bar.set_draw_target(ProgressDrawTarget::stderr());
-    progress_bar.set_style(
-        ProgressStyle::with_template(
-            "{spinner:.green} [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({percent}%) {msg}",
-        )
-        .expect("valid indicatif template"),
-    );
-    progress_bar.enable_steady_tick(Duration::from_millis(100));
+    // Create the progress bar lazily only once the receiver has accepted and
+    // payload streaming starts.
+    let mut progress_bar: Option<ProgressBar> = None;
 
     let mut transfer_done = false;
     let mut length_set = false;
@@ -122,12 +117,26 @@ pub async fn send(code: String, files: Vec<PathBuf>, server_url: Option<String>)
             match progress.phase {
                 SendTransferPhase::Connecting | SendTransferPhase::WaitingForDecision => {}
                 SendTransferPhase::Sending => {
+                    if progress_bar.is_none() {
+                        let pb = ProgressBar::new(0);
+                        pb.set_draw_target(ProgressDrawTarget::stderr());
+                        pb.set_style(
+                            ProgressStyle::with_template(
+                                "{spinner:.green} [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({percent}%) {msg}",
+                            )
+                            .expect("valid indicatif template"),
+                        );
+                        pb.enable_steady_tick(Duration::from_millis(100));
+                        progress_bar = Some(pb);
+                    }
+                    let pb = progress_bar.as_ref().expect("progress bar set");
+
                     // Set the total once we have it (it comes from the manifest).
                     if !length_set {
-                        progress_bar.set_length(progress.manifest.total_size);
+                        pb.set_length(progress.manifest.total_size);
                         length_set = true;
                     }
-                    progress_bar.set_position(progress.bytes_sent);
+                    pb.set_position(progress.bytes_sent);
 
                     let msg = match progress.current_file_index {
                         Some(idx) => {
@@ -139,11 +148,13 @@ pub async fn send(code: String, files: Vec<PathBuf>, server_url: Option<String>)
                         }
                         None => "starting...".to_string(),
                     };
-                    progress_bar.set_message(msg);
+                    pb.set_message(msg);
                 }
                 SendTransferPhase::Completed => {
                     transfer_done = true;
-                    progress_bar.finish_and_clear();
+                    if let Some(pb) = progress_bar.take() {
+                        pb.finish_and_clear();
+                    }
                 }
             }
         },
@@ -151,8 +162,10 @@ pub async fn send(code: String, files: Vec<PathBuf>, server_url: Option<String>)
     .await;
 
     // If the transfer errors out (e.g. receiver declined), we may never see `Completed`.
-    if !transfer_done {
-        progress_bar.finish_and_clear();
+    if let Some(pb) = progress_bar.take() {
+        if !transfer_done {
+            pb.finish_and_clear();
+        }
     }
 
     match &outcome {
@@ -233,7 +246,21 @@ pub async fn receive(out_dir: PathBuf, server_url: Option<String>) -> Result<()>
                     "receive.peer_connected"
                 );
                 machine.transition(ReceiverState::Connected)?;
-                let result = handle_receiver_connection(
+                let mut last_phase: Option<ReceiveTransferPhase> = None;
+
+                // Create the progress bar lazily only once the offer is accepted.
+                // (So users don't see a bar while waiting for confirmation.)
+                let mut progress_bar: Option<ProgressBar> = None;
+
+                let mut transfer_done = false;
+                let mut length_set = false;
+
+                let mut final_phase: Option<ReceiveTransferPhase> = None;
+                let mut completed_sender_device_name: Option<String> = None;
+                let mut completed_file_count: u64 = 0;
+                let mut completed_total_bytes: u64 = 0;
+
+                let result = handle_receiver_connection_with_progress(
                     connection,
                     out_dir.clone(),
                     &device_name,
@@ -244,11 +271,109 @@ pub async fn receive(out_dir: PathBuf, server_url: Option<String>) -> Result<()>
                             .await
                             .context("confirm task")?
                     },
+                    |progress: ReceiveTransferProgress| {
+                        log_receive_progress(&mut last_phase, &progress);
+
+                        match progress.phase {
+                            ReceiveTransferPhase::WaitingForDecision => {}
+                            ReceiveTransferPhase::Receiving => {
+                                if progress_bar.is_none() {
+                                    let pb = ProgressBar::new(0);
+                                    pb.set_draw_target(ProgressDrawTarget::stderr());
+                                    pb.set_style(
+                                        ProgressStyle::with_template(
+                                            "{spinner:.green} [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({percent}%) {msg}",
+                                        )
+                                        .expect("valid indicatif template"),
+                                    );
+                                    pb.enable_steady_tick(Duration::from_millis(100));
+                                    progress_bar = Some(pb);
+                                }
+
+                                let pb = progress_bar.as_ref().expect("progress bar set");
+
+                                if !length_set && progress.bytes_to_receive > 0 {
+                                    pb.set_length(progress.bytes_to_receive);
+                                    length_set = true;
+                                }
+                                if length_set {
+                                    pb.set_position(progress.bytes_received);
+                                }
+
+                                let msg = match progress.current_file_path {
+                                    Some(path) => format!(
+                                        "file: {} ({}/{}) bytes",
+                                        path, progress.bytes_received_in_file, progress.current_file_size
+                                    ),
+                                    None => "starting...".to_string(),
+                                };
+                                pb.set_message(msg);
+                            }
+                            ReceiveTransferPhase::Completed => {
+                                final_phase = Some(ReceiveTransferPhase::Completed);
+                                completed_sender_device_name =
+                                    Some(progress.sender_device_name.clone());
+                                completed_file_count = progress.file_count;
+                                completed_total_bytes = progress.total_bytes;
+                                transfer_done = true;
+                                if let Some(pb) = progress_bar.take() {
+                                    pb.finish_and_clear();
+                                }
+                            }
+                            ReceiveTransferPhase::Declined => {
+                                final_phase = Some(ReceiveTransferPhase::Declined);
+                                completed_sender_device_name =
+                                    Some(progress.sender_device_name.clone());
+                                completed_file_count = progress.file_count;
+                                completed_total_bytes = progress.total_bytes;
+                                transfer_done = true;
+                                if let Some(pb) = progress_bar.take() {
+                                    pb.finish_and_clear();
+                                }
+                            }
+                            ReceiveTransferPhase::Failed => {
+                                final_phase = Some(ReceiveTransferPhase::Failed);
+                                transfer_done = true;
+                                if let Some(pb) = progress_bar.take() {
+                                    pb.finish_and_clear();
+                                }
+                            }
+                        }
+                    },
                 )
                 .await;
+
                 endpoint.close().await;
+
+                if let Some(pb) = progress_bar.take() {
+                    // If anything unexpected happened, make sure we don't leave the bar hanging.
+                    // Normal completion paths already finish it in the callback.
+                    if !transfer_done {
+                        pb.finish_and_clear();
+                    }
+                }
+
                 match &result {
-                    Ok(()) => info!("receive.session_finished_ok"),
+                    Ok(()) => match final_phase {
+                        Some(ReceiveTransferPhase::Completed) => {
+                            info!(
+                                sender = %completed_sender_device_name.unwrap_or_else(|| "Sender".to_owned()),
+                                file_count = completed_file_count,
+                                total_bytes = completed_total_bytes,
+                                total_human = %human_size(completed_total_bytes),
+                                "receive.completed"
+                            );
+                        }
+                        Some(ReceiveTransferPhase::Declined) => {
+                            info!(
+                                sender = %completed_sender_device_name.unwrap_or_else(|| "Sender".to_owned()),
+                                file_count = completed_file_count,
+                                total_bytes = completed_total_bytes,
+                                "receive.declined"
+                            );
+                        }
+                        _ => info!("receive.session_finished_ok"),
+                    },
                     Err(e) => warn!(error = %e, error_chain = %format!("{e:#}"), "receive.session_finished_err"),
                 }
                 return result;
@@ -327,6 +452,63 @@ fn log_send_progress(last_phase: &mut Option<SendTransferPhase>, progress: &Send
                 receiver = %progress.destination_label,
                 bytes_sent = progress.bytes_sent,
                 "send.phase"
+            );
+        }
+    }
+
+    *last_phase = Some(progress.phase);
+}
+
+fn log_receive_progress(
+    last_phase: &mut Option<ReceiveTransferPhase>,
+    progress: &ReceiveTransferProgress,
+) {
+    if last_phase.as_ref() == Some(&progress.phase) {
+        return;
+    }
+
+    match progress.phase {
+        ReceiveTransferPhase::WaitingForDecision => {
+            info!(
+                phase = "waiting_for_decision",
+                sender = %progress.sender_device_name,
+                file_count = progress.file_count,
+                total_bytes = progress.total_bytes,
+                total_human = %human_size(progress.total_bytes),
+                "receive.phase"
+            );
+        }
+        ReceiveTransferPhase::Receiving => {
+            info!(
+                phase = "receiving",
+                sender = %progress.sender_device_name,
+                file_count = progress.file_count,
+                total_bytes = progress.total_bytes,
+                bytes_received = progress.bytes_received,
+                "receive.phase"
+            );
+        }
+        ReceiveTransferPhase::Completed => {
+            info!(
+                phase = "completed",
+                sender = %progress.sender_device_name,
+                bytes_received = progress.bytes_received,
+                "receive.phase"
+            );
+        }
+        ReceiveTransferPhase::Declined => {
+            info!(
+                phase = "declined",
+                sender = %progress.sender_device_name,
+                "receive.phase"
+            );
+        }
+        ReceiveTransferPhase::Failed => {
+            warn!(
+                phase = "failed",
+                sender = %progress.sender_device_name,
+                error = ?progress.error_message,
+                "receive.phase"
             );
         }
     }

@@ -111,6 +111,11 @@ class DriftController extends ChangeNotifier {
   DateTime? _sendPayloadStartedAt;
   List<TransferMetricRow>? _sendCompletionMetrics;
 
+  // Receiving payload progress (overall bytes).
+  int? _receivePayloadBytesReceived;
+  int? _receivePayloadTotalBytes;
+  DateTime? _receivePayloadStartedAt;
+
   String get deviceName => _deviceName;
   String get deviceType => _deviceType;
   bool get animateSendingConnection => _animateSendingConnection;
@@ -145,11 +150,24 @@ class DriftController extends ChangeNotifier {
 
   List<TransferMetricRow>? get sendCompletionMetrics => _sendCompletionMetrics;
 
+  int? get receivePayloadBytesReceived => _receivePayloadBytesReceived;
+  int? get receivePayloadTotalBytes => _receivePayloadTotalBytes;
+  bool get hasReceivePayloadProgress =>
+      _receivePayloadBytesReceived != null &&
+      _receivePayloadTotalBytes != null &&
+      _receivePayloadTotalBytes! > 0;
+
   List<TransferMetricRow>? get receiveCompletionMetrics {
     if (_receiveStage != TransferStage.completed || _receiveSummary == null) {
       return null;
     }
     final s = _receiveSummary!;
+    final startedAt = _receivePayloadStartedAt;
+    final now = DateTime.now();
+    final bytesReceived = _receivePayloadBytesReceived ?? 0;
+    final payloadSec = startedAt == null
+        ? null
+        : now.difference(startedAt).inMilliseconds / 1000.0;
     return [
       if (s.senderName.isNotEmpty)
         TransferMetricRow(label: 'From', value: s.senderName),
@@ -162,6 +180,18 @@ class DriftController extends ChangeNotifier {
         value: '${s.itemCount}',
       ),
       TransferMetricRow(label: 'Size', value: s.totalSize),
+      if (startedAt != null) ...[
+        if (now.difference(startedAt).inMilliseconds >= 200)
+          TransferMetricRow(
+            label: 'Transfer time',
+            value: _formatElapsedDuration(now.difference(startedAt)),
+          ),
+        if (payloadSec != null && payloadSec >= 0.25 && bytesReceived > 0)
+          TransferMetricRow(
+            label: 'Average speed',
+            value: _formatBytesPerSecond(bytesReceived / payloadSec),
+          ),
+      ],
     ];
   }
 
@@ -201,6 +231,7 @@ class DriftController extends ChangeNotifier {
     _receiveErrorText = null;
     _receiveItems = const [];
     _receiveSummary = null;
+    _clearReceivePayloadMetrics();
     notifyListeners();
   }
 
@@ -212,6 +243,7 @@ class DriftController extends ChangeNotifier {
     _receiveErrorText = null;
     _receiveItems = const [];
     _receiveSummary = null;
+    _clearReceivePayloadMetrics();
     notifyListeners();
   }
 
@@ -306,6 +338,11 @@ class DriftController extends ChangeNotifier {
     _receiveEntryExpanded = true;
     _receiveStage = TransferStage.waiting;
     _receiveErrorText = null;
+
+    // Reset per-transfer progress while keeping the known total bytes from the
+    // OfferReady phase.
+    _receivePayloadBytesReceived = null;
+    _receivePayloadStartedAt = null;
 
     // Keep current summary (sender/files/destination) but switch message until
     // the Rust listener reports the real phase transitions.
@@ -423,6 +460,7 @@ class DriftController extends ChangeNotifier {
     _receiveItems = const [];
     _receiveSummary = null;
     _idleIncomingDecisionPending = false;
+    _clearReceivePayloadMetrics();
   }
 
   void _beginSend(SendTransferUpdate update) {
@@ -608,6 +646,11 @@ class DriftController extends ChangeNotifier {
         _mode = TransferDirection.receive;
         _receiveEntryExpanded = true;
         _receiveStage = TransferStage.waiting;
+        _receivePayloadBytesReceived = _bigIntToInt(event.totalSizeBytes);
+        if (_receivePayloadStartedAt == null &&
+            (_receivePayloadBytesReceived ?? 0) > 0) {
+          _receivePayloadStartedAt = DateTime.now();
+        }
         _receiveSummary = (_receiveSummary ??
                 TransferSummaryViewData(
                   itemCount: _bigIntToInt(event.itemCount),
@@ -626,6 +669,8 @@ class DriftController extends ChangeNotifier {
         _mode = TransferDirection.receive;
         _receiveEntryExpanded = true;
         _receiveStage = TransferStage.completed;
+        _receivePayloadBytesReceived = _bigIntToInt(event.totalSizeBytes);
+        _receivePayloadTotalBytes ??= _receivePayloadBytesReceived;
         _receiveSummary = (_receiveSummary ??
                 TransferSummaryViewData(
                   itemCount: _bigIntToInt(event.itemCount),
@@ -674,6 +719,12 @@ class DriftController extends ChangeNotifier {
     _receiveStage = TransferStage.review;
     _receiveErrorText = null;
     _receiveItems = List<TransferItemViewData>.unmodifiable(items);
+
+    // Save the total size for the receiving progress bar.
+    _receivePayloadTotalBytes = _bigIntToInt(event.totalSizeBytes);
+    _receivePayloadBytesReceived = null;
+    _receivePayloadStartedAt = null;
+
     _receiveSummary = TransferSummaryViewData(
       itemCount: _bigIntToInt(event.itemCount),
       totalSize: event.totalSizeLabel,
@@ -739,6 +790,16 @@ class DriftController extends ChangeNotifier {
   }
 
   Future<void> _ensureIdleReceiver() async {
+    // Keep idle-registration refresh strictly on the idle shell so we never
+    // disturb an active send/receive session.
+    final isIdleShell =
+        !hasActiveTransferCard &&
+        !_receiveEntryExpanded &&
+        !_idleIncomingDecisionPending;
+    if (!isIdleShell) {
+      return;
+    }
+
     try {
       final registration = await _receiveRegistrationSource
           .ensureIdleReceiver();
@@ -858,6 +919,12 @@ class DriftController extends ChangeNotifier {
     _lastSendProgressSampleAt = null;
     _lastSendProgressBytes = null;
     _sendSmoothedBps = null;
+  }
+
+  void _clearReceivePayloadMetrics() {
+    _receivePayloadBytesReceived = null;
+    _receivePayloadTotalBytes = null;
+    _receivePayloadStartedAt = null;
   }
 
   void _applySendTransferMetrics(SendTransferUpdate update) {

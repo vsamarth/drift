@@ -1,7 +1,10 @@
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 
-use drift_core::receiver::{receiver_finish_after_decision, receiver_run_until_decision};
+use drift_core::receiver::{
+    receiver_finish_after_decision_with_progress, receiver_run_until_decision,
+    ReceiveTransferPhase, ReceiveTransferProgress,
+};
 use drift_core::rendezvous::{resolve_server_url, RegisterPeerResponse, RendezvousClient};
 use drift_core::session::bind_endpoint;
 use drift_core::transfer::{ReceiverMachine, ReceiverState};
@@ -348,67 +351,70 @@ async fn run_idle_incoming_loop(
             *g = None;
         }
 
-        if !approved {
-            let _ = receiver_finish_after_decision(pending, &mut machine, false).await;
+        let mut on_progress = |progress: ReceiveTransferProgress| {
+            let phase = match progress.phase {
+                ReceiveTransferPhase::WaitingForDecision => IdleIncomingPhase::Receiving,
+                ReceiveTransferPhase::Receiving => IdleIncomingPhase::Receiving,
+                ReceiveTransferPhase::Completed => IdleIncomingPhase::Completed,
+                ReceiveTransferPhase::Declined => IdleIncomingPhase::Declined,
+                ReceiveTransferPhase::Failed => IdleIncomingPhase::Failed,
+            };
+
+            let status_message = match progress.phase {
+                ReceiveTransferPhase::WaitingForDecision => {
+                    "Receiving files…".to_owned()
+                }
+                ReceiveTransferPhase::Receiving => "Receiving files…".to_owned(),
+                ReceiveTransferPhase::Completed => "Files saved.".to_owned(),
+                ReceiveTransferPhase::Declined => "Transfer cancelled.".to_owned(),
+                ReceiveTransferPhase::Failed => "Transfer failed.".to_owned(),
+            };
+
+            // `IdleIncomingEvent.total_size_bytes` is used for two purposes:
+            // - OfferReady/Completed/Declined: total bytes to receive (manifest.total_size)
+            // - Receiving: bytes received so far (progress.bytes_received)
+            let total_size_bytes = match progress.phase {
+                ReceiveTransferPhase::Receiving => progress.bytes_received,
+                _ => progress.total_bytes,
+            };
+
             let _ = updates.add(IdleIncomingEvent {
-                phase: IdleIncomingPhase::Declined,
-                sender_name: String::new(),
+                phase,
+                sender_name: progress.sender_device_name,
                 destination_label: sender_label.clone(),
                 save_root_label: save_root_label.clone(),
-                status_message: "Transfer cancelled.".to_owned(),
+                status_message,
+                item_count: progress.file_count,
+                total_size_bytes,
+                total_size_label: human_size(total_size_bytes),
+                files: Vec::new(),
+                error_message: None,
+            });
+        };
+
+        let res = receiver_finish_after_decision_with_progress(
+            pending,
+            &mut machine,
+            approved,
+            &mut on_progress,
+        )
+        .await;
+
+        if let Err(err) = res {
+            let msg = format_error_chain(&err);
+            log(&format!("receive payload failed: {msg}"));
+            let _ = updates.add(IdleIncomingEvent {
+                phase: IdleIncomingPhase::Failed,
+                sender_name: String::new(),
+                destination_label: String::new(),
+                save_root_label: save_root_label.clone(),
+                status_message: "Transfer failed.".to_owned(),
                 item_count: manifest.file_count,
                 total_size_bytes: manifest.total_size,
                 total_size_label: human_size(manifest.total_size),
                 files: Vec::new(),
-                error_message: None,
+                error_message: Some(msg),
             });
-            continue;
-        }
-
-        let _ = updates.add(IdleIncomingEvent {
-            phase: IdleIncomingPhase::Receiving,
-            sender_name: pending.sender_device_name().to_owned(),
-            destination_label: sender_label.clone(),
-            save_root_label: save_root_label.clone(),
-            status_message: "Receiving files…".to_owned(),
-            item_count: manifest.file_count,
-            total_size_bytes: manifest.total_size,
-            total_size_label: human_size(manifest.total_size),
-            files: Vec::new(),
-            error_message: None,
-        });
-
-        match receiver_finish_after_decision(pending, &mut machine, true).await {
-            Ok(()) => {
-                let _ = updates.add(IdleIncomingEvent {
-                    phase: IdleIncomingPhase::Completed,
-                    sender_name: String::new(),
-                    destination_label: sender_label,
-                    save_root_label: save_root_label.clone(),
-                    status_message: "Files saved.".to_owned(),
-                    item_count: manifest.file_count,
-                    total_size_bytes: manifest.total_size,
-                    total_size_label: human_size(manifest.total_size),
-                    files: Vec::new(),
-                    error_message: None,
-                });
-            }
-            Err(err) => {
-                let msg = format_error_chain(&err);
-                log(&format!("receive payload failed: {msg}"));
-                let _ = updates.add(IdleIncomingEvent {
-                    phase: IdleIncomingPhase::Failed,
-                    sender_name: String::new(),
-                    destination_label: String::new(),
-                    save_root_label: save_root_label.clone(),
-                    status_message: "Transfer failed.".to_owned(),
-                    item_count: manifest.file_count,
-                    total_size_bytes: manifest.total_size,
-                    total_size_label: human_size(manifest.total_size),
-                    files: Vec::new(),
-                    error_message: Some(msg),
-                });
-            }
         }
     }
 }
