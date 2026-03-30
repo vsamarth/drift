@@ -1,8 +1,8 @@
 use std::path::PathBuf;
 
-use drift_core::fs_plan::preview::{
-    inspect_selected_paths, SelectedPathKind, SelectedPathPreview,
-    SelectionPreview as CoreSelectionPreview,
+use drift_app::{
+    SelectionItem as AppSelectionItem, SelectionPreview as AppSelectionPreview,
+    inspect_paths as app_inspect_paths,
 };
 
 #[derive(Debug, Clone)]
@@ -23,11 +23,11 @@ pub struct SelectionItem {
 
 pub fn inspect_paths(paths: Vec<String>) -> Result<SelectionPreview, String> {
     let raw_paths = paths.into_iter().map(PathBuf::from).collect::<Vec<_>>();
-    let preview = inspect_selected_paths(&raw_paths).map_err(|err| err.to_string())?;
+    let preview = app_inspect_paths(&raw_paths).map_err(|err| err.to_string())?;
     Ok(map_preview(preview))
 }
 
-fn map_preview(preview: CoreSelectionPreview) -> SelectionPreview {
+fn map_preview(preview: AppSelectionPreview) -> SelectionPreview {
     SelectionPreview {
         items: preview.items.into_iter().map(map_item).collect(),
         file_count: preview.file_count,
@@ -35,15 +35,11 @@ fn map_preview(preview: CoreSelectionPreview) -> SelectionPreview {
     }
 }
 
-fn map_item(item: SelectedPathPreview) -> SelectionItem {
+fn map_item(item: AppSelectionItem) -> SelectionItem {
     SelectionItem {
-        name: item
-            .path
-            .file_name()
-            .map(|name| name.to_string_lossy().into_owned())
-            .unwrap_or_else(|| item.path.display().to_string()),
-        path: item.path.display().to_string(),
-        is_directory: item.kind == SelectedPathKind::Folder,
+        name: item.name,
+        path: item.path,
+        is_directory: item.is_directory,
         file_count: item.file_count,
         total_size: item.total_size,
     }

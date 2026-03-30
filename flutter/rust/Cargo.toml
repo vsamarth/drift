@@ -8,6 +8,7 @@ crate-type = ["cdylib", "staticlib"]
 
 [dependencies]
 anyhow = "1.0"
+drift-app = { path = "../../crates/app" }
 drift-core = { path = "../../crates/core" }
 flutter_rust_bridge = "=2.11.1"
 iroh = "0.96"

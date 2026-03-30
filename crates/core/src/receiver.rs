@@ -10,7 +10,6 @@ use crate::fs_plan::receive::{ExpectedFile, build_expected_files};
 use crate::rendezvous::OfferManifest;
 use crate::session::{FileReceiveProgress, receive_files_over_connection_with_progress};
 use crate::transfer::{ReceiverMachine, ReceiverState, ensure_session_id, validate_hello};
-use crate::util::human_size;
 use crate::wire::{
     Accept, ControlMessage, Decline, DeviceType, Hello, TRANSFER_PROTOCOL_VERSION, TransferRole,
     read_message, write_message,
@@ -33,6 +32,10 @@ pub struct ReceiverPendingDecision {
 }
 
 impl ReceiverPendingDecision {
+    pub fn connection(&self) -> &iroh::endpoint::Connection {
+        &self.connection
+    }
+
     pub fn sender_device_name(&self) -> &str {
         &self.sender_device_name
     }
@@ -43,6 +46,15 @@ impl ReceiverPendingDecision {
 
     pub fn out_dir(&self) -> &Path {
         &self.out_dir
+    }
+
+    pub async fn wait_for_disconnect(&mut self) -> Result<()> {
+        let mut byte = [0_u8; 1];
+        self.control_recv
+            .read_exact(&mut byte)
+            .await
+            .context("waiting for sender disconnect")?;
+        bail!("unexpected control data while waiting for decision")
     }
 }
 
@@ -101,8 +113,6 @@ pub async fn receiver_run_until_decision(
         }
     };
 
-    println!("Sender: {}", hello.device_name);
-
     send_hello(
         &mut control_send,
         &hello.session_id,
@@ -126,13 +136,6 @@ pub async fn receiver_run_until_decision(
             bail!("expected offer from sender, got {:?}", other);
         }
     };
-
-    println!("Incoming offer");
-    println!("Files: {}", offer.manifest.file_count);
-    println!("Total size: {}", human_size(offer.manifest.total_size));
-    for file in &offer.manifest.files {
-        println!("  {} ({})", file.path, human_size(file.size));
-    }
 
     let expected_files = match build_expected_files(&offer.manifest, &out_dir).await {
         Ok(expected_files) => expected_files,
@@ -178,7 +181,6 @@ where
             "receiver declined the offer".to_owned(),
         )
         .await?;
-        println!("Offer declined");
         on_progress(ReceiveTransferProgress {
             phase: ReceiveTransferPhase::Declined,
             sender_device_name,
@@ -197,8 +199,6 @@ where
     let session_id = pending.session_id.clone();
     send_accept(&mut pending.control_send, &session_id).await?;
     machine.transition(ReceiverState::Approved)?;
-    println!("Accepted offer. Receiving files...");
-
     machine.transition(ReceiverState::Receiving)?;
     receive_files_over_connection_with_progress(
         pending.connection,

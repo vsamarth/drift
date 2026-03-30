@@ -1,0 +1,12 @@
+[package]
+name = "drift-app"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+drift-core = { path = "../core" }
+iroh.workspace = true
+rand.workspace = true
+time.workspace = true
+tokio.workspace = true

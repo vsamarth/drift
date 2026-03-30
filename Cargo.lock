@@ -764,6 +764,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
+ "drift-app",
  "drift-core",
  "indicatif",
  "iroh",
@@ -775,6 +776,18 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "drift-app"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "drift-core",
+ "iroh",
+ "rand 0.8.5",
+ "time",
+ "tokio",
 ]
 
 [[package]]

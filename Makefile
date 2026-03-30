@@ -20,7 +20,6 @@ help:
 	@echo ""
 	@echo "  server          — drift-server on $(SERVER_ADDR) (override SERVER_ADDR)"
 	@echo "  receive         — receiver → $(OUT)/ (override OUT; SERVER_URL for rendezvous)"
-	@echo ""
 	@echo "Send via short code (receiver must show CODE):"
 	@echo "  send-file       — CODE=… FILE=…"
 	@echo "  send-files      — CODE=… FILES=\"path1 path2\""

@@ -746,6 +746,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "drift-app"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "drift-core",
+ "iroh",
+ "time",
+ "tokio",
+]
+
+[[package]]
 name = "drift-core"
 version = "0.1.0"
 dependencies = [
@@ -770,6 +781,7 @@ name = "drift_bridge"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "drift-app",
  "drift-core",
  "flutter_rust_bridge",
  "iroh",

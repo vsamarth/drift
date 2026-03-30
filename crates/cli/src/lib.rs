@@ -3,30 +3,17 @@ use std::path::PathBuf;
 
 use anyhow::{Context, Result, bail};
 use clap::{Args, ValueEnum};
-use drift_core::lan;
-use drift_core::receiver::{
-    ReceiveTransferPhase, ReceiveTransferProgress, handle_receiver_connection_with_progress,
+use drift_app::{
+    ConflictPolicy, OfferDecision, ReceiverConfig, ReceiverEvent, ReceiverOfferEvent,
+    ReceiverOfferPhase, ReceiverService, SendEvent, SendPhase, SendRequest, SendTarget,
+    send as app_send,
 };
-use drift_core::rendezvous::RendezvousClient;
-use drift_core::sender::{
-    SendTransferPhase, SendTransferProgress, send_files_with_progress,
-    send_files_with_progress_via_lan_ticket,
-};
-use drift_core::session::bind_endpoint;
-use drift_core::transfer::{ReceiverMachine, ReceiverState};
-use drift_core::util::{confirm_accept, describe_remote, human_size, process_display_device_name};
-use drift_core::wire::DeviceType;
-use drift_core::wire::make_ticket;
+use drift_core::util::{confirm_accept, human_size, process_display_device_name};
+use iroh::SecretKey;
 use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
-use time::OffsetDateTime;
-use time::format_description::well_known::Rfc3339;
-use tokio::fs;
-use tokio::signal;
-use tokio::time::{Duration, Instant, MissedTickBehavior, interval};
+use tokio::time::Duration;
 use tracing::{debug, info, warn};
 use tracing_subscriber::EnvFilter;
-
-const CONNECT_GRACE_PERIOD: Duration = Duration::from_secs(30);
 
 /// Log line format for stderr (`json` is one JSON object per line).
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, ValueEnum)]
@@ -54,7 +41,6 @@ pub struct LoggingOpts {
     pub verbose: u8,
 }
 
-/// Install a global tracing subscriber. Call once at process start.
 pub fn init_tracing(log_format: LogFormat, verbose: u8) {
     let filter = log_env_filter(verbose);
     let result = match log_format {
@@ -88,11 +74,9 @@ fn log_env_filter(verbose: u8) -> EnvFilter {
 }
 
 pub async fn send(code: String, files: Vec<PathBuf>, server_url: Option<String>) -> Result<()> {
-    let code_normalized = code.trim().to_uppercase();
     let device_name = process_display_device_name();
-    let device_type = DeviceType::Laptop;
     info!(
-        code = %code_normalized,
+        code = %code.trim().to_uppercase(),
         file_count = files.len(),
         device = %device_name,
         rendezvous_override = ?server_url,
@@ -102,125 +86,65 @@ pub async fn send(code: String, files: Vec<PathBuf>, server_url: Option<String>)
         debug!(index = i, path = %path.display(), "send.input_path");
     }
 
+    let mut progress_bar = None;
     let mut last_phase = None;
-
-    // Create the progress bar lazily only once the receiver has accepted and
-    // payload streaming starts.
-    let mut progress_bar: Option<ProgressBar> = None;
-
-    let mut transfer_done = false;
-    let mut length_set = false;
-    let outcome = send_files_with_progress(
-        code,
-        files,
-        server_url,
-        device_name,
-        device_type,
-        |progress| {
-            log_send_progress(&mut last_phase, &progress);
-
-            match progress.phase {
-                SendTransferPhase::Connecting | SendTransferPhase::WaitingForDecision => {}
-                SendTransferPhase::Sending => {
-                    if progress_bar.is_none() {
-                        let pb = ProgressBar::new(0);
-                        pb.set_draw_target(ProgressDrawTarget::stderr());
-                        pb.set_style(
-                            ProgressStyle::with_template(
-                                "{spinner:.green} [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({percent}%) {msg}",
-                            )
-                            .expect("valid indicatif template"),
-                        );
-                        pb.enable_steady_tick(Duration::from_millis(100));
-                        progress_bar = Some(pb);
-                    }
-                    let pb = progress_bar.as_ref().expect("progress bar set");
-
-                    // Set the total once we have it (it comes from the manifest).
-                    if !length_set {
-                        pb.set_length(progress.manifest.total_size);
-                        length_set = true;
-                    }
-                    pb.set_position(progress.bytes_sent);
-
-                    let msg = match progress.current_file_index {
-                        Some(idx) => {
-                            let i = idx as usize;
-                            progress.manifest.files.get(i).map_or_else(
-                                || format!("file {idx}"),
-                                |f| format!("file: {} ({}/{}) bytes", f.path, progress.bytes_sent_in_file, f.size),
-                            )
-                        }
-                        None => "starting...".to_string(),
-                    };
-                    pb.set_message(msg);
-                }
-                SendTransferPhase::Completed => {
-                    transfer_done = true;
-                    if let Some(pb) = progress_bar.take() {
-                        pb.finish_and_clear();
-                    }
-                }
-            }
+    let outcome = app_send(
+        SendRequest {
+            paths: files,
+            device_name,
+            device_type: "laptop".to_owned(),
+            target: SendTarget::Code { code, server_url },
         },
+        |event| render_send_event(&mut last_phase, &mut progress_bar, &event),
     )
     .await;
-
-    // If the transfer errors out (e.g. receiver declined), we may never see `Completed`.
-    if let Some(pb) = progress_bar.take() {
-        if !transfer_done {
-            pb.finish_and_clear();
-        }
-    }
+    finish_progress_bar(&mut progress_bar);
 
     match &outcome {
-        Ok(o) => info!(
-            receiver = %o.receiver_device_name,
-            file_count = o.manifest.file_count,
-            total_bytes = o.manifest.total_size,
-            "send.completed"
-        ),
+        Ok(()) => info!("send.completed"),
         Err(e) => warn!(error = %e, error_chain = %format!("{e:#}"), "send.failed"),
     }
 
-    outcome.map(|_| ())
+    outcome
 }
 
-/// Send after picking a receiver discovered via mDNS (`--nearby`).
 pub async fn send_nearby(
     files: Vec<PathBuf>,
     nearby_timeout_secs: u64,
     _server_url: Option<String>,
 ) -> Result<()> {
-    let scan = Duration::from_secs(nearby_timeout_secs.max(1));
     let device_name = process_display_device_name();
-    let device_type = DeviceType::Laptop;
-
     info!(
         file_count = files.len(),
         device = %device_name,
-        scan_secs = scan.as_secs(),
+        scan_secs = nearby_timeout_secs.max(1),
         "send.nearby_started"
     );
 
-    let receivers = tokio::task::spawn_blocking(move || lan::browse_nearby_receivers(scan, None))
-        .await
-        .context("mdns browse task")??;
+    let receiver = ReceiverService::start(ReceiverConfig {
+        device_name: device_name.clone(),
+        device_type: "laptop".to_owned(),
+        download_root: PathBuf::from("."),
+        conflict_policy: ConflictPolicy::Reject,
+        secret_key: SecretKey::from_bytes(&rand::random()),
+    })
+    .await?;
+    let receivers = receiver.scan_nearby(nearby_timeout_secs).await?;
+    let _ = receiver.shutdown().await;
 
     if receivers.is_empty() {
         bail!(
             "no Drift receivers found on the LAN. \
-             On the other machine run `drift receive` (same Wi‑Fi / LAN), then try again."
+             On the other machine run `drift receive` (same Wi-Fi / LAN), then try again."
         );
     }
 
     eprintln!("Nearby receivers:");
-    for (i, r) in receivers.iter().enumerate() {
-        eprintln!("  {}. {}", i + 1, r.label);
+    for (i, receiver) in receivers.iter().enumerate() {
+        eprintln!("  {}. {}", i + 1, receiver.label);
     }
-
     let upper = receivers.len();
-    eprint!("Enter number (1–{upper}), or q to quit: ");
+    eprint!("Enter number (1-{upper}), or q to quit: ");
     io::stdout().flush().context("flushing prompt")?;
 
     let mut line = String::new();
@@ -231,435 +155,248 @@ pub async fn send_nearby(
     }
     let idx: usize = trimmed
         .parse()
-        .with_context(|| format!("expected a number 1–{upper}, got {trimmed:?}"))?;
+        .with_context(|| format!("expected a number 1-{upper}, got {trimmed:?}"))?;
     if idx == 0 || idx > upper {
         bail!("choice must be between 1 and {upper}");
     }
 
     let picked = &receivers[idx - 1];
-    let destination_label = format!("Nearby: {}", picked.label);
-
     info!(label = %picked.label, "send.nearby_picked");
 
+    let mut progress_bar = None;
     let mut last_phase = None;
-    let mut progress_bar: Option<ProgressBar> = None;
-    let mut transfer_done = false;
-    let mut length_set = false;
-
-    let outcome = send_files_with_progress_via_lan_ticket(
-        picked.ticket.clone(),
-        destination_label,
-        files,
-        device_name,
-        device_type,
-        |progress| {
-            log_send_progress(&mut last_phase, &progress);
-
-            match progress.phase {
-                SendTransferPhase::Connecting | SendTransferPhase::WaitingForDecision => {}
-                SendTransferPhase::Sending => {
-                    if progress_bar.is_none() {
-                        let pb = ProgressBar::new(0);
-                        pb.set_draw_target(ProgressDrawTarget::stderr());
-                        pb.set_style(
-                            ProgressStyle::with_template(
-                                "{spinner:.green} [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({percent}%) {msg}",
-                            )
-                            .expect("valid indicatif template"),
-                        );
-                        pb.enable_steady_tick(Duration::from_millis(100));
-                        progress_bar = Some(pb);
-                    }
-                    let pb = progress_bar.as_ref().expect("progress bar set");
-
-                    if !length_set {
-                        pb.set_length(progress.manifest.total_size);
-                        length_set = true;
-                    }
-                    pb.set_position(progress.bytes_sent);
-
-                    let msg = match progress.current_file_index {
-                        Some(idx) => {
-                            let i = idx as usize;
-                            progress.manifest.files.get(i).map_or_else(
-                                || format!("file {idx}"),
-                                |f| format!(
-                                    "file: {} ({}/{}) bytes",
-                                    f.path, progress.bytes_sent_in_file, f.size
-                                ),
-                            )
-                        }
-                        None => "starting...".to_string(),
-                    };
-                    pb.set_message(msg);
-                }
-                SendTransferPhase::Completed => {
-                    transfer_done = true;
-                    if let Some(pb) = progress_bar.take() {
-                        pb.finish_and_clear();
-                    }
-                }
-            }
+    let outcome = app_send(
+        SendRequest {
+            paths: files,
+            device_name,
+            device_type: "laptop".to_owned(),
+            target: SendTarget::Lan {
+                ticket: picked.ticket.clone(),
+                destination_label: format!("Nearby: {}", picked.label),
+            },
         },
+        |event| render_send_event(&mut last_phase, &mut progress_bar, &event),
     )
     .await;
-
-    if let Some(pb) = progress_bar.take() {
-        if !transfer_done {
-            pb.finish_and_clear();
-        }
-    }
+    finish_progress_bar(&mut progress_bar);
 
     match &outcome {
-        Ok(o) => info!(
-            receiver = %o.receiver_device_name,
-            file_count = o.manifest.file_count,
-            total_bytes = o.manifest.total_size,
-            "send.completed"
-        ),
+        Ok(()) => info!("send.completed"),
         Err(e) => warn!(error = %e, error_chain = %format!("{e:#}"), "send.failed"),
     }
 
-    outcome.map(|_| ())
+    outcome
 }
 
 pub async fn receive(out_dir: PathBuf, server_url: Option<String>) -> Result<()> {
-    let resolved_url = drift_core::rendezvous::resolve_server_url(server_url.as_deref());
     let device_name = process_display_device_name();
     info!(
         out_dir = %out_dir.display(),
-        server = %resolved_url,
+        server = ?server_url,
         device = %device_name,
         "receive.started"
     );
 
-    fs::create_dir_all(&out_dir)
-        .await
-        .with_context(|| format!("creating output directory {}", out_dir.display()))?;
+    let mut progress_bar = None;
+    let mut last_phase = None;
+    let service = ReceiverService::start(ReceiverConfig {
+        device_name,
+        device_type: "laptop".to_owned(),
+        download_root: out_dir,
+        conflict_policy: ConflictPolicy::Reject,
+        secret_key: SecretKey::from_bytes(&rand::random()),
+    })
+    .await?;
 
-    let client = RendezvousClient::new(resolved_url.clone());
-    let endpoint = bind_endpoint()
-        .await
-        .context("binding local iroh endpoint")?;
-    let ticket = make_ticket(&endpoint).await?;
-    let registration = client.register_peer(ticket.clone()).await?;
-    let expires_at = OffsetDateTime::parse(&registration.expires_at, &Rfc3339)
-        .context("parsing discovery expiry")?;
-    let device_type = DeviceType::Laptop;
-
-    let mut machine = ReceiverMachine::new();
-    machine.transition(ReceiverState::Discoverable)?;
-
-    info!(
-        code = %registration.code,
-        expires_at = %registration.expires_at,
-        out_dir = %out_dir.display(),
-        device = %device_name,
-        "receive.registered"
+    let registration = service.setup(server_url).await?;
+    info!(code = %registration.code, expires_at = %registration.expires_at, "receive.ready");
+    eprintln!(
+        "Pairing code: {} (expires {})",
+        registration.code, registration.expires_at
     );
-    info!(code = %registration.code, "receive.waiting_for_sender");
+    if let Err(error) = service.set_discoverable(true).await {
+        warn!(error = %error, "receive.discoverability_unavailable");
+    }
 
-    let _lan_advertise = match lan::LanReceiveAdvertisement::start(&ticket, &device_name) {
-        Ok(Some(guard)) => {
-            info!("receive.lan_mdns_publishing");
-            Some(guard)
-        }
-        Ok(None) => {
-            info!("receive.lan_mdns_skipped_no_ipv4");
-            None
-        }
-        Err(e) => {
-            warn!(
-                error = %e,
-                error_chain = %format!("{e:#}"),
-                "receive.lan_mdns_publish_failed"
-            );
-            None
+    let mut event_rx = service.subscribe_events();
+    let outcome = loop {
+        tokio::select! {
+            _ = tokio::signal::ctrl_c() => {
+                break Ok(());
+            }
+            event = event_rx.recv() => {
+                match event {
+                    Ok(ReceiverEvent::OfferUpdated(event)) => {
+                        render_receive_event(&mut last_phase, &mut progress_bar, &event);
+                        match event.phase {
+                            ReceiverOfferPhase::OfferReady => {
+                                let accept = tokio::task::spawn_blocking(confirm_accept)
+                                    .await
+                                    .context("confirm task")??;
+                                let decision = if accept {
+                                    OfferDecision::Accept
+                                } else {
+                                    OfferDecision::Decline
+                                };
+                                service.respond_to_offer(decision).await?;
+                            }
+                            ReceiverOfferPhase::Completed | ReceiverOfferPhase::Declined => {
+                                break Ok(());
+                            }
+                            ReceiverOfferPhase::Failed => {
+                                let message = event
+                                    .error_message
+                                    .clone()
+                                    .unwrap_or_else(|| event.status_message.clone());
+                                break Err(anyhow::anyhow!(message));
+                            }
+                            ReceiverOfferPhase::Connecting | ReceiverOfferPhase::Receiving => {}
+                        }
+                    }
+                    Ok(ReceiverEvent::RegistrationUpdated(registration)) => {
+                        info!(code = %registration.code, expires_at = %registration.expires_at, "receive.code_rotated");
+                    }
+                    Ok(ReceiverEvent::SetupCompleted(_)) => {}
+                    Ok(ReceiverEvent::DiscoverabilityChanged { requested, active }) => {
+                        debug!(requested, active, "receive.discoverability");
+                    }
+                    Ok(ReceiverEvent::Shutdown) => break Ok(()),
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => break Ok(()),
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
+                        warn!(skipped, "receive.event_lagged");
+                    }
+                }
+            }
         }
     };
+    finish_progress_bar(&mut progress_bar);
+    let _ = service.shutdown().await;
 
-    let mut accept_future = Box::pin(endpoint.accept());
-    let mut poll = interval(Duration::from_secs(2));
-    poll.set_missed_tick_behavior(MissedTickBehavior::Delay);
-    poll.tick().await;
-    let mut ctrl_c = Box::pin(signal::ctrl_c());
-    let mut claimed_at: Option<Instant> = None;
-
-    loop {
-        tokio::select! {
-            _ = &mut ctrl_c => {
-                debug!("receive.ctrl_c");
-                endpoint.close().await;
-                info!("receive.stopped_by_user");
-                return Ok(());
-            }
-            incoming = &mut accept_future => {
-                machine.transition(ReceiverState::Connecting)?;
-                let incoming = incoming.context("receiver stopped before a sender connected")?;
-                let connection = incoming.await.context("accepting sender connection")?;
-                let remote_label = describe_remote(
-                    connection.remote_id(),
-                    endpoint.remote_info(connection.remote_id()).await.as_ref()
-                );
-                info!(
-                    remote_id = %connection.remote_id(),
-                    remote = %remote_label,
-                    "receive.peer_connected"
-                );
-                machine.transition(ReceiverState::Connected)?;
-                let mut last_phase: Option<ReceiveTransferPhase> = None;
-
-                // Create the progress bar lazily only once the offer is accepted.
-                // (So users don't see a bar while waiting for confirmation.)
-                let mut progress_bar: Option<ProgressBar> = None;
-
-                let mut transfer_done = false;
-                let mut length_set = false;
-
-                let mut final_phase: Option<ReceiveTransferPhase> = None;
-                let mut completed_sender_device_name: Option<String> = None;
-                let mut completed_file_count: u64 = 0;
-                let mut completed_total_bytes: u64 = 0;
-
-                let result = handle_receiver_connection_with_progress(
-                    connection,
-                    out_dir.clone(),
-                    &device_name,
-                    device_type,
-                    &mut machine,
-                    async {
-                        tokio::task::spawn_blocking(|| confirm_accept())
-                            .await
-                            .context("confirm task")?
-                    },
-                    |progress: ReceiveTransferProgress| {
-                        log_receive_progress(&mut last_phase, &progress);
-
-                        match progress.phase {
-                            ReceiveTransferPhase::WaitingForDecision => {}
-                            ReceiveTransferPhase::Receiving => {
-                                if progress_bar.is_none() {
-                                    let pb = ProgressBar::new(0);
-                                    pb.set_draw_target(ProgressDrawTarget::stderr());
-                                    pb.set_style(
-                                        ProgressStyle::with_template(
-                                            "{spinner:.green} [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({percent}%) {msg}",
-                                        )
-                                        .expect("valid indicatif template"),
-                                    );
-                                    pb.enable_steady_tick(Duration::from_millis(100));
-                                    progress_bar = Some(pb);
-                                }
-
-                                let pb = progress_bar.as_ref().expect("progress bar set");
-
-                                if !length_set && progress.bytes_to_receive > 0 {
-                                    pb.set_length(progress.bytes_to_receive);
-                                    length_set = true;
-                                }
-                                if length_set {
-                                    pb.set_position(progress.bytes_received);
-                                }
-
-                                let msg = match progress.current_file_path {
-                                    Some(path) => format!(
-                                        "file: {} ({}/{}) bytes",
-                                        path, progress.bytes_received_in_file, progress.current_file_size
-                                    ),
-                                    None => "starting...".to_string(),
-                                };
-                                pb.set_message(msg);
-                            }
-                            ReceiveTransferPhase::Completed => {
-                                final_phase = Some(ReceiveTransferPhase::Completed);
-                                completed_sender_device_name =
-                                    Some(progress.sender_device_name.clone());
-                                completed_file_count = progress.file_count;
-                                completed_total_bytes = progress.total_bytes;
-                                transfer_done = true;
-                                if let Some(pb) = progress_bar.take() {
-                                    pb.finish_and_clear();
-                                }
-                            }
-                            ReceiveTransferPhase::Declined => {
-                                final_phase = Some(ReceiveTransferPhase::Declined);
-                                completed_sender_device_name =
-                                    Some(progress.sender_device_name.clone());
-                                completed_file_count = progress.file_count;
-                                completed_total_bytes = progress.total_bytes;
-                                transfer_done = true;
-                                if let Some(pb) = progress_bar.take() {
-                                    pb.finish_and_clear();
-                                }
-                            }
-                            ReceiveTransferPhase::Failed => {
-                                final_phase = Some(ReceiveTransferPhase::Failed);
-                                transfer_done = true;
-                                if let Some(pb) = progress_bar.take() {
-                                    pb.finish_and_clear();
-                                }
-                            }
-                        }
-                    },
-                )
-                .await;
-
-                endpoint.close().await;
-
-                if let Some(pb) = progress_bar.take() {
-                    // If anything unexpected happened, make sure we don't leave the bar hanging.
-                    // Normal completion paths already finish it in the callback.
-                    if !transfer_done {
-                        pb.finish_and_clear();
-                    }
-                }
-
-                match &result {
-                    Ok(()) => match final_phase {
-                        Some(ReceiveTransferPhase::Completed) => {
-                            info!(
-                                sender = %completed_sender_device_name.unwrap_or_else(|| "Sender".to_owned()),
-                                file_count = completed_file_count,
-                                total_bytes = completed_total_bytes,
-                                total_human = %human_size(completed_total_bytes),
-                                "receive.completed"
-                            );
-                        }
-                        Some(ReceiveTransferPhase::Declined) => {
-                            info!(
-                                sender = %completed_sender_device_name.unwrap_or_else(|| "Sender".to_owned()),
-                                file_count = completed_file_count,
-                                total_bytes = completed_total_bytes,
-                                "receive.declined"
-                            );
-                        }
-                        _ => info!("receive.session_finished_ok"),
-                    },
-                    Err(e) => warn!(error = %e, error_chain = %format!("{e:#}"), "receive.session_finished_err"),
-                }
-                return result;
-            }
-            _ = poll.tick() => {
-                match client.pair_status(&registration.code).await? {
-                    Some(status) => {
-                        debug!(code = %registration.code, ?status, "receive.pair_status_open");
-                    }
-                    None => {
-                        if claimed_at.is_none() {
-                            if OffsetDateTime::now_utc() >= expires_at {
-                                warn!(code = %registration.code, "receive.code_expired");
-                                endpoint.close().await;
-                                return Ok(());
-                            }
-                            claimed_at = Some(Instant::now());
-                            info!(code = %registration.code, "receive.code_claimed_waiting_connect");
-                        } else if claimed_at.unwrap().elapsed() >= CONNECT_GRACE_PERIOD {
-                            warn!(
-                                code = %registration.code,
-                                grace_secs = CONNECT_GRACE_PERIOD.as_secs(),
-                                "receive.claim_connect_timeout"
-                            );
-                            bail!("sender claimed the code but did not connect in time");
-                        }
-                    }
-                }
-            }
-        }
+    match &outcome {
+        Ok(()) => info!("receive.session_finished_ok"),
+        Err(e) => warn!(error = %e, error_chain = %format!("{e:#}"), "receive.session_finished_err"),
     }
+
+    outcome
 }
 
-fn log_send_progress(last_phase: &mut Option<SendTransferPhase>, progress: &SendTransferProgress) {
-    if last_phase.as_ref() == Some(&progress.phase) {
-        return;
-    }
-
-    match progress.phase {
-        SendTransferPhase::Connecting => {
-            debug!(phase = "connecting", "send.phase");
-        }
-        SendTransferPhase::WaitingForDecision => {
-            info!(
-                phase = "waiting_for_decision",
-                receiver = %progress.destination_label,
-                "send.phase"
-            );
-        }
-        SendTransferPhase::Sending => {
-            info!(
-                phase = "sending",
-                receiver = %progress.destination_label,
-                file_count = progress.manifest.file_count,
-                total_bytes = progress.manifest.total_size,
-                total_human = %human_size(progress.manifest.total_size),
-                "send.phase"
-            );
-        }
-        SendTransferPhase::Completed => {
-            info!(
-                phase = "completed",
-                receiver = %progress.destination_label,
-                bytes_sent = progress.bytes_sent,
-                "send.phase"
-            );
-        }
-    }
-
-    *last_phase = Some(progress.phase);
-}
-
-fn log_receive_progress(
-    last_phase: &mut Option<ReceiveTransferPhase>,
-    progress: &ReceiveTransferProgress,
+fn render_send_event(
+    last_phase: &mut Option<SendPhase>,
+    progress_bar: &mut Option<ProgressBar>,
+    event: &SendEvent,
 ) {
-    if last_phase.as_ref() == Some(&progress.phase) {
-        return;
+    if last_phase.as_ref() != Some(&event.phase) {
+        match event.phase {
+            SendPhase::Connecting => debug!(phase = "connecting", "send.phase"),
+            SendPhase::WaitingForDecision => {
+                info!(phase = "waiting_for_decision", receiver = %event.destination_label, "send.phase");
+            }
+            SendPhase::Sending => {
+                info!(
+                    phase = "sending",
+                    receiver = %event.destination_label,
+                    file_count = event.item_count,
+                    total_bytes = event.total_size,
+                    total_human = %human_size(event.total_size),
+                    "send.phase"
+                );
+            }
+            SendPhase::Completed => {
+                info!(phase = "completed", receiver = %event.destination_label, bytes_sent = event.bytes_sent, "send.phase");
+            }
+            SendPhase::Failed => {
+                warn!(phase = "failed", receiver = %event.destination_label, error = ?event.error_message, "send.phase");
+            }
+        }
+        *last_phase = Some(event.phase);
     }
 
-    match progress.phase {
-        ReceiveTransferPhase::WaitingForDecision => {
-            info!(
-                phase = "waiting_for_decision",
-                sender = %progress.sender_device_name,
-                file_count = progress.file_count,
-                total_bytes = progress.total_bytes,
-                total_human = %human_size(progress.total_bytes),
-                "receive.phase"
-            );
+    match event.phase {
+        SendPhase::Sending => {
+            let pb = ensure_progress_bar(progress_bar, event.total_size);
+            pb.set_position(event.bytes_sent);
+            pb.set_message(event.status_message.clone());
         }
-        ReceiveTransferPhase::Receiving => {
-            info!(
-                phase = "receiving",
-                sender = %progress.sender_device_name,
-                file_count = progress.file_count,
-                total_bytes = progress.total_bytes,
-                bytes_received = progress.bytes_received,
-                "receive.phase"
-            );
+        SendPhase::Completed | SendPhase::Failed => finish_progress_bar(progress_bar),
+        SendPhase::Connecting | SendPhase::WaitingForDecision => {}
+    }
+}
+
+fn render_receive_event(
+    last_phase: &mut Option<ReceiverOfferPhase>,
+    progress_bar: &mut Option<ProgressBar>,
+    event: &ReceiverOfferEvent,
+) {
+    if last_phase.as_ref() != Some(&event.phase) {
+        match event.phase {
+            ReceiverOfferPhase::OfferReady => {
+                info!(
+                    phase = "waiting_for_decision",
+                    sender = %event.sender_name,
+                    file_count = event.item_count,
+                    total_bytes = event.total_size_bytes,
+                    total_human = %event.total_size_label,
+                    "receive.phase"
+                );
+            }
+            ReceiverOfferPhase::Receiving => {
+                info!(
+                    phase = "receiving",
+                    sender = %event.sender_name,
+                    file_count = event.item_count,
+                    total_bytes = event.total_size_bytes,
+                    "receive.phase"
+                );
+            }
+            ReceiverOfferPhase::Completed => {
+                info!(phase = "completed", sender = %event.sender_name, "receive.phase");
+            }
+            ReceiverOfferPhase::Declined => {
+                info!(phase = "declined", sender = %event.sender_name, "receive.phase");
+            }
+            ReceiverOfferPhase::Failed => {
+                warn!(phase = "failed", sender = %event.sender_name, error = ?event.error_message, "receive.phase");
+            }
+            ReceiverOfferPhase::Connecting => {}
         }
-        ReceiveTransferPhase::Completed => {
-            info!(
-                phase = "completed",
-                sender = %progress.sender_device_name,
-                bytes_received = progress.bytes_received,
-                "receive.phase"
-            );
-        }
-        ReceiveTransferPhase::Declined => {
-            info!(
-                phase = "declined",
-                sender = %progress.sender_device_name,
-                "receive.phase"
-            );
-        }
-        ReceiveTransferPhase::Failed => {
-            warn!(
-                phase = "failed",
-                sender = %progress.sender_device_name,
-                error = ?progress.error_message,
-                "receive.phase"
-            );
-        }
+        *last_phase = Some(event.phase);
     }
 
-    *last_phase = Some(progress.phase);
+    match event.phase {
+        ReceiverOfferPhase::Receiving => {
+            let pb = ensure_progress_bar(progress_bar, event.total_size_bytes.max(1));
+            pb.set_position(event.total_size_bytes);
+            pb.set_message(event.status_message.clone());
+        }
+        ReceiverOfferPhase::Completed | ReceiverOfferPhase::Declined | ReceiverOfferPhase::Failed => {
+            finish_progress_bar(progress_bar)
+        }
+        ReceiverOfferPhase::OfferReady | ReceiverOfferPhase::Connecting => {}
+    }
+}
+
+fn ensure_progress_bar(progress_bar: &mut Option<ProgressBar>, total: u64) -> &ProgressBar {
+    if progress_bar.is_none() {
+        let pb = ProgressBar::new(total);
+        pb.set_draw_target(ProgressDrawTarget::stderr());
+        pb.set_style(
+            ProgressStyle::with_template(
+                "{spinner:.green} [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({percent}%) {msg}",
+            )
+            .expect("valid indicatif template"),
+        );
+        pb.enable_steady_tick(Duration::from_millis(100));
+        *progress_bar = Some(pb);
+    }
+    let pb = progress_bar.as_ref().expect("progress bar set");
+    if total > 0 && pb.length().unwrap_or(0) == 0 {
+        pb.set_length(total);
+    }
+    pb
+}
+
+fn finish_progress_bar(progress_bar: &mut Option<ProgressBar>) {
+    if let Some(pb) = progress_bar.take() {
+        pb.finish_and_clear();
+    }
 }
