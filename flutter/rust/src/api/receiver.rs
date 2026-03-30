@@ -8,6 +8,7 @@ use drift_app::{
     ReceiverRegistration as AppReceiverRegistration, ReceiverService,
 };
 use iroh::SecretKey;
+use tokio::sync::Mutex as AsyncMutex;
 use tokio::task::JoinHandle;
 
 use super::RUNTIME;
@@ -19,6 +20,7 @@ static RECEIVER_SECRET_KEY: LazyLock<SecretKey> =
     LazyLock::new(|| SecretKey::from_bytes(&rand::random()));
 static RECEIVER_STATE: LazyLock<Mutex<Option<BridgeReceiverState>>> =
     LazyLock::new(|| Mutex::new(None));
+static RECEIVER_SERVICE_LOCK: LazyLock<AsyncMutex<()>> = LazyLock::new(|| AsyncMutex::new(()));
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct BridgeReceiverConfig {
@@ -225,6 +227,8 @@ pub(crate) async fn scan_nearby_with_receiver(
 async fn ensure_receiver_service(
     config: BridgeReceiverConfig,
 ) -> Result<Arc<ReceiverService>, String> {
+    let _lock = RECEIVER_SERVICE_LOCK.lock().await;
+
     if let Some(service) = existing_service_for_config(&config) {
         return Ok(service);
     }
