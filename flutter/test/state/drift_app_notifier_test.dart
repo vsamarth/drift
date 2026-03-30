@@ -276,6 +276,22 @@ rust_receiver.ReceiverTransferEvent _incomingOfferEvent() {
   );
 }
 
+rust_receiver.ReceiverTransferEvent _incomingReceivingEvent({
+  required BigInt receivedBytes,
+}) {
+  return rust_receiver.ReceiverTransferEvent(
+    phase: rust_receiver.ReceiverTransferPhase.receiving,
+    senderName: 'Maya',
+    destinationLabel: 'Downloads',
+    saveRootLabel: 'Downloads',
+    statusMessage: 'Receiving files...',
+    itemCount: BigInt.one,
+    totalSizeBytes: receivedBytes,
+    totalSizeLabel: '18 KB',
+    files: const [],
+  );
+}
+
 void main() {
   testWidgets(
     'selecting files enters send draft and disables discoverability',
@@ -601,9 +617,24 @@ void main() {
 
     sendTransferSource.controller.add(
       _sendUpdate(
+        phase: SendTransferUpdatePhase.sending,
+        bytesSent: 9 * 1024,
+        totalBytes: 18 * 1024,
+      ),
+    );
+    await _flushAsyncWork(tester);
+
+    await tester.runAsync(() async {
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+    });
+
+    sendTransferSource.controller.add(
+      _sendUpdate(
         phase: SendTransferUpdatePhase.completed,
         destinationLabel: 'Maya’s iPhone',
         statusMessage: 'Files sent successfully',
+        bytesSent: 18 * 1024,
+        totalBytes: 18 * 1024,
       ),
     );
     await _flushAsyncWork(tester);
@@ -611,6 +642,16 @@ void main() {
     final state = container.read(driftAppNotifierProvider);
     expect(state.session, isA<SendResultSession>());
     expect((state.session as SendResultSession).success, isTrue);
+    expect(
+      state.sendCompletionMetrics?.map((row) => row.label),
+      containsAll([
+        'Sent to',
+        'Files',
+        'Size',
+        'Transfer time',
+        'Average speed',
+      ]),
+    );
     expect(receiverService.discoverableCalls.last, isFalse);
   });
 
@@ -642,6 +683,15 @@ void main() {
         container.read(driftAppNotifierProvider).session,
         isA<ReceiveTransferSession>(),
       );
+      receiverService.incomingController.add(
+        _incomingReceivingEvent(
+          receivedBytes: BigInt.from(9 * 1024),
+        ),
+      );
+      await _flushAsyncWork(tester);
+      final receivingState = container.read(driftAppNotifierProvider);
+      expect(receivingState.receivePayloadBytesReceived, 9 * 1024);
+      expect(receivingState.receivePayloadTotalBytes, 18 * 1024);
       expect(receiverService.respondToOfferCalls.last, isTrue);
 
       receiverService.incomingController.add(_incomingOfferEvent());

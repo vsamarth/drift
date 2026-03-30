@@ -209,6 +209,7 @@ class DriftAppState {
   bool get showShellBackButton => switch (session) {
     IdleSession() => false,
     SendResultSession(:final success) => !success,
+    ReceiveResultSession() => false,
     ReceiveTransferSession() => false,
     _ => true,
   };

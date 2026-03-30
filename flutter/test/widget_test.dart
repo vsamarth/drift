@@ -441,7 +441,7 @@ void main() {
     expect(find.text('beach.mov'), findsOneWidget);
     expect(find.text('boarding-pass.pdf'), findsOneWidget);
     expect(find.text('+1 more item'), findsNothing);
-    expect(find.text('4 · 14.9 MB'), findsOneWidget);
+    expect(find.text('4 files · 14.9 MB'), findsOneWidget);
 
     await tester.ensureVisible(saveToDownloadsButton());
     await tester.tap(saveToDownloadsButton());
@@ -449,6 +449,7 @@ void main() {
 
     expect(find.text('Files saved'), findsOneWidget);
     expect(find.text('Saved to Downloads'), findsOneWidget);
+    expect(shellBackButton(), findsNothing);
     expectNoFlutterError(tester);
   });
 
@@ -515,6 +516,7 @@ void main() {
 
     expect(find.text('Sending'), findsOneWidget);
     expect(find.text('Waiting for confirmation.'), findsOneWidget);
+    expect(find.text('2 files · 18 KB'), findsOneWidget);
 
     sendTransferSource.emit(
       sendTransferUpdate(
@@ -544,7 +546,7 @@ void main() {
     expect(find.text('Size'), findsOneWidget);
     expect(find.text('18 KB'), findsOneWidget);
 
-    await tester.tap(find.text('Send more files'));
+    await tester.tap(find.text('Done'));
     await tester.pumpAndSettle();
 
     expect(find.text('Drop files to send'), findsOneWidget);

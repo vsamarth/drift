@@ -548,6 +548,8 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
     if (_receivePayloadStartedAt == null && payloadBytesReceived > 0) {
       _receivePayloadStartedAt = DateTime.now();
     }
+    final payloadTotalBytes =
+        state.receivePayloadTotalBytes ?? payloadBytesReceived;
 
     final currentSummary =
         state.receiveSummary ??
@@ -566,7 +568,7 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
         items: state.receiveItems,
         summary: currentSummary.copyWith(statusMessage: event.statusMessage),
         payloadBytesReceived: payloadBytesReceived,
-        payloadTotalBytes: _bigIntToInt(event.totalSizeBytes),
+        payloadTotalBytes: payloadTotalBytes,
       ),
     );
   }
@@ -786,6 +788,7 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
   void _applySendUpdate(SendTransferUpdate update) {
     final items = state.sendItems.isEmpty ? sampleSendItems : state.sendItems;
     final existingSummary = state.sendSummary ?? sampleSendSummary;
+    final payloadStartedAt = _sendPayloadStartedAt;
     final summary = existingSummary.copyWith(
       itemCount: update.itemCount,
       totalSize: update.totalSize,
@@ -833,7 +836,10 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
             success: true,
             items: items,
             summary: summary,
-            metrics: _buildSendCompletionMetrics(update),
+            metrics: _buildSendCompletionMetrics(
+              update,
+              payloadStartedAt: payloadStartedAt,
+            ),
             remoteDeviceType: update.remoteDeviceType,
           ),
         );
@@ -897,9 +903,43 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
     }
   }
 
+  List<TransferMetricRow> _buildPerformanceMetrics({
+    required DateTime? startedAt,
+    required int bytesTransferred,
+  }) {
+    final rows = <TransferMetricRow>[];
+    if (startedAt == null) {
+      return rows;
+    }
+
+    final now = DateTime.now();
+    final transferElapsed = now.difference(startedAt);
+    if (transferElapsed.inMilliseconds >= 200) {
+      rows.add(
+        TransferMetricRow(
+          label: 'Transfer time',
+          value: _formatElapsedDuration(transferElapsed),
+        ),
+      );
+    }
+
+    final payloadSec = transferElapsed.inMilliseconds / 1000.0;
+    if (payloadSec >= 0.25 && bytesTransferred > 0) {
+      rows.add(
+        TransferMetricRow(
+          label: 'Average speed',
+          value: _formatBytesPerSecond(bytesTransferred / payloadSec),
+        ),
+      );
+    }
+
+    return rows;
+  }
+
   List<TransferMetricRow>? _buildSendCompletionMetrics(
-    SendTransferUpdate update,
-  ) {
+    SendTransferUpdate update, {
+    required DateTime? payloadStartedAt,
+  }) {
     final rows = <TransferMetricRow>[];
     final recipient = update.destinationLabel.trim().isEmpty
         ? 'Recipient device'
@@ -907,30 +947,12 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
     rows.add(TransferMetricRow(label: 'Sent to', value: recipient));
     rows.add(TransferMetricRow(label: 'Files', value: '${update.itemCount}'));
     rows.add(TransferMetricRow(label: 'Size', value: update.totalSize));
-
-    final payloadStart = _sendPayloadStartedAt;
-    final now = DateTime.now();
-    if (payloadStart != null) {
-      final transferElapsed = now.difference(payloadStart);
-      if (transferElapsed.inMilliseconds >= 200) {
-        rows.add(
-          TransferMetricRow(
-            label: 'Transfer time',
-            value: _formatElapsedDuration(transferElapsed),
-          ),
-        );
-      }
-      final payloadSec = transferElapsed.inMilliseconds / 1000.0;
-      if (payloadSec >= 0.25 && update.bytesSent > 0) {
-        rows.add(
-          TransferMetricRow(
-            label: 'Average speed',
-            value: _formatBytesPerSecond(update.bytesSent / payloadSec),
-          ),
-        );
-      }
-    }
-
+    rows.addAll(
+      _buildPerformanceMetrics(
+        startedAt: payloadStartedAt,
+        bytesTransferred: update.bytesSent,
+      ),
+    );
     return rows;
   }
 
@@ -947,30 +969,12 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
     );
     rows.add(TransferMetricRow(label: 'Files', value: '${summary.itemCount}'));
     rows.add(TransferMetricRow(label: 'Size', value: summary.totalSize));
-
-    final startedAt = _receivePayloadStartedAt;
-    final now = DateTime.now();
-    if (startedAt != null) {
-      final elapsed = now.difference(startedAt);
-      if (elapsed.inMilliseconds >= 200) {
-        rows.add(
-          TransferMetricRow(
-            label: 'Transfer time',
-            value: _formatElapsedDuration(elapsed),
-          ),
-        );
-      }
-      final payloadSec = elapsed.inMilliseconds / 1000.0;
-      if (payloadSec >= 0.25 && bytesReceived > 0) {
-        rows.add(
-          TransferMetricRow(
-            label: 'Average speed',
-            value: _formatBytesPerSecond(bytesReceived / payloadSec),
-          ),
-        );
-      }
-    }
-
+    rows.addAll(
+      _buildPerformanceMetrics(
+        startedAt: _receivePayloadStartedAt,
+        bytesTransferred: bytesReceived,
+      ),
+    );
     return rows;
   }
 

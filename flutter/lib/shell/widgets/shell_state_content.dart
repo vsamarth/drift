@@ -81,7 +81,7 @@ class ShellStateContent extends ConsumerWidget {
           message:
               state.sendSummary?.statusMessage ?? 'Files sent successfully',
           metrics: state.sendCompletionMetrics,
-          primaryLabel: 'Send more files',
+          primaryLabel: 'Done',
           onPrimary: notifier.resetShell,
         ),
       ),
