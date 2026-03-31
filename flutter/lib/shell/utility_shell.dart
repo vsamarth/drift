@@ -69,7 +69,7 @@ class _UtilityShellState extends ConsumerState<UtilityShell> {
                                 setState(() => _showSettings = true);
                               },
                             ),
-                            const SizedBox(height: 8),
+                            const SizedBox(height: 20),
                           ] else ...[
                             const ShellHeader(),
                             const SizedBox(height: 6),
