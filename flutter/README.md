@@ -1,19 +1,41 @@
 # Drift
 
-This Flutter app is wired to Rust with `flutter_rust_bridge`.
+Drift is a cross-platform file transfer application that leverages **Flutter** for a modern user interface and **Rust** for high-performance networking and file-handling logic. It enables seamless file sharing across local networks with automatic device discovery.
+
+## Architecture
+
+Drift is built with a clear separation between the UI and the core logic:
+
+-   **Frontend (Flutter):** Uses **Riverpod** for state management. The UI is a state-driven "Shell" that adapts based on whether the app is idle, preparing a transfer, or actively sending/receiving.
+-   **Backend (Rust):** Handles the heavy lifting, including LAN discovery (mDNS and UDP), secure networking, and high-performance file I/O. This ensures consistent behavior and speed across all supported platforms.
+-   **Bridge (`flutter_rust_bridge`):** Facilitates communication between Dart and Rust. It allows the Flutter UI to trigger Rust functions and receive asynchronous updates (like transfer progress) via Dart streams.
+
+## How It Works
+
+1.  **Initialization:** On startup, the Flutter app initializes the Rust library (`RustLib.init()`).
+2.  **Discovery:** The app automatically scans the local network using mDNS (`_drift._udp`) and UDP pings (on port 47474) to find other Drift-enabled devices.
+3.  **State Management:** The `DriftAppNotifier` manages the application's lifecycle, transitioning between session states (e.g., `Idle`, `SendDraft`, `Transferring`) based on user actions and network events.
+4.  **Transfer:** When a transfer starts, the Rust backend manages the data stream, providing real-time progress updates back to the Flutter UI for display.
+
+## Project Structure
+
+-   `lib/state/`: Business logic and state management (Riverpod).
+-   `lib/shell/`: Main UI components and navigation.
+-   `rust/src/api/`: Rust implementation of discovery, sending, and receiving logic.
+-   `rust_builder/`: Native build glue for compiling Rust code for each platform.
 
 ## What Is Set Up
 
-- Rust crate: `flutter/rust`
-- Generated Dart bindings: `flutter/lib/src/rust`
-- FRB config: `flutter/flutter_rust_bridge.yaml`
-- Native build glue: `flutter/rust_builder`
+- Rust crate: `rust/`
+- Generated Dart bindings: `lib/src/rust`
+- FRB config: `flutter_rust_bridge.yaml`
+- Native build glue: `rust_builder/`
 
 The current hello-world path is:
 
-- Rust function: `flutter/rust/src/api/simple.rs`
-- Dart wrapper: `flutter/lib/src/rust/api/simple.dart`
-- App entrypoint: `flutter/lib/main.dart`
+- Rust function: `rust/src/api/simple.rs`
+- Dart wrapper: `lib/src/rust/api/simple.dart`
+- App entrypoint: `lib/main.dart`
 
 On startup, Flutter initializes the Rust library and calls `greet(name: 'Drift')`.
 The returned string is shown in the idle identity area so you can confirm the bridge is working.
