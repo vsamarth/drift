@@ -8,7 +8,9 @@ import '../../core/theme/drift_theme.dart';
 import '../../state/drift_providers.dart';
 
 class IdleIdentityZone extends ConsumerStatefulWidget {
-  const IdleIdentityZone({super.key});
+  const IdleIdentityZone({super.key, required this.onOpenSettings});
+
+  final VoidCallback onOpenSettings;
 
   @override
   ConsumerState<IdleIdentityZone> createState() => _IdleIdentityZoneState();
@@ -132,75 +134,102 @@ class _IdleIdentityZoneState extends ConsumerState<IdleIdentityZone> {
             ),
           ),
           const SizedBox(width: 12),
-          Column(
+          Row(
             mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.end,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              AnimatedSwitcher(
-                duration: const Duration(milliseconds: 160),
-                switchInCurve: Curves.easeOutCubic,
-                switchOutCurve: Curves.easeInCubic,
-                transitionBuilder: (child, animation) =>
-                    FadeTransition(opacity: animation, child: child),
-                child: Text(
-                  _copied ? 'Copied' : 'Receive code',
-                  key: ValueKey<String>(
-                    _copied ? 'copied-label' : 'receive-label',
-                  ),
-                  style: driftSans(
-                    fontSize: 9.5,
-                    fontWeight: FontWeight.w500,
-                    color: _copied
-                        ? const Color(0xFF5E9B70)
-                        : kMuted.withValues(alpha: 0.62),
-                    letterSpacing: 0.18,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 3),
-              MouseRegion(
-                cursor: SystemMouseCursors.click,
-                onEnter: (_) => setState(() => _codeHovering = true),
-                onExit: (_) => setState(() => _codeHovering = false),
-                child: GestureDetector(
-                  onTap: () => _copyCode(state.idleReceiveCode),
-                  child: AnimatedContainer(
-                    key: const ValueKey<String>('idle-receive-code'),
+              Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  AnimatedSwitcher(
                     duration: const Duration(milliseconds: 160),
-                    curve: Curves.easeOutCubic,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 8,
-                    ),
-                    decoration: BoxDecoration(
-                      color: _codeHovering
-                          ? const Color(0xFFFFFFFF)
-                          : const Color(0xFFFDFDFD),
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(
-                        color: _codeHovering
-                            ? const Color(0xFFCFCFCF)
-                            : const Color(0xFFD7D7D7),
-                      ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(
-                            alpha: _codeHovering ? 0.028 : 0.018,
-                          ),
-                          blurRadius: _codeHovering ? 10 : 6,
-                          offset: const Offset(0, 2),
-                        ),
-                      ],
-                    ),
+                    switchInCurve: Curves.easeOutCubic,
+                    switchOutCurve: Curves.easeInCubic,
+                    transitionBuilder: (child, animation) =>
+                        FadeTransition(opacity: animation, child: child),
                     child: Text(
-                      _formatCode(state.idleReceiveCode),
-                      style: driftMono(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
-                        color: const Color(0xFF111111),
-                        letterSpacing: 2.2,
+                      _copied ? 'Copied' : 'Receive code',
+                      key: ValueKey<String>(
+                        _copied ? 'copied-label' : 'receive-label',
+                      ),
+                      style: driftSans(
+                        fontSize: 9.5,
+                        fontWeight: FontWeight.w500,
+                        color: _copied
+                            ? const Color(0xFF5E9B70)
+                            : kMuted.withValues(alpha: 0.62),
+                        letterSpacing: 0.18,
                       ),
                     ),
+                  ),
+                  const SizedBox(height: 6),
+                  MouseRegion(
+                    cursor: SystemMouseCursors.click,
+                    onEnter: (_) => setState(() => _codeHovering = true),
+                    onExit: (_) => setState(() => _codeHovering = false),
+                    child: GestureDetector(
+                      onTap: () => _copyCode(state.idleReceiveCode),
+                      child: AnimatedContainer(
+                        key: const ValueKey<String>('idle-receive-code'),
+                        duration: const Duration(milliseconds: 160),
+                        curve: Curves.easeOutCubic,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 8,
+                        ),
+                        decoration: BoxDecoration(
+                          color: _codeHovering
+                              ? const Color(0xFFFFFFFF)
+                              : const Color(0xFFFDFDFD),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: _codeHovering
+                                ? const Color(0xFFCFCFCF)
+                                : const Color(0xFFD7D7D7),
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(
+                                alpha: _codeHovering ? 0.028 : 0.018,
+                              ),
+                              blurRadius: _codeHovering ? 10 : 6,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: Text(
+                          _formatCode(state.idleReceiveCode),
+                          style: driftMono(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                            color: const Color(0xFF111111),
+                            letterSpacing: 2.2,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(width: 10),
+              Padding(
+                padding: const EdgeInsets.only(top: 18),
+                child: IconButton(
+                  key: const ValueKey<String>('idle-settings-button'),
+                  onPressed: widget.onOpenSettings,
+                  tooltip: 'Settings',
+                  style: IconButton.styleFrom(
+                    minimumSize: const Size(34, 34),
+                    padding: EdgeInsets.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    backgroundColor: const Color(0xFFFCFCFC),
+                    side: const BorderSide(color: Color(0xFFD7D7D7)),
+                  ),
+                  icon: Icon(
+                    Icons.tune_rounded,
+                    size: 18,
+                    color: kMuted.withValues(alpha: 0.9),
                   ),
                 ),
               ),

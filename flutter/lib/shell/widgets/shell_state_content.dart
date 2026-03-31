@@ -17,13 +17,23 @@ class ShellStateContent extends ConsumerWidget {
     super.key,
     required this.view,
     required this.availableHeight,
+    this.overrideChild,
   });
 
   final ShellView view;
   final double availableHeight;
+  final Widget? overrideChild;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    if (overrideChild != null) {
+      return SizedBox(
+        height: availableHeight,
+        width: double.infinity,
+        child: overrideChild,
+      );
+    }
+
     final notifier = ref.read(driftAppNotifierProvider.notifier);
     final state = ref.watch(driftAppNotifierProvider);
 
