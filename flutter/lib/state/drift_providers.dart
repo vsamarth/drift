@@ -53,13 +53,6 @@ final sendResultSessionProvider = Provider<SendResultSession?>((ref) {
   return session is SendResultSession ? session : null;
 });
 
-final receiveEntrySessionProvider = Provider<ReceiveEntrySession?>((ref) {
-  final session = ref.watch(
-    driftAppNotifierProvider.select((state) => state.session),
-  );
-  return session is ReceiveEntrySession ? session : null;
-});
-
 final receiveOfferSessionProvider = Provider<ReceiveOfferSession?>((ref) {
   final session = ref.watch(
     driftAppNotifierProvider.select((state) => state.session),

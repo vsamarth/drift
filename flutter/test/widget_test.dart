@@ -49,13 +49,6 @@ Future<void> pumpUiSettled(WidgetTester tester) async {
   await tester.pump(const Duration(milliseconds: 500));
 }
 
-Finder receiveCodeFieldFinder() =>
-    find.byKey(const ValueKey<String>('receive-code-field'));
-
-Finder receiveCodeFieldPrimary() => receiveCodeFieldFinder().at(0);
-
-Finder receiveButton() =>
-    find.byKey(const ValueKey<String>('receive-submit')).last;
 Finder chooseFilesButton() => find.text('Select files');
 Finder saveToDownloadsButton() => find.text('Save to Downloads');
 Finder idleDropSurface() =>
@@ -64,6 +57,7 @@ Finder idleIdentityZone() =>
     find.byKey(const ValueKey<String>('idle-identity-zone'));
 Finder idleReceiveCodePill() =>
     find.byKey(const ValueKey<String>('idle-receive-code'));
+Finder receiveTab() => find.byKey(const ValueKey<String>('receive-tab'));
 Finder sendCodeField() => find.byKey(const ValueKey<String>('send-code-field'));
 Finder shellBackButton() =>
     find.byKey(const ValueKey<String>('shell-back-button'));
@@ -313,6 +307,25 @@ class FakeReceiverServiceSource implements ReceiverServiceSource {
   }
 }
 
+rust_receiver.ReceiverTransferEvent _incomingOfferEvent() {
+  return rust_receiver.ReceiverTransferEvent(
+    phase: rust_receiver.ReceiverTransferPhase.offerReady,
+    senderName: 'Maya',
+    destinationLabel: 'Downloads',
+    saveRootLabel: 'Downloads',
+    statusMessage: 'Maya wants to send you a file.',
+    itemCount: BigInt.one,
+    totalSizeBytes: BigInt.from(18 * 1024),
+    totalSizeLabel: '18 KB',
+    files: [
+      rust_receiver.ReceiverTransferFile(
+        path: 'sample.txt',
+        size: BigInt.from(18 * 1024),
+      ),
+    ],
+  );
+}
+
 SendTransferUpdate sendTransferUpdate({
   required SendTransferUpdatePhase phase,
   required String destinationLabel,
@@ -422,51 +435,26 @@ void main() {
     expectNoFlutterError(tester);
   });
 
-  testWidgets('receive flow previews files and completes', (tester) async {
+  testWidgets('receive tab shows the passive waiting state', (tester) async {
     final container = buildTestContainer();
-    container.read(driftAppNotifierProvider.notifier).openReceiveEntry();
+    container
+        .read(driftAppNotifierProvider.notifier)
+        .setMode(TransferDirection.receive);
     await pumpUtilityApp(tester, container: container);
-
-    await tester.enterText(receiveCodeFieldPrimary(), 'ab2cd3');
-    await tester.pump();
-    await tester.ensureVisible(receiveButton());
-    await tester.tap(receiveButton());
     await pumpUiSettled(tester);
 
-    expect(find.text('Wants to send you 4 files (14.9 MB).'), findsOneWidget);
-    expect(find.text('Save to Downloads'), findsOneWidget);
-    expect(find.text('sample.txt'), findsOneWidget);
-    expect(find.text('vacation.jpg'), findsOneWidget);
-    expect(find.text('beach.mov'), findsOneWidget);
-    expect(find.text('boarding-pass.pdf'), findsOneWidget);
-    expect(find.text('+1 more item'), findsNothing);
-    expect(find.text('4 files · 14.9 MB'), findsOneWidget);
-
-    await tester.ensureVisible(saveToDownloadsButton());
-    await tester.tap(saveToDownloadsButton());
-    await pumpUiSettled(tester);
-
-    expect(find.text('Files saved'), findsOneWidget);
-    expect(find.text('Saved to Downloads'), findsOneWidget);
-    expect(shellBackButton(), findsNothing);
-    expectNoFlutterError(tester);
-  });
-
-  testWidgets('receive flow validates short codes inline', (tester) async {
-    final container = buildTestContainer();
-    container.read(driftAppNotifierProvider.notifier).openReceiveEntry();
-    await pumpUtilityApp(tester, container: container);
-
-    await tester.enterText(receiveCodeFieldPrimary(), 'abc');
-    await tester.pump();
-    await tester.ensureVisible(receiveButton());
-    await tester.tap(receiveButton());
-    await pumpUiSettled(tester);
-
+    expect(find.text('Receive files'), findsOneWidget);
     expect(
-      find.text('Enter the 6-character code from the sender.'),
+      find.text('Incoming transfers will appear here automatically.'),
       findsOneWidget,
     );
+    expect(find.text('Waiting for an incoming transfer'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('receive-code-field')),
+      findsNothing,
+    );
+    expect(find.text('Receive code'), findsNothing);
+    expect(shellBackButton(), findsOneWidget);
     expectNoFlutterError(tester);
   });
 
@@ -920,51 +908,51 @@ void main() {
     await tester.pumpAndSettle();
   });
 
-  testWidgets('receive error can recover back into a valid receive flow', (
+  testWidgets('receive back arrow returns to the send idle state', (
     tester,
   ) async {
     final container = buildTestContainer();
-    container.read(driftAppNotifierProvider.notifier).openReceiveEntry();
+    container
+        .read(driftAppNotifierProvider.notifier)
+        .setMode(TransferDirection.receive);
     await pumpUtilityApp(tester, container: container);
+    await pumpUiSettled(tester);
+    expect(find.text('Receive files'), findsOneWidget);
+    expect(shellBackButton(), findsOneWidget);
 
-    await tester.enterText(receiveCodeFieldPrimary(), 'abc');
-    await tester.pump();
-    await tester.ensureVisible(receiveButton());
-    await tester.tap(receiveButton());
+    await tester.tap(shellBackButton());
     await pumpUiSettled(tester);
 
-    await tester.enterText(receiveCodeFieldPrimary(), 'ab2cd3');
-    await tester.pump();
-    await tester.ensureVisible(receiveButton());
-    await tester.tap(receiveButton());
-    await pumpUiSettled(tester);
-
-    expect(find.text('Wants to send you 4 files (14.9 MB).'), findsOneWidget);
+    expect(find.text('Drop files to send'), findsOneWidget);
+    expect(find.text('Receive files'), findsNothing);
     expectNoFlutterError(tester);
   });
 
-  testWidgets('back arrow returns receive review to code entry', (
+  testWidgets('back arrow returns receive review to the waiting state', (
     tester,
   ) async {
-    final container = buildTestContainer();
-    container.read(driftAppNotifierProvider.notifier).openReceiveEntry();
+    final receiverService = FakeReceiverServiceSource();
+    final container = buildTestContainer(
+      receiverServiceSource: receiverService,
+      enableIdleIncomingListener: true,
+    );
+    container
+        .read(driftAppNotifierProvider.notifier)
+        .setMode(TransferDirection.receive);
     await pumpUtilityApp(tester, container: container);
 
-    await tester.enterText(receiveCodeFieldPrimary(), 'ab2cd3');
-    await tester.pump();
-    await tester.ensureVisible(receiveButton());
-    await tester.tap(receiveButton());
+    receiverService.emitIncoming(_incomingOfferEvent());
     await pumpUiSettled(tester);
 
-    expect(find.text('Wants to send you 4 files (14.9 MB).'), findsOneWidget);
+    expect(find.text('Wants to send you 1 file (18 KB).'), findsOneWidget);
     expect(shellBackButton(), findsOneWidget);
 
     await tester.tap(shellBackButton());
     await pumpUiSettled(tester);
 
     expect(find.text('Receive files'), findsOneWidget);
-    expect(receiveCodeFieldFinder(), findsOneWidget);
-    expect(find.text('Wants to send you 4 files (14.9 MB).'), findsNothing);
+    expect(find.text('Waiting for an incoming transfer'), findsOneWidget);
+    expect(find.text('Wants to send you 1 file (18 KB).'), findsNothing);
     expectNoFlutterError(tester);
   });
 

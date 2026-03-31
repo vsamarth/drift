@@ -684,9 +684,7 @@ void main() {
         isA<ReceiveTransferSession>(),
       );
       receiverService.incomingController.add(
-        _incomingReceivingEvent(
-          receivedBytes: BigInt.from(9 * 1024),
-        ),
+        _incomingReceivingEvent(receivedBytes: BigInt.from(9 * 1024)),
       );
       await _flushAsyncWork(tester);
       final receivingState = container.read(driftAppNotifierProvider);
@@ -700,7 +698,7 @@ void main() {
       await _flushAsyncWork(tester);
       expect(
         container.read(driftAppNotifierProvider).session,
-        isA<ReceiveEntrySession>(),
+        isA<ReceiveIdleSession>(),
       );
       expect(receiverService.respondToOfferCalls.last, isFalse);
     },

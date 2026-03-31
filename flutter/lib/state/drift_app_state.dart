@@ -40,7 +40,7 @@ class DriftAppState {
   String get idleReceiveStatus => receiverBadge.status;
 
   TransferDirection get mode => switch (session) {
-    ReceiveEntrySession() ||
+    ReceiveIdleSession() ||
     ReceiveOfferSession() ||
     ReceiveTransferSession() ||
     ReceiveResultSession() => TransferDirection.receive,
@@ -60,11 +60,10 @@ class DriftAppState {
   };
 
   TransferStage get receiveStage => switch (session) {
+    ReceiveIdleSession() => TransferStage.idle,
     ReceiveOfferSession() => TransferStage.review,
     ReceiveTransferSession() => TransferStage.waiting,
     ReceiveResultSession() => TransferStage.completed,
-    ReceiveEntrySession(:final errorText) =>
-      errorText == null ? TransferStage.idle : TransferStage.error,
     _ => TransferStage.idle,
   };
 
@@ -104,16 +103,11 @@ class DriftAppState {
   };
 
   String get receiveCode => switch (session) {
-    ReceiveEntrySession(:final codeInput) => codeInput,
+    ReceiveIdleSession() => '',
     ReceiveOfferSession(:final summary) => summary.code,
     ReceiveTransferSession(:final summary) => summary.code,
     ReceiveResultSession(:final summary) => summary.code,
     _ => '',
-  };
-
-  String? get receiveErrorText => switch (session) {
-    ReceiveEntrySession(:final errorText) => errorText,
-    _ => null,
   };
 
   List<TransferItemViewData> get sendItems => switch (session) {
@@ -202,7 +196,7 @@ class DriftAppState {
   };
 
   bool get hasActiveTransfer =>
-      session is! IdleSession && session is! ReceiveEntrySession;
+      session is! IdleSession && session is! ReceiveIdleSession;
 
   bool get canGoBack => session is! IdleSession;
 
@@ -214,7 +208,8 @@ class DriftAppState {
     _ => true,
   };
 
-  bool get discoverableEnabled => session is IdleSession;
+  bool get discoverableEnabled =>
+      session is IdleSession || session is ReceiveIdleSession;
 
   ShellView get shellView => shellViewFor(this);
 }
@@ -225,6 +220,10 @@ sealed class ShellSessionState {
 
 class IdleSession extends ShellSessionState {
   const IdleSession();
+}
+
+class ReceiveIdleSession extends ShellSessionState {
+  const ReceiveIdleSession();
 }
 
 class SendDraftSession extends ShellSessionState {
@@ -324,20 +323,6 @@ class SendResultSession extends ShellSessionState {
   final TransferSummaryViewData summary;
   final List<TransferMetricRow>? metrics;
   final String? remoteDeviceType;
-}
-
-class ReceiveEntrySession extends ShellSessionState {
-  const ReceiveEntrySession({required this.codeInput, this.errorText});
-
-  final String codeInput;
-  final String? errorText;
-
-  ReceiveEntrySession copyWith({String? codeInput, String? errorText}) {
-    return ReceiveEntrySession(
-      codeInput: codeInput ?? this.codeInput,
-      errorText: errorText,
-    );
-  }
 }
 
 class ReceiveOfferSession extends ShellSessionState {

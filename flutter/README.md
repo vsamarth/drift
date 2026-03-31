@@ -50,7 +50,7 @@ The send screen browses mDNS for `_drift._udp` (same as the CLI `--nearby` path)
 - **iOS**: Set `NSLocalNetworkUsageDescription` in `Info.plist`; declare the Bonjour service type `_drift._udp` (and related) per Apple’s Bonjour browsing rules.
 - **Android**: Multicast/Wi‑Fi may require `CHANGE_WIFI_MULTICAST_STATE` and holding a multicast lock where the OS requires it.
 
-Simulators, VPNs, and split tunnels can hide LAN peers; the UI falls back to manual code entry.
+Simulators, VPNs, and split tunnels can hide LAN peers; the UI falls back to the passive receive state until a transfer arrives.
 
 ## Edit The Rust API
 

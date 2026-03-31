@@ -81,17 +81,23 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
       case TransferDirection.send:
         resetShell();
       case TransferDirection.receive:
-        openReceiveEntry();
+        openReceivePanel();
     }
   }
 
-  void openReceiveEntry() {
+  void openReceivePanel() {
     _cancelNearbyScanTimer();
-    _setSession(const ReceiveEntrySession(codeInput: '', errorText: null));
+    if (state.session is ReceiveIdleSession ||
+        state.session is ReceiveOfferSession ||
+        state.session is ReceiveTransferSession ||
+        state.session is ReceiveResultSession) {
+      return;
+    }
+    _setSession(const ReceiveIdleSession());
   }
 
-  void closeReceiveEntry() {
-    _setSession(const ReceiveEntrySession(codeInput: '', errorText: null));
+  void closeReceivePanel() {
+    _setSession(const IdleSession());
   }
 
   void activateSendDropTarget() {
@@ -141,41 +147,6 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
     }
   }
 
-  void updateReceiveCode(String value) {
-    final session = state.session;
-    if (session is! ReceiveEntrySession) {
-      return;
-    }
-    _setSession(
-      ReceiveEntrySession(codeInput: value.toUpperCase(), errorText: null),
-    );
-  }
-
-  void previewReceiveOffer() {
-    final entry = state.session is ReceiveEntrySession
-        ? state.session as ReceiveEntrySession
-        : const ReceiveEntrySession(codeInput: '', errorText: null);
-    final trimmed = entry.codeInput.trim().toUpperCase();
-    if (trimmed.length < 6) {
-      _setSession(
-        const ReceiveEntrySession(
-          codeInput: '',
-          errorText: 'Enter the 6-character code from the sender.',
-        ),
-      );
-      return;
-    }
-
-    _setSession(
-      ReceiveOfferSession(
-        items: List<TransferItemViewData>.unmodifiable(sampleReceiveItems),
-        summary: sampleReceiveSummary.copyWith(code: trimmed),
-        decisionPending: false,
-        payloadTotalBytes: null,
-      ),
-    );
-  }
-
   void acceptReceiveOffer() {
     final session = state.session;
     if (session is! ReceiveOfferSession) {
@@ -209,20 +180,11 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
   void declineReceiveOffer() {
     final session = state.session;
     if (session is ReceiveOfferSession && session.decisionPending) {
-      _setSession(const ReceiveEntrySession(codeInput: '', errorText: null));
+      _setSession(const ReceiveIdleSession());
       unawaited(_respondToIncomingOffer(accept: false));
       return;
     }
-    closeReceiveEntry();
-  }
-
-  void loadReceiveError() {
-    _setSession(
-      const ReceiveEntrySession(
-        codeInput: 'F9P2Q1',
-        errorText: 'That code expired. Ask the sender for a new code.',
-      ),
-    );
+    closeReceivePanel();
   }
 
   void cancelSendInProgress() {
@@ -244,10 +206,10 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
         if (decisionPending) {
           unawaited(_respondToIncomingOffer(accept: false));
         }
-        _setSession(const ReceiveEntrySession(codeInput: '', errorText: null));
+        _setSession(const ReceiveIdleSession());
       case ReceiveResultSession():
-        _setSession(const ReceiveEntrySession(codeInput: '', errorText: null));
-      case ReceiveEntrySession():
+        _setSession(const ReceiveIdleSession());
+      case ReceiveIdleSession():
         _setSession(const IdleSession());
       case SendDraftSession():
         _setSession(const IdleSession());
@@ -511,7 +473,7 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
         resetShell();
         return;
       case rust_receiver.ReceiverTransferPhase.declined:
-        _setSession(const ReceiveEntrySession(codeInput: '', errorText: null));
+        _setSession(const ReceiveIdleSession());
         return;
     }
   }

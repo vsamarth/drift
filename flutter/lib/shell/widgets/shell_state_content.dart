@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../state/drift_providers.dart';
 import '../shell_routing.dart';
-import 'receive_entry_card.dart';
+import 'receive_idle_card.dart';
 import 'receive_receiving_card.dart';
 import 'receive_review_card.dart';
 import 'send_code_card.dart';
@@ -24,8 +24,8 @@ class ShellStateContent extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final state = ref.watch(driftAppNotifierProvider);
     final notifier = ref.read(driftAppNotifierProvider.notifier);
+    final state = ref.watch(driftAppNotifierProvider);
 
     return switch (view) {
       ShellView.sendIdle => SendDropPanel(
@@ -33,16 +33,10 @@ class ShellStateContent extends ConsumerWidget {
         onDropPaths: notifier.acceptDroppedSendItems,
         height: availableHeight,
       ),
-      ShellView.receiveEntry => ReceiveEntryCard(
-        title: 'Receive files',
-        helper: 'Enter the code from the sending device',
+      ShellView.receiveIdle => SizedBox(
         height: availableHeight,
-      ),
-      ShellView.receiveError => ReceiveEntryCard(
-        title: 'Receive files',
-        helper: 'Enter a valid code to continue',
-        errorText: state.receiveErrorText,
-        height: availableHeight,
+        width: double.infinity,
+        child: const ReceiveIdleCard(),
       ),
       ShellView.sendSelected => SizedBox(
         height: availableHeight,

@@ -345,11 +345,18 @@ class _SelectedItemsOverflowRow extends StatelessWidget {
               ),
             ),
           ),
-          if (trailing != null) trailing!,
+          ..._buildTrailingWidgets(trailing),
         ],
       ),
     );
   }
+}
+
+List<Widget> _buildTrailingWidgets(Widget? trailing) {
+  return switch (trailing) {
+    final widget? => [widget],
+    null => const [],
+  };
 }
 
 class SelectedItemRow extends StatelessWidget {
