@@ -56,7 +56,7 @@ class SendingConnectionStrip extends StatefulWidget {
 }
 
 class _SendingConnectionStripState extends State<SendingConnectionStrip>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   AnimationController? _loopController;
 
   static const double _laneHeight = 40;

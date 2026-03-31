@@ -9,13 +9,11 @@ class SendDropPanel extends StatefulWidget {
     required this.onChooseFiles,
     required this.onDropPaths,
     required this.height,
-    this.windowHovering = false,
   });
 
   final VoidCallback onChooseFiles;
   final ValueChanged<List<String>> onDropPaths;
   final double height;
-  final bool windowHovering;
 
   @override
   State<SendDropPanel> createState() => _SendDropPanelState();
@@ -27,8 +25,7 @@ class _SendDropPanelState extends State<SendDropPanel> {
 
   @override
   Widget build(BuildContext context) {
-    final isInteractive = _hovering || _dropHovering || widget.windowHovering;
-    final headline = isInteractive ? 'Drop to send' : 'Drop files to send';
+    final isInteractive = _hovering || _dropHovering;
 
     return DropTarget(
       onDragEntered: (_) => setState(() => _dropHovering = true),
@@ -94,7 +91,7 @@ class _SendDropPanelState extends State<SendDropPanel> {
                   ),
                   const SizedBox(height: 14),
                   Text(
-                    headline,
+                    'Drop files to send',
                     style: driftSans(
                       fontSize: 24,
                       fontWeight: FontWeight.w600,

@@ -383,7 +383,6 @@ void main() {
     expect(find.text('Ready'), findsOneWidget);
     expect(find.text('Receive code'), findsOneWidget);
     expect(find.text('Drop files to send'), findsOneWidget);
-    expect(find.text('Drop to send'), findsNothing);
     expect(find.text('Send instantly using a code'), findsNothing);
     expect(find.text('Receive files'), findsNothing);
     expect(find.text('Send'), findsNothing);
@@ -990,11 +989,11 @@ void main() {
 
     expect(tester.getSize(idleDropSurface()), beforeSize);
     expect(afterDecoration.color, isNot(equals(beforeDecoration.color)));
-    expect(find.text('Drop to send'), findsOneWidget);
+    expect(find.text('Drop files to send'), findsOneWidget);
     expectNoFlutterError(tester);
   });
 
-  testWidgets('hovering the idle window reinforces the drop surface', (
+  testWidgets('hovering the idle window does not affect the drop surface', (
     tester,
   ) async {
     await pumpUtilityApp(tester);
@@ -1011,12 +1010,10 @@ void main() {
 
     final afterWidget = tester.widget<AnimatedContainer>(idleDropSurface());
     final afterDecoration = afterWidget.decoration! as BoxDecoration;
-    final beforeBorder = beforeDecoration.border! as Border;
-    final afterBorder = afterDecoration.border! as Border;
 
-    expect(afterBorder.top.color, isNot(equals(beforeBorder.top.color)));
-    expect(afterDecoration.color, isNot(equals(beforeDecoration.color)));
-    expect(find.text('Drop to send'), findsOneWidget);
+    expect(afterDecoration.color, equals(beforeDecoration.color));
+    expect(afterDecoration.border, equals(beforeDecoration.border));
+    expect(find.text('Drop files to send'), findsOneWidget);
     expectNoFlutterError(tester);
   });
 

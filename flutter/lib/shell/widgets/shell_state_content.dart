@@ -17,12 +17,10 @@ class ShellStateContent extends ConsumerWidget {
     super.key,
     required this.view,
     required this.availableHeight,
-    this.idleWindowHovering = false,
   });
 
   final ShellView view;
   final double availableHeight;
-  final bool idleWindowHovering;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -34,7 +32,6 @@ class ShellStateContent extends ConsumerWidget {
         onChooseFiles: notifier.pickSendItems,
         onDropPaths: notifier.acceptDroppedSendItems,
         height: availableHeight,
-        windowHovering: idleWindowHovering,
       ),
       ShellView.receiveEntry => ReceiveEntryCard(
         title: 'Receive files',
