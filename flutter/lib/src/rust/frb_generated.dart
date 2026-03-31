@@ -123,6 +123,7 @@ abstract class RustLibApi extends BaseApi {
   Future<void> crateApiReceiverSetReceiverDiscoverable({required bool enabled});
 
   Stream<ReceiverTransferEvent> crateApiReceiverStartReceiverTransferListener({
+    String? serverUrl,
     required String downloadRoot,
     required String deviceName,
     required String deviceType,
@@ -133,6 +134,7 @@ abstract class RustLibApi extends BaseApi {
   });
 
   Stream<ReceiverPairingState> crateApiReceiverWatchReceiverPairing({
+    String? serverUrl,
     required String downloadRoot,
     required String deviceName,
     required String deviceType,
@@ -516,6 +518,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   @override
   Stream<ReceiverTransferEvent> crateApiReceiverStartReceiverTransferListener({
+    String? serverUrl,
     required String downloadRoot,
     required String deviceName,
     required String deviceType,
@@ -526,6 +529,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         NormalTask(
           callFfi: (port_) {
             final serializer = SseSerializer(generalizedFrbRustBinding);
+            sse_encode_opt_String(serverUrl, serializer);
             sse_encode_String(downloadRoot, serializer);
             sse_encode_String(deviceName, serializer);
             sse_encode_String(deviceType, serializer);
@@ -545,7 +549,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             decodeErrorData: sse_decode_String,
           ),
           constMeta: kCrateApiReceiverStartReceiverTransferListenerConstMeta,
-          argValues: [downloadRoot, deviceName, deviceType, updates],
+          argValues: [serverUrl, downloadRoot, deviceName, deviceType, updates],
           apiImpl: this,
         ),
       ),
@@ -556,7 +560,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateApiReceiverStartReceiverTransferListenerConstMeta =>
       const TaskConstMeta(
         debugName: "start_receiver_transfer_listener",
-        argNames: ["downloadRoot", "deviceName", "deviceType", "updates"],
+        argNames: [
+          "serverUrl",
+          "downloadRoot",
+          "deviceName",
+          "deviceType",
+          "updates",
+        ],
       );
 
   @override
@@ -599,6 +609,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   @override
   Stream<ReceiverPairingState> crateApiReceiverWatchReceiverPairing({
+    String? serverUrl,
     required String downloadRoot,
     required String deviceName,
     required String deviceType,
@@ -609,6 +620,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         NormalTask(
           callFfi: (port_) {
             final serializer = SseSerializer(generalizedFrbRustBinding);
+            sse_encode_opt_String(serverUrl, serializer);
             sse_encode_String(downloadRoot, serializer);
             sse_encode_String(deviceName, serializer);
             sse_encode_String(deviceType, serializer);
@@ -628,7 +640,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             decodeErrorData: sse_decode_String,
           ),
           constMeta: kCrateApiReceiverWatchReceiverPairingConstMeta,
-          argValues: [downloadRoot, deviceName, deviceType, updates],
+          argValues: [serverUrl, downloadRoot, deviceName, deviceType, updates],
           apiImpl: this,
         ),
       ),
@@ -639,7 +651,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateApiReceiverWatchReceiverPairingConstMeta =>
       const TaskConstMeta(
         debugName: "watch_receiver_pairing",
-        argNames: ["downloadRoot", "deviceName", "deviceType", "updates"],
+        argNames: [
+          "serverUrl",
+          "downloadRoot",
+          "deviceName",
+          "deviceType",
+          "updates",
+        ],
       );
 
   @protected

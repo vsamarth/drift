@@ -36,6 +36,9 @@ class DriftAppState {
 
   String get deviceName => identity.deviceName;
   String get deviceType => identity.deviceType;
+  String get downloadRoot => identity.downloadRoot;
+  String? get serverUrl => identity.serverUrl;
+  bool get discoverableByDefault => identity.discoverableByDefault;
   String get idleReceiveCode => receiverBadge.code;
   String get idleReceiveStatus => receiverBadge.status;
 
@@ -209,7 +212,8 @@ class DriftAppState {
   };
 
   bool get discoverableEnabled =>
-      session is IdleSession || session is ReceiveIdleSession;
+      discoverableByDefault &&
+      (session is IdleSession || session is ReceiveIdleSession);
 
   ShellView get shellView => shellViewFor(this);
 }

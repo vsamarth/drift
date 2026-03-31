@@ -5,9 +5,18 @@ import '../platform/send_transfer_source.dart';
 import 'app_identity.dart';
 import 'nearby_discovery_source.dart';
 import 'receiver_service_source.dart';
+import 'settings_store.dart';
+
+final driftSettingsStoreProvider = Provider<DriftSettingsStore>(
+  (ref) => DriftSettingsStore.inMemory(),
+);
+
+final initialDriftAppIdentityProvider = Provider<DriftAppIdentity>(
+  (ref) => buildDefaultDriftAppIdentity(),
+);
 
 final driftAppIdentityProvider = Provider<DriftAppIdentity>(
-  (ref) => buildDefaultDriftAppIdentity(),
+  (ref) => ref.watch(initialDriftAppIdentityProvider),
 );
 
 final sendItemSourceProvider = Provider<SendItemSource>(

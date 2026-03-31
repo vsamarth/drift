@@ -30,10 +30,12 @@ Future<ReceiverRegistration?> currentReceiverRegistration() =>
     RustLib.instance.api.crateApiReceiverCurrentReceiverRegistration();
 
 Stream<ReceiverPairingState> watchReceiverPairing({
+  String? serverUrl,
   required String downloadRoot,
   required String deviceName,
   required String deviceType,
 }) => RustLib.instance.api.crateApiReceiverWatchReceiverPairing(
+  serverUrl: serverUrl,
   downloadRoot: downloadRoot,
   deviceName: deviceName,
   deviceType: deviceType,
@@ -45,10 +47,12 @@ Future<void> setReceiverDiscoverable({required bool enabled}) => RustLib
     .crateApiReceiverSetReceiverDiscoverable(enabled: enabled);
 
 Stream<ReceiverTransferEvent> startReceiverTransferListener({
+  String? serverUrl,
   required String downloadRoot,
   required String deviceName,
   required String deviceType,
 }) => RustLib.instance.api.crateApiReceiverStartReceiverTransferListener(
+  serverUrl: serverUrl,
   downloadRoot: downloadRoot,
   deviceName: deviceName,
   deviceType: deviceType,
