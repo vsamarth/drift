@@ -17,26 +17,75 @@ class _SettingsPanelState extends ConsumerState<SettingsPanel> {
   late final TextEditingController _deviceNameController;
   late final TextEditingController _downloadRootController;
   late final TextEditingController _serverUrlController;
+  late String _initialDeviceName;
+  late String _initialDownloadRoot;
+  late String _initialServerUrl;
   bool _discoverable = true;
+  bool _initialDiscoverable = true;
+  bool _saving = false;
 
   @override
   void initState() {
     super.initState();
     final state = ref.read(driftAppNotifierProvider);
-    _deviceNameController = TextEditingController(text: state.deviceName);
-    _downloadRootController = TextEditingController(
-      text: state.identity.downloadRoot,
-    );
-    _serverUrlController = TextEditingController(text: 'http://127.0.0.1:8787');
-    _discoverable = state.discoverableEnabled;
+    _initialDeviceName = state.deviceName;
+    _initialDownloadRoot = state.downloadRoot;
+    _initialServerUrl = state.serverUrl ?? '';
+    _initialDiscoverable = state.discoverableByDefault;
+    _deviceNameController = TextEditingController(text: _initialDeviceName);
+    _downloadRootController = TextEditingController(text: _initialDownloadRoot);
+    _serverUrlController = TextEditingController(text: _initialServerUrl);
+    _discoverable = _initialDiscoverable;
+    _deviceNameController.addListener(_onFieldChanged);
+    _downloadRootController.addListener(_onFieldChanged);
+    _serverUrlController.addListener(_onFieldChanged);
   }
 
   @override
   void dispose() {
+    _deviceNameController.removeListener(_onFieldChanged);
+    _downloadRootController.removeListener(_onFieldChanged);
+    _serverUrlController.removeListener(_onFieldChanged);
     _deviceNameController.dispose();
     _downloadRootController.dispose();
     _serverUrlController.dispose();
     super.dispose();
+  }
+
+  bool get _isDirty =>
+      _deviceNameController.text.trim() != _initialDeviceName.trim() ||
+      _downloadRootController.text.trim() != _initialDownloadRoot.trim() ||
+      _serverUrlController.text.trim() != _initialServerUrl.trim() ||
+      _discoverable != _initialDiscoverable;
+
+  void _onFieldChanged() {
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  Future<void> _saveSettings() async {
+    if (_saving || !_isDirty) {
+      return;
+    }
+
+    setState(() => _saving = true);
+    try {
+      await ref.read(driftAppNotifierProvider.notifier).saveSettings(
+        deviceName: _deviceNameController.text,
+        downloadRoot: _downloadRootController.text,
+        serverUrl: _serverUrlController.text,
+        discoverableByDefault: _discoverable,
+      );
+      _initialDeviceName = _deviceNameController.text.trim();
+      _initialDownloadRoot = _downloadRootController.text.trim();
+      _initialServerUrl = _serverUrlController.text.trim();
+      _initialDiscoverable = _discoverable;
+    } finally {
+      if (mounted) {
+        setState(() => _saving = false);
+      }
+    }
   }
 
   @override
@@ -137,7 +186,10 @@ class _SettingsPanelState extends ConsumerState<SettingsPanel> {
                 ),
               ),
               const SizedBox(width: 12),
-              FilledButton(onPressed: null, child: const Text('Save Changes')),
+              FilledButton(
+                onPressed: _isDirty && !_saving ? _saveSettings : null,
+                child: Text(_saving ? 'Saving...' : 'Save Changes'),
+              ),
             ],
           ),
         ),

@@ -38,6 +38,7 @@ dependencies:
   file_selector: ^1.1.0
   flutter_riverpod: ^2.6.1
   flutter_rust_bridge: 2.11.1
+  shared_preferences: ^2.5.3
   window_manager: ^0.5.1
 
 dev_dependencies:

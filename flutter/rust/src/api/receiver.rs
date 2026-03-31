@@ -27,6 +27,7 @@ struct BridgeReceiverConfig {
     device_name: String,
     device_type: String,
     download_root: PathBuf,
+    server_url: Option<String>,
 }
 
 struct BridgeReceiverState {
@@ -94,6 +95,7 @@ pub fn ensure_receiver_registration(
             device_name,
             device_type: "laptop".to_owned(),
             download_root: PathBuf::from("."),
+            server_url: server_url.clone().or(Some(LOCAL_RENDEZVOUS_URL.to_owned())),
         })
         .await?;
 
@@ -112,6 +114,7 @@ pub fn current_receiver_registration() -> Option<ReceiverRegistration> {
 }
 
 pub fn watch_receiver_pairing(
+    server_url: Option<String>,
     download_root: String,
     device_name: String,
     device_type: String,
@@ -122,10 +125,11 @@ pub fn watch_receiver_pairing(
             device_name,
             device_type,
             download_root: PathBuf::from(download_root),
+            server_url: server_url.clone().or(Some(LOCAL_RENDEZVOUS_URL.to_owned())),
         };
         let service = ensure_receiver_service(config.clone()).await?;
         service
-            .ensure_registered(Some(LOCAL_RENDEZVOUS_URL.to_owned()))
+            .ensure_registered(config.server_url.clone())
             .await
             .map_err(|e| e.to_string())?;
         service
@@ -143,6 +147,7 @@ pub fn set_receiver_discoverable(enabled: bool) -> Result<(), String> {
 }
 
 pub fn start_receiver_transfer_listener(
+    server_url: Option<String>,
     download_root: String,
     device_name: String,
     device_type: String,
@@ -153,10 +158,11 @@ pub fn start_receiver_transfer_listener(
             device_name,
             device_type,
             download_root: PathBuf::from(download_root),
+            server_url: server_url.clone().or(Some(LOCAL_RENDEZVOUS_URL.to_owned())),
         };
         let service = ensure_receiver_service(config.clone()).await?;
         service
-            .ensure_registered(Some(LOCAL_RENDEZVOUS_URL.to_owned()))
+            .ensure_registered(config.server_url.clone())
             .await
             .map_err(|e| e.to_string())?;
         service

@@ -54,6 +54,7 @@ class LocalReceiverServiceSource implements ReceiverServiceSource {
   Stream<ReceiverBadgeState> watchBadge(DriftAppIdentity identity) {
     return rust_receiver
         .watchReceiverPairing(
+          serverUrl: identity.serverUrl,
           downloadRoot: identity.downloadRoot,
           deviceName: identity.deviceName,
           deviceType: identity.deviceType,
@@ -66,6 +67,7 @@ class LocalReceiverServiceSource implements ReceiverServiceSource {
     DriftAppIdentity identity,
   ) {
     return rust_receiver.startReceiverTransferListener(
+      serverUrl: identity.serverUrl,
       downloadRoot: identity.downloadRoot,
       deviceName: identity.deviceName,
       deviceType: identity.deviceType,

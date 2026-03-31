@@ -467,6 +467,7 @@ fn wire__crate__api__receiver__start_receiver_transfer_listener_impl(
             };
             let mut deserializer =
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_server_url = <Option<String>>::sse_decode(&mut deserializer);
             let api_download_root = <String>::sse_decode(&mut deserializer);
             let api_device_name = <String>::sse_decode(&mut deserializer);
             let api_device_type = <String>::sse_decode(&mut deserializer);
@@ -478,6 +479,7 @@ fn wire__crate__api__receiver__start_receiver_transfer_listener_impl(
             move |context| {
                 transform_result_sse::<_, String>((move || {
                     let output_ok = crate::api::receiver::start_receiver_transfer_listener(
+                        api_server_url,
                         api_download_root,
                         api_device_name,
                         api_device_type,
@@ -550,6 +552,7 @@ fn wire__crate__api__receiver__watch_receiver_pairing_impl(
             };
             let mut deserializer =
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_server_url = <Option<String>>::sse_decode(&mut deserializer);
             let api_download_root = <String>::sse_decode(&mut deserializer);
             let api_device_name = <String>::sse_decode(&mut deserializer);
             let api_device_type = <String>::sse_decode(&mut deserializer);
@@ -561,6 +564,7 @@ fn wire__crate__api__receiver__watch_receiver_pairing_impl(
             move |context| {
                 transform_result_sse::<_, String>((move || {
                     let output_ok = crate::api::receiver::watch_receiver_pairing(
+                        api_server_url,
                         api_download_root,
                         api_device_name,
                         api_device_type,
