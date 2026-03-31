@@ -1,6 +1,6 @@
 {
-    "name": "drift_app",
-    "short_name": "drift_app",
+    "name": "Drift",
+    "short_name": "Drift",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",

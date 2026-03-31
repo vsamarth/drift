@@ -1,4 +1,4 @@
-# Drift Flutter App
+# Drift
 
 This Flutter app is wired to Rust with `flutter_rust_bridge`.
 
@@ -33,6 +33,14 @@ From `flutter/`:
 ```bash
 flutter run -d macos
 ```
+
+For Android testing, connect a device or start an emulator and run:
+
+```bash
+flutter run -d android
+```
+
+On Android, the app skips desktop window management and keeps file picking through the native chooser.
 
 ## LAN discovery (nearby receivers)
 
