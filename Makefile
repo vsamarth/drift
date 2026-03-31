@@ -1,4 +1,4 @@
-.PHONY: help server send send-file send-dir send-files send-nearby send-multiple send-large receive
+.PHONY: help check test fmt fmt-check clippy server send send-file send-dir send-files send-nearby send-multiple send-large receive
 
 SERVER_URL ?= http://127.0.0.1:8787
 SERVER_ADDR ?= 127.0.0.1:8787
@@ -18,6 +18,13 @@ NEARBY_TIMEOUT_SECS ?= 15
 help:
 	@echo "Drift Makefile targets"
 	@echo ""
+	@echo "Rust workflow:"
+	@echo "  check           — cargo check"
+	@echo "  test            — cargo test"
+	@echo "  fmt             — cargo fmt"
+	@echo "  fmt-check       — cargo fmt --check"
+	@echo "  clippy          — cargo clippy --all-targets --all-features"
+	@echo ""
 	@echo "  server          — drift-server on $(SERVER_ADDR) (override SERVER_ADDR)"
 	@echo "  receive         — receiver → $(OUT)/ (override OUT; SERVER_URL for rendezvous)"
 	@echo "Send via short code (receiver must show CODE):"
@@ -32,6 +39,21 @@ help:
 	@echo "  send-nearby     — FILE=… or FILES=\"…\" (default FILE=$(FILE)); NEARBY_TIMEOUT_SECS=$(NEARBY_TIMEOUT_SECS)"
 	@echo ""
 	@echo "Env: SERVER_URL=$(SERVER_URL)"
+
+check:
+	cargo check
+
+test:
+	cargo test
+
+fmt:
+	cargo fmt
+
+fmt-check:
+	cargo fmt --check
+
+clippy:
+	cargo clippy --all-targets --all-features
 
 server:
 	cargo run -p drift-server -- serve --listen $(SERVER_ADDR)
