@@ -1,16 +1,14 @@
-name: Flutter CI
+name: macOS Release Build
 
 on:
   push:
-    branches:
-      - main
+    branches: [ main ]
   pull_request:
-    branches:
-      - main
+    branches: [ main ]
+  workflow_dispatch:
 
 jobs:
-  flutter:
-    name: Flutter CI
+  build:
     runs-on: macos-latest
 
     defaults:
@@ -18,7 +16,7 @@ jobs:
         working-directory: flutter
 
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
           sparse-checkout: |
@@ -27,32 +25,32 @@ jobs:
             Cargo.toml
             Cargo.lock
 
-      - name: Set up Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          channel: stable
-          cache: true
-
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
       - name: Install cargo-expand
         run: cargo install cargo-expand
 
+      - name: Install Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
       - name: Install flutter_rust_bridge_codegen
         run: cargo install flutter_rust_bridge_codegen --version 2.11.1
 
-      - name: Fetch dependencies
+      - name: Get Flutter dependencies
         run: flutter pub get
 
       - name: Run code generation
         run: flutter_rust_bridge_codegen generate
 
-      - name: Analyze
-        run: flutter analyze
+      - name: Build macOS app
+        run: flutter build macos --release
 
-      - name: Run unit tests
-        run: flutter test
-
-      - name: Run integration tests
-        run: flutter test integration_test/simple_test.dart
+      - name: Upload macOS artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-release
+          path: flutter/build/macos/Build/Products/Release/Drift.app

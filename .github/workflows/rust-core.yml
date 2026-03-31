@@ -4,23 +4,9 @@ on:
   push:
     branches:
       - main
-    paths:
-      - "Cargo.toml"
-      - "Cargo.lock"
-      - "crates/**"
-      - "src/**"
-      - ".github/workflows/rust-core.yml"
-      - "Makefile"
-      - "README.md"
   pull_request:
-    paths:
-      - "Cargo.toml"
-      - "Cargo.lock"
-      - "crates/**"
-      - "src/**"
-      - ".github/workflows/rust-core.yml"
-      - "Makefile"
-      - "README.md"
+    branches:
+      - main
 
 jobs:
   rust:
