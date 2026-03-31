@@ -21,12 +21,6 @@ class _IdleIdentityZoneState extends ConsumerState<IdleIdentityZone> {
   bool _copied = false;
   Timer? _copiedResetTimer;
 
-  IconData _deviceIcon(String deviceType) {
-    return deviceType.toLowerCase() == 'phone'
-        ? Icons.smartphone_rounded
-        : Icons.laptop_mac_rounded;
-  }
-
   String _formatCode(String raw) {
     if (raw.length != 6) return raw;
     return '${raw.substring(0, 3)} ${raw.substring(3)}';
@@ -59,76 +53,57 @@ class _IdleIdentityZoneState extends ConsumerState<IdleIdentityZone> {
       key: const ValueKey<String>('idle-identity-zone'),
       padding: const EdgeInsets.fromLTRB(6, 0, 6, 1),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           Expanded(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                SizedBox(
-                  width: 36,
-                  child: Center(
-                    child: Icon(
-                      _deviceIcon(state.deviceType),
-                      key: const ValueKey<String>('idle-device-icon'),
-                      size: 30,
-                      color: kInk.withValues(alpha: 0.88),
-                    ),
+                Text(
+                  state.deviceName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: driftSans(
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w600,
+                    color: kInk,
+                    letterSpacing: -0.25,
                   ),
                 ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        state.deviceName,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: driftSans(
-                          fontSize: 13.5,
-                          fontWeight: FontWeight.w600,
-                          color: kInk,
-                          letterSpacing: -0.25,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Row(
-                        children: [
-                          Container(
-                            width: 7,
-                            height: 7,
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF49B36C),
-                              shape: BoxShape.circle,
-                              boxShadow: [
-                                BoxShadow(
-                                  color: const Color(
-                                    0xFF49B36C,
-                                  ).withValues(alpha: 0.22),
-                                  blurRadius: 6,
-                                ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(width: 7),
-                          Flexible(
-                            child: Text(
-                              state.idleReceiveStatus,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: driftSans(
-                                fontSize: 11.5,
-                                fontWeight: FontWeight.w500,
-                                color: kMuted,
-                              ),
-                            ),
+                const SizedBox(height: 2),
+                Row(
+                  children: [
+                    Container(
+                      width: 7,
+                      height: 7,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF49B36C),
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: const Color(
+                              0xFF49B36C,
+                            ).withValues(alpha: 0.22),
+                            blurRadius: 6,
                           ),
                         ],
                       ),
-                    ],
-                  ),
+                    ),
+                    const SizedBox(width: 7),
+                    Flexible(
+                      child: Text(
+                        state.idleReceiveStatus,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: driftSans(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w500,
+                          color: kMuted,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -136,7 +111,7 @@ class _IdleIdentityZoneState extends ConsumerState<IdleIdentityZone> {
           const SizedBox(width: 12),
           Row(
             mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               Column(
                 mainAxisSize: MainAxisSize.min,
@@ -174,15 +149,13 @@ class _IdleIdentityZoneState extends ConsumerState<IdleIdentityZone> {
                         key: const ValueKey<String>('idle-receive-code'),
                         duration: const Duration(milliseconds: 160),
                         curve: Curves.easeOutCubic,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 14,
-                          vertical: 8,
-                        ),
+                        height: 38,
+                        padding: const EdgeInsets.symmetric(horizontal: 14),
                         decoration: BoxDecoration(
                           color: _codeHovering
                               ? const Color(0xFFFFFFFF)
                               : const Color(0xFFFDFDFD),
-                          borderRadius: BorderRadius.circular(14),
+                          borderRadius: BorderRadius.circular(12),
                           border: Border.all(
                             color: _codeHovering
                                 ? const Color(0xFFCFCFCF)
@@ -198,13 +171,15 @@ class _IdleIdentityZoneState extends ConsumerState<IdleIdentityZone> {
                             ),
                           ],
                         ),
-                        child: Text(
-                          _formatCode(state.idleReceiveCode),
-                          style: driftMono(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w700,
-                            color: const Color(0xFF111111),
-                            letterSpacing: 2.2,
+                        child: Center(
+                          child: Text(
+                            _formatCode(state.idleReceiveCode),
+                            style: driftMono(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                              color: const Color(0xFF111111),
+                              letterSpacing: 2.2,
+                            ),
                           ),
                         ),
                       ),
@@ -212,25 +187,26 @@ class _IdleIdentityZoneState extends ConsumerState<IdleIdentityZone> {
                   ),
                 ],
               ),
-              const SizedBox(width: 10),
-              Padding(
-                padding: const EdgeInsets.only(top: 18),
-                child: IconButton(
-                  key: const ValueKey<String>('idle-settings-button'),
-                  onPressed: widget.onOpenSettings,
-                  tooltip: 'Settings',
-                  style: IconButton.styleFrom(
-                    minimumSize: const Size(34, 34),
-                    padding: EdgeInsets.zero,
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    backgroundColor: const Color(0xFFFCFCFC),
+              const SizedBox(width: 8),
+              IconButton(
+                key: const ValueKey<String>('idle-settings-button'),
+                onPressed: widget.onOpenSettings,
+                tooltip: 'Settings',
+                style: IconButton.styleFrom(
+                  fixedSize: const Size(38, 38),
+                  minimumSize: const Size(38, 38),
+                  padding: EdgeInsets.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  backgroundColor: const Color(0xFFFCFCFC),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
                     side: const BorderSide(color: Color(0xFFD7D7D7)),
                   ),
-                  icon: Icon(
-                    Icons.tune_rounded,
-                    size: 18,
-                    color: kMuted.withValues(alpha: 0.9),
-                  ),
+                ),
+                icon: Icon(
+                  Icons.tune_rounded,
+                  size: 18,
+                  color: kMuted.withValues(alpha: 0.9),
                 ),
               ),
             ],
