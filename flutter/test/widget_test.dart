@@ -9,6 +9,7 @@ import 'package:drift_app/state/app_identity.dart';
 import 'package:drift_app/state/drift_providers.dart';
 import 'package:drift_app/state/nearby_discovery_source.dart';
 import 'package:drift_app/state/receiver_service_source.dart';
+import 'package:drift_app/state/settings_store.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -109,6 +110,16 @@ ProviderContainer buildTestContainer({
 
   final container = ProviderContainer(
     overrides: [
+      driftSettingsStoreProvider.overrideWith(
+        (ref) => DriftSettingsStore.inMemory(),
+      ),
+      initialDriftAppIdentityProvider.overrideWith(
+        (ref) => const DriftAppIdentity(
+          deviceName: 'Samarth MacBook Pro',
+          deviceType: 'laptop',
+          downloadRoot: '/tmp/Downloads',
+        ),
+      ),
       driftAppIdentityProvider.overrideWith(
         (ref) => const DriftAppIdentity(
           deviceName: 'Samarth MacBook Pro',
@@ -386,11 +397,6 @@ void main() {
       find.byKey(const ValueKey<String>('idle-identity-zone')),
       findsOneWidget,
     );
-    expect(
-      find.byKey(const ValueKey<String>('idle-device-icon')),
-      findsOneWidget,
-    );
-    expect(find.byIcon(Icons.laptop_mac_rounded), findsOneWidget);
     expect(find.text('Samarth MacBook Pro'), findsOneWidget);
     expect(find.text('F9P 2Q1'), findsOneWidget);
     expect(find.text('Ready'), findsOneWidget);

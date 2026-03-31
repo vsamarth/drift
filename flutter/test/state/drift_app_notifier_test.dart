@@ -8,6 +8,7 @@ import 'package:drift_app/state/drift_app_state.dart';
 import 'package:drift_app/state/drift_providers.dart';
 import 'package:drift_app/state/nearby_discovery_source.dart';
 import 'package:drift_app/state/receiver_service_source.dart';
+import 'package:drift_app/state/settings_store.dart';
 import 'package:drift_app/src/rust/api/receiver.dart' as rust_receiver;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -42,6 +43,16 @@ ProviderContainer _buildContainer({
 }) {
   return ProviderContainer(
     overrides: [
+      driftSettingsStoreProvider.overrideWith(
+        (ref) => DriftSettingsStore.inMemory(),
+      ),
+      initialDriftAppIdentityProvider.overrideWith(
+        (ref) => const DriftAppIdentity(
+          deviceName: 'Samarth MacBook Pro',
+          deviceType: 'laptop',
+          downloadRoot: '/tmp/Downloads',
+        ),
+      ),
       driftAppIdentityProvider.overrideWith(
         (ref) => const DriftAppIdentity(
           deviceName: 'Samarth MacBook Pro',
