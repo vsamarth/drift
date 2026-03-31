@@ -148,6 +148,7 @@ ThemeData buildDriftTheme() {
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
       fillColor: kSurface,
+      hoverColor: kSurface,
       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
       hintStyle: driftSans(color: kSubtle, fontSize: 14),
       border: OutlineInputBorder(

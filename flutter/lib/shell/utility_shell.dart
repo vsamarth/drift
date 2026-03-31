@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/theme/drift_theme.dart';
 import '../state/drift_providers.dart';
 import 'widgets/idle_identity_zone.dart';
+import 'widgets/settings_panel.dart';
 import 'widgets/shell_header.dart';
 import 'widgets/shell_state_content.dart';
 
@@ -16,10 +17,13 @@ class UtilityShell extends ConsumerStatefulWidget {
 }
 
 class _UtilityShellState extends ConsumerState<UtilityShell> {
+  bool _showSettings = false;
+
   @override
   Widget build(BuildContext context) {
     final view = ref.watch(shellViewProvider);
     final isIdle = view.name == 'sendIdle';
+    final showSettings = isIdle && _showSettings;
 
     return Scaffold(
       backgroundColor: kBg,
@@ -43,15 +47,28 @@ class _UtilityShellState extends ConsumerState<UtilityShell> {
                       key: const ValueKey<String>('utility-shell'),
                       padding: EdgeInsets.fromLTRB(
                         20,
-                        isIdle ? 28 : 26,
+                        showSettings || isIdle ? 28 : 26,
                         20,
                         20,
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          if (isIdle) ...[
-                            const IdleIdentityZone(),
+                          if (showSettings) ...[
+                            ShellHeader(
+                              title: 'Settings',
+                              forceShowBackButton: true,
+                              onBackPressed: () {
+                                setState(() => _showSettings = false);
+                              },
+                            ),
+                            const SizedBox(height: 10),
+                          ] else if (isIdle) ...[
+                            IdleIdentityZone(
+                              onOpenSettings: () {
+                                setState(() => _showSettings = true);
+                              },
+                            ),
                             const SizedBox(height: 8),
                           ] else ...[
                             const ShellHeader(),
@@ -64,14 +81,17 @@ class _UtilityShellState extends ConsumerState<UtilityShell> {
                                 switchInCurve: Curves.easeOutCubic,
                                 switchOutCurve: Curves.easeInCubic,
                                 transitionBuilder: (child, anim) =>
-                                    FadeTransition(
-                                      opacity: anim,
-                                      child: child,
-                                    ),
+                                    FadeTransition(opacity: anim, child: child),
                                 child: ShellStateContent(
                                   key: ValueKey<String>('state-${view.name}'),
                                   view: view,
                                   availableHeight: constraints.maxHeight,
+                                  overrideChild: showSettings
+                                      ? SettingsPanel(
+                                          availableHeight:
+                                              constraints.maxHeight,
+                                        )
+                                      : null,
                                 ),
                               ),
                             ),

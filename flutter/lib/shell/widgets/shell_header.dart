@@ -5,30 +5,54 @@ import '../../core/theme/drift_theme.dart';
 import '../../state/drift_providers.dart';
 
 class ShellHeader extends ConsumerWidget {
-  const ShellHeader({super.key});
+  const ShellHeader({
+    super.key,
+    this.title,
+    this.forceShowBackButton = false,
+    this.onBackPressed,
+  });
+
+  final String? title;
+  final bool forceShowBackButton;
+  final VoidCallback? onBackPressed;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final showBackButton = ref.watch(showShellBackButtonProvider);
     final canGoBack = ref.watch(canGoBackProvider);
-    if (!showBackButton) {
+    if (!showBackButton && !forceShowBackButton) {
       return const SizedBox(height: 24);
     }
 
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: IconButton(
-        key: const ValueKey<String>('shell-back-button'),
-        onPressed: canGoBack
-            ? ref.read(driftAppNotifierProvider.notifier).goBack
-            : null,
-        style: IconButton.styleFrom(
-          minimumSize: const Size(32, 32),
-          padding: EdgeInsets.zero,
-          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+    final backAction =
+        onBackPressed ??
+        (canGoBack ? ref.read(driftAppNotifierProvider.notifier).goBack : null);
+
+    return Row(
+      children: [
+        IconButton(
+          key: const ValueKey<String>('shell-back-button'),
+          onPressed: backAction,
+          style: IconButton.styleFrom(
+            minimumSize: const Size(32, 32),
+            padding: EdgeInsets.zero,
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
+          icon: Icon(Icons.arrow_back_ios_new_rounded, size: 18, color: kMuted),
         ),
-        icon: Icon(Icons.arrow_back_ios_new_rounded, size: 18, color: kMuted),
-      ),
+        if (title != null) ...[
+          const SizedBox(width: 6),
+          Text(
+            title!,
+            style: driftSans(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              color: kInk,
+              letterSpacing: -0.2,
+            ),
+          ),
+        ],
+      ],
     );
   }
 }
