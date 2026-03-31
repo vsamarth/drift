@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:window_manager/window_manager.dart';
 
 import 'app/drift_app.dart';
+import 'platform/storage_access_source.dart';
 import 'platform/platform_features.dart';
 import 'state/drift_dependencies.dart';
 import 'state/settings_store.dart';
@@ -18,12 +19,17 @@ Future<void> main() async {
   final prefs = await SharedPreferences.getInstance();
   final settingsStore = DriftSettingsStore(prefs);
   final initialIdentity = await settingsStore.initialize();
+  final storageAccessSource = StorageAccessSource();
+  await storageAccessSource.restorePersistedAccess(
+    path: initialIdentity.downloadRoot,
+  );
 
   runApp(
     ProviderScope(
       overrides: [
         driftSettingsStoreProvider.overrideWithValue(settingsStore),
         initialDriftAppIdentityProvider.overrideWithValue(initialIdentity),
+        storageAccessSourceProvider.overrideWithValue(storageAccessSource),
       ],
       child: const DriftApp(),
     ),

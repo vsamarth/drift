@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../platform/send_item_source.dart';
 import '../platform/send_transfer_source.dart';
+import '../platform/storage_access_source.dart';
 import 'app_identity.dart';
 import 'nearby_discovery_source.dart';
 import 'receiver_service_source.dart';
@@ -13,6 +14,10 @@ final driftSettingsStoreProvider = Provider<DriftSettingsStore>(
 
 final initialDriftAppIdentityProvider = Provider<DriftAppIdentity>(
   (ref) => buildDefaultDriftAppIdentity(),
+);
+
+final storageAccessSourceProvider = Provider<StorageAccessSource>(
+  (ref) => StorageAccessSource(),
 );
 
 final driftAppIdentityProvider = Provider<DriftAppIdentity>(
@@ -32,7 +37,7 @@ final nearbyDiscoverySourceProvider = Provider<NearbyDiscoverySource>(
 );
 
 final receiverServiceSourceProvider = Provider<ReceiverServiceSource>(
-  (ref) => const LocalReceiverServiceSource(),
+  (ref) => LocalReceiverServiceSource(ref.watch(storageAccessSourceProvider)),
 );
 
 final animateSendingConnectionProvider = Provider<bool>((ref) => true);

@@ -1,5 +1,6 @@
 import '../src/rust/api/receiver.dart' as rust_receiver;
 import 'app_identity.dart';
+import '../platform/storage_access_source.dart';
 
 class ReceiverBadgeState {
   const ReceiverBadgeState({
@@ -48,29 +49,39 @@ abstract class ReceiverServiceSource {
 }
 
 class LocalReceiverServiceSource implements ReceiverServiceSource {
-  const LocalReceiverServiceSource();
+  const LocalReceiverServiceSource(this._storageAccessSource);
+
+  final StorageAccessSource _storageAccessSource;
 
   @override
   Stream<ReceiverBadgeState> watchBadge(DriftAppIdentity identity) {
-    return rust_receiver
-        .watchReceiverPairing(
-          serverUrl: identity.serverUrl,
-          downloadRoot: identity.downloadRoot,
-          deviceName: identity.deviceName,
-          deviceType: identity.deviceType,
-        )
-        .map(_mapPairingState);
+    return Stream<void>.fromFuture(
+      _storageAccessSource.restorePersistedAccess(path: identity.downloadRoot),
+    ).asyncExpand(
+      (_) => rust_receiver
+          .watchReceiverPairing(
+            serverUrl: identity.serverUrl,
+            downloadRoot: identity.downloadRoot,
+            deviceName: identity.deviceName,
+            deviceType: identity.deviceType,
+          )
+          .map(_mapPairingState),
+    );
   }
 
   @override
   Stream<rust_receiver.ReceiverTransferEvent> watchIncomingTransfers(
     DriftAppIdentity identity,
   ) {
-    return rust_receiver.startReceiverTransferListener(
-      serverUrl: identity.serverUrl,
-      downloadRoot: identity.downloadRoot,
-      deviceName: identity.deviceName,
-      deviceType: identity.deviceType,
+    return Stream<void>.fromFuture(
+      _storageAccessSource.restorePersistedAccess(path: identity.downloadRoot),
+    ).asyncExpand(
+      (_) => rust_receiver.startReceiverTransferListener(
+        serverUrl: identity.serverUrl,
+        downloadRoot: identity.downloadRoot,
+        deviceName: identity.deviceName,
+        deviceType: identity.deviceType,
+      ),
     );
   }
 
