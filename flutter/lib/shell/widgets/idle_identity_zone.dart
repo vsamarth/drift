@@ -64,12 +64,12 @@ class _IdleIdentityZoneState extends ConsumerState<IdleIdentityZone> {
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 SizedBox(
-                  width: 20,
+                  width: 36,
                   child: Center(
                     child: Icon(
                       _deviceIcon(state.deviceType),
                       key: const ValueKey<String>('idle-device-icon'),
-                      size: 18,
+                      size: 30,
                       color: kInk.withValues(alpha: 0.88),
                     ),
                   ),
