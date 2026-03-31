@@ -5,9 +5,7 @@ import 'app_identity.dart';
 class DriftSettingsStore {
   DriftSettingsStore(this._prefs) : _memory = null;
 
-  DriftSettingsStore.inMemory()
-    : _prefs = null,
-      _memory = <String, Object?>{};
+  DriftSettingsStore.inMemory() : _prefs = null, _memory = <String, Object?>{};
 
   static const _deviceNameKey = 'settings.device_name';
   static const _downloadRootKey = 'settings.download_root';

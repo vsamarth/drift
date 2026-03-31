@@ -71,21 +71,45 @@ class _SettingsPanelState extends ConsumerState<SettingsPanel> {
 
     setState(() => _saving = true);
     try {
-      await ref.read(driftAppNotifierProvider.notifier).saveSettings(
-        deviceName: _deviceNameController.text,
-        downloadRoot: _downloadRootController.text,
-        serverUrl: _serverUrlController.text,
-        discoverableByDefault: _discoverable,
-      );
+      await ref
+          .read(driftAppNotifierProvider.notifier)
+          .saveSettings(
+            deviceName: _deviceNameController.text,
+            downloadRoot: _downloadRootController.text,
+            serverUrl: _serverUrlController.text,
+            discoverableByDefault: _discoverable,
+          );
       _initialDeviceName = _deviceNameController.text.trim();
       _initialDownloadRoot = _downloadRootController.text.trim();
       _initialServerUrl = _serverUrlController.text.trim();
       _initialDiscoverable = _discoverable;
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(error.toString())));
+      }
     } finally {
       if (mounted) {
         setState(() => _saving = false);
       }
     }
+  }
+
+  Future<void> _pickDownloadRoot() async {
+    final selected = await ref
+        .read(storageAccessSourceProvider)
+        .pickDirectory(
+          initialDirectory: _downloadRootController.text.trim().isEmpty
+              ? null
+              : _downloadRootController.text.trim(),
+        );
+
+    if (selected == null || selected.trim().isEmpty) {
+      return;
+    }
+
+    _downloadRootController.text = selected.trim();
   }
 
   @override
@@ -112,8 +136,41 @@ class _SettingsPanelState extends ConsumerState<SettingsPanel> {
                   label: 'Save received files to',
                   child: TextField(
                     controller: _downloadRootController,
-                    decoration: const InputDecoration(
+                    readOnly: true,
+                    onTap: _pickDownloadRoot,
+                    decoration: InputDecoration(
                       hintText: '/Users/you/Downloads',
+                      suffixIconConstraints: const BoxConstraints(
+                        minWidth: 0,
+                        minHeight: 0,
+                      ),
+                      suffixIcon: Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: TextButton(
+                          onPressed: _pickDownloadRoot,
+                          style: TextButton.styleFrom(
+                            minimumSize: const Size(0, 32),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 6,
+                            ),
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            foregroundColor: kInk,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                              side: const BorderSide(color: kBorder),
+                            ),
+                          ),
+                          child: Text(
+                            'Choose',
+                            style: driftSans(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: kInk,
+                            ),
+                          ),
+                        ),
+                      ),
                     ),
                   ),
                 ),

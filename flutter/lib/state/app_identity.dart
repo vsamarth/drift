@@ -81,9 +81,18 @@ String inferDeviceType() {
 }
 
 String defaultReceiveDownloadRoot() {
-  // For now, keep Flutter writes confined to a guaranteed-writable directory.
-  // (This avoids macOS App Sandbox issues with `~/Downloads`.)
-  return '${Directory.systemTemp.path}${Platform.pathSeparator}Downloads';
+  final home = _userHomeDirectory();
+  if (home == null || home.isEmpty) {
+    return '${Directory.systemTemp.path}${Platform.pathSeparator}Downloads${Platform.pathSeparator}Drift';
+  }
+  return '$home${Platform.pathSeparator}Downloads${Platform.pathSeparator}Drift';
+}
+
+String? _userHomeDirectory() {
+  if (Platform.isWindows) {
+    return Platform.environment['USERPROFILE'];
+  }
+  return Platform.environment['HOME'];
 }
 
 String normalizeDeviceName(String value) {

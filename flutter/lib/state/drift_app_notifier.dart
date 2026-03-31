@@ -32,7 +32,7 @@ const List<TransferItemViewData> _defaultDroppedSendItems = [
 ];
 
 class DriftAppNotifier extends Notifier<DriftAppState> {
-  late final DriftAppIdentity _identity;
+  late DriftAppIdentity _identity;
   late final SendItemSource _sendItemSource;
   late final SendTransferSource _sendTransferSource;
   late final NearbyDiscoverySource _nearbyDiscoverySource;
