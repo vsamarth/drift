@@ -81,7 +81,7 @@ class ReceiveReceivingCard extends ConsumerWidget {
                         localDeviceType: 'laptop',
                         remoteLabel: state.deviceName,
                         remoteDeviceType: state.deviceType,
-                        animate: true,
+                        animate: ref.watch(animateSendingConnectionProvider),
                         mode: mode,
                         transferProgress: transferProgress,
                       ),
