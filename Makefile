@@ -11,6 +11,7 @@ FILES ?= $(FILE)
 MULTIPLE_COUNT ?= 5
 MULTIPLE_SIZE_MB ?= 100
 LARGE_SIZE_MB ?= 1024
+NEARBY_SIZE_MB ?= 10
 
 # mDNS scan duration for send-nearby (seconds).
 NEARBY_TIMEOUT_SECS ?= 15
@@ -36,7 +37,7 @@ help:
 	@echo "  send            — same as send-file if CODE is set; else prints this help"
 	@echo ""
 	@echo "Send via LAN (mDNS; receiver must run receive on same network):"
-	@echo "  send-nearby     — FILE=… or FILES=\"…\" (default FILE=$(FILE)); NEARBY_TIMEOUT_SECS=$(NEARBY_TIMEOUT_SECS)"
+	@echo "  send-nearby     — generates a fresh $(NEARBY_SIZE_MB)MB random file; NEARBY_TIMEOUT_SECS=$(NEARBY_TIMEOUT_SECS)"
 	@echo ""
 	@echo "Env: SERVER_URL=$(SERVER_URL)"
 
@@ -81,7 +82,14 @@ send-files:
 	DRIFT_RENDEZVOUS_URL=$(SERVER_URL) cargo run -p drift -- send -c "$(CODE)" $(FILES)
 
 send-nearby:
-	DRIFT_RENDEZVOUS_URL=$(SERVER_URL) cargo run -p drift -- send --nearby --nearby-timeout-secs $(NEARBY_TIMEOUT_SECS) $(FILES)
+	@set -e; \
+		TMP_DIR=$$(mktemp -d); \
+		NEARBY_FILE="$$TMP_DIR/nearby-$$(date +%s)-$$(LC_ALL=C tr -dc 'a-z0-9' </dev/urandom | head -c 8).bin"; \
+		trap 'rm -rf "$$TMP_DIR"' EXIT INT TERM; \
+		echo "Generating $$NEARBY_FILE ($(NEARBY_SIZE_MB)MB) ..."; \
+		dd if=/dev/urandom of="$$NEARBY_FILE" bs=1m count="$(NEARBY_SIZE_MB)" status=none 2>/dev/null || \
+		dd if=/dev/urandom of="$$NEARBY_FILE" bs=1m count="$(NEARBY_SIZE_MB)" >/dev/null 2>&1; \
+		DRIFT_RENDEZVOUS_URL=$(SERVER_URL) cargo run -p drift -- send --nearby --nearby-timeout-secs $(NEARBY_TIMEOUT_SECS) "$$NEARBY_FILE"
 
 send-multiple:
 	@if [ -z "$(CODE)" ]; then echo "usage: make send-multiple CODE=AB2CD3"; exit 1; fi

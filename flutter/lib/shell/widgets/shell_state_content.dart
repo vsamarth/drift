@@ -115,7 +115,7 @@ class ShellStateContent extends ConsumerWidget {
           fillBody: true,
           tone: TransferResultTone.success,
           title: 'Files saved',
-          message: state.receiveSummary?.statusMessage ?? 'Saved to Downloads',
+          message: state.receiveSummary?.statusMessage ?? 'Files saved',
           metrics: state.receiveCompletionMetrics,
           primaryLabel: 'Done',
           onPrimary: notifier.resetShell,

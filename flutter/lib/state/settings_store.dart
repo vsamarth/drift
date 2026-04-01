@@ -32,10 +32,15 @@ class DriftSettingsStore {
     final rawDownloadRoot = _getString(_downloadRootKey);
     final rawServerUrl = _getString(_serverUrlKey);
     final rawDiscoverable = _getBool(_discoverableKey);
+    final resolvedDownloadRoot =
+        rawDownloadRoot == null ||
+            shouldMigrateLegacyDefaultReceiveRoot(rawDownloadRoot)
+        ? await resolvePreferredReceiveDownloadRoot()
+        : rawDownloadRoot;
 
     final identity = buildDefaultDriftAppIdentity(
       deviceName: rawDeviceName,
-      downloadRoot: rawDownloadRoot,
+      downloadRoot: resolvedDownloadRoot,
       serverUrl: rawServerUrl,
       discoverable: rawDiscoverable,
     );

@@ -63,7 +63,7 @@ For quick local testing, the root `Makefile` includes `make send-*` wrappers aro
 - `make send-dir CODE=AB2CD3 DIR=photos/` (send a directory)
 - `make send-multiple CODE=AB2CD3` (generate 5 x 100MB random files in a temp `tmd/` dir, transfer it, then delete)
 - `make send-large CODE=AB2CD3` (generate a 1GB random file in a temp dir, transfer it, then delete)
-- `make send-nearby FILE=sample.txt` (LAN mDNS picker; optional `NEARBY_TIMEOUT_SECS=20`, or `FILES="a b"`)
+- `make send-nearby` (LAN mDNS picker; generates a fresh random 10MB file each run; optional `NEARBY_TIMEOUT_SECS=20`)
 
 ## Server selection
 

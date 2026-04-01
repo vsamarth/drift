@@ -1,5 +1,7 @@
 import 'dart:io';
 
+import 'package:path_provider/path_provider.dart';
+
 import '../src/rust/api/device.dart' as rust_device;
 
 class DriftAppIdentity {
@@ -86,6 +88,40 @@ String defaultReceiveDownloadRoot() {
     return '${Directory.systemTemp.path}${Platform.pathSeparator}Downloads${Platform.pathSeparator}Drift';
   }
   return '$home${Platform.pathSeparator}Downloads${Platform.pathSeparator}Drift';
+}
+
+Future<String> resolvePreferredReceiveDownloadRoot() async {
+  if (Platform.isAndroid || Platform.isIOS) {
+    final docsDir = await getApplicationDocumentsDirectory();
+    return '${docsDir.path}${Platform.pathSeparator}Drift';
+  }
+  return defaultReceiveDownloadRoot();
+}
+
+bool shouldMigrateLegacyDefaultReceiveRoot(String path) {
+  if (!(Platform.isAndroid || Platform.isIOS)) {
+    return false;
+  }
+
+  final normalized = path.trim();
+  if (normalized.isEmpty) {
+    return true;
+  }
+
+  return _legacyDefaultReceiveRoots().contains(normalized);
+}
+
+Set<String> _legacyDefaultReceiveRoots() {
+  final roots = <String>{
+    '${Directory.systemTemp.path}${Platform.pathSeparator}Downloads${Platform.pathSeparator}Drift',
+  };
+  final home = _userHomeDirectory();
+  if (home != null && home.isNotEmpty) {
+    roots.add(
+      '$home${Platform.pathSeparator}Downloads${Platform.pathSeparator}Drift',
+    );
+  }
+  return roots;
 }
 
 String? _userHomeDirectory() {

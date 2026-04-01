@@ -5,4 +5,11 @@ void main() {
   test('default download root ends with Downloads/Drift', () {
     expect(defaultReceiveDownloadRoot(), endsWith('Downloads/Drift'));
   });
+
+  test('legacy default receive roots are detected', () {
+    expect(
+      shouldMigrateLegacyDefaultReceiveRoot(defaultReceiveDownloadRoot()),
+      isA<bool>(),
+    );
+  });
 }

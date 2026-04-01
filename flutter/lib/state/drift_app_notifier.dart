@@ -189,7 +189,7 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
         ReceiveResultSession(
           items: session.items,
           summary: session.summary.copyWith(
-            statusMessage: 'Saved to Downloads',
+            statusMessage: 'Saved to ${session.summary.destinationLabel}',
           ),
         ),
       );
