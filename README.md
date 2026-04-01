@@ -2,12 +2,22 @@
 
 `drift` is a minimal short-code file transfer tool built on `iroh`.
 
+## Features
+
+- Send files with a short code.
+- Find nearby devices on the same network and send without typing a code.
+- Receive files with a clear accept/decline step before anything is saved.
+- Send folders as well as individual files.
+- Use the app on desktop or mobile.
+- Choose where incoming files are saved.
+- Copy the receive code easily when someone else wants to send to you.
+
 ## Repository layout
 
 - `crates/core`: shared discovery, transfer, rendezvous, and server logic
 - `crates/cli`: `drift` command-line app
 - `crates/server`: `drift-server` rendezvous binary
-- `flutter/`: reserved for a future Flutter app
+- `flutter/`: Flutter app and Rust bridge workspace
 
 ## Default flow
 
