@@ -8,3 +8,10 @@ bool get isDesktopPlatform {
   }
   return Platform.isMacOS || Platform.isWindows || Platform.isLinux;
 }
+
+bool get isMobilePlatform {
+  if (kIsWeb) {
+    return false;
+  }
+  return Platform.isAndroid || Platform.isIOS;
+}

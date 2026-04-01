@@ -72,6 +72,8 @@ The send screen browses mDNS for `_drift._udp` (same as the CLI `--nearby` path)
 - **iOS**: Set `NSLocalNetworkUsageDescription` in `Info.plist`; declare the Bonjour service type `_drift._udp` (and related) per Apple’s Bonjour browsing rules.
 - **Android**: Multicast/Wi‑Fi may require `CHANGE_WIFI_MULTICAST_STATE` and holding a multicast lock where the OS requires it.
 
+Nearby receive advertising does **not** require a rendezvous server. If no server URL is configured, the app can still appear in nearby scans and receive LAN transfers, but the short pairing code remains unavailable until a reachable rendezvous server is configured.
+
 Simulators, VPNs, and split tunnels can hide LAN peers; the UI falls back to the passive receive state until a transfer arrives.
 
 ## Edit The Rust API

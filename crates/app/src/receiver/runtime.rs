@@ -108,7 +108,7 @@ impl ReceiverRuntime {
                 let _ = event_tx.send(ReceiverEvent::SetupCompleted(registration.clone()));
             }
             Err(_) => {
-                self.clear_advertising();
+                self.reconcile_advertising();
                 let _ = pairing_tx.send(PairingCodeState::Unavailable);
             }
         }
@@ -130,7 +130,7 @@ impl ReceiverRuntime {
                 let _ = event_tx.send(ReceiverEvent::RegistrationUpdated(registration.clone()));
             }
             Err(_) => {
-                self.clear_advertising();
+                self.reconcile_advertising();
                 let _ = pairing_tx.send(PairingCodeState::Unavailable);
             }
         }
@@ -389,6 +389,6 @@ pub(super) fn registration_needs_refresh(registration: &ReceiverRegistration) ->
     OffsetDateTime::now_utc() >= expires_at
 }
 
-pub(super) fn should_advertise(discoverable_requested: bool, has_registration: bool) -> bool {
-    discoverable_requested && has_registration
+pub(super) fn should_advertise(discoverable_requested: bool, _has_registration: bool) -> bool {
+    discoverable_requested
 }

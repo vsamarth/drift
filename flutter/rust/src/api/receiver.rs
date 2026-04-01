@@ -14,8 +14,6 @@ use tokio::task::JoinHandle;
 use super::RUNTIME;
 use crate::frb_generated::StreamSink;
 
-const LOCAL_RENDEZVOUS_URL: &str = "http://127.0.0.1:8787";
-
 static RECEIVER_SECRET_KEY: LazyLock<SecretKey> =
     LazyLock::new(|| SecretKey::from_bytes(&rand::random()));
 static RECEIVER_STATE: LazyLock<Mutex<Option<BridgeReceiverState>>> =
@@ -95,12 +93,12 @@ pub fn ensure_receiver_registration(
             device_name,
             device_type: "laptop".to_owned(),
             download_root: PathBuf::from("."),
-            server_url: server_url.clone().or(Some(LOCAL_RENDEZVOUS_URL.to_owned())),
+            server_url: server_url.clone(),
         })
         .await?;
 
         service
-            .ensure_registered(server_url.or(Some(LOCAL_RENDEZVOUS_URL.to_owned())))
+            .ensure_registered(server_url)
             .await
             .map(map_registration)
             .map_err(|e| e.to_string())
@@ -125,13 +123,17 @@ pub fn watch_receiver_pairing(
             device_name,
             device_type,
             download_root: PathBuf::from(download_root),
-            server_url: server_url.clone().or(Some(LOCAL_RENDEZVOUS_URL.to_owned())),
+            server_url: server_url.clone(),
         };
         let service = ensure_receiver_service(config.clone()).await?;
-        service
-            .ensure_registered(config.server_url.clone())
-            .await
-            .map_err(|e| e.to_string())?;
+        if let Some(server_url) = config.server_url.clone() {
+            if let Err(error) = service.ensure_registered(Some(server_url)).await {
+                println!(
+                    "[bridge] receiver pairing registration unavailable: {}",
+                    error
+                );
+            }
+        }
         service
             .set_discoverable(true)
             .await
@@ -158,13 +160,17 @@ pub fn start_receiver_transfer_listener(
             device_name,
             device_type,
             download_root: PathBuf::from(download_root),
-            server_url: server_url.clone().or(Some(LOCAL_RENDEZVOUS_URL.to_owned())),
+            server_url: server_url.clone(),
         };
         let service = ensure_receiver_service(config.clone()).await?;
-        service
-            .ensure_registered(config.server_url.clone())
-            .await
-            .map_err(|e| e.to_string())?;
+        if let Some(server_url) = config.server_url.clone() {
+            if let Err(error) = service.ensure_registered(Some(server_url)).await {
+                println!(
+                    "[bridge] receiver transfer listener registration unavailable: {}",
+                    error
+                );
+            }
+        }
         service
             .set_discoverable(true)
             .await
@@ -194,9 +200,11 @@ pub fn respond_to_receiver_offer(accept: bool) -> Result<(), String> {
 pub(crate) async fn scan_nearby_with_receiver(
     timeout_secs: u64,
 ) -> Result<Vec<crate::api::lan::NearbyReceiverInfo>, String> {
+    println!("[bridge] scanning nearby receivers (timeout={}s)", timeout_secs);
     let service = match current_service() {
         Some(service) => service,
         None => {
+            println!("[bridge] starting temporary receiver service for scan");
             let temp = ReceiverService::start(ReceiverConfig {
                 device_name: String::new(),
                 device_type: "laptop".to_owned(),
@@ -210,6 +218,10 @@ pub(crate) async fn scan_nearby_with_receiver(
                 .scan_nearby(timeout_secs)
                 .await
                 .map_err(|e| e.to_string())?;
+            println!("[bridge] scan found {} receivers", receivers.len());
+            for r in &receivers {
+                println!("[bridge]   - found receiver: name='{}' label='{}' code='{}'", r.fullname, r.label, r.code);
+            }
             let _ = temp.shutdown().await;
             return Ok(receivers
                 .into_iter()
@@ -218,16 +230,20 @@ pub(crate) async fn scan_nearby_with_receiver(
         }
     };
 
-    service
+    let receivers = service
         .scan_nearby(timeout_secs)
         .await
-        .map_err(|e| e.to_string())
-        .map(|items| {
-            items
-                .into_iter()
-                .map(crate::api::lan::map_nearby_receiver)
-                .collect()
-        })
+        .map_err(|e| e.to_string())?;
+    
+    println!("[bridge] scan found {} receivers", receivers.len());
+    for r in &receivers {
+        println!("[bridge]   - found receiver: name='{}' label='{}' code='{}'", r.fullname, r.label, r.code);
+    }
+
+    Ok(receivers
+        .into_iter()
+        .map(crate::api::lan::map_nearby_receiver)
+        .collect())
 }
 
 async fn ensure_receiver_service(
@@ -238,6 +254,8 @@ async fn ensure_receiver_service(
     if let Some(service) = existing_service_for_config(&config) {
         return Ok(service);
     }
+
+    println!("[bridge] creating new receiver service: device_name='{}' device_type='{}'", config.device_name, config.device_type);
 
     let old_state = {
         let mut guard = RECEIVER_STATE
@@ -267,6 +285,8 @@ async fn ensure_receiver_service(
         .await
         .map_err(|e| e.to_string())?,
     );
+
+    println!("[bridge] receiver service started");
 
     let mut guard = RECEIVER_STATE
         .lock()
@@ -354,8 +374,10 @@ fn current_service() -> Option<Arc<ReceiverService>> {
 }
 
 fn set_discoverable(enabled: bool) -> Result<(), String> {
+    println!("[bridge] setting discoverable: {}", enabled);
     RUNTIME.block_on(async move {
         let Some(service) = current_service() else {
+            println!("[bridge] WARNING: set_discoverable called but no service running");
             return Ok(());
         };
         service

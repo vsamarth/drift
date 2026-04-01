@@ -58,8 +58,8 @@ fn registration_stays_valid_when_future_expiry_parses() {
 }
 
 #[test]
-fn discoverability_requires_setup() {
-    assert!(!should_advertise(true, false));
+fn discoverability_only_requires_opt_in() {
+    assert!(should_advertise(true, false));
     assert!(!should_advertise(false, true));
     assert!(should_advertise(true, true));
 }

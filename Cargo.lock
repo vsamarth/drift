@@ -801,6 +801,7 @@ dependencies = [
  "blake3",
  "flume",
  "futures-lite",
+ "if-addrs",
  "iroh",
  "mdns-sd",
  "rand 0.8.5",
@@ -809,6 +810,7 @@ dependencies = [
  "serde_json",
  "time",
  "tokio",
+ "tracing",
 ]
 
 [[package]]

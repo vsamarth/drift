@@ -106,9 +106,8 @@ pub(super) async fn run_receiver_actor(
         tokio::select! {
             _ = maintenance.tick() => {
                 if runtime.maintain_registration(&pairing_tx, &event_tx).await.is_err() {
-                    runtime.clear_advertising();
                     let _ = pairing_tx.send(PairingCodeState::Unavailable);
-                    let _ = publish_snapshot(&state_tx, &runtime, ReceiverLifecycle::Failed);
+                    let _ = publish_snapshot(&state_tx, &runtime, ReceiverLifecycle::Ready);
                     let _ = event_tx.send(ReceiverEvent::DiscoverabilityChanged {
                         requested: runtime.discoverable_requested,
                         active: runtime.advertising_active(),

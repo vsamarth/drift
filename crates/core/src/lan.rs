@@ -17,6 +17,7 @@ use flume::RecvTimeoutError;
 use iroh::EndpointId;
 use mdns_sd::{ServiceDaemon, ServiceEvent, ServiceInfo, TxtProperties};
 use rand::seq::SliceRandom;
+use tracing::info;
 /// DNS-SD type for drift receivers on the LAN (`drift` ≤ 15 bytes per RFC 6763).
 pub const DRIFT_MDNS_SERVICE_TYPE: &str = "_drift._udp.local.";
 
@@ -35,14 +36,32 @@ const OP_PONG: u8 = 2;
 const PRESENCE_PKT_LEN: usize = 16;
 
 fn default_route_ipv4() -> Result<Ipv4Addr> {
-    let socket = UdpSocket::bind("0.0.0.0:0").context("binding UDP socket for local IP probe")?;
-    socket
-        .connect("192.0.2.1:1")
-        .context("connecting UDP socket for local IP probe")?;
-    match socket.local_addr().context("local_addr after connect")? {
-        SocketAddr::V4(addr) => Ok(*addr.ip()),
-        SocketAddr::V6(_) => bail!("expected an IPv4 local address"),
+    let probes = ["1.1.1.1:53", "8.8.8.8:53", "192.0.2.1:1"];
+    for probe in probes {
+        if let Ok(socket) = UdpSocket::bind("0.0.0.0:0") {
+            if socket.connect(probe).is_ok() {
+                if let Ok(SocketAddr::V4(addr)) = socket.local_addr() {
+                    let ip = *addr.ip();
+                    if !ip.is_unspecified() && !ip.is_loopback() {
+                        return Ok(ip);
+                    }
+                }
+            }
+        }
     }
+
+    // Fallback: search for any non-loopback IPv4 interface
+    if let Ok(addrs) = if_addrs::get_if_addrs() {
+        for iface in addrs {
+            if !iface.is_loopback() {
+                if let IpAddr::V4(ip) = iface.ip() {
+                    return Ok(ip);
+                }
+            }
+        }
+    }
+
+    bail!("could not determine a usable IPv4 address for LAN discovery")
 }
 
 fn chunk_ascii(s: &str, max: usize) -> Vec<String> {
@@ -226,6 +245,7 @@ impl LanReceiveAdvertisement {
             Ok(ip) => ip,
             Err(_) => return Ok(None),
         };
+        info!(%ip, %device_label, "lan_advertisement.starting");
 
         let presence = PresenceResponder::bind(DRIFT_LAN_PRESENCE_PORT)
             .context("starting LAN presence responder")?;
