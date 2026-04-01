@@ -531,6 +531,14 @@ fn map_receiver_offer_progress(
 }
 
 fn save_root_display(path: &std::path::Path) -> String {
+    let file_name = path.file_name().and_then(|s| s.to_str());
+    let parent_name = path
+        .parent()
+        .and_then(|parent| parent.file_name())
+        .and_then(|s| s.to_str());
+    if matches!(file_name, Some("Drift")) && matches!(parent_name, Some("Download" | "Downloads")) {
+        return "Downloads".to_owned();
+    }
     path.file_name()
         .and_then(|s| s.to_str())
         .map(String::from)

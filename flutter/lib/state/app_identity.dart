@@ -91,7 +91,22 @@ String defaultReceiveDownloadRoot() {
 }
 
 Future<String> resolvePreferredReceiveDownloadRoot() async {
-  if (Platform.isAndroid || Platform.isIOS) {
+  if (Platform.isAndroid) {
+    final downloadsDir = await getDownloadsDirectory();
+    if (downloadsDir != null) {
+      return '${downloadsDir.path}${Platform.pathSeparator}Drift';
+    }
+    final externalDirs = await getExternalStorageDirectories(
+      type: StorageDirectory.downloads,
+    );
+    final externalDir = externalDirs?.firstOrNull;
+    if (externalDir != null) {
+      return '${externalDir.path}${Platform.pathSeparator}Drift';
+    }
+    final docsDir = await getApplicationDocumentsDirectory();
+    return '${docsDir.path}${Platform.pathSeparator}Drift';
+  }
+  if (Platform.isIOS) {
     final docsDir = await getApplicationDocumentsDirectory();
     return '${docsDir.path}${Platform.pathSeparator}Drift';
   }

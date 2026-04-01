@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/theme/drift_theme.dart';
+import '../../platform/platform_features.dart';
 import '../../state/drift_providers.dart';
 
 class SettingsPanel extends ConsumerStatefulWidget {
@@ -134,44 +135,61 @@ class _SettingsPanelState extends ConsumerState<SettingsPanel> {
                 const SizedBox(height: 24),
                 _SettingFieldBlock(
                   label: 'Save received files to',
-                  child: TextField(
-                    controller: _downloadRootController,
-                    readOnly: true,
-                    onTap: _pickDownloadRoot,
-                    decoration: InputDecoration(
-                      hintText: '/Users/you/Downloads',
-                      suffixIconConstraints: const BoxConstraints(
-                        minWidth: 0,
-                        minHeight: 0,
-                      ),
-                      suffixIcon: Padding(
-                        padding: const EdgeInsets.only(right: 8),
-                        child: TextButton(
-                          onPressed: _pickDownloadRoot,
-                          style: TextButton.styleFrom(
-                            minimumSize: const Size(0, 32),
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 6,
-                            ),
-                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                            foregroundColor: kInk,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
-                              side: const BorderSide(color: kBorder),
-                            ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      TextField(
+                        controller: _downloadRootController,
+                        readOnly: true,
+                        onTap: _pickDownloadRoot,
+                        decoration: InputDecoration(
+                          hintText: '/Users/you/Downloads',
+                          suffixIconConstraints: const BoxConstraints(
+                            minWidth: 0,
+                            minHeight: 0,
                           ),
-                          child: Text(
-                            'Choose',
-                            style: driftSans(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color: kInk,
+                          suffixIcon: Padding(
+                            padding: const EdgeInsets.only(right: 8),
+                            child: TextButton(
+                              onPressed: _pickDownloadRoot,
+                              style: TextButton.styleFrom(
+                                minimumSize: const Size(0, 32),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 6,
+                                ),
+                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                foregroundColor: kInk,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                  side: const BorderSide(color: kBorder),
+                                ),
+                              ),
+                              child: Text(
+                                'Choose',
+                                style: driftSans(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: kInk,
+                                ),
+                              ),
                             ),
                           ),
                         ),
                       ),
-                    ),
+                      if (isMobilePlatform) ...[
+                        const SizedBox(height: 8),
+                        Text(
+                          'On Android and iPhone, Drift saves into an app-writable downloads folder.',
+                          style: driftSans(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w400,
+                            color: kMuted,
+                            height: 1.45,
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                 ),
                 const SizedBox(height: 24),
