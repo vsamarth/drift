@@ -16,5 +16,11 @@ rand = "0.8"
 time = { version = "0.3", features = ["formatting", "parsing"] }
 tokio = { version = "1.50", features = ["fs", "rt-multi-thread", "sync", "time"] }
 
+[profile.release]
+codegen-units = 1
+lto = "thin"
+opt-level = "z"
+strip = "symbols"
+
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)'] }

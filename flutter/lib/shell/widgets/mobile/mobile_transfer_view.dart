@@ -4,7 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/models/transfer_models.dart';
 import '../../../core/theme/drift_theme.dart';
 import '../../../state/drift_providers.dart';
-import '../../../state/drift_app_state.dart';
 import '../preview_list.dart';
 
 class MobileTransferView extends ConsumerWidget {
