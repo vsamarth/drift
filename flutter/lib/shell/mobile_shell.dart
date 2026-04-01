@@ -201,7 +201,7 @@ class _MobileShellState extends ConsumerState<MobileShell> {
                         const Spacer(),
                         IconButton(
                           onPressed: _openSettings,
-                          icon: const Icon(Icons.settings_outlined),
+                          icon: const Icon(Icons.tune_rounded),
                           tooltip: 'Settings',
                         ),
                       ],

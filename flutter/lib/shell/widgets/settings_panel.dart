@@ -140,55 +140,43 @@ class _SettingsPanelState extends ConsumerState<SettingsPanel> {
                     children: [
                       TextField(
                         controller: _downloadRootController,
-                        readOnly: true,
-                        onTap: _pickDownloadRoot,
+                        readOnly: !isMobilePlatform,
+                        enabled: !isMobilePlatform,
+                        onTap: isMobilePlatform ? null : _pickDownloadRoot,
                         decoration: InputDecoration(
                           hintText: '/Users/you/Downloads',
-                          suffixIconConstraints: const BoxConstraints(
-                            minWidth: 0,
-                            minHeight: 0,
-                          ),
-                          suffixIcon: Padding(
-                            padding: const EdgeInsets.only(right: 8),
-                            child: TextButton(
-                              onPressed: _pickDownloadRoot,
-                              style: TextButton.styleFrom(
-                                minimumSize: const Size(0, 32),
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 10,
-                                  vertical: 6,
+                          suffixIcon: isMobilePlatform
+                              ? null
+                              : Padding(
+                                  padding: const EdgeInsets.only(right: 8),
+                                  child: TextButton(
+                                    onPressed: _pickDownloadRoot,
+                                    style: TextButton.styleFrom(
+                                      minimumSize: const Size(0, 32),
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 10,
+                                        vertical: 6,
+                                      ),
+                                      tapTargetSize:
+                                          MaterialTapTargetSize.shrinkWrap,
+                                      foregroundColor: kInk,
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(8),
+                                        side: const BorderSide(color: kBorder),
+                                      ),
+                                    ),
+                                    child: Text(
+                                      'Choose',
+                                      style: driftSans(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                        color: kInk,
+                                      ),
+                                    ),
+                                  ),
                                 ),
-                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                foregroundColor: kInk,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(8),
-                                  side: const BorderSide(color: kBorder),
-                                ),
-                              ),
-                              child: Text(
-                                'Choose',
-                                style: driftSans(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                  color: kInk,
-                                ),
-                              ),
-                            ),
-                          ),
                         ),
                       ),
-                      if (isMobilePlatform) ...[
-                        const SizedBox(height: 8),
-                        Text(
-                          'On Android and iPhone, Drift saves into an app-writable downloads folder.',
-                          style: driftSans(
-                            fontSize: 11.5,
-                            fontWeight: FontWeight.w400,
-                            color: kMuted,
-                            height: 1.45,
-                          ),
-                        ),
-                      ],
                     ],
                   ),
                 ),
@@ -348,7 +336,18 @@ class _FlatToggleRow extends StatelessWidget {
           child: Switch(
             value: value,
             onChanged: onChanged,
-            activeThumbColor: kAccentCyanStrong,
+            thumbColor: WidgetStateProperty.resolveWith((states) {
+              if (states.contains(WidgetState.selected)) {
+                return Colors.white;
+              }
+              return Colors.white;
+            }),
+            trackColor: WidgetStateProperty.resolveWith((states) {
+              if (states.contains(WidgetState.selected)) {
+                return kAccentCyanStrong;
+              }
+              return kBorder;
+            }),
           ),
         ),
       ],
