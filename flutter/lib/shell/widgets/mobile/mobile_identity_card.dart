@@ -10,11 +10,13 @@ class MobileIdentityCard extends StatefulWidget {
     required this.deviceName,
     required this.receiveCode,
     required this.status,
+    required this.statusColor,
   });
 
   final String deviceName;
   final String receiveCode;
   final String status;
+  final Color statusColor;
 
   @override
   State<MobileIdentityCard> createState() => _MobileIdentityCardState();
@@ -78,8 +80,8 @@ class _MobileIdentityCardState extends State<MobileIdentityCard> {
                           Container(
                             width: 8,
                             height: 8,
-                            decoration: const BoxDecoration(
-                              color: Color(0xFF49B36C),
+                            decoration: BoxDecoration(
+                              color: widget.statusColor,
                               shape: BoxShape.circle,
                             ),
                           ),
@@ -88,16 +90,12 @@ class _MobileIdentityCardState extends State<MobileIdentityCard> {
                             widget.status,
                             style: driftSans(
                               fontSize: 14,
-                              color: kMuted,
+                              color: widget.statusColor,
                               fontWeight: FontWeight.w500,
                             ),
                           ),
                           const SizedBox(width: 12),
-                          Container(
-                            width: 1,
-                            height: 12,
-                            color: kBorder,
-                          ),
+                          Container(width: 1, height: 12, color: kBorder),
                           const SizedBox(width: 12),
                           Icon(
                             Icons.wifi_tethering_rounded,
@@ -106,7 +104,7 @@ class _MobileIdentityCardState extends State<MobileIdentityCard> {
                           ),
                           const SizedBox(width: 4),
                           Text(
-                            'Broadcasting',
+                            'Visible to nearby devices',
                             style: driftSans(
                               fontSize: 14,
                               color: kAccentCyanStrong,
@@ -148,11 +146,16 @@ class _MobileIdentityCardState extends State<MobileIdentityCard> {
                   AnimatedSwitcher(
                     duration: const Duration(milliseconds: 200),
                     child: _copied
-                        ? const Icon(Icons.check_circle_outline_rounded,
-                            color: Color(0xFF49B36C), key: ValueKey('done'))
-                        : Icon(Icons.copy_rounded,
+                        ? const Icon(
+                            Icons.check_circle_outline_rounded,
+                            color: Color(0xFF49B36C),
+                            key: ValueKey('done'),
+                          )
+                        : Icon(
+                            Icons.copy_rounded,
                             color: kMuted.withValues(alpha: 0.5),
-                            key: const ValueKey('copy')),
+                            key: const ValueKey('copy'),
+                          ),
                   ),
                 ],
               ),

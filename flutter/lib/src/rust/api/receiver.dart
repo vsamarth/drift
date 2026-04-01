@@ -100,6 +100,7 @@ class ReceiverRegistration {
 class ReceiverTransferEvent {
   final ReceiverTransferPhase phase;
   final String senderName;
+  final String senderDeviceType;
   final String destinationLabel;
   final String saveRootLabel;
   final String statusMessage;
@@ -112,6 +113,7 @@ class ReceiverTransferEvent {
   const ReceiverTransferEvent({
     required this.phase,
     required this.senderName,
+    required this.senderDeviceType,
     required this.destinationLabel,
     required this.saveRootLabel,
     required this.statusMessage,
@@ -126,6 +128,7 @@ class ReceiverTransferEvent {
   int get hashCode =>
       phase.hashCode ^
       senderName.hashCode ^
+      senderDeviceType.hashCode ^
       destinationLabel.hashCode ^
       saveRootLabel.hashCode ^
       statusMessage.hashCode ^
@@ -142,6 +145,7 @@ class ReceiverTransferEvent {
           runtimeType == other.runtimeType &&
           phase == other.phase &&
           senderName == other.senderName &&
+          senderDeviceType == other.senderDeviceType &&
           destinationLabel == other.destinationLabel &&
           saveRootLabel == other.saveRootLabel &&
           statusMessage == other.statusMessage &&

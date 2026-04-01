@@ -26,6 +26,7 @@ pub struct ReceiverPendingDecision {
     control_recv: iroh::endpoint::RecvStream,
     session_id: String,
     sender_device_name: String,
+    sender_device_type: DeviceType,
     manifest: OfferManifest,
     expected_files: BTreeMap<String, ExpectedFile>,
     out_dir: PathBuf,
@@ -38,6 +39,10 @@ impl ReceiverPendingDecision {
 
     pub fn sender_device_name(&self) -> &str {
         &self.sender_device_name
+    }
+
+    pub fn sender_device_type(&self) -> DeviceType {
+        self.sender_device_type
     }
 
     pub fn manifest(&self) -> &OfferManifest {
@@ -72,6 +77,7 @@ pub enum ReceiveTransferPhase {
 pub struct ReceiveTransferProgress {
     pub phase: ReceiveTransferPhase,
     pub sender_device_name: String,
+    pub sender_device_type: DeviceType,
     pub file_count: u64,
     pub total_bytes: u64,
 
@@ -154,6 +160,7 @@ pub async fn receiver_run_until_decision(
         control_recv,
         session_id: hello.session_id,
         sender_device_name: hello.device_name,
+        sender_device_type: hello.device_type,
         manifest: offer.manifest,
         expected_files,
         out_dir,
@@ -170,6 +177,7 @@ where
     F: FnMut(ReceiveTransferProgress),
 {
     let sender_device_name = pending.sender_device_name.clone();
+    let sender_device_type = pending.sender_device_type;
     let file_count = pending.manifest.file_count;
     let total_bytes = pending.manifest.total_size;
 
@@ -184,6 +192,7 @@ where
         on_progress(ReceiveTransferProgress {
             phase: ReceiveTransferPhase::Declined,
             sender_device_name,
+            sender_device_type,
             file_count,
             total_bytes,
             bytes_received: 0,
@@ -213,6 +222,7 @@ where
             on_progress(ReceiveTransferProgress {
                 phase: ReceiveTransferPhase::Receiving,
                 sender_device_name: sender_device_name.clone(),
+                sender_device_type,
                 file_count,
                 total_bytes,
                 bytes_received: p.total_bytes_received,
@@ -230,6 +240,7 @@ where
     on_progress(ReceiveTransferProgress {
         phase: ReceiveTransferPhase::Completed,
         sender_device_name,
+        sender_device_type,
         file_count,
         total_bytes,
         bytes_received: total_bytes,
@@ -270,12 +281,14 @@ where
         receiver_run_until_decision(connection, out_dir, device_name, device_type, machine).await?;
 
     let sender_device_name = pending.sender_device_name.clone();
+    let sender_device_type = pending.sender_device_type;
     let file_count = pending.manifest.file_count;
     let total_bytes = pending.manifest.total_size;
 
     on_progress(ReceiveTransferProgress {
         phase: ReceiveTransferPhase::WaitingForDecision,
         sender_device_name: sender_device_name.clone(),
+        sender_device_type,
         file_count,
         total_bytes,
         bytes_received: 0,
@@ -296,6 +309,7 @@ where
         on_progress(ReceiveTransferProgress {
             phase: ReceiveTransferPhase::Failed,
             sender_device_name,
+            sender_device_type,
             file_count,
             total_bytes,
             bytes_received: 0,

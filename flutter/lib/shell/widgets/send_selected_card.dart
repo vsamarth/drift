@@ -465,6 +465,8 @@ class NearbyDevicesSection extends ConsumerWidget {
     final state = ref.watch(driftAppNotifierProvider);
     final destinations = state.nearbySendDestinations;
     final canScan = state.canBrowseNearbyReceivers;
+    final scanInProgress = state.nearbyScanInProgress;
+    final scanCompletedOnce = state.nearbyScanHasCompletedOnce;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -500,6 +502,13 @@ class NearbyDevicesSection extends ConsumerWidget {
             message: state.isInspectingSendItems
                 ? 'Nearby devices will appear here once your files are ready.'
                 : 'Nearby devices will appear here after you add files.',
+          )
+        else if (scanInProgress && !scanCompletedOnce)
+          const _NearbyStatusPanel(
+            icon: Icons.radar_outlined,
+            title: 'Scanning nearby devices...',
+            message:
+                'Looking for receivers on your current network. This should only take a few seconds.',
           )
         else
           const _NearbyStatusPanel(

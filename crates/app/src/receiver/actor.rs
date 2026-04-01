@@ -247,6 +247,7 @@ async fn run_listener_loop(
                 final_event: ReceiverOfferEvent {
                     phase: ReceiverOfferPhase::Failed,
                     sender_name: String::new(),
+                    sender_device_type: String::new(),
                     destination_label: String::new(),
                     save_root_label,
                     status_message: "Could not prepare save location.".to_owned(),
@@ -323,6 +324,7 @@ async fn handle_incoming_offer(
                     final_event: ReceiverOfferEvent {
                         phase: ReceiverOfferPhase::Failed,
                         sender_name: String::new(),
+                        sender_device_type: String::new(),
                         destination_label: String::new(),
                         save_root_label,
                         status_message: "Transfer failed.".to_owned(),
@@ -339,6 +341,7 @@ async fn handle_incoming_offer(
     };
 
     let sender_label = display_sender_label(pending.sender_device_name());
+    let sender_device_type = pending.sender_device_type();
     let manifest = pending.manifest().clone();
     let files = manifest
         .files
@@ -353,6 +356,7 @@ async fn handle_incoming_offer(
         offer_id,
         pending.connection().clone(),
         pending.sender_device_name().to_owned(),
+        sender_device_type,
         sender_label.clone(),
         save_root_label.clone(),
         manifest.file_count,
@@ -362,6 +366,7 @@ async fn handle_incoming_offer(
     let prepared_event = ReceiverOfferEvent {
         phase: ReceiverOfferPhase::OfferReady,
         sender_name: pending.sender_device_name().to_owned(),
+        sender_device_type: device_type_to_str(sender_device_type),
         destination_label: sender_label.clone(),
         save_root_label: save_root_label.clone(),
         status_message: format!("{sender_label} wants to send you files."),
@@ -411,6 +416,7 @@ async fn handle_incoming_offer(
                 ReceiverOfferPhase::Declined
             },
             sender_name: String::new(),
+            sender_device_type: device_type_to_str(sender_device_type),
             destination_label: sender_label,
             save_root_label,
             status_message: if approved {
@@ -427,6 +433,7 @@ async fn handle_incoming_offer(
         Err(err) => ReceiverOfferEvent {
             phase: ReceiverOfferPhase::Failed,
             sender_name: String::new(),
+            sender_device_type: device_type_to_str(sender_device_type),
             destination_label: sender_label,
             save_root_label,
             status_message: "Transfer failed.".to_owned(),
@@ -450,6 +457,7 @@ fn spawn_pending_offer_watch_task(
     offer_id: u64,
     connection: iroh::endpoint::Connection,
     sender_name: String,
+    sender_device_type: DeviceType,
     destination_label: String,
     save_root_label: String,
     item_count: u64,
@@ -460,6 +468,7 @@ fn spawn_pending_offer_watch_task(
         let disconnected_event = ReceiverOfferEvent {
             phase: ReceiverOfferPhase::Failed,
             sender_name: sender_name.clone(),
+            sender_device_type: device_type_to_str(sender_device_type),
             destination_label: destination_label.clone(),
             save_root_label: save_root_label.clone(),
             status_message: "Sender disconnected before you responded.".to_owned(),
@@ -472,6 +481,7 @@ fn spawn_pending_offer_watch_task(
         let expired_event = ReceiverOfferEvent {
             phase: ReceiverOfferPhase::Failed,
             sender_name,
+            sender_device_type: device_type_to_str(sender_device_type),
             destination_label,
             save_root_label,
             status_message: "Offer expired before you responded.".to_owned(),
@@ -512,6 +522,7 @@ fn map_receiver_offer_progress(
     ReceiverOfferEvent {
         phase,
         sender_name: progress.sender_device_name.clone(),
+        sender_device_type: device_type_to_str(progress.sender_device_type),
         destination_label: sender_label.to_owned(),
         save_root_label: save_root_label.to_owned(),
         status_message: match progress.phase {
@@ -527,6 +538,13 @@ fn map_receiver_offer_progress(
         total_size_label: human_size(total_size_bytes),
         files: Vec::new(),
         error_message: progress.error_message.clone(),
+    }
+}
+
+fn device_type_to_str(value: DeviceType) -> String {
+    match value {
+        DeviceType::Phone => "phone".to_owned(),
+        DeviceType::Laptop => "laptop".to_owned(),
     }
 }
 

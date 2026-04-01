@@ -531,6 +531,7 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
         ),
         decisionPending: true,
         payloadTotalBytes: _bigIntToInt(event.totalSizeBytes),
+        senderDeviceType: event.senderDeviceType,
       ),
     );
     unawaited(focusAppForIncomingTransfer());
@@ -562,6 +563,7 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
         summary: currentSummary.copyWith(statusMessage: event.statusMessage),
         payloadBytesReceived: payloadBytesReceived,
         payloadTotalBytes: payloadTotalBytes,
+        senderDeviceType: event.senderDeviceType,
       ),
     );
   }
@@ -596,6 +598,7 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
         ),
         payloadBytesReceived: bytesReceived,
         payloadTotalBytes: totalBytes,
+        senderDeviceType: event.senderDeviceType,
       ),
     );
   }
@@ -652,7 +655,7 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
       draft.copyWith(nearbyScanCompletedOnce: false, nearbyScanInFlight: false),
     );
     unawaited(_runNearbyScanOnce());
-    _nearbyScanTimer = Timer.periodic(const Duration(seconds: 12), (_) {
+    _nearbyScanTimer = Timer.periodic(_nearbyRefreshInterval, (_) {
       final current = _draftSession;
       if (current == null || current.items.isEmpty || current.isInspecting) {
         _cancelNearbyScanTimer();
@@ -669,7 +672,9 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
     }
     _setSession(draft.copyWith(nearbyScanInFlight: true));
     try {
-      final next = await _nearbyDiscoverySource.scan();
+      final next = await _nearbyDiscoverySource.scan(
+        timeout: _nearbyScanTimeout,
+      );
       final current = _draftSession;
       if (current == null || current.isInspecting) {
         return;
@@ -695,6 +700,14 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
       }
     }
   }
+
+  Duration get _nearbyScanTimeout => _identity.deviceType == 'phone'
+      ? const Duration(seconds: 4)
+      : const Duration(seconds: 8);
+
+  Duration get _nearbyRefreshInterval => _identity.deviceType == 'phone'
+      ? const Duration(seconds: 8)
+      : const Duration(seconds: 12);
 
   void _startSendTransferWithTicket(
     SendDestinationViewData destination,

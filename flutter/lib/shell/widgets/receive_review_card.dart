@@ -19,6 +19,7 @@ class ReceiveReviewCard extends ConsumerWidget {
     final itemSummary =
         '${_fileCountLabel(itemCount)}${totalSize.isEmpty ? '' : ' · $totalSize'}';
     final saveRoot = summary?.destinationLabel.trim() ?? 'Downloads';
+    final senderDeviceType = state.receiveSenderDeviceType ?? 'laptop';
     final notifier = ref.read(driftAppNotifierProvider.notifier);
 
     return Padding(
@@ -78,7 +79,7 @@ class ReceiveReviewCard extends ConsumerWidget {
                       padding: const EdgeInsets.symmetric(horizontal: 4),
                       child: SendingConnectionStrip(
                         localLabel: senderName,
-                        localDeviceType: 'laptop',
+                        localDeviceType: senderDeviceType,
                         remoteLabel: state.deviceName,
                         remoteDeviceType: state.deviceType,
                         animate: ref.watch(animateSendingConnectionProvider),

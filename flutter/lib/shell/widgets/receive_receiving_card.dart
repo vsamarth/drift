@@ -19,6 +19,7 @@ class ReceiveReceivingCard extends ConsumerWidget {
     final totalSize = summary?.totalSize ?? '';
     final itemSummary =
         '${_fileCountLabel(itemCount)}${totalSize.isEmpty ? '' : ' · $totalSize'}';
+    final senderDeviceType = state.receiveSenderDeviceType ?? 'laptop';
 
     final transferProgress = _transferProgressForStrip(state);
     final mode = _receivingStripMode(state);
@@ -78,7 +79,7 @@ class ReceiveReceivingCard extends ConsumerWidget {
                       padding: const EdgeInsets.symmetric(horizontal: 4),
                       child: SendingConnectionStrip(
                         localLabel: senderName,
-                        localDeviceType: 'laptop',
+                        localDeviceType: senderDeviceType,
                         remoteLabel: state.deviceName,
                         remoteDeviceType: state.deviceType,
                         animate: ref.watch(animateSendingConnectionProvider),

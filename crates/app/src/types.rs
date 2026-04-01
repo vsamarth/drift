@@ -69,6 +69,7 @@ pub struct ReceiverOfferFile {
 pub struct ReceiverOfferEvent {
     pub phase: ReceiverOfferPhase,
     pub sender_name: String,
+    pub sender_device_type: String,
     pub destination_label: String,
     pub save_root_label: String,
     pub status_message: String,

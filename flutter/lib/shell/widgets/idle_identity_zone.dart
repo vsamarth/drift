@@ -48,6 +48,7 @@ class _IdleIdentityZoneState extends ConsumerState<IdleIdentityZone> {
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(driftAppNotifierProvider);
+    final badgeColor = state.receiverBadge.statusColor;
 
     return Padding(
       key: const ValueKey<String>('idle-identity-zone'),
@@ -78,13 +79,11 @@ class _IdleIdentityZoneState extends ConsumerState<IdleIdentityZone> {
                       width: 7,
                       height: 7,
                       decoration: BoxDecoration(
-                        color: const Color(0xFF49B36C),
+                        color: badgeColor,
                         shape: BoxShape.circle,
                         boxShadow: [
                           BoxShadow(
-                            color: const Color(
-                              0xFF49B36C,
-                            ).withValues(alpha: 0.22),
+                            color: badgeColor.withValues(alpha: 0.22),
                             blurRadius: 6,
                           ),
                         ],
@@ -99,7 +98,7 @@ class _IdleIdentityZoneState extends ConsumerState<IdleIdentityZone> {
                         style: driftSans(
                           fontSize: 11.5,
                           fontWeight: FontWeight.w500,
-                          color: kMuted,
+                          color: badgeColor,
                         ),
                       ),
                     ),

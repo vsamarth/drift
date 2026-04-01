@@ -1,27 +1,41 @@
+import 'package:flutter/material.dart';
+
+import '../platform/storage_access_source.dart';
 import '../src/rust/api/receiver.dart' as rust_receiver;
 import 'app_identity.dart';
-import '../platform/storage_access_source.dart';
+
+enum ReceiverBadgePhase { unavailable, registering, ready }
 
 class ReceiverBadgeState {
   const ReceiverBadgeState({
     required this.code,
     required this.status,
+    required this.phase,
     this.expiresAt,
   });
 
   const ReceiverBadgeState.registering()
     : code = '......',
       status = 'Registering',
+      phase = ReceiverBadgePhase.registering,
       expiresAt = null;
 
   const ReceiverBadgeState.unavailable()
     : code = '......',
       status = 'Unavailable',
+      phase = ReceiverBadgePhase.unavailable,
       expiresAt = null;
 
   final String code;
   final String status;
+  final ReceiverBadgePhase phase;
   final String? expiresAt;
+
+  Color get statusColor => switch (phase) {
+    ReceiverBadgePhase.unavailable => const Color(0xFF8A8A8A),
+    ReceiverBadgePhase.registering => const Color(0xFFD4A824),
+    ReceiverBadgePhase.ready => const Color(0xFF49B36C),
+  };
 
   @override
   bool operator ==(Object other) =>
@@ -30,10 +44,11 @@ class ReceiverBadgeState {
           runtimeType == other.runtimeType &&
           code == other.code &&
           status == other.status &&
+          phase == other.phase &&
           expiresAt == other.expiresAt;
 
   @override
-  int get hashCode => Object.hash(code, status, expiresAt);
+  int get hashCode => Object.hash(code, status, phase, expiresAt);
 }
 
 abstract class ReceiverServiceSource {
@@ -104,6 +119,7 @@ ReceiverBadgeState _mapPairingState(rust_receiver.ReceiverPairingState state) {
   return ReceiverBadgeState(
     code: code,
     status: 'Ready',
+    phase: ReceiverBadgePhase.ready,
     expiresAt: state.expiresAt,
   );
 }

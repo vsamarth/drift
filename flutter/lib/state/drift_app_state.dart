@@ -105,6 +105,19 @@ class DriftAppState {
     _ => null,
   };
 
+  String? get receiveSenderDeviceType => switch (session) {
+    ReceiveOfferSession(:final senderDeviceType)
+        when senderDeviceType?.trim().isNotEmpty == true =>
+      senderDeviceType,
+    ReceiveTransferSession(:final senderDeviceType)
+        when senderDeviceType?.trim().isNotEmpty == true =>
+      senderDeviceType,
+    ReceiveResultSession(:final senderDeviceType)
+        when senderDeviceType?.trim().isNotEmpty == true =>
+      senderDeviceType,
+    _ => null,
+  };
+
   String get receiveCode => switch (session) {
     ReceiveIdleSession() => '',
     ReceiveOfferSession(:final summary) => summary.code,
@@ -335,12 +348,14 @@ class ReceiveOfferSession extends ShellSessionState {
     required this.summary,
     required this.decisionPending,
     required this.payloadTotalBytes,
+    this.senderDeviceType,
   });
 
   final List<TransferItemViewData> items;
   final TransferSummaryViewData summary;
   final bool decisionPending;
   final int? payloadTotalBytes;
+  final String? senderDeviceType;
 }
 
 class ReceiveTransferSession extends ShellSessionState {
@@ -349,24 +364,28 @@ class ReceiveTransferSession extends ShellSessionState {
     required this.summary,
     this.payloadBytesReceived,
     this.payloadTotalBytes,
+    this.senderDeviceType,
   });
 
   final List<TransferItemViewData> items;
   final TransferSummaryViewData summary;
   final int? payloadBytesReceived;
   final int? payloadTotalBytes;
+  final String? senderDeviceType;
 
   ReceiveTransferSession copyWith({
     List<TransferItemViewData>? items,
     TransferSummaryViewData? summary,
     int? payloadBytesReceived,
     int? payloadTotalBytes,
+    String? senderDeviceType,
   }) {
     return ReceiveTransferSession(
       items: items ?? this.items,
       summary: summary ?? this.summary,
       payloadBytesReceived: payloadBytesReceived ?? this.payloadBytesReceived,
       payloadTotalBytes: payloadTotalBytes ?? this.payloadTotalBytes,
+      senderDeviceType: senderDeviceType ?? this.senderDeviceType,
     );
   }
 }
@@ -378,6 +397,7 @@ class ReceiveResultSession extends ShellSessionState {
     this.metrics,
     this.payloadBytesReceived,
     this.payloadTotalBytes,
+    this.senderDeviceType,
   });
 
   final List<TransferItemViewData> items;
@@ -385,4 +405,5 @@ class ReceiveResultSession extends ShellSessionState {
   final List<TransferMetricRow>? metrics;
   final int? payloadBytesReceived;
   final int? payloadTotalBytes;
+  final String? senderDeviceType;
 }

@@ -14,22 +14,28 @@ class MobileTransferView extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(driftAppNotifierProvider);
     final notifier = ref.read(driftAppNotifierProvider.notifier);
-    
+
     final isSending = state.mode == TransferDirection.send;
     final items = isSending ? state.sendItems : state.receiveItems;
     final summary = isSending ? state.sendSummary : state.receiveSummary;
-    
-    final progress = isSending 
-        ? (state.sendPayloadTotalBytes != null && state.sendPayloadTotalBytes! > 0
-            ? (state.sendPayloadBytesSent ?? 0) / state.sendPayloadTotalBytes!
-            : 0.0)
-        : (state.receivePayloadTotalBytes != null && state.receivePayloadTotalBytes! > 0
-            ? (state.receivePayloadBytesReceived ?? 0) / state.receivePayloadTotalBytes!
-            : 0.0);
-            
-    final status = summary?.statusMessage ?? (isSending ? 'Preparing...' : 'Waiting...');
+
+    final progress = isSending
+        ? (state.sendPayloadTotalBytes != null &&
+                  state.sendPayloadTotalBytes! > 0
+              ? (state.sendPayloadBytesSent ?? 0) / state.sendPayloadTotalBytes!
+              : 0.0)
+        : (state.receivePayloadTotalBytes != null &&
+                  state.receivePayloadTotalBytes! > 0
+              ? (state.receivePayloadBytesReceived ?? 0) /
+                    state.receivePayloadTotalBytes!
+              : 0.0);
+
+    final status =
+        summary?.statusMessage ?? (isSending ? 'Preparing...' : 'Waiting...');
     final title = isSending ? 'Sending' : 'Receiving';
-    final destination = isSending ? (summary?.destinationLabel ?? 'Recipient') : (summary?.senderName ?? 'Sender');
+    final destination = isSending
+        ? (summary?.destinationLabel ?? 'Recipient')
+        : (summary?.senderName ?? 'Sender');
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -103,18 +109,20 @@ class MobileTransferView extends ConsumerWidget {
           const SizedBox(height: 32),
           const Divider(),
           const SizedBox(height: 16),
-          Expanded(
-            child: PreviewList(items: items),
-          ),
+          Expanded(child: PreviewList(items: items)),
           const SizedBox(height: 16),
           if (isSending || state.receiveStage == TransferStage.waiting)
             Padding(
               padding: const EdgeInsets.only(bottom: 24),
               child: FilledButton.tonal(
-                onPressed: isSending ? notifier.cancelSendInProgress : notifier.declineReceiveOffer,
+                onPressed: isSending
+                    ? notifier.cancelSendInProgress
+                    : notifier.declineReceiveOffer,
                 style: FilledButton.styleFrom(
                   foregroundColor: const Color(0xFFCC3333),
-                  backgroundColor: const Color(0xFFCC3333).withValues(alpha: 0.1),
+                  backgroundColor: const Color(
+                    0xFFCC3333,
+                  ).withValues(alpha: 0.1),
                 ),
                 child: const Text('Cancel Transfer'),
               ),

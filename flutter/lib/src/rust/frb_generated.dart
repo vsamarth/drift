@@ -813,19 +813,20 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ReceiverTransferEvent dco_decode_receiver_transfer_event(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 10)
-      throw Exception('unexpected arr length: expect 10 but see ${arr.length}');
+    if (arr.length != 11)
+      throw Exception('unexpected arr length: expect 11 but see ${arr.length}');
     return ReceiverTransferEvent(
       phase: dco_decode_receiver_transfer_phase(arr[0]),
       senderName: dco_decode_String(arr[1]),
-      destinationLabel: dco_decode_String(arr[2]),
-      saveRootLabel: dco_decode_String(arr[3]),
-      statusMessage: dco_decode_String(arr[4]),
-      itemCount: dco_decode_u_64(arr[5]),
-      totalSizeBytes: dco_decode_u_64(arr[6]),
-      totalSizeLabel: dco_decode_String(arr[7]),
-      files: dco_decode_list_receiver_transfer_file(arr[8]),
-      errorMessage: dco_decode_opt_String(arr[9]),
+      senderDeviceType: dco_decode_String(arr[2]),
+      destinationLabel: dco_decode_String(arr[3]),
+      saveRootLabel: dco_decode_String(arr[4]),
+      statusMessage: dco_decode_String(arr[5]),
+      itemCount: dco_decode_u_64(arr[6]),
+      totalSizeBytes: dco_decode_u_64(arr[7]),
+      totalSizeLabel: dco_decode_String(arr[8]),
+      files: dco_decode_list_receiver_transfer_file(arr[9]),
+      errorMessage: dco_decode_opt_String(arr[10]),
     );
   }
 
@@ -1130,6 +1131,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_phase = sse_decode_receiver_transfer_phase(deserializer);
     var var_senderName = sse_decode_String(deserializer);
+    var var_senderDeviceType = sse_decode_String(deserializer);
     var var_destinationLabel = sse_decode_String(deserializer);
     var var_saveRootLabel = sse_decode_String(deserializer);
     var var_statusMessage = sse_decode_String(deserializer);
@@ -1141,6 +1143,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     return ReceiverTransferEvent(
       phase: var_phase,
       senderName: var_senderName,
+      senderDeviceType: var_senderDeviceType,
       destinationLabel: var_destinationLabel,
       saveRootLabel: var_saveRootLabel,
       statusMessage: var_statusMessage,

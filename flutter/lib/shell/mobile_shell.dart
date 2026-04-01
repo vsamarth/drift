@@ -6,6 +6,7 @@ import '../state/drift_providers.dart';
 import '../state/drift_app_state.dart';
 import 'widgets/mobile/mobile_identity_card.dart';
 import 'widgets/mobile/mobile_transfer_view.dart';
+import 'widgets/settings_panel.dart';
 import 'widgets/mobile/send_bottom_sheet.dart';
 import 'widgets/shell_state_content.dart';
 
@@ -117,6 +118,15 @@ class _MobileShellState extends ConsumerState<MobileShell> {
     );
   }
 
+  void _openSettings() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        fullscreenDialog: true,
+        builder: (context) => const _MobileSettingsPage(),
+      ),
+    );
+  }
+
   Widget _buildStepCard({
     required IconData icon,
     required String title,
@@ -181,34 +191,23 @@ class _MobileShellState extends ConsumerState<MobileShell> {
           CustomScrollView(
             physics: const BouncingScrollPhysics(),
             slivers: [
-              SliverAppBar(
-                expandedHeight: 120,
-                floating: false,
-                pinned: true,
-                backgroundColor: kBg,
-                elevation: 0,
-                flexibleSpace: FlexibleSpaceBar(
-                  title: Text(
-                    'Drift',
-                    style: driftSans(
-                      fontSize: 24,
-                      fontWeight: FontWeight.w800,
-                      color: kInk,
+              SliverToBoxAdapter(
+                child: SafeArea(
+                  bottom: false,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                    child: Row(
+                      children: [
+                        const Spacer(),
+                        IconButton(
+                          onPressed: _openSettings,
+                          icon: const Icon(Icons.settings_outlined),
+                          tooltip: 'Settings',
+                        ),
+                      ],
                     ),
                   ),
-                  centerTitle: false,
-                  titlePadding: const EdgeInsets.symmetric(
-                    horizontal: 24,
-                    vertical: 16,
-                  ),
                 ),
-                actions: [
-                  IconButton(
-                    onPressed: () {},
-                    icon: const Icon(Icons.settings_outlined),
-                  ),
-                  const SizedBox(width: 8),
-                ],
               ),
               SliverPadding(
                 padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -219,6 +218,7 @@ class _MobileShellState extends ConsumerState<MobileShell> {
                       deviceName: state.deviceName,
                       receiveCode: state.idleReceiveCode,
                       status: state.idleReceiveStatus,
+                      statusColor: state.receiverBadge.statusColor,
                     ),
                     const SizedBox(height: 32),
                     if (isIdle) ...[
@@ -307,6 +307,52 @@ class _MobileShellState extends ConsumerState<MobileShell> {
               child: const Icon(Icons.add_rounded),
             )
           : null,
+    );
+  }
+}
+
+class _MobileSettingsPage extends StatelessWidget {
+  const _MobileSettingsPage();
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: kBg,
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  IconButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.close_rounded),
+                    tooltip: 'Close',
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    'Settings',
+                    style: driftSans(
+                      fontSize: 22,
+                      fontWeight: FontWeight.w700,
+                      color: kInk,
+                      letterSpacing: -0.35,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Expanded(
+                child: SettingsPanel(
+                  availableHeight: MediaQuery.of(context).size.height,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

@@ -67,6 +67,7 @@ pub struct ReceiverTransferFile {
 pub struct ReceiverTransferEvent {
     pub phase: ReceiverTransferPhase,
     pub sender_name: String,
+    pub sender_device_type: String,
     pub destination_label: String,
     pub save_root_label: String,
     pub status_message: String,
@@ -425,6 +426,7 @@ fn map_event(event: AppReceiverOfferEvent) -> ReceiverTransferEvent {
             AppReceiverOfferPhase::Declined => ReceiverTransferPhase::Declined,
         },
         sender_name: event.sender_name,
+        sender_device_type: event.sender_device_type,
         destination_label: event.destination_label,
         save_root_label: event.save_root_label,
         status_message: event.status_message,

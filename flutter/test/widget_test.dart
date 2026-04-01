@@ -269,6 +269,7 @@ class FakeReceiverServiceSource implements ReceiverServiceSource {
     this.initialBadge = const ReceiverBadgeState(
       code: 'F9P2Q1',
       status: 'Ready',
+      phase: ReceiverBadgePhase.ready,
     ),
   });
 
@@ -322,6 +323,7 @@ rust_receiver.ReceiverTransferEvent _incomingOfferEvent() {
   return rust_receiver.ReceiverTransferEvent(
     phase: rust_receiver.ReceiverTransferPhase.offerReady,
     senderName: 'Maya',
+    senderDeviceType: 'phone',
     destinationLabel: 'Downloads',
     saveRootLabel: 'Downloads',
     statusMessage: 'Maya wants to send you a file.',
