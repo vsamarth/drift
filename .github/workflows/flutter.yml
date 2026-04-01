@@ -55,4 +55,4 @@ jobs:
         run: flutter test
 
       - name: Run integration tests
-        run: flutter test integration_test/simple_test.dart
+        run: flutter test -d macos integration_test/transfer_test.dart
