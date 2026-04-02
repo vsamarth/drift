@@ -5,9 +5,9 @@
 ## Features
 
 - **Send files to anyone, anywhere in the world.** Just like AirDrop, but even more magical.
-- **Simple and fast:** pick your files, connect, and send directly to the other device, with no uploads and no extra steps.
-- **End-to-end encrypted.**
 - Use **Drift** across **macOS, Linux, Windows, Android, and iOS**.
+- **Simple and fast:** pick your files, connect, and send directly to the other device, with no uploads and no extra steps.
+- **End-to-end encrypted:** only you and the recipient can read your files; no one else can.
 - **Free & open source:** **no ads**, **no limits** on what you send, and **no account** required.
 
 ## Installation
