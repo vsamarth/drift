@@ -4,10 +4,11 @@
 
 ## Features
 
-- Send files to anyone, anywhere in the world. Just like AirDrop, but even more magical.
-- End-to-end encrypted.
-- Share quickly, even for large files and folders.
-- Use Drift across macOS, Linux, Windows, Android, and iOS.
+- **Send files to anyone, anywhere in the world.** Just like AirDrop, but even more magical.
+- **Simple and fast:** pick your files, connect, and send directly to the other device, with no uploads and no extra steps.
+- **End-to-end encrypted.**
+- Use **Drift** across **macOS, Linux, Windows, Android, and iOS**.
+- **Free & open source:** **no ads**, **no limits** on what you send, and **no account** required.
 
 ## Installation
 
