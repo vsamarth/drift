@@ -279,6 +279,7 @@ rust_receiver.ReceiverTransferEvent _incomingOfferEvent() {
     statusMessage: 'Maya wants to send you a file.',
     itemCount: BigInt.one,
     totalSizeBytes: BigInt.from(18 * 1024),
+    bytesReceived: BigInt.zero,
     totalSizeLabel: '18 KB',
     files: [
       rust_receiver.ReceiverTransferFile(
@@ -300,7 +301,8 @@ rust_receiver.ReceiverTransferEvent _incomingReceivingEvent({
     saveRootLabel: 'Downloads',
     statusMessage: 'Receiving files...',
     itemCount: BigInt.one,
-    totalSizeBytes: receivedBytes,
+    totalSizeBytes: BigInt.from(18 * 1024),
+    bytesReceived: receivedBytes,
     totalSizeLabel: '18 KB',
     files: const [],
   );

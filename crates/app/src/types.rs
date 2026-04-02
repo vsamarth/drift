@@ -75,6 +75,7 @@ pub struct ReceiverOfferEvent {
     pub status_message: String,
     pub item_count: u64,
     pub total_size_bytes: u64,
+    pub bytes_received: u64,
     pub total_size_label: String,
     pub files: Vec<ReceiverOfferFile>,
     pub error_message: Option<String>,

@@ -106,6 +106,7 @@ class ReceiverTransferEvent {
   final String statusMessage;
   final BigInt itemCount;
   final BigInt totalSizeBytes;
+  final BigInt bytesReceived;
   final String totalSizeLabel;
   final List<ReceiverTransferFile> files;
   final String? errorMessage;
@@ -119,6 +120,7 @@ class ReceiverTransferEvent {
     required this.statusMessage,
     required this.itemCount,
     required this.totalSizeBytes,
+    required this.bytesReceived,
     required this.totalSizeLabel,
     required this.files,
     this.errorMessage,
@@ -134,6 +136,7 @@ class ReceiverTransferEvent {
       statusMessage.hashCode ^
       itemCount.hashCode ^
       totalSizeBytes.hashCode ^
+      bytesReceived.hashCode ^
       totalSizeLabel.hashCode ^
       files.hashCode ^
       errorMessage.hashCode;
@@ -151,6 +154,7 @@ class ReceiverTransferEvent {
           statusMessage == other.statusMessage &&
           itemCount == other.itemCount &&
           totalSizeBytes == other.totalSizeBytes &&
+          bytesReceived == other.bytesReceived &&
           totalSizeLabel == other.totalSizeLabel &&
           files == other.files &&
           errorMessage == other.errorMessage;

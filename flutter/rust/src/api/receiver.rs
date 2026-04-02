@@ -73,6 +73,7 @@ pub struct ReceiverTransferEvent {
     pub status_message: String,
     pub item_count: u64,
     pub total_size_bytes: u64,
+    pub bytes_received: u64,
     pub total_size_label: String,
     pub files: Vec<ReceiverTransferFile>,
     pub error_message: Option<String>,
@@ -201,7 +202,10 @@ pub fn respond_to_receiver_offer(accept: bool) -> Result<(), String> {
 pub(crate) async fn scan_nearby_with_receiver(
     timeout_secs: u64,
 ) -> Result<Vec<crate::api::lan::NearbyReceiverInfo>, String> {
-    println!("[bridge] scanning nearby receivers (timeout={}s)", timeout_secs);
+    println!(
+        "[bridge] scanning nearby receivers (timeout={}s)",
+        timeout_secs
+    );
     let service = match current_service() {
         Some(service) => service,
         None => {
@@ -221,7 +225,10 @@ pub(crate) async fn scan_nearby_with_receiver(
                 .map_err(|e| e.to_string())?;
             println!("[bridge] scan found {} receivers", receivers.len());
             for r in &receivers {
-                println!("[bridge]   - found receiver: name='{}' label='{}' code='{}'", r.fullname, r.label, r.code);
+                println!(
+                    "[bridge]   - found receiver: name='{}' label='{}' code='{}'",
+                    r.fullname, r.label, r.code
+                );
             }
             let _ = temp.shutdown().await;
             return Ok(receivers
@@ -235,10 +242,13 @@ pub(crate) async fn scan_nearby_with_receiver(
         .scan_nearby(timeout_secs)
         .await
         .map_err(|e| e.to_string())?;
-    
+
     println!("[bridge] scan found {} receivers", receivers.len());
     for r in &receivers {
-        println!("[bridge]   - found receiver: name='{}' label='{}' code='{}'", r.fullname, r.label, r.code);
+        println!(
+            "[bridge]   - found receiver: name='{}' label='{}' code='{}'",
+            r.fullname, r.label, r.code
+        );
     }
 
     Ok(receivers
@@ -256,7 +266,10 @@ async fn ensure_receiver_service(
         return Ok(service);
     }
 
-    println!("[bridge] creating new receiver service: device_name='{}' device_type='{}'", config.device_name, config.device_type);
+    println!(
+        "[bridge] creating new receiver service: device_name='{}' device_type='{}'",
+        config.device_name, config.device_type
+    );
 
     let old_state = {
         let mut guard = RECEIVER_STATE
@@ -432,6 +445,7 @@ fn map_event(event: AppReceiverOfferEvent) -> ReceiverTransferEvent {
         status_message: event.status_message,
         item_count: event.item_count,
         total_size_bytes: event.total_size_bytes,
+        bytes_received: event.bytes_received,
         total_size_label: event.total_size_label,
         files: event.files.into_iter().map(map_file_row).collect(),
         error_message: event.error_message,

@@ -143,6 +143,10 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
     unawaited(_appendSendItemsFromPicker());
   }
 
+  void rescanNearbySendDestinations() {
+    unawaited(_runNearbyScanOnce());
+  }
+
   void acceptDroppedSendItems(List<String> paths) {
     unawaited(_acceptDroppedSendItems(paths));
   }
@@ -538,12 +542,11 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
   }
 
   void _applyIncomingReceiving(rust_receiver.ReceiverTransferEvent event) {
-    final payloadBytesReceived = _bigIntToInt(event.totalSizeBytes);
+    final payloadBytesReceived = _bigIntToInt(event.bytesReceived);
     if (_receivePayloadStartedAt == null && payloadBytesReceived > 0) {
       _receivePayloadStartedAt = DateTime.now();
     }
-    final payloadTotalBytes =
-        state.receivePayloadTotalBytes ?? payloadBytesReceived;
+    final payloadTotalBytes = _bigIntToInt(event.totalSizeBytes);
 
     final currentSummary =
         state.receiveSummary ??
@@ -569,8 +572,8 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
   }
 
   void _applyIncomingCompleted(rust_receiver.ReceiverTransferEvent event) {
-    final bytesReceived = _bigIntToInt(event.totalSizeBytes);
-    final totalBytes = state.receivePayloadTotalBytes ?? bytesReceived;
+    final bytesReceived = _bigIntToInt(event.bytesReceived);
+    final totalBytes = _bigIntToInt(event.totalSizeBytes);
     final summary =
         state.receiveSummary ??
         TransferSummaryViewData(

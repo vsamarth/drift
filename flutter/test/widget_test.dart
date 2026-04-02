@@ -3,8 +3,10 @@ import 'dart:ui';
 
 import 'package:drift_app/app/drift_app.dart';
 import 'package:drift_app/core/models/transfer_models.dart';
+import 'package:drift_app/core/theme/drift_theme.dart';
 import 'package:drift_app/platform/send_item_source.dart';
 import 'package:drift_app/platform/send_transfer_source.dart';
+import 'package:drift_app/shell/mobile_shell.dart';
 import 'package:drift_app/state/app_identity.dart';
 import 'package:drift_app/state/drift_providers.dart';
 import 'package:drift_app/state/nearby_discovery_source.dart';
@@ -33,6 +35,29 @@ Future<void> pumpUtilityApp(
     UncontrolledProviderScope(
       container: resolvedContainer,
       child: const DriftApp(),
+    ),
+  );
+  await tester.pumpAndSettle();
+  expectNoFlutterError(tester);
+}
+
+Future<void> pumpMobileShell(
+  WidgetTester tester, {
+  Size size = const Size(700, 844),
+  ProviderContainer? container,
+}) async {
+  tester.view.physicalSize = size;
+  tester.view.devicePixelRatio = 1.0;
+  addTearDown(() {
+    tester.view.resetPhysicalSize();
+    tester.view.resetDevicePixelRatio();
+  });
+
+  final resolvedContainer = container ?? buildTestContainer();
+  await tester.pumpWidget(
+    UncontrolledProviderScope(
+      container: resolvedContainer,
+      child: MaterialApp(theme: buildDriftTheme(), home: const MobileShell()),
     ),
   );
   await tester.pumpAndSettle();
@@ -228,6 +253,22 @@ class FakeSendItemSource implements SendItemSource {
   }
 }
 
+class ControlledSendItemSource extends FakeSendItemSource {
+  ControlledSendItemSource({required super.pickedItems});
+
+  final Completer<List<TransferItemViewData>> _pickCompleter =
+      Completer<List<TransferItemViewData>>();
+
+  @override
+  Future<List<TransferItemViewData>> pickFiles() => _pickCompleter.future;
+
+  void completePick(List<TransferItemViewData> items) {
+    if (!_pickCompleter.isCompleted) {
+      _pickCompleter.complete(List<TransferItemViewData>.unmodifiable(items));
+    }
+  }
+}
+
 class FakeNearbyDiscoverySource implements NearbyDiscoverySource {
   FakeNearbyDiscoverySource({this.destinations = const [], this.scanHandler});
 
@@ -329,6 +370,7 @@ rust_receiver.ReceiverTransferEvent _incomingOfferEvent() {
     statusMessage: 'Maya wants to send you a file.',
     itemCount: BigInt.one,
     totalSizeBytes: BigInt.from(18 * 1024),
+    bytesReceived: BigInt.zero,
     totalSizeLabel: '18 KB',
     files: [
       rust_receiver.ReceiverTransferFile(
@@ -440,6 +482,49 @@ void main() {
 
     expect(copiedText, 'F9P2Q1');
     expect(find.text('Copied'), findsOneWidget);
+    expectNoFlutterError(tester);
+  });
+
+  testWidgets('mobile selecting files opens the shared send shell', (
+    tester,
+  ) async {
+    final sendItemSource = ControlledSendItemSource(
+      pickedItems: const [
+        TransferItemViewData(
+          name: 'sample.txt',
+          path: 'sample.txt',
+          size: '18 KB',
+          kind: TransferItemKind.file,
+          sizeBytes: 18 * 1024,
+        ),
+      ],
+    );
+    final container = buildTestContainer(sendItemSource: sendItemSource);
+    await pumpMobileShell(tester, container: container);
+
+    expect(find.text('Tap to choose files to send.'), findsOneWidget);
+    expect(find.text('Selected files'), findsNothing);
+
+    await tester.tap(chooseFilesButton());
+    await tester.pump();
+
+    expect(find.text('Selected files'), findsNothing);
+
+    sendItemSource.completePick(const [
+      TransferItemViewData(
+        name: 'sample.txt',
+        path: 'sample.txt',
+        size: '18 KB',
+        kind: TransferItemKind.file,
+        sizeBytes: 18 * 1024,
+      ),
+    ]);
+    await pumpUiSettled(tester);
+
+    expect(find.text('Selected files'), findsWidgets);
+    expect(find.text('NEARBY DEVICES'), findsOneWidget);
+    container.read(driftAppNotifierProvider.notifier).resetShell();
+    await pumpUiSettled(tester);
     expectNoFlutterError(tester);
   });
 

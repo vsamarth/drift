@@ -789,6 +789,7 @@ impl SseDecode for crate::api::receiver::ReceiverTransferEvent {
         let mut var_statusMessage = <String>::sse_decode(deserializer);
         let mut var_itemCount = <u64>::sse_decode(deserializer);
         let mut var_totalSizeBytes = <u64>::sse_decode(deserializer);
+        let mut var_bytesReceived = <u64>::sse_decode(deserializer);
         let mut var_totalSizeLabel = <String>::sse_decode(deserializer);
         let mut var_files =
             <Vec<crate::api::receiver::ReceiverTransferFile>>::sse_decode(deserializer);
@@ -802,6 +803,7 @@ impl SseDecode for crate::api::receiver::ReceiverTransferEvent {
             status_message: var_statusMessage,
             item_count: var_itemCount,
             total_size_bytes: var_totalSizeBytes,
+            bytes_received: var_bytesReceived,
             total_size_label: var_totalSizeLabel,
             files: var_files,
             error_message: var_errorMessage,
@@ -1098,6 +1100,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::receiver::ReceiverTransferEve
             self.status_message.into_into_dart().into_dart(),
             self.item_count.into_into_dart().into_dart(),
             self.total_size_bytes.into_into_dart().into_dart(),
+            self.bytes_received.into_into_dart().into_dart(),
             self.total_size_label.into_into_dart().into_dart(),
             self.files.into_into_dart().into_dart(),
             self.error_message.into_into_dart().into_dart(),
@@ -1457,6 +1460,7 @@ impl SseEncode for crate::api::receiver::ReceiverTransferEvent {
         <String>::sse_encode(self.status_message, serializer);
         <u64>::sse_encode(self.item_count, serializer);
         <u64>::sse_encode(self.total_size_bytes, serializer);
+        <u64>::sse_encode(self.bytes_received, serializer);
         <String>::sse_encode(self.total_size_label, serializer);
         <Vec<crate::api::receiver::ReceiverTransferFile>>::sse_encode(self.files, serializer);
         <Option<String>>::sse_encode(self.error_message, serializer);

@@ -35,13 +35,21 @@ class MobileTransferView extends ConsumerWidget {
     final destination = isSending
         ? (summary?.destinationLabel ?? 'Recipient')
         : (summary?.senderName ?? 'Sender');
+    final transferredBytes = isSending
+        ? (state.sendPayloadBytesSent ?? 0)
+        : (state.receivePayloadBytesReceived ?? 0);
+    final totalBytes = isSending
+        ? (state.sendPayloadTotalBytes ?? 0)
+        : (state.receivePayloadTotalBytes ?? 0);
+    final itemCount = summary?.itemCount ?? items.length;
+    final totalSizeLabel = summary?.totalSize ?? _formatBytes(totalBytes);
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 24),
+    return SingleChildScrollView(
+      physics: const BouncingScrollPhysics(),
+      padding: const EdgeInsets.fromLTRB(24, 20, 24, 24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const SizedBox(height: 20),
           Center(
             child: Stack(
               alignment: Alignment.center,
@@ -105,29 +113,139 @@ class MobileTransferView extends ConsumerWidget {
             style: driftSans(fontSize: 14, color: kMuted),
             textAlign: TextAlign.center,
           ),
+          const SizedBox(height: 24),
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: kSurface,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: kBorder),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  isSending ? 'Transfer details' : 'Receive details',
+                  style: driftSans(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    color: kInk,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                _MetricRow(
+                  label: 'Payload',
+                  value:
+                      '${_formatBytes(transferredBytes)} / ${_formatBytes(totalBytes)}',
+                ),
+                _MetricRow(label: 'Items', value: '$itemCount'),
+                _MetricRow(label: 'Selection', value: totalSizeLabel),
+                if (isSending && state.sendTransferSpeedLabel != null)
+                  _MetricRow(
+                    label: 'Speed',
+                    value: state.sendTransferSpeedLabel!,
+                  ),
+                if (isSending && state.sendTransferEtaLabel != null)
+                  _MetricRow(label: 'ETA', value: state.sendTransferEtaLabel!),
+                if (items.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  Text(
+                    'Files',
+                    style: driftSans(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: kMuted,
+                      letterSpacing: 0.4,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  for (final item in items.take(4))
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 6),
+                      child: Text(
+                        '${item.name} · ${item.size}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: driftSans(fontSize: 13, color: kInk),
+                      ),
+                    ),
+                  if (items.length > 4)
+                    Text(
+                      '+${items.length - 4} more',
+                      style: driftSans(fontSize: 12, color: kMuted),
+                    ),
+                ],
+              ],
+            ),
+          ),
           const SizedBox(height: 32),
           const Divider(),
           const SizedBox(height: 16),
-          Expanded(child: PreviewList(items: items)),
+          PreviewList(items: items),
           const SizedBox(height: 16),
           if (isSending || state.receiveStage == TransferStage.waiting)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 24),
-              child: FilledButton.tonal(
-                onPressed: isSending
-                    ? notifier.cancelSendInProgress
-                    : notifier.declineReceiveOffer,
-                style: FilledButton.styleFrom(
-                  foregroundColor: const Color(0xFFCC3333),
-                  backgroundColor: const Color(
-                    0xFFCC3333,
-                  ).withValues(alpha: 0.1),
-                ),
-                child: const Text('Cancel Transfer'),
+            FilledButton.tonal(
+              onPressed: isSending
+                  ? notifier.cancelSendInProgress
+                  : notifier.declineReceiveOffer,
+              style: FilledButton.styleFrom(
+                foregroundColor: const Color(0xFFCC3333),
+                backgroundColor: const Color(0xFFCC3333).withValues(alpha: 0.1),
               ),
+              child: const Text('Cancel Transfer'),
             ),
         ],
       ),
     );
   }
+}
+
+class _MetricRow extends StatelessWidget {
+  const _MetricRow({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(label, style: driftSans(fontSize: 13, color: kMuted)),
+          ),
+          const SizedBox(width: 12),
+          Flexible(
+            child: Text(
+              value,
+              textAlign: TextAlign.right,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: driftSans(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: kInk,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+String _formatBytes(int bytes) {
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  var value = bytes.toDouble();
+  var unitIndex = 0;
+
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+
+  final decimals = value >= 10 || unitIndex == 0 ? 0 : 1;
+  final formatted = value.toStringAsFixed(decimals);
+  return '$formatted ${units[unitIndex]}';
 }

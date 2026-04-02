@@ -813,8 +813,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ReceiverTransferEvent dco_decode_receiver_transfer_event(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 11)
-      throw Exception('unexpected arr length: expect 11 but see ${arr.length}');
+    if (arr.length != 12)
+      throw Exception('unexpected arr length: expect 12 but see ${arr.length}');
     return ReceiverTransferEvent(
       phase: dco_decode_receiver_transfer_phase(arr[0]),
       senderName: dco_decode_String(arr[1]),
@@ -824,9 +824,10 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       statusMessage: dco_decode_String(arr[5]),
       itemCount: dco_decode_u_64(arr[6]),
       totalSizeBytes: dco_decode_u_64(arr[7]),
-      totalSizeLabel: dco_decode_String(arr[8]),
-      files: dco_decode_list_receiver_transfer_file(arr[9]),
-      errorMessage: dco_decode_opt_String(arr[10]),
+      bytesReceived: dco_decode_u_64(arr[8]),
+      totalSizeLabel: dco_decode_String(arr[9]),
+      files: dco_decode_list_receiver_transfer_file(arr[10]),
+      errorMessage: dco_decode_opt_String(arr[11]),
     );
   }
 
@@ -1137,6 +1138,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_statusMessage = sse_decode_String(deserializer);
     var var_itemCount = sse_decode_u_64(deserializer);
     var var_totalSizeBytes = sse_decode_u_64(deserializer);
+    var var_bytesReceived = sse_decode_u_64(deserializer);
     var var_totalSizeLabel = sse_decode_String(deserializer);
     var var_files = sse_decode_list_receiver_transfer_file(deserializer);
     var var_errorMessage = sse_decode_opt_String(deserializer);
@@ -1149,6 +1151,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       statusMessage: var_statusMessage,
       itemCount: var_itemCount,
       totalSizeBytes: var_totalSizeBytes,
+      bytesReceived: var_bytesReceived,
       totalSizeLabel: var_totalSizeLabel,
       files: var_files,
       errorMessage: var_errorMessage,
@@ -1497,6 +1500,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_String(self.statusMessage, serializer);
     sse_encode_u_64(self.itemCount, serializer);
     sse_encode_u_64(self.totalSizeBytes, serializer);
+    sse_encode_u_64(self.bytesReceived, serializer);
     sse_encode_String(self.totalSizeLabel, serializer);
     sse_encode_list_receiver_transfer_file(self.files, serializer);
     sse_encode_opt_String(self.errorMessage, serializer);

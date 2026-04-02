@@ -2,12 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/theme/drift_theme.dart';
-import '../state/drift_providers.dart';
 import '../state/drift_app_state.dart';
+import '../state/drift_providers.dart';
 import 'widgets/mobile/mobile_identity_card.dart';
+import 'widgets/mobile/mobile_send_draft_view.dart';
 import 'widgets/mobile/mobile_transfer_view.dart';
 import 'widgets/settings_panel.dart';
-import 'widgets/mobile/send_bottom_sheet.dart';
+import 'widgets/mobile/select_files_card.dart';
 import 'widgets/shell_state_content.dart';
 
 class MobileShell extends ConsumerStatefulWidget {
@@ -26,34 +27,12 @@ class _MobileShellState extends ConsumerState<MobileShell> {
 
   void _setupShellListeners() {
     ref.listenManual(driftAppNotifierProvider, (previous, next) {
-      final wasDraft = previous?.session is SendDraftSession;
-      final isDraft = next.session is SendDraftSession;
-      if (!wasDraft && isDraft) {
-        _showSendBottomSheet();
-      } else if (wasDraft && !isDraft) {
-        Navigator.of(context).maybePop();
-      }
-
       final wasOffer = previous?.session is ReceiveOfferSession;
       final isOffer = next.session is ReceiveOfferSession;
       if (!wasOffer && isOffer) {
         _showReceiveOfferBottomSheet();
       } else if (wasOffer && !isOffer) {
         Navigator.of(context).maybePop();
-      }
-    });
-  }
-
-  void _showSendBottomSheet() {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => const SendBottomSheet(),
-    ).then((_) {
-      final state = ref.read(driftAppNotifierProvider);
-      if (state.session is SendDraftSession) {
-        ref.read(driftAppNotifierProvider.notifier).resetShell();
       }
     });
   }
@@ -180,6 +159,10 @@ class _MobileShellState extends ConsumerState<MobileShell> {
     final state = ref.watch(driftAppNotifierProvider);
     final notifier = ref.read(driftAppNotifierProvider.notifier);
     final isIdle = state.session is IdleSession;
+    final isSelectingSendItems =
+        state.session is SendDraftSession &&
+        state.sendItems.isEmpty &&
+        state.isInspectingSendItems;
     final isTransferring =
         state.session is SendTransferSession ||
         state.session is ReceiveTransferSession;
@@ -222,30 +205,11 @@ class _MobileShellState extends ConsumerState<MobileShell> {
                     ),
                     const SizedBox(height: 32),
                     if (isIdle) ...[
-                      Text(
-                        'GETTING STARTED',
-                        style: driftSans(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w800,
-                          color: kMuted,
-                          letterSpacing: 1.2,
-                        ),
+                      SelectFilesCard(
+                        onTap: notifier.pickSendItems,
+                        isPicking: state.isInspectingSendItems,
                       ),
-                      const SizedBox(height: 16),
-                      _buildStepCard(
-                        icon: Icons.add_rounded,
-                        title: 'Send Files',
-                        subtitle:
-                            'Tap the plus button below to select and send files.',
-                      ),
-                      const SizedBox(height: 12),
-                      _buildStepCard(
-                        icon: Icons.pin_rounded,
-                        title: 'Receive Files',
-                        subtitle:
-                            'Enter the 6-digit code above on another device.',
-                      ),
-                      const SizedBox(height: 120), // Bottom padding for FAB
+                      const SizedBox(height: 24),
                     ],
                   ]),
                 ),
@@ -253,7 +217,7 @@ class _MobileShellState extends ConsumerState<MobileShell> {
             ],
           ),
           if (!isIdle &&
-              state.session is! SendDraftSession &&
+              !isSelectingSendItems &&
               state.session is! ReceiveOfferSession)
             Positioned.fill(
               child: Container(
@@ -285,6 +249,8 @@ class _MobileShellState extends ConsumerState<MobileShell> {
                       Expanded(
                         child: isTransferring
                             ? const MobileTransferView()
+                            : state.session is SendDraftSession
+                            ? const MobileSendDraftView()
                             : ShellStateContent(
                                 view: state.shellView,
                                 availableHeight: MediaQuery.of(
@@ -299,14 +265,6 @@ class _MobileShellState extends ConsumerState<MobileShell> {
             ),
         ],
       ),
-      floatingActionButton: isIdle
-          ? FloatingActionButton(
-              onPressed: notifier.pickSendItems,
-              backgroundColor: kInk,
-              foregroundColor: Colors.white,
-              child: const Icon(Icons.add_rounded),
-            )
-          : null,
     );
   }
 }
