@@ -1,7 +1,7 @@
 .PHONY: help check test fmt fmt-check clippy server send send-file send-dir send-files send-nearby send-multiple send-large receive demo-receive
 
 SERVER_URL ?= http://127.0.0.1:8787
-SERVER_ADDR ?= 127.0.0.1:8787
+SERVER_ADDR ?= 0.0.0.0:8787
 FILE ?= Cargo.toml
 DIR ?=
 OUT ?= downloads

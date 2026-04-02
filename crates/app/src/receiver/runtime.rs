@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use drift_core::lan::LanReceiveAdvertisement;
 use drift_core::rendezvous::{RendezvousClient, resolve_server_url};
-use drift_core::wire::make_ticket_now;
+use drift_core::wire::make_ticket;
 use iroh::{Endpoint, EndpointId};
 use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
@@ -108,7 +108,7 @@ impl ReceiverRuntime {
                 let _ = event_tx.send(ReceiverEvent::SetupCompleted(registration.clone()));
             }
             Err(_) => {
-                self.reconcile_advertising();
+                self.reconcile_advertising().await;
                 let _ = pairing_tx.send(PairingCodeState::Unavailable);
             }
         }
@@ -130,7 +130,7 @@ impl ReceiverRuntime {
                 let _ = event_tx.send(ReceiverEvent::RegistrationUpdated(registration.clone()));
             }
             Err(_) => {
-                self.reconcile_advertising();
+                self.reconcile_advertising().await;
                 let _ = pairing_tx.send(PairingCodeState::Unavailable);
             }
         }
@@ -151,7 +151,7 @@ impl ReceiverRuntime {
             .server_url
             .clone()
             .context("receiver setup has not been completed")?;
-        let ticket = make_ticket_now(&self.endpoint)?;
+        let ticket = make_ticket(&self.endpoint).await?;
         let registration = RendezvousClient::new(resolved_url)
             .register_peer(ticket)
             .await?;
@@ -160,7 +160,7 @@ impl ReceiverRuntime {
             expires_at: registration.expires_at,
         };
         self.registration = Some(registration.clone());
-        self.reconcile_advertising();
+        self.reconcile_advertising().await;
         Ok(registration)
     }
 
@@ -221,9 +221,9 @@ impl ReceiverRuntime {
         }
     }
 
-    pub(super) fn set_discoverable(&mut self, enabled: bool) -> Result<()> {
+    pub(super) async fn set_discoverable(&mut self, enabled: bool) -> Result<()> {
         self.discoverable_requested = enabled;
-        self.reconcile_advertising();
+        self.reconcile_advertising().await;
         Ok(())
     }
 
@@ -326,14 +326,14 @@ impl ReceiverRuntime {
         }
     }
 
-    fn reconcile_advertising(&mut self) {
+    async fn reconcile_advertising(&mut self) {
         if !should_advertise(self.discoverable_requested, self.registration.is_some()) {
             self.clear_advertising();
             return;
         }
 
         self.clear_advertising();
-        let ticket = match make_ticket_now(&self.endpoint) {
+        let ticket = match make_ticket(&self.endpoint).await {
             Ok(ticket) => ticket,
             Err(error) => {
                 warn!(

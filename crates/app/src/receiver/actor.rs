@@ -135,7 +135,7 @@ pub(super) async fn run_receiver_actor(
                     }
                     ReceiverCommand::SetDiscoverable { enabled, reply } => {
                         let was_active = runtime.advertising_active();
-                        let result = runtime.set_discoverable(enabled);
+                        let result = runtime.set_discoverable(enabled).await;
                         runtime.publish_discoverability_change_if_needed(was_active, &event_tx);
                         let _ = publish_snapshot(&state_tx, &runtime, ReceiverLifecycle::Ready);
                         let _ = reply.send(result);
