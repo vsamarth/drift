@@ -5,6 +5,25 @@ import '../shell/shell_routing.dart';
 import 'app_identity.dart';
 import 'receiver_service_source.dart';
 
+enum TransferResultToneData { success, error }
+
+@immutable
+class TransferResultViewData {
+  const TransferResultViewData({
+    required this.tone,
+    required this.title,
+    required this.message,
+    this.metrics,
+    this.primaryLabel,
+  });
+
+  final TransferResultToneData tone;
+  final String title;
+  final String message;
+  final List<TransferMetricRow>? metrics;
+  final String? primaryLabel;
+}
+
 @immutable
 class DriftAppState {
   const DriftAppState({
@@ -211,6 +230,34 @@ class DriftAppState {
     _ => null,
   };
 
+  TransferResultSession? get transferResultSession => switch (session) {
+    SendResultSession() => session as SendResultSession,
+    ReceiveResultSession() => session as ReceiveResultSession,
+    _ => null,
+  };
+
+  TransferResultViewData? get transferResult => switch (session) {
+    SendResultSession(:final success, :final summary, :final metrics) =>
+      TransferResultViewData(
+        tone: success
+            ? TransferResultToneData.success
+            : TransferResultToneData.error,
+        title: success ? 'Transfer complete' : 'Transfer failed',
+        message: summary.statusMessage,
+        metrics: success ? metrics : null,
+        primaryLabel: success ? 'Done' : null,
+      ),
+    ReceiveResultSession(:final summary, :final metrics) =>
+      TransferResultViewData(
+        tone: TransferResultToneData.success,
+        title: 'Files saved',
+        message: summary.statusMessage,
+        metrics: metrics,
+        primaryLabel: 'Done',
+      ),
+    _ => null,
+  };
+
   bool get hasActiveTransfer =>
       session is! IdleSession && session is! ReceiveIdleSession;
 
@@ -233,6 +280,18 @@ class DriftAppState {
 
 sealed class ShellSessionState {
   const ShellSessionState();
+}
+
+sealed class TransferResultSession extends ShellSessionState {
+  const TransferResultSession({
+    required this.items,
+    required this.summary,
+    this.metrics,
+  });
+
+  final List<TransferItemViewData> items;
+  final TransferSummaryViewData summary;
+  final List<TransferMetricRow>? metrics;
 }
 
 class IdleSession extends ShellSessionState {
@@ -326,19 +385,16 @@ class SendTransferSession extends ShellSessionState {
   }
 }
 
-class SendResultSession extends ShellSessionState {
+class SendResultSession extends TransferResultSession {
   const SendResultSession({
     required this.success,
-    required this.items,
-    required this.summary,
-    this.metrics,
+    required super.items,
+    required super.summary,
+    super.metrics,
     this.remoteDeviceType,
-  });
+  }) : super();
 
   final bool success;
-  final List<TransferItemViewData> items;
-  final TransferSummaryViewData summary;
-  final List<TransferMetricRow>? metrics;
   final String? remoteDeviceType;
 }
 
@@ -390,19 +446,16 @@ class ReceiveTransferSession extends ShellSessionState {
   }
 }
 
-class ReceiveResultSession extends ShellSessionState {
+class ReceiveResultSession extends TransferResultSession {
   const ReceiveResultSession({
-    required this.items,
-    required this.summary,
-    this.metrics,
+    required super.items,
+    required super.summary,
+    super.metrics,
     this.payloadBytesReceived,
     this.payloadTotalBytes,
     this.senderDeviceType,
-  });
+  }) : super();
 
-  final List<TransferItemViewData> items;
-  final TransferSummaryViewData summary;
-  final List<TransferMetricRow>? metrics;
   final int? payloadBytesReceived;
   final int? payloadTotalBytes;
   final String? senderDeviceType;

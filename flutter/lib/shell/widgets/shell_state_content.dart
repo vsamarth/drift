@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../state/drift_app_state.dart';
 import '../../state/drift_providers.dart';
 import '../shell_routing.dart';
 import 'receive_idle_card.dart';
@@ -36,6 +37,7 @@ class ShellStateContent extends ConsumerWidget {
 
     final notifier = ref.read(driftAppNotifierProvider.notifier);
     final state = ref.watch(driftAppNotifierProvider);
+    final result = state.transferResult;
 
     return switch (view) {
       ShellView.sendIdle => SendDropPanel(
@@ -75,27 +77,17 @@ class ShellStateContent extends ConsumerWidget {
       ShellView.sendCompleted => SizedBox(
         height: availableHeight,
         width: double.infinity,
-        child: TransferResultCard(
-          fillBody: true,
-          tone: TransferResultTone.success,
-          title: 'Transfer complete',
-          message:
-              state.sendSummary?.statusMessage ?? 'Files sent successfully',
-          metrics: state.sendCompletionMetrics,
-          primaryLabel: 'Done',
-          onPrimary: notifier.resetShell,
+        child: _buildTransferResultCard(
+          onReset: notifier.resetShell,
+          result: result,
         ),
       ),
       ShellView.sendError => SizedBox(
         height: availableHeight,
         width: double.infinity,
-        child: TransferResultCard(
-          fillBody: true,
-          tone: TransferResultTone.error,
-          title: 'Transfer failed',
-          message:
-              state.sendSummary?.statusMessage ??
-              'This transfer did not finish.',
+        child: _buildTransferResultCard(
+          onReset: notifier.resetShell,
+          result: result,
         ),
       ),
       ShellView.receiveReview => SizedBox(
@@ -111,16 +103,33 @@ class ShellStateContent extends ConsumerWidget {
       ShellView.receiveCompleted => SizedBox(
         height: availableHeight,
         width: double.infinity,
-        child: TransferResultCard(
-          fillBody: true,
-          tone: TransferResultTone.success,
-          title: 'Files saved',
-          message: state.receiveSummary?.statusMessage ?? 'Files saved',
-          metrics: state.receiveCompletionMetrics,
-          primaryLabel: 'Done',
-          onPrimary: notifier.resetShell,
+        child: _buildTransferResultCard(
+          onReset: notifier.resetShell,
+          result: result,
         ),
       ),
     };
   }
+}
+
+Widget _buildTransferResultCard({
+  required VoidCallback onReset,
+  required TransferResultViewData? result,
+}) {
+  if (result == null) {
+    return const SizedBox.shrink();
+  }
+
+  return TransferResultCard(
+    fillBody: true,
+    tone: switch (result.tone) {
+      TransferResultToneData.success => TransferResultTone.success,
+      TransferResultToneData.error => TransferResultTone.error,
+    },
+    title: result.title,
+    message: result.message,
+    metrics: result.metrics,
+    primaryLabel: result.primaryLabel,
+    onPrimary: result.primaryLabel == null ? null : onReset,
+  );
 }

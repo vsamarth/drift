@@ -528,6 +528,50 @@ void main() {
     expectNoFlutterError(tester);
   });
 
+  testWidgets('mobile receive completion uses the shared result view', (
+    tester,
+  ) async {
+    final receiverService = FakeReceiverServiceSource();
+    final container = buildTestContainer(
+      receiverServiceSource: receiverService,
+      enableIdleIncomingListener: true,
+    );
+    await pumpMobileShell(tester, container: container);
+
+    receiverService.emitIncoming(
+      rust_receiver.ReceiverTransferEvent(
+        phase: rust_receiver.ReceiverTransferPhase.completed,
+        senderName: 'Maya',
+        senderDeviceType: 'phone',
+        destinationLabel: 'Downloads',
+        saveRootLabel: 'Downloads',
+        statusMessage: 'Files saved',
+        itemCount: BigInt.one,
+        totalSizeBytes: BigInt.from(18 * 1024),
+        bytesReceived: BigInt.from(18 * 1024),
+        totalSizeLabel: '18 KB',
+        files: [
+          rust_receiver.ReceiverTransferFile(
+            path: 'sample.txt',
+            size: BigInt.from(18 * 1024),
+          ),
+        ],
+      ),
+    );
+    await pumpUiSettled(tester);
+
+    expect(find.text('Files saved'), findsWidgets);
+    expect(find.text('Saved to'), findsOneWidget);
+    expect(find.text('Downloads'), findsOneWidget);
+    expect(find.text('Done'), findsOneWidget);
+
+    await tester.tap(find.text('Done'));
+    await pumpUiSettled(tester);
+
+    expect(find.text('Tap to choose files to send.'), findsOneWidget);
+    expectNoFlutterError(tester);
+  });
+
   testWidgets('receive tab shows the passive waiting state', (tester) async {
     final container = buildTestContainer();
     container

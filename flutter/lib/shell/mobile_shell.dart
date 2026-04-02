@@ -6,6 +6,7 @@ import '../state/drift_app_state.dart';
 import '../state/drift_providers.dart';
 import 'widgets/mobile/mobile_identity_card.dart';
 import 'widgets/mobile/mobile_send_draft_view.dart';
+import 'widgets/mobile/mobile_transfer_result_view.dart';
 import 'widgets/mobile/mobile_transfer_view.dart';
 import 'widgets/settings_panel.dart';
 import 'widgets/mobile/select_files_card.dart';
@@ -118,6 +119,7 @@ class _MobileShellState extends ConsumerState<MobileShell> {
     final isTransferring =
         state.session is SendTransferSession ||
         state.session is ReceiveTransferSession;
+    final isShowingResult = state.transferResult != null;
 
     return Scaffold(
       backgroundColor: kBg,
@@ -201,6 +203,8 @@ class _MobileShellState extends ConsumerState<MobileShell> {
                       Expanded(
                         child: isTransferring
                             ? const MobileTransferView()
+                            : isShowingResult
+                            ? const MobileTransferResultView()
                             : state.session is SendDraftSession
                             ? const MobileSendDraftView()
                             : ShellStateContent(
