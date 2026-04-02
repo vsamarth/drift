@@ -124,10 +124,6 @@ pub async fn make_ticket(endpoint: &Endpoint) -> Result<String> {
     make_ticket_from_addr(endpoint.addr())
 }
 
-pub fn make_ticket_now(endpoint: &Endpoint) -> Result<String> {
-    make_ticket_from_addr(endpoint.addr())
-}
-
 fn make_ticket_from_addr(addr: EndpointAddr) -> Result<String> {
     let ticket = TransferTicket {
         node_id: addr.id.to_string(),

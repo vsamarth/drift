@@ -522,9 +522,38 @@ void main() {
     await pumpUiSettled(tester);
 
     expect(find.text('Selected files'), findsWidgets);
-    expect(find.text('NEARBY DEVICES'), findsOneWidget);
+    expect(find.text('Nearby devices'), findsOneWidget);
     container.read(driftAppNotifierProvider.notifier).resetShell();
     await pumpUiSettled(tester);
+    expectNoFlutterError(tester);
+  });
+
+  testWidgets('mobile incoming offer uses the shared receive review screen', (
+    tester,
+  ) async {
+    final receiverService = FakeReceiverServiceSource();
+    final container = buildTestContainer(
+      receiverServiceSource: receiverService,
+      enableIdleIncomingListener: true,
+    );
+    await pumpMobileShell(tester, container: container);
+
+    receiverService.emitIncoming(_incomingOfferEvent());
+    await pumpUiSettled(tester);
+
+    expect(find.text('Incoming'), findsOneWidget);
+    expect(find.text('Maya'), findsWidgets);
+    expect(
+      find.text('Review the files and accept only if you trust the sender.'),
+      findsOneWidget,
+    );
+    expect(saveToDownloadsButton(), findsOneWidget);
+    expect(find.text('Decline'), findsOneWidget);
+
+    await tester.tap(find.text('Decline'));
+    await pumpUiSettled(tester);
+
+    expect(find.text('Tap to choose files to send.'), findsOneWidget);
     expectNoFlutterError(tester);
   });
 

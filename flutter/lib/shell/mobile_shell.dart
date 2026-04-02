@@ -5,11 +5,9 @@ import '../core/theme/drift_theme.dart';
 import '../state/drift_app_state.dart';
 import '../state/drift_providers.dart';
 import 'widgets/mobile/mobile_identity_card.dart';
-import 'widgets/mobile/mobile_send_draft_view.dart';
-import 'widgets/mobile/mobile_transfer_result_view.dart';
-import 'widgets/mobile/mobile_transfer_view.dart';
 import 'widgets/settings_panel.dart';
 import 'widgets/mobile/select_files_card.dart';
+import 'widgets/shell_header.dart';
 import 'widgets/shell_state_content.dart';
 
 class MobileShell extends ConsumerStatefulWidget {
@@ -20,84 +18,6 @@ class MobileShell extends ConsumerStatefulWidget {
 }
 
 class _MobileShellState extends ConsumerState<MobileShell> {
-  @override
-  void initState() {
-    super.initState();
-    _setupShellListeners();
-  }
-
-  void _setupShellListeners() {
-    ref.listenManual(driftAppNotifierProvider, (previous, next) {
-      final wasOffer = previous?.session is ReceiveOfferSession;
-      final isOffer = next.session is ReceiveOfferSession;
-      if (!wasOffer && isOffer) {
-        _showReceiveOfferBottomSheet();
-      } else if (wasOffer && !isOffer) {
-        Navigator.of(context).maybePop();
-      }
-    });
-  }
-
-  void _showReceiveOfferBottomSheet() {
-    final state = ref.read(driftAppNotifierProvider);
-    final summary = state.receiveSummary;
-    final items = state.receiveItems;
-    final notifier = ref.read(driftAppNotifierProvider.notifier);
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
-        decoration: const BoxDecoration(
-          color: kSurface,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-              'Incoming files',
-              style: driftSans(fontSize: 24, fontWeight: FontWeight.w700),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              '${summary?.senderName ?? 'Someone'} wants to send you ${items.length} ${items.length == 1 ? 'file' : 'files'} (${summary?.totalSize ?? 'unknown size'})',
-              style: driftSans(fontSize: 15, color: kMuted, height: 1.4),
-            ),
-            const SizedBox(height: 32),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: () {
-                      notifier.declineReceiveOffer();
-                      Navigator.pop(context);
-                    },
-                    child: const Text('Decline'),
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: FilledButton(
-                    onPressed: () {
-                      notifier.acceptReceiveOffer();
-                      Navigator.pop(context);
-                    },
-                    child: const Text('Accept'),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-          ],
-        ),
-      ),
-    );
-  }
-
   void _openSettings() {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
@@ -112,14 +32,6 @@ class _MobileShellState extends ConsumerState<MobileShell> {
     final state = ref.watch(driftAppNotifierProvider);
     final notifier = ref.read(driftAppNotifierProvider.notifier);
     final isIdle = state.session is IdleSession;
-    final isSelectingSendItems =
-        state.session is SendDraftSession &&
-        state.sendItems.isEmpty &&
-        state.isInspectingSendItems;
-    final isTransferring =
-        state.session is SendTransferSession ||
-        state.session is ReceiveTransferSession;
-    final isShowingResult = state.transferResult != null;
 
     return Scaffold(
       backgroundColor: kBg,
@@ -170,51 +82,38 @@ class _MobileShellState extends ConsumerState<MobileShell> {
               ),
             ],
           ),
-          if (!isIdle &&
-              !isSelectingSendItems &&
-              state.session is! ReceiveOfferSession)
+          if (!isIdle)
             Positioned.fill(
               child: Container(
                 color: kBg,
                 child: SafeArea(
-                  child: Column(
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 8,
+                  child: LayoutBuilder(
+                    builder: (context, constraints) => Column(
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+                          child: Row(
+                            children: [
+                              const ShellHeader(),
+                              const Spacer(),
+                              if (state.session is SendDraftSession ||
+                                  state.session is ReceiveOfferSession)
+                                IconButton(
+                                  onPressed: notifier.resetShell,
+                                  icon: const Icon(Icons.close_rounded),
+                                  tooltip: 'Close',
+                                ),
+                            ],
+                          ),
                         ),
-                        child: Row(
-                          children: [
-                            if (state.showShellBackButton)
-                              IconButton(
-                                onPressed: notifier.goBack,
-                                icon: const Icon(Icons.arrow_back_rounded),
-                              ),
-                            const Spacer(),
-                            if (!isTransferring)
-                              IconButton(
-                                onPressed: notifier.resetShell,
-                                icon: const Icon(Icons.close_rounded),
-                              ),
-                          ],
+                        Expanded(
+                          child: ShellStateContent(
+                            view: state.shellView,
+                            availableHeight: constraints.maxHeight,
+                          ),
                         ),
-                      ),
-                      Expanded(
-                        child: isTransferring
-                            ? const MobileTransferView()
-                            : isShowingResult
-                            ? const MobileTransferResultView()
-                            : state.session is SendDraftSession
-                            ? const MobileSendDraftView()
-                            : ShellStateContent(
-                                view: state.shellView,
-                                availableHeight: MediaQuery.of(
-                                  context,
-                                ).size.height,
-                              ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ),
