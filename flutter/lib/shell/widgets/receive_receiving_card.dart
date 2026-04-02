@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../core/theme/drift_theme.dart';
 import '../../state/drift_app_state.dart';
 import '../../state/drift_providers.dart';
 import 'preview_list.dart';

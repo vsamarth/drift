@@ -714,7 +714,7 @@ void main() {
       await _flushAsyncWork(tester);
       expect(
         container.read(driftAppNotifierProvider).session,
-        isA<ReceiveIdleSession>(),
+        isA<IdleSession>(),
       );
       expect(receiverService.respondToOfferCalls.last, isFalse);
     },
