@@ -14,11 +14,14 @@ use iroh_blobs::{
         remote::GetProgressItem,
     },
     format::collection::Collection,
+    provider::events::{EventMask, EventSender, ProviderMessage, RequestMode, RequestUpdate},
     store::fs::FsStore,
     ticket::BlobTicket,
+    Hash,
 };
 use tokio::fs;
 use tokio::io::AsyncWriteExt;
+use tokio::sync::mpsc;
 use tokio::time::{Duration, timeout};
 
 use crate::fs_plan::prepare::PreparedFile;
@@ -62,6 +65,7 @@ struct BlobProvider {
     router: Router,
     root: TempDir,
     _collection_tag: TempTag,
+    progress_rx: mpsc::Receiver<FileSendProgress>,
 }
 
 struct BlobDownloadStore {
@@ -137,7 +141,7 @@ pub async fn send_files_over_connection<F>(
 where
     F: FnMut(FileSendProgress),
 {
-    let provider = prepare_blob_provider(session_id, files).await?;
+    let mut provider = prepare_blob_provider(session_id, files).await?;
     let ticket = provider.ticket().await?;
 
     write_message(
@@ -150,32 +154,34 @@ where
     .await
     .context("sending blob transfer ticket")?;
 
-    let result = match read_message::<ControlMessage>(control_recv)
-        .await
-        .context("waiting for final transfer result")?
-    {
-        ControlMessage::TransferResult(result) => {
-            ensure_matching_session_id(&result.session_id, session_id)?;
-            if !matches!(result.status, TransferStatus::Ok) {
-                Err(anyhow!(
-                    "receiver failed transfer: {}",
-                    transfer_status_summary(&result.status)
-                ))
-            } else {
-                Ok(())
+    let result = loop {
+        tokio::select! {
+            maybe_progress = provider.progress_rx.recv() => {
+                if let Some(progress) = maybe_progress {
+                    on_progress(progress);
+                }
+            }
+            control_message = read_message::<ControlMessage>(control_recv) => {
+                let outcome = match control_message.context("waiting for final transfer result")? {
+                    ControlMessage::TransferResult(result) => {
+                        ensure_matching_session_id(&result.session_id, session_id)?;
+                        if !matches!(result.status, TransferStatus::Ok) {
+                            Err(anyhow!(
+                                "receiver failed transfer: {}",
+                                transfer_status_summary(&result.status)
+                            ))
+                        } else {
+                            Ok(())
+                        }
+                    }
+                    other => Err(anyhow!("unexpected final control message: {:?}", other)),
+                };
+                break outcome;
             }
         }
-        other => Err(anyhow!("unexpected final control message: {:?}", other)),
     };
 
     if result.is_ok() {
-        let total_bytes_sent = files.iter().map(|file| file.size).sum();
-        on_progress(FileSendProgress {
-            total_bytes_sent,
-            bytes_sent_in_file: 0,
-            file_index: 0,
-        });
-
         send_transfer_ack(control_send, session_id).await?;
         control_send.finish()?;
         let _ = timeout(CONTROL_STREAM_FINISH_TIMEOUT, control_send.stopped()).await;
@@ -418,14 +424,22 @@ impl BlobProvider {
     }
 }
 
+#[derive(Clone, Copy)]
+struct BlobProgressState {
+    hash: Hash,
+    file_index: usize,
+    file_size: u64,
+}
+
 async fn prepare_blob_provider(session_id: &str, files: &[PreparedFile]) -> Result<BlobProvider> {
     let root = TempDir::new("drift-blobs-send", session_id).await?;
     let store = FsStore::load(&root.path)
         .await
         .with_context(|| format!("loading blob store {}", root.path.display()))?;
+    let mut file_hashes = BTreeMap::new();
 
     let mut collection = Collection::default();
-    for prepared in files {
+    for (file_index, prepared) in files.iter().enumerate() {
         let tag = store
             .add_path_with_opts(AddPathOptions {
                 path: prepared.source_path.clone(),
@@ -435,10 +449,27 @@ async fn prepare_blob_provider(session_id: &str, files: &[PreparedFile]) -> Resu
             .temp_tag()
             .await
             .with_context(|| format!("importing {}", prepared.source_path.display()))?;
+        file_hashes.insert(
+            Hash::from(prepared.file_blake3),
+            BlobProgressState {
+                hash: tag.hash(),
+                file_index,
+                file_size: prepared.size,
+            },
+        );
         collection.extend([(prepared.transfer_path.clone(), tag.hash())]);
     }
 
     let collection_tag = collection.store(store.as_ref()).await?;
+    let (event_sender, event_rx) = EventSender::channel(
+        32,
+        EventMask {
+            get: RequestMode::NotifyLog,
+            get_many: RequestMode::NotifyLog,
+            ..EventMask::DEFAULT
+        },
+    );
+    let progress_rx = spawn_blob_progress_forwarder(event_rx, file_hashes);
 
     let endpoint = Endpoint::builder(presets::N0)
         .alpns(vec![BLOBS_ALPN.to_vec()])
@@ -447,14 +478,74 @@ async fn prepare_blob_provider(session_id: &str, files: &[PreparedFile]) -> Resu
         .await
         .context("binding blob provider endpoint")?;
     let router = Router::builder(endpoint)
-        .accept(BLOBS_ALPN, BlobsProtocol::new(store.as_ref(), None))
+        .accept(BLOBS_ALPN, BlobsProtocol::new(store.as_ref(), Some(event_sender)))
         .spawn();
 
     Ok(BlobProvider {
         router,
         root,
         _collection_tag: collection_tag,
+        progress_rx,
     })
+}
+
+fn spawn_blob_progress_forwarder(
+    mut event_rx: mpsc::Receiver<ProviderMessage>,
+    file_hashes: BTreeMap<Hash, BlobProgressState>,
+) -> mpsc::Receiver<FileSendProgress> {
+    let (progress_tx, progress_rx) = mpsc::channel(64);
+    tokio::spawn(async move {
+        while let Some(message) = event_rx.recv().await {
+            match message {
+                ProviderMessage::GetRequestReceivedNotify(msg) => {
+                    tokio::spawn(forward_request_updates(msg.rx, file_hashes.clone(), progress_tx.clone()));
+                }
+                ProviderMessage::GetManyRequestReceivedNotify(msg) => {
+                    tokio::spawn(forward_request_updates(msg.rx, file_hashes.clone(), progress_tx.clone()));
+                }
+                _ => {}
+            }
+        }
+    });
+    progress_rx
+}
+
+async fn forward_request_updates(
+    mut updates_rx: irpc::channel::mpsc::Receiver<RequestUpdate>,
+    file_hashes: BTreeMap<Hash, BlobProgressState>,
+    progress_tx: mpsc::Sender<FileSendProgress>,
+) {
+    let mut current: Option<BlobProgressState> = None;
+    let mut bytes_by_hash = BTreeMap::<Hash, u64>::new();
+    let mut total_bytes_sent = 0_u64;
+
+    while let Ok(Some(update)) = updates_rx.recv().await {
+        match update {
+            RequestUpdate::Started(started) => {
+                current = file_hashes.get(&started.hash).copied();
+            }
+            RequestUpdate::Progress(progress) => {
+                if let Some(current_file) = current {
+                    let next = progress.end_offset.min(current_file.file_size);
+                    let prev = bytes_by_hash.get(&current_file.hash).copied().unwrap_or(0);
+                    if next > prev {
+                        total_bytes_sent += next - prev;
+                        bytes_by_hash.insert(current_file.hash, next);
+                        let _ = progress_tx
+                            .send(FileSendProgress {
+                                total_bytes_sent,
+                                bytes_sent_in_file: next,
+                                file_index: current_file.file_index,
+                            })
+                            .await;
+                    }
+                }
+            }
+            RequestUpdate::Completed(_) | RequestUpdate::Aborted(_) => {
+                current = None;
+            }
+        }
+    }
 }
 
 async fn receive_blob_collection<F>(

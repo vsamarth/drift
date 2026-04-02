@@ -13,6 +13,7 @@ futures-lite.workspace = true
 if-addrs = "0.15"
 iroh.workspace = true
 iroh-blobs.workspace = true
+irpc.workspace = true
 mdns-sd.workspace = true
 rand.workspace = true
 reqwest.workspace = true

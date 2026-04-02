@@ -23,6 +23,7 @@ futures-lite = "2.6"
 http-body-util = "0.1"
 iroh = "0.97"
 iroh-blobs = "0.99"
+irpc = "0.13"
 rand = "0.8"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 serde = { version = "1.0", features = ["derive"] }

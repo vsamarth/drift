@@ -862,6 +862,7 @@ dependencies = [
  "if-addrs",
  "iroh",
  "iroh-blobs",
+ "irpc",
  "mdns-sd",
  "rand 0.8.5",
  "reqwest",
