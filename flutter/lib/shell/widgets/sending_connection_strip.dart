@@ -103,7 +103,8 @@ class _SendingConnectionStripState extends State<SendingConnectionStrip>
     final captionStyle = driftSans(
       fontSize: 11,
       fontWeight: FontWeight.w500,
-      color: kMuted,
+      color: kInk.withValues(alpha: 0.9),
+      height: 1.2,
       letterSpacing: -0.1,
     );
 
@@ -125,7 +126,7 @@ class _SendingConnectionStripState extends State<SendingConnectionStrip>
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         SizedBox(
-          width: 92,
+          width: 100, // Increased from 92
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -137,12 +138,15 @@ class _SendingConnectionStripState extends State<SendingConnectionStrip>
                 color: kInk.withValues(alpha: 0.88),
               ),
               const SizedBox(height: 6),
-              Text(
-                widget.localLabel,
-                textAlign: TextAlign.center,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: captionStyle,
+              Tooltip(
+                message: widget.localLabel,
+                child: Text(
+                  widget.localLabel,
+                  textAlign: TextAlign.center,
+                  maxLines: 2, // Allowed 2 lines
+                  overflow: TextOverflow.ellipsis,
+                  style: captionStyle,
+                ),
               ),
             ],
           ),
@@ -167,7 +171,7 @@ class _SendingConnectionStripState extends State<SendingConnectionStrip>
           ),
         ),
         SizedBox(
-          width: 92,
+          width: 100, // Increased from 92
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -179,12 +183,15 @@ class _SendingConnectionStripState extends State<SendingConnectionStrip>
                 color: kInk.withValues(alpha: 0.88),
               ),
               const SizedBox(height: 6),
-              Text(
-                widget.remoteLabel,
-                textAlign: TextAlign.center,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: captionStyle,
+              Tooltip(
+                message: widget.remoteLabel,
+                child: Text(
+                  widget.remoteLabel,
+                  textAlign: TextAlign.center,
+                  maxLines: 2, // Allowed 2 lines
+                  overflow: TextOverflow.ellipsis,
+                  style: captionStyle,
+                ),
               ),
             ],
           ),

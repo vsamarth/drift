@@ -33,8 +33,8 @@ class PreviewTable extends StatelessWidget {
 
     final headerStyle = driftSans(
       fontSize: 11,
-      fontWeight: FontWeight.w600,
-      color: kMuted,
+      fontWeight: FontWeight.w700,
+      color: kInk.withValues(alpha: 0.8),
       letterSpacing: 0.15,
     );
 
@@ -61,6 +61,7 @@ class PreviewTable extends StatelessWidget {
           ),
         ),
         _divider,
+        const SizedBox(height: 10),
         for (int i = 0; i < items.length; i++) ...[
           if (i > 0) _divider,
           _PreviewTableRow(item: items[i]),
@@ -174,8 +175,8 @@ class _PreviewTableViewportBody extends StatelessWidget {
 
     final headerStyle = driftSans(
       fontSize: 11,
-      fontWeight: FontWeight.w600,
-      color: kMuted,
+      fontWeight: FontWeight.w700,
+      color: kInk.withValues(alpha: 0.8),
       letterSpacing: 0.15,
     );
 
@@ -271,14 +272,17 @@ class _PreviewTableRow extends StatelessWidget {
         children: [
           SizedBox(width: 28, child: Icon(icon, size: 18, color: kMuted)),
           Expanded(
-            child: Text(
-              item.name,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: driftSans(
-                fontSize: 13,
-                fontWeight: FontWeight.w500,
-                color: kInk,
+            child: Tooltip(
+              message: item.name,
+              child: Text(
+                item.name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: driftSans(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                  color: kInk,
+                ),
               ),
             ),
           ),
@@ -340,14 +344,17 @@ class PreviewRow extends StatelessWidget {
           Icon(icon, size: 18, color: kMuted),
           const SizedBox(width: 10),
           Expanded(
-            child: Text(
-              item.name,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: driftSans(
-                fontSize: 13,
-                fontWeight: FontWeight.w500,
-                color: kInk,
+            child: Tooltip(
+              message: item.name,
+              child: Text(
+                item.name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: driftSans(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                  color: kInk,
+                ),
               ),
             ),
           ),

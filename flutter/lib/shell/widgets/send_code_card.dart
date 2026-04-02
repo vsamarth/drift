@@ -38,7 +38,7 @@ class SendCodeCard extends ConsumerWidget {
 
     if (!fillBody) {
       return Padding(
-        padding: const EdgeInsets.fromLTRB(8, 6, 8, 10),
+        padding: const EdgeInsets.fromLTRB(16, 6, 16, 10),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -56,10 +56,6 @@ class SendCodeCard extends ConsumerWidget {
               status,
               style: driftSans(fontSize: 13, color: kMuted, height: 1.45),
             ),
-            if (state.hasSendPayloadProgress) ...[
-              const SizedBox(height: 14),
-              const _SendPayloadLinearBar(),
-            ],
             const SizedBox(height: 18),
             const Divider(height: 1),
             const SizedBox(height: 14),
@@ -87,120 +83,173 @@ class SendCodeCard extends ConsumerWidget {
       );
     }
 
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 6, 8, 10),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 7,
-                height: 7,
-                decoration: BoxDecoration(
-                  color: dotColor,
-                  shape: BoxShape.circle,
+    return Column(
+      children: [
+        Expanded(
+          child: SingleChildScrollView(
+            physics: const BouncingScrollPhysics(),
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // Header Block
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: dotColor.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 6,
+                            height: 6,
+                            decoration: BoxDecoration(color: dotColor, shape: BoxShape.circle),
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            title,
+                            style: driftSans(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: dotColor,
+                              letterSpacing: 0.2,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
-              ),
-              const SizedBox(width: 8),
-              Text(
-                title,
-                style: driftSans(
-                  fontSize: 11.5,
-                  fontWeight: FontWeight.w600,
-                  color: kMuted,
-                  letterSpacing: 0.2,
+                const SizedBox(height: 20),
+                Text(
+                  destinationLabel,
+                  style: driftSans(
+                    fontSize: 26,
+                    fontWeight: FontWeight.w700,
+                    color: kInk,
+                    letterSpacing: -0.6,
+                    height: 1.1,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Text(
+                  status,
+                  style: driftSans(
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w500,
+                    color: kMuted,
+                    height: 1.4,
+                  ),
+                ),
+                if (stage == TransferStage.waiting && !state.hasSendPayloadProgress) ...[
+                  const SizedBox(height: 12),
+                  Text(
+                    'The receiver must accept before files start transferring.',
+                    style: driftSans(fontSize: 12, color: kSubtle, height: 1.4),
+                  ),
+                ],
+
+                const SizedBox(height: 20),
+                // Illustration Block
+                Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxHeight: 100),
+                    child: SendingConnectionStrip(
+                      localLabel: state.deviceName,
+                      localDeviceType: state.deviceType,
+                      remoteLabel: destinationLabel,
+                      remoteDeviceType: state.sendRemoteDeviceType,
+                      animate: state.animateSendingConnection,
+                      mode: _sendingStripMode(state),
+                      transferProgress: _transferProgressForStrip(state),
+                    ),
+                  ),
+                ),
+                
+                const SizedBox(height: 24),
+                // Manifest Card
+                Container(
+                  decoration: BoxDecoration(
+                    color: kSurface2,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: kBorder.withValues(alpha: 0.8)),
+                  ),
+                  child: Column(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(18, 16, 18, 0),
+                        child: PreviewTable(
+                          items: state.sendItems,
+                          footerSummary: itemSummary,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 24),
+              ],
+            ),
+          ),
+        ),
+        // Sticky Footer
+        Container(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+          decoration: BoxDecoration(
+            color: kBg,
+            border: Border(top: BorderSide(color: kBorder.withValues(alpha: 0.5))),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: TextButton(
+                  onPressed: () => _confirmCancel(context, ref),
+                  style: TextButton.styleFrom(
+                    foregroundColor: const Color(0xFFCC3333),
+                    backgroundColor: const Color(0xFFCC3333).withValues(alpha: 0.08),
+                    minimumSize: const Size(0, 44),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      side: BorderSide(color: const Color(0xFFCC3333).withValues(alpha: 0.15)),
+                    ),
+                  ),
+                  child: const Text('Cancel'),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 18),
-          Text(
-            destinationLabel,
-            style: driftSans(
-              fontSize: 28,
-              fontWeight: FontWeight.w700,
-              color: kInk,
-              letterSpacing: -0.8,
-              height: 1.1,
-            ),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _confirmCancel(BuildContext context, WidgetRef ref) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Cancel Transfer?'),
+        content: const Text('Stop waiting and cancel send?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('No'),
           ),
-          const SizedBox(height: 8),
-          Text(
-            status,
-            style: driftSans(fontSize: 13, color: kMuted, height: 1.5),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(foregroundColor: const Color(0xFFCC3333)),
+            child: const Text('Yes, cancel'),
           ),
-          const SizedBox(height: 18),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Expanded(
-                  flex: 2,
-                  child: Center(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 4),
-                      child: SendingConnectionStrip(
-                        localLabel: state.deviceName,
-                        localDeviceType: state.deviceType,
-                        remoteLabel: destinationLabel,
-                        remoteDeviceType: state.sendRemoteDeviceType,
-                        animate: state.animateSendingConnection,
-                        mode: _sendingStripMode(state),
-                        transferProgress: _transferProgressForStrip(state),
-                      ),
-                    ),
-                  ),
-                ),
-                Expanded(
-                  flex: 3,
-                  child: SingleChildScrollView(
-                    physics: const BouncingScrollPhysics(),
-                    child: PreviewTable(
-                      items: state.sendItems,
-                      footerSummary: itemSummary,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          if (stage == TransferStage.ready ||
-              stage == TransferStage.waiting) ...[
-            Padding(
-              padding: const EdgeInsets.only(top: 6, bottom: 2),
-              child: Center(
-                child: TextButton(
-                  onPressed: ref
-                      .read(driftAppNotifierProvider.notifier)
-                      .cancelSendInProgress,
-                  style: TextButton.styleFrom(
-                    foregroundColor: kMuted,
-                    minimumSize: Size.zero,
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 8,
-                    ),
-                  ),
-                  child: Text(
-                    'Cancel',
-                    style: driftSans(
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ],
-          if (primaryLabel != null && onPrimary != null) ...[
-            const SizedBox(height: 16),
-            FilledButton(onPressed: onPrimary, child: Text(primaryLabel!)),
-          ],
         ],
       ),
     );
+
+    if (confirmed == true) {
+      ref.read(driftAppNotifierProvider.notifier).cancelSendInProgress();
+    }
   }
 }
 
