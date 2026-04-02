@@ -1,100 +1,58 @@
 # drift
 
-`drift` is a minimal short-code file transfer tool built on `iroh`.
+`drift` is a lightweight file transfer tool built on `iroh`, with a Flutter app UI and Rust CLI/server binaries.
 
 ## Features
 
-- Send files with a short code.
-- Find nearby devices on the same network and send without typing a code.
-- Receive files with a clear accept/decline step before anything is saved.
-- Send folders as well as individual files.
-- Use the app on desktop or mobile.
-- Choose where incoming files are saved.
-- Copy the receive code easily when someone else wants to send to you.
+- Send files to anyone, anywhere in the world. Just like AirDrop, but even more magical.
+- End-to-end encrypted.
+- Share quickly, even for large files and folders.
+- Use Drift across macOS, Linux, Windows, Android, and iOS.
 
-## Repository layout
+## Installation
 
-- `crates/core`: shared discovery, transfer, rendezvous, and server logic
-- `crates/cli`: `drift` command-line app
-- `crates/server`: `drift-server` rendezvous binary
-- `flutter/`: Flutter app and Rust bridge workspace
+| Platform | Download |
+| --- | --- |
+| macOS | [drift-macos.dmg](https://github.com/vsamarth/drift/releases/latest/download/drift-macos.dmg) |
+| Windows | *Coming soon* |
+| Linux | *Coming soon* |
+| Android | [drift-android.apk](https://github.com/vsamarth/drift/releases/latest/download/drift-android.apk) |
+| iOS | [drift-ios.ipa](https://github.com/vsamarth/drift/releases/latest/download/drift-ios.ipa) |
 
-## Default flow
+**From source:** Build the app in [`flutter/`](flutter/); see [`flutter/README.md`](flutter/README.md). A concise guide here is coming soon.
 
-1. Start `drift-server`:
+## Getting Started
 
-```bash
-cargo run -p drift-server -- serve --listen 127.0.0.1:8787
-```
+1. Install Drift on both devices (see [Installation](#installation) above).
+2. On the device that will receive files, open Drift and start receiving. You’ll get a pairing code, or you can use nearby discovery on the same network.
+3. On the device that will send, open Drift, connect using that code or pick a nearby receiver, choose your files, and send.
+4. On the receiver, review what’s incoming and accept to save the files.
 
-2. Start the receiver and note the short code:
+## How It Works
 
-```bash
-DRIFT_RENDEZVOUS_URL=http://127.0.0.1:8787 cargo run -p drift -- receive --out downloads
-```
+1. The receiving device registers for pairing through a **discovery server** (short code) and may use **LAN discovery** on the same network.
+2. The sending device looks up the receiver; we open a direct peer-to-peer session between them.
+3. The sending device shares a file manifest; the receiving device explicitly accepts or declines.
+4. After acceptance, we send file data over that end-to-end encrypted channel.
 
-3. Send files from another terminal (short code is `-c` / `--code`, then paths):
+## Security & Privacy
 
-```bash
-DRIFT_RENDEZVOUS_URL=http://127.0.0.1:8787 cargo run -p drift -- send -c AB2CD3 sample.txt photos/
-```
+- We use a **discovery server** so two devices can connect from anywhere in the world. The server only receives your `Endpoint` address (what we need to reach the other peer), not your files.
+- After discovery, we open an **[end-to-end encrypted](https://docs.iroh.computer/deployment/security-privacy)** connection between the two devices. Your files are sent only over that link, after the receiver accepts the transfer.
+- If a **direct connection** is not possible, we may route traffic through a **relay**. The relay may see **metadata** (for example IP addresses, timing, file count, or total size), but **not** the contents of your files. Payloads stay end-to-end encrypted and readable only on the sender and receiver.
 
-`drift-server` stores the receiver's discovery ticket briefly so the sender can resolve it by short code. After discovery, the peers run a direct `iroh` transfer-control protocol: the sender offers a manifest, the receiver accepts or declines, and file data only starts after accept.
+## Roadmap
 
-## LAN discovery (mDNS)
+Drift is still in its early stages. We are focused on stability and UX, and we will continue shipping essential features. Feel free to open a discussion with suggestions. Here are some ideas we are working on:
 
-On a local network, `receive` also publishes the **same** iroh ticket via mDNS (`_drift._udp.local.`) while the short code is active, so senders can find nearby receivers without typing the code.
+- Remember trusted devices as favorites for faster repeat transfers.
+- Add resumable downloads/transfers for interrupted sessions.
+- Keep Drift listening in the background so it is always ready to receive files.
 
-Send with `--nearby` to scan for a few seconds, list receivers, then enter a number to pick one:
+## Acknowledgments
 
-```bash
-cargo run -p drift -- send --nearby sample.txt
-```
+Special thanks to [iroh](https://github.com/n0-computer/iroh) for abstracting away the complex networking details that power Drift. We are also grateful to [LocalSend](https://github.com/localsend/localsend) and [croc](https://github.com/schollz/croc) for inspiring our design.
 
-Optional: `--nearby-timeout-secs 20` (default `15`). You still need a rendezvous server for the receiver’s short code, but the sender does not use the code when using `--nearby`.
+## License
 
-If the machine has no IPv4 default route, LAN advertising is skipped and receive still works via the short code only.
-
-## Directory Transfers
-
-- `drift send` accepts a mix of files and directories.
-- Directory inputs are transferred recursively and keep their top-level root names on the receiver.
-- The receiver previews the manifest before accepting.
-- The receive step fails before transfer if any destination path already exists.
-- v1 only transfers regular files. Symbolic links and empty directories are not preserved.
-
-## Makefile helpers
-For quick local testing, the root `Makefile` includes `make send-*` wrappers around the `drift send` CLI. Run **`make help`** for a full list. Summary:
-- `make server` (start `drift-server`)
-- `make receive` (start receiver)
-- `make demo-receive` (start receiver with the temporary demo `hello` payload path)
-- `make send CODE=AB2CD3 FILE=sample.txt` (same as `send-file` when `CODE` is set; without `CODE`, prints help and exits)
-- `make send-file CODE=AB2CD3 FILE=sample.txt` (send one path; uses `send -c …`)
-- `make send-files CODE=AB2CD3 FILES="sample.txt photos/"` (send multiple paths)
-- `make send-dir CODE=AB2CD3 DIR=photos/` (send a directory)
-- `make send-multiple CODE=AB2CD3` (generate 5 x 100MB random files in a temp `tmd/` dir, transfer it, then delete)
-- `make send-large CODE=AB2CD3` (generate a 1GB random file in a temp dir, transfer it, then delete)
-- `make send-nearby` (LAN mDNS picker; generates a fresh random 10MB file each run; optional `NEARBY_TIMEOUT_SECS=20`)
-
-## Server selection
-
-`drift` chooses the pairing server in this order:
-
-1. `--server`
-2. `DRIFT_RENDEZVOUS_URL`
-3. built-in default URL
-
-## CLI logging
-
-The `drift` binary logs to **stderr** with `tracing`. Use **structured fields** (pretty text by default, or JSON for pipelines).
-
-- **Format:** `--log-format pretty` (default) or `--log-format json` (one JSON object per line). Override with env `DRIFT_LOG_FORMAT=json`.
-- **Filters:** standard `RUST_LOG` (e.g. `RUST_LOG=drift=debug,iroh=info`). If unset, default is `warn` for dependencies and `info` for the `drift` crate; use `-v` / `-vv` for `drift` at `debug` / `trace` without setting `RUST_LOG`.
-- **Receive:** manifest and progress lines from `drift-core` still print to **stdout** during the transfer; stderr carries the structured CLI events (`receive.*`, `send.*`).
-
-Example:
-
-```bash
-DRIFT_RENDEZVOUS_URL=http://127.0.0.1:8787 \
-  cargo run -p drift -- --log-format json send -c AB2CD3 sample.txt 2>send.log
-```
+This project is licensed under the MIT License. See [`LICENSE`](LICENSE).
