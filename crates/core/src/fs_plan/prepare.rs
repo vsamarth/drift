@@ -1,9 +1,8 @@
 use std::collections::HashSet;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use anyhow::{Context, Result, anyhow, bail};
 use tokio::fs;
-use tokio::io::AsyncReadExt;
 
 use crate::rendezvous::{OfferFile, OfferManifest};
 
@@ -14,7 +13,6 @@ pub struct PreparedFile {
     pub source_path: PathBuf,
     pub transfer_path: String,
     pub size: u64,
-    pub file_blake3: [u8; 32],
 }
 
 #[derive(Debug, Clone)]
@@ -85,7 +83,6 @@ pub async fn prepare_files(paths: Vec<PathBuf>) -> Result<PreparedFiles> {
                 source_path,
                 transfer_path,
                 size: metadata.len(),
-                file_blake3: [0_u8; 32],
             });
         }
     }
@@ -95,12 +92,6 @@ pub async fn prepare_files(paths: Vec<PathBuf>) -> Result<PreparedFiles> {
     }
 
     files.sort_by(|left, right| left.transfer_path.cmp(&right.transfer_path));
-
-    for prepared in &mut files {
-        prepared.file_blake3 = blake3_file(&prepared.source_path)
-            .await
-            .with_context(|| format!("hashing {}", prepared.source_path.display()))?;
-    }
 
     let mut manifest_files = Vec::with_capacity(files.len());
     let mut total_size = 0_u64;
@@ -123,25 +114,6 @@ pub async fn prepare_files(paths: Vec<PathBuf>) -> Result<PreparedFiles> {
             files: manifest_files,
         },
     })
-}
-
-async fn blake3_file(path: &Path) -> Result<[u8; 32]> {
-    let mut file = fs::File::open(path)
-        .await
-        .with_context(|| format!("opening {}", path.display()))?;
-    let mut hasher = blake3::Hasher::new();
-    let mut buf = vec![0_u8; 256 * 1024];
-    loop {
-        let n = file
-            .read(&mut buf)
-            .await
-            .with_context(|| format!("reading {}", path.display()))?;
-        if n == 0 {
-            break;
-        }
-        hasher.update(&buf[..n]);
-    }
-    Ok(*hasher.finalize().as_bytes())
 }
 
 #[cfg(test)]

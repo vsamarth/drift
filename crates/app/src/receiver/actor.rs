@@ -23,6 +23,8 @@ use super::runtime::{OfferResolution, ReceiverRuntime};
 use super::{OfferDecision, ReceiverEvent, ReceiverLifecycle, ReceiverSnapshot, parse_device_type};
 
 const PENDING_OFFER_TIMEOUT: Duration = Duration::from_secs(120);
+const PROGRESS_EVENT_MIN_INTERVAL: Duration = Duration::from_millis(100);
+const PROGRESS_EVENT_MIN_BYTES: u64 = 4 * 1024 * 1024;
 
 #[derive(Debug)]
 pub(super) enum ReceiverCommand {
@@ -168,7 +170,6 @@ pub(super) async fn run_receiver_actor(
                         if runtime.handle_offer_progress(offer_id) {
                             let _ = event_tx.send(ReceiverEvent::OfferUpdated(event));
                         }
-                        let _ = publish_snapshot(&state_tx, &runtime, ReceiverLifecycle::Ready);
                     }
                     ReceiverCommand::OfferFinished { offer_id, final_event } => {
                         if runtime.handle_offer_finished(offer_id)
@@ -254,6 +255,7 @@ async fn run_listener_loop(
                     item_count: 0,
                     total_size_bytes: 0,
                     bytes_received: 0,
+                    connection_path: None,
                     total_size_label: String::new(),
                     files: Vec::new(),
                     error_message: Some(err.to_string()),
@@ -279,9 +281,11 @@ async fn run_listener_loop(
         let out_dir_for_offer = out_dir.clone();
         let device_name_for_offer = device_name.clone();
         let save_root_label_for_offer = save_root_label.clone();
+        let endpoint_for_offer = endpoint.clone();
         tokio::spawn(async move {
             handle_incoming_offer(
                 offer_id,
+                endpoint_for_offer,
                 connection,
                 out_dir_for_offer,
                 device_name_for_offer,
@@ -296,6 +300,7 @@ async fn run_listener_loop(
 
 async fn handle_incoming_offer(
     offer_id: u64,
+    endpoint: Endpoint,
     connection: iroh::endpoint::Connection,
     out_dir: std::path::PathBuf,
     device_name: String,
@@ -309,6 +314,7 @@ async fn handle_incoming_offer(
     let _ = machine.transition(ReceiverState::Connected);
 
     let pending = match receiver_run_until_decision(
+        endpoint,
         connection,
         out_dir,
         &device_name,
@@ -332,6 +338,7 @@ async fn handle_incoming_offer(
                         item_count: 0,
                         total_size_bytes: 0,
                         bytes_received: 0,
+                        connection_path: None,
                         total_size_label: String::new(),
                         files: Vec::new(),
                         error_message: Some(format_error_chain(&err)),
@@ -375,6 +382,7 @@ async fn handle_incoming_offer(
         item_count: manifest.file_count,
         total_size_bytes: manifest.total_size,
         bytes_received: 0,
+        connection_path: None,
         total_size_label: human_size(manifest.total_size),
         files,
         error_message: None,
@@ -398,7 +406,21 @@ async fn handle_incoming_offer(
         Ok(OfferResolution::Cancel) | Err(_) => return,
     };
     let progress_cmd_tx = cmd_tx.clone();
+    let mut last_progress_emit_at = std::time::Instant::now()
+        .checked_sub(PROGRESS_EVENT_MIN_INTERVAL)
+        .unwrap_or_else(std::time::Instant::now);
+    let mut last_progress_bytes = 0_u64;
     let mut progress_cb = |progress: ReceiveTransferProgress| {
+        let now = std::time::Instant::now();
+        let bytes = progress.bytes_received;
+        let interval_elapsed = now.duration_since(last_progress_emit_at) >= PROGRESS_EVENT_MIN_INTERVAL;
+        let bytes_advanced = bytes.saturating_sub(last_progress_bytes) >= PROGRESS_EVENT_MIN_BYTES;
+        let is_complete = progress.total_bytes > 0 && bytes >= progress.total_bytes;
+        if !(interval_elapsed || bytes_advanced || is_complete) {
+            return;
+        }
+        last_progress_emit_at = now;
+        last_progress_bytes = bytes;
         let _ = progress_cmd_tx.try_send(ReceiverCommand::OfferProgress {
             offer_id,
             event: map_receiver_offer_progress(&progress, &sender_label, &save_root_label),
@@ -430,6 +452,7 @@ async fn handle_incoming_offer(
             item_count: manifest.file_count,
             total_size_bytes: manifest.total_size,
             bytes_received: manifest.total_size,
+            connection_path: None,
             total_size_label: human_size(manifest.total_size),
             files: Vec::new(),
             error_message: None,
@@ -444,6 +467,7 @@ async fn handle_incoming_offer(
             item_count: manifest.file_count,
             total_size_bytes: manifest.total_size,
             bytes_received: 0,
+            connection_path: None,
             total_size_label: human_size(manifest.total_size),
             files: Vec::new(),
             error_message: Some(format_error_chain(&err)),
@@ -480,6 +504,7 @@ fn spawn_pending_offer_watch_task(
             item_count,
             total_size_bytes,
             bytes_received: 0,
+            connection_path: None,
             total_size_label: human_size(total_size_bytes),
             files: Vec::new(),
             error_message: Some("sender disconnected before approval".to_owned()),
@@ -494,6 +519,7 @@ fn spawn_pending_offer_watch_task(
             item_count,
             total_size_bytes,
             bytes_received: 0,
+            connection_path: None,
             total_size_label: human_size(total_size_bytes),
             files: Vec::new(),
             error_message: Some("offer timed out before approval".to_owned()),
@@ -539,6 +565,11 @@ fn map_receiver_offer_progress(
         item_count: progress.file_count,
         total_size_bytes: progress.total_bytes,
         bytes_received: progress.bytes_received,
+        connection_path: Some(match progress.connection_path_kind {
+            drift_core::util::ConnectionPathKind::Direct => "p2p".to_owned(),
+            drift_core::util::ConnectionPathKind::Relay => "relay".to_owned(),
+            drift_core::util::ConnectionPathKind::Unknown => "unknown".to_owned(),
+        }),
         total_size_label: human_size(progress.total_bytes),
         files: Vec::new(),
         error_message: progress.error_message.clone(),

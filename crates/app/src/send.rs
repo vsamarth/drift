@@ -17,6 +17,7 @@ use drift_core::sender::{
     SendTransferPhase as CoreSendTransferPhase, SendTransferProgress, format_code_label,
     send_files_with_progress, send_files_with_progress_via_lan_ticket,
 };
+use drift_core::util::ConnectionPathKind;
 use drift_core::wire::DeviceType;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -205,6 +206,7 @@ fn failed_event(destination_label: &str, error: &anyhow::Error) -> SendEvent {
         total_size: 0,
         bytes_sent: 0,
         remote_device_type: None,
+        connection_path: None,
         error_message: Some(format_error_chain(error)),
     }
 }
@@ -234,6 +236,7 @@ fn map_progress(progress: SendTransferProgress) -> SendEvent {
         total_size: progress.manifest.total_size,
         bytes_sent: progress.bytes_sent,
         remote_device_type: progress.remote_device_type.map(device_type_to_str),
+        connection_path: progress.connection_path_kind.map(connection_path_to_str),
         error_message: None,
     }
 }
@@ -272,6 +275,14 @@ fn device_type_to_str(value: DeviceType) -> String {
     match value {
         DeviceType::Phone => "phone".to_owned(),
         DeviceType::Laptop => "laptop".to_owned(),
+    }
+}
+
+fn connection_path_to_str(value: ConnectionPathKind) -> String {
+    match value {
+        ConnectionPathKind::Direct => "p2p".to_owned(),
+        ConnectionPathKind::Relay => "relay".to_owned(),
+        ConnectionPathKind::Unknown => "unknown".to_owned(),
     }
 }
 
@@ -336,6 +347,7 @@ mod tests {
             bytes_sent: 4,
             current_file_index: Some(0),
             bytes_sent_in_file: 4,
+            connection_path_kind: None,
         });
         assert_eq!(event.phase, SendPhase::Sending);
         assert_eq!(event.destination_label, "quiet river");

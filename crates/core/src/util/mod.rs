@@ -7,6 +7,40 @@ use std::io::{self, Write};
 use anyhow::{Context, Result};
 use iroh::TransportAddr;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConnectionPathKind {
+    Direct,
+    Relay,
+    Unknown,
+}
+
+pub async fn classify_connection_path(
+    endpoint: &iroh::Endpoint,
+    remote_id: iroh::EndpointId,
+) -> ConnectionPathKind {
+    let Some(info) = endpoint.remote_info(remote_id).await else {
+        return ConnectionPathKind::Unknown;
+    };
+
+    let mut has_ip = false;
+    let mut has_relay = false;
+    for addr in info.addrs() {
+        match addr.addr() {
+            TransportAddr::Ip(_) => has_ip = true,
+            TransportAddr::Relay(_) => has_relay = true,
+            _ => {}
+        }
+    }
+
+    if has_ip {
+        ConnectionPathKind::Direct
+    } else if has_relay {
+        ConnectionPathKind::Relay
+    } else {
+        ConnectionPathKind::Unknown
+    }
+}
+
 pub fn confirm_accept() -> Result<bool> {
     print!("Accept? [y/N]: ");
     io::stdout().flush().context("flushing prompt")?;

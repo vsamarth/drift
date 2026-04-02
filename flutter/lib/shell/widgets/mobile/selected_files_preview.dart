@@ -11,14 +11,9 @@ class SelectedFilesPreview extends StatelessWidget {
   static const double _kPreviewFooterHeight = 28;
 
   final List<TransferItemViewData> items;
-  final VoidCallback? onAddMore;
-  final bool isPicking;
-
   const SelectedFilesPreview({
     super.key,
     required this.items,
-    required this.onAddMore,
-    required this.isPicking,
   });
 
   String _selectionSummaryLabel(List<TransferItemViewData> items) {
@@ -118,14 +113,6 @@ class SelectedFilesPreview extends StatelessWidget {
           SizedBox(
             height: previewHeight,
             child: PreviewTableViewport(items: items, maxHeight: previewHeight),
-          ),
-          const SizedBox(height: 8),
-          Align(
-            alignment: Alignment.centerRight,
-            child: TextButton(
-              onPressed: isPicking ? null : onAddMore,
-              child: const Text('Add more'),
-            ),
           ),
         ],
       ),

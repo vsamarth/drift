@@ -14,10 +14,10 @@ enum PeerResolution {
     LanTicket(String),
 }
 use crate::session::{
-    bind_endpoint, connect_to_ticket, demo_hello_mode_enabled, send_demo_hello_over_connection,
-    send_files_over_connection,
+    bind_endpoint, connect_to_ticket, send_files_over_connection,
 };
 use crate::transfer::{SenderMachine, SenderState, ensure_session_id, validate_hello};
+use crate::util::{ConnectionPathKind, classify_connection_path};
 use crate::wire::{
     ControlMessage, DeviceType, Hello, Offer, TRANSFER_PROTOCOL_VERSION, TransferRole,
     decode_ticket, read_message, write_message,
@@ -45,12 +45,15 @@ pub struct SendTransferProgress {
     pub current_file_index: Option<u64>,
     /// Bytes sent in the currently streaming file so far.
     pub bytes_sent_in_file: u64,
+    /// Observed transport path kind for the session.
+    pub connection_path_kind: Option<ConnectionPathKind>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SendTransferOutcome {
     pub receiver_device_name: String,
     pub manifest: OfferManifest,
+    pub connection_path_kind: ConnectionPathKind,
 }
 
 pub async fn send_files_with_progress<F>(
@@ -78,6 +81,7 @@ where
         0,
         None,
         0,
+        None,
     ));
 
     let result = send_prepared_files(
@@ -118,6 +122,7 @@ where
         0,
         None,
         0,
+        None,
     ));
 
     send_prepared_files(
@@ -159,6 +164,7 @@ where
         .await
         .context("binding local iroh endpoint")?;
     let connection = connect_to_ticket(&endpoint, endpoint_addr).await?;
+    let connection_path_kind = classify_connection_path(&endpoint, connection.remote_id()).await;
     machine.transition(SenderState::Connected)?;
 
     machine.transition(SenderState::Offering)?;
@@ -199,6 +205,7 @@ where
         0,
         None,
         0,
+        Some(connection_path_kind),
     ));
 
     match read_message::<ControlMessage>(&mut control_recv)
@@ -216,31 +223,28 @@ where
                 0,
                 None,
                 0,
+                Some(connection_path_kind),
             ));
-            if demo_hello_mode_enabled() {
-                println!("DRIFT_DEMO_HELLO enabled: sending demo payload instead of files");
-                send_demo_hello_over_connection(connection).await?;
-            } else {
-                send_files_over_connection(
-                    connection,
-                    &mut control_send,
-                    &mut control_recv,
-                    session_id,
-                    &prepared.files,
-                    |p| {
-                        on_progress(progress(
-                            SendTransferPhase::Sending,
-                            receiver_hello.device_name.clone(),
-                            prepared,
-                            Some(receiver_hello.device_type),
-                            p.total_bytes_sent,
-                            Some(p.file_index as u64),
-                            p.bytes_sent_in_file,
-                        ));
-                    },
-                )
-                .await?;
-            }
+            send_files_over_connection(
+                &endpoint,
+                &mut control_send,
+                &mut control_recv,
+                session_id,
+                &prepared.files,
+                |p| {
+                    on_progress(progress(
+                        SendTransferPhase::Sending,
+                        receiver_hello.device_name.clone(),
+                        prepared,
+                        Some(receiver_hello.device_type),
+                        p.total_bytes_sent,
+                        Some(p.file_index as u64),
+                        p.bytes_sent_in_file,
+                        Some(connection_path_kind),
+                    ));
+                },
+            )
+            .await?;
             machine.transition(SenderState::Completed)?;
             on_progress(progress(
                 SendTransferPhase::Completed,
@@ -250,6 +254,7 @@ where
                 prepared.manifest.total_size,
                 None,
                 0,
+                Some(connection_path_kind),
             ));
         }
         ControlMessage::Decline(message) => {
@@ -269,6 +274,7 @@ where
     Ok(SendTransferOutcome {
         receiver_device_name: receiver_hello.device_name,
         manifest: prepared.manifest.clone(),
+        connection_path_kind,
     })
 }
 
@@ -280,6 +286,7 @@ fn progress(
     bytes_sent: u64,
     current_file_index: Option<u64>,
     bytes_sent_in_file: u64,
+    connection_path_kind: Option<ConnectionPathKind>,
 ) -> SendTransferProgress {
     SendTransferProgress {
         phase,
@@ -289,6 +296,7 @@ fn progress(
         bytes_sent,
         current_file_index,
         bytes_sent_in_file,
+        connection_path_kind,
     }
 }
 

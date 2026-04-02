@@ -20,9 +20,9 @@ use iroh_blobs::{
     Hash,
 };
 use tokio::fs;
-use tokio::io::AsyncWriteExt;
 use tokio::sync::mpsc;
 use tokio::time::{Duration, timeout};
+use tracing::trace;
 
 use crate::fs_plan::prepare::PreparedFile;
 use crate::fs_plan::receive::{ExpectedFile, build_expected_files};
@@ -33,9 +33,6 @@ use crate::wire::{
     TransferStatus, read_message, write_message,
 };
 
-const ACK_OK: &[u8] = b"ok";
-const DEMO_HELLO: &[u8] = b"hello";
-const DEMO_DONE: &[u8] = b"done";
 const CONTROL_STREAM_FINISH_TIMEOUT: Duration = Duration::from_secs(2);
 
 #[derive(Debug, Clone, Copy)]
@@ -103,7 +100,7 @@ impl Drop for TempDir {
 
 pub async fn bind_endpoint() -> Result<Endpoint> {
     Endpoint::builder(presets::N0)
-        .alpns(vec![ALPN.to_vec()])
+        .alpns(vec![ALPN.to_vec(), BLOBS_ALPN.to_vec()])
         .relay_mode(RelayMode::Default)
         .bind()
         .await
@@ -131,7 +128,7 @@ pub async fn connect_to_ticket(
 }
 
 pub async fn send_files_over_connection<F>(
-    _connection: iroh::endpoint::Connection,
+    endpoint: &Endpoint,
     control_send: &mut iroh::endpoint::SendStream,
     control_recv: &mut iroh::endpoint::RecvStream,
     session_id: &str,
@@ -141,8 +138,13 @@ pub async fn send_files_over_connection<F>(
 where
     F: FnMut(FileSendProgress),
 {
-    let mut provider = prepare_blob_provider(session_id, files).await?;
+    let mut provider = prepare_blob_provider(endpoint, session_id, files).await?;
     let ticket = provider.ticket().await?;
+    trace!(
+        session_id = %session_id,
+        blob_provider_ticket = %ticket,
+        "prepared blob provider ticket"
+    );
 
     write_message(
         control_send,
@@ -181,67 +183,26 @@ where
         }
     };
 
-    if result.is_ok() {
+    let ack_result: Result<()> = if result.is_ok() {
         send_transfer_ack(control_send, session_id).await?;
         control_send.finish()?;
         let _ = timeout(CONTROL_STREAM_FINISH_TIMEOUT, control_send.stopped()).await;
-    }
+        Ok(())
+    } else {
+        Ok(())
+    };
 
-    provider.shutdown().await?;
-    result
+    // Always tear down the blob provider even if ACK/finish fails, to avoid leaking
+    // router/store resources on sender-side protocol errors.
+    let shutdown_result = provider.shutdown().await;
+    shutdown_result?;
+    result?;
+    ack_result
 }
 
-pub fn demo_hello_mode_enabled() -> bool {
-    matches!(
-        std::env::var("DRIFT_DEMO_HELLO").ok().as_deref(),
-        Some("1") | Some("true") | Some("TRUE") | Some("yes") | Some("YES")
-    )
-}
-
-pub async fn send_demo_hello_over_connection(connection: iroh::endpoint::Connection) -> Result<()> {
-    let (mut send_stream, mut recv_stream) = connection
-        .open_bi()
-        .await
-        .context("opening demo hello stream")?;
-
-    send_stream
-        .write_all(DEMO_HELLO)
-        .await
-        .context("writing demo hello payload")?;
-    send_stream
-        .flush()
-        .await
-        .context("flushing demo hello payload")?;
-
-    let mut ack = [0_u8; ACK_OK.len()];
-    recv_stream
-        .read_exact(&mut ack)
-        .await
-        .context("waiting for demo hello ACK")?;
-    if ack.as_slice() != ACK_OK {
-        bail!("receiver returned unexpected demo ACK");
-    }
-
-    send_stream
-        .write_all(DEMO_DONE)
-        .await
-        .context("writing demo done marker")?;
-    send_stream
-        .flush()
-        .await
-        .context("flushing demo done marker")?;
-    send_stream.finish()?;
-
-    println!(
-        "Demo hello payload sent: {}",
-        String::from_utf8_lossy(DEMO_HELLO)
-    );
-    connection.close(0u32.into(), b"done");
-    Ok(())
-}
 
 pub async fn receive_files_over_connection(
-    connection: iroh::endpoint::Connection,
+    endpoint: &Endpoint,
     control_send: &mut iroh::endpoint::SendStream,
     control_recv: &mut iroh::endpoint::RecvStream,
     session_id: &str,
@@ -251,7 +212,7 @@ pub async fn receive_files_over_connection(
     let expected_files =
         build_expected_transfer_files(manifest, build_expected_files(manifest, &out_dir).await?)?;
     receive_files_over_connection_with_progress(
-        connection,
+        endpoint,
         control_send,
         control_recv,
         session_id,
@@ -262,7 +223,7 @@ pub async fn receive_files_over_connection(
 }
 
 pub async fn receive_files_over_connection_with_progress<F>(
-    _connection: iroh::endpoint::Connection,
+    endpoint: &Endpoint,
     control_send: &mut iroh::endpoint::SendStream,
     control_recv: &mut iroh::endpoint::RecvStream,
     session_id: &str,
@@ -300,7 +261,7 @@ where
     };
 
     let result =
-        receive_blob_collection(&ticket_message.ticket, &expected_files, total_bytes_to_receive, &mut on_progress)
+        receive_blob_collection(endpoint, &ticket_message.ticket, &expected_files, total_bytes_to_receive, &mut on_progress)
             .await;
     match result {
         Ok(()) => {
@@ -327,49 +288,6 @@ where
     control_send.finish()?;
     let _ = timeout(CONTROL_STREAM_FINISH_TIMEOUT, control_send.stopped()).await;
     println!("Transfer session finished");
-    Ok(())
-}
-
-pub async fn receive_demo_hello_over_connection(
-    connection: iroh::endpoint::Connection,
-) -> Result<()> {
-    let (mut send_stream, mut recv_stream) = connection
-        .accept_bi()
-        .await
-        .context("waiting for demo hello stream")?;
-
-    let mut payload = [0_u8; DEMO_HELLO.len()];
-    recv_stream
-        .read_exact(&mut payload)
-        .await
-        .context("reading demo hello payload")?;
-    if payload.as_slice() != DEMO_HELLO {
-        bail!("unexpected demo hello payload");
-    }
-
-    println!(
-        "Received demo payload: {}",
-        String::from_utf8_lossy(DEMO_HELLO)
-    );
-
-    send_stream
-        .write_all(ACK_OK)
-        .await
-        .context("writing demo hello ACK")?;
-    send_stream
-        .flush()
-        .await
-        .context("flushing demo hello ACK")?;
-    let mut done = [0_u8; DEMO_DONE.len()];
-    recv_stream
-        .read_exact(&mut done)
-        .await
-        .context("waiting for demo done marker")?;
-    if done.as_slice() != DEMO_DONE {
-        bail!("unexpected demo done marker");
-    }
-
-    send_stream.finish()?;
     Ok(())
 }
 
@@ -431,7 +349,11 @@ struct BlobProgressState {
     file_size: u64,
 }
 
-async fn prepare_blob_provider(session_id: &str, files: &[PreparedFile]) -> Result<BlobProvider> {
+async fn prepare_blob_provider(
+    endpoint: &Endpoint,
+    session_id: &str,
+    files: &[PreparedFile],
+) -> Result<BlobProvider> {
     let root = TempDir::new("drift-blobs-send", session_id).await?;
     let store = FsStore::load(&root.path)
         .await
@@ -450,7 +372,7 @@ async fn prepare_blob_provider(session_id: &str, files: &[PreparedFile]) -> Resu
             .await
             .with_context(|| format!("importing {}", prepared.source_path.display()))?;
         file_hashes.insert(
-            Hash::from(prepared.file_blake3),
+            tag.hash(),
             BlobProgressState {
                 hash: tag.hash(),
                 file_index,
@@ -471,13 +393,7 @@ async fn prepare_blob_provider(session_id: &str, files: &[PreparedFile]) -> Resu
     );
     let progress_rx = spawn_blob_progress_forwarder(event_rx, file_hashes);
 
-    let endpoint = Endpoint::builder(presets::N0)
-        .alpns(vec![BLOBS_ALPN.to_vec()])
-        .relay_mode(RelayMode::Default)
-        .bind()
-        .await
-        .context("binding blob provider endpoint")?;
-    let router = Router::builder(endpoint)
+    let router = Router::builder(endpoint.clone())
         .accept(BLOBS_ALPN, BlobsProtocol::new(store.as_ref(), Some(event_sender)))
         .spawn();
 
@@ -549,6 +465,7 @@ async fn forward_request_updates(
 }
 
 async fn receive_blob_collection<F>(
+    endpoint: &Endpoint,
     ticket: &str,
     expected_files: &[ExpectedTransferFile],
     total_bytes_to_receive: u64,
@@ -559,12 +476,8 @@ where
 {
     let blob_ticket: BlobTicket = ticket.parse().context("parsing blob ticket")?;
     let download = BlobDownloadStore::new("drift-blobs-recv", ticket).await?;
-    let endpoint = Endpoint::builder(presets::N0)
-        .alpns(vec![BLOBS_ALPN.to_vec()])
-        .relay_mode(RelayMode::Default)
-        .bind()
-        .await
-        .context("binding blob receiver endpoint")?;
+    // Reuse the receiver's existing endpoint — open a new BLOBS_ALPN connection to the
+    // same peer rather than binding a second local endpoint.
     let connection = endpoint
         .connect(blob_ticket.addr().clone(), BLOBS_ALPN)
         .await
@@ -607,7 +520,6 @@ where
     }
     .await;
 
-    endpoint.close().await;
     download.shutdown().await?;
     result
 }
@@ -727,6 +639,9 @@ async fn send_transfer_ack(
 #[cfg(test)]
 mod transfer_tests {
     use super::*;
+    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::time::{SystemTime, UNIX_EPOCH};
+    use tokio::fs;
 
     #[tokio::test]
     async fn build_expected_transfer_files_preserves_manifest_order() -> Result<()> {
@@ -765,6 +680,60 @@ mod transfer_tests {
 
         assert_eq!(ordered[0].path, "b.txt");
         assert_eq!(ordered[1].path, "a.txt");
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn prepare_blob_provider_contains_all_added_files() -> Result<()> {
+        static NEXT_TEMP_ID: AtomicU64 = AtomicU64::new(0);
+        let unique = format!(
+            "drift-session-prepare-provider-{}-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("system time")
+                .as_nanos(),
+            NEXT_TEMP_ID.fetch_add(1, Ordering::Relaxed)
+        );
+        let temp = std::env::temp_dir().join(unique);
+        fs::create_dir_all(&temp).await?;
+        let first = temp.join("first.txt");
+        let second = temp.join("nested/second.txt");
+        if let Some(parent) = second.parent() {
+            fs::create_dir_all(parent).await?;
+        }
+        fs::write(&first, "alpha").await?;
+        fs::write(&second, "beta").await?;
+
+        let files = vec![
+            PreparedFile {
+                source_path: first,
+                transfer_path: "first.txt".to_owned(),
+                size: 5,
+            },
+            PreparedFile {
+                source_path: second,
+                transfer_path: "nested/second.txt".to_owned(),
+                size: 4,
+            },
+        ];
+
+        let endpoint = bind_endpoint().await?;
+        let provider = prepare_blob_provider(&endpoint, "session-test", &files).await?;
+        let store = FsStore::load(&provider.root.path)
+            .await
+            .context("loading provider store for verification")?;
+        let collection = Collection::load(provider._collection_tag.hash(), store.as_ref())
+            .await
+            .context("loading provider collection for verification")?;
+        let by_path = collection.into_iter().collect::<BTreeMap<_, _>>();
+
+        assert_eq!(by_path.len(), files.len());
+        assert!(by_path.contains_key("first.txt"));
+        assert!(by_path.contains_key("nested/second.txt"));
+
+        provider.shutdown().await?;
+        endpoint.close().await;
+        let _ = std::fs::remove_dir_all(temp);
         Ok(())
     }
 }

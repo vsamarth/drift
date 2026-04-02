@@ -26,6 +26,7 @@ pub struct SendEvent {
     pub total_size: u64,
     pub bytes_sent: u64,
     pub remote_device_type: Option<String>,
+    pub connection_path: Option<String>,
     pub error_message: Option<String>,
 }
 
@@ -76,6 +77,7 @@ pub struct ReceiverOfferEvent {
     pub item_count: u64,
     pub total_size_bytes: u64,
     pub bytes_received: u64,
+    pub connection_path: Option<String>,
     pub total_size_label: String,
     pub files: Vec<ReceiverOfferFile>,
     pub error_message: Option<String>,

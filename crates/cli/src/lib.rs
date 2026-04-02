@@ -256,7 +256,7 @@ pub async fn receive(out_dir: PathBuf, server_url: Option<String>) -> Result<()>
                     Ok(ReceiverEvent::Shutdown) => break Ok(()),
                     Err(tokio::sync::broadcast::error::RecvError::Closed) => break Ok(()),
                     Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
-                        warn!(skipped, "receive.event_lagged");
+                        debug!(skipped, "receive.event_lagged");
                     }
                 }
             }
@@ -287,9 +287,11 @@ fn render_send_event(
                 info!(phase = "waiting_for_decision", receiver = %event.destination_label, "send.phase");
             }
             SendPhase::Sending => {
+                let path = event.connection_path.as_deref().unwrap_or("unknown");
                 info!(
                     phase = "sending",
                     receiver = %event.destination_label,
+                    connection_path = path,
                     file_count = event.item_count,
                     total_bytes = event.total_size,
                     total_human = %human_size(event.total_size),
@@ -297,7 +299,14 @@ fn render_send_event(
                 );
             }
             SendPhase::Completed => {
-                info!(phase = "completed", receiver = %event.destination_label, bytes_sent = event.bytes_sent, "send.phase");
+                let path = event.connection_path.as_deref().unwrap_or("unknown");
+                info!(
+                    phase = "completed",
+                    receiver = %event.destination_label,
+                    connection_path = path,
+                    bytes_sent = event.bytes_sent,
+                    "send.phase"
+                );
             }
             SendPhase::Failed => {
                 warn!(phase = "failed", receiver = %event.destination_label, error = ?event.error_message, "send.phase");
@@ -335,16 +344,19 @@ fn render_receive_event(
                 );
             }
             ReceiverOfferPhase::Receiving => {
+                let path = event.connection_path.as_deref().unwrap_or("unknown");
                 info!(
                     phase = "receiving",
                     sender = %event.sender_name,
+                    connection_path = path,
                     file_count = event.item_count,
                     total_bytes = event.total_size_bytes,
                     "receive.phase"
                 );
             }
             ReceiverOfferPhase::Completed => {
-                info!(phase = "completed", sender = %event.sender_name, "receive.phase");
+                let path = event.connection_path.as_deref().unwrap_or("unknown");
+                info!(phase = "completed", sender = %event.sender_name, connection_path = path, "receive.phase");
             }
             ReceiverOfferPhase::Declined => {
                 info!(phase = "declined", sender = %event.sender_name, "receive.phase");
@@ -360,7 +372,7 @@ fn render_receive_event(
     match event.phase {
         ReceiverOfferPhase::Receiving => {
             let pb = ensure_progress_bar(progress_bar, event.total_size_bytes.max(1));
-            pb.set_position(event.total_size_bytes);
+            pb.set_position(event.bytes_received.min(event.total_size_bytes));
             pb.set_message(event.status_message.clone());
         }
         ReceiverOfferPhase::Completed
