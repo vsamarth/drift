@@ -48,14 +48,14 @@ ProviderContainer _buildContainer({
       ),
       initialDriftAppIdentityProvider.overrideWith(
         (ref) => const DriftAppIdentity(
-          deviceName: 'Samarth MacBook Pro',
+          deviceName: 'Drift Device',
           deviceType: 'laptop',
           downloadRoot: '/tmp/Downloads',
         ),
       ),
       driftAppIdentityProvider.overrideWith(
         (ref) => const DriftAppIdentity(
-          deviceName: 'Samarth MacBook Pro',
+          deviceName: 'Drift Device',
           deviceType: 'laptop',
           downloadRoot: '/tmp/Downloads',
         ),

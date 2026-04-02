@@ -140,14 +140,14 @@ ProviderContainer buildTestContainer({
       ),
       initialDriftAppIdentityProvider.overrideWith(
         (ref) => const DriftAppIdentity(
-          deviceName: 'Samarth MacBook Pro',
+          deviceName: 'Drift Device',
           deviceType: 'laptop',
           downloadRoot: '/tmp/Downloads',
         ),
       ),
       driftAppIdentityProvider.overrideWith(
         (ref) => const DriftAppIdentity(
-          deviceName: 'Samarth MacBook Pro',
+          deviceName: 'Drift Device',
           deviceType: 'laptop',
           downloadRoot: '/tmp/Downloads',
         ),
@@ -441,7 +441,7 @@ void main() {
       find.byKey(const ValueKey<String>('idle-identity-zone')),
       findsOneWidget,
     );
-    expect(find.text('Samarth MacBook Pro'), findsOneWidget);
+    expect(find.text('Drift Device'), findsOneWidget);
     expect(find.text('F9P 2Q1'), findsOneWidget);
     expect(find.text('Ready'), findsOneWidget);
     expect(find.text('Receive code'), findsOneWidget);
@@ -723,7 +723,7 @@ void main() {
 
     expect(sendTransferSource.lastRequest, isNotNull);
     expect(sendTransferSource.lastRequest?.code, 'AB2CD3');
-    expect(sendTransferSource.lastRequest?.deviceName, 'Samarth MacBook Pro');
+    expect(sendTransferSource.lastRequest?.deviceName, 'Drift Device');
     expect(sendTransferSource.lastRequest?.paths, ['sample.txt', 'photos/']);
     expect(find.text('Continue'), findsNothing);
     expect(find.text('Finish transfer'), findsNothing);
