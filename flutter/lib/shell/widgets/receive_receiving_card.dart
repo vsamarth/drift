@@ -6,6 +6,7 @@ import '../../state/drift_app_state.dart';
 import '../../state/drift_providers.dart';
 import 'preview_list.dart';
 import 'sending_connection_strip.dart';
+import 'transfer_flow_layout.dart';
 
 class ReceiveReceivingCard extends ConsumerWidget {
   const ReceiveReceivingCard({super.key});
@@ -24,87 +25,71 @@ class ReceiveReceivingCard extends ConsumerWidget {
     final transferProgress = _transferProgressForStrip(state);
     final mode = _receivingStripMode(state);
 
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 6, 8, 10),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+    const accentColor = Color(0xFFD4A824);
+
+    return TransferFlowLayout(
+      statusLabel: 'Receiving',
+      statusColor: accentColor,
+      title: senderName,
+      subtitle: state.receiveSummary?.statusMessage ?? 'Receiving files...',
+      illustration: SendingConnectionStrip(
+        localLabel: senderName,
+        localDeviceType: senderDeviceType,
+        remoteLabel: state.deviceName,
+        remoteDeviceType: state.deviceType,
+        animate: ref.watch(animateSendingConnectionProvider),
+        mode: mode,
+        transferProgress: transferProgress,
+      ),
+      manifest: PreviewTable(
+        items: state.receiveItems,
+        footerSummary: itemSummary,
+      ),
+      footer: Row(
         children: [
-          Row(
-            children: [
-              Container(
-                width: 7,
-                height: 7,
-                decoration: const BoxDecoration(
-                  color: Color(0xFFD4A824),
-                  shape: BoxShape.circle,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Text(
-                'Incoming',
-                style: driftSans(
-                  fontSize: 11.5,
-                  fontWeight: FontWeight.w600,
-                  color: kMuted,
-                  letterSpacing: 0.2,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 18),
-          Text(
-            senderName,
-            style: driftSans(
-              fontSize: 28,
-              fontWeight: FontWeight.w700,
-              color: kInk,
-              letterSpacing: -0.8,
-              height: 1.1,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            state.receiveSummary?.statusMessage ?? 'Receiving files...',
-            style: driftSans(fontSize: 13, color: kMuted, height: 1.5),
-          ),
-          const SizedBox(height: 18),
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Expanded(
-                  flex: 2,
-                  child: Center(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 4),
-                      child: SendingConnectionStrip(
-                        localLabel: senderName,
-                        localDeviceType: senderDeviceType,
-                        remoteLabel: state.deviceName,
-                        remoteDeviceType: state.deviceType,
-                        animate: ref.watch(animateSendingConnectionProvider),
-                        mode: mode,
-                        transferProgress: transferProgress,
-                      ),
-                    ),
-                  ),
+            child: TextButton(
+              onPressed: () => _confirmCancel(context, ref),
+              style: TextButton.styleFrom(
+                foregroundColor: const Color(0xFFCC3333),
+                backgroundColor: const Color(0xFFCC3333).withValues(alpha: 0.08),
+                minimumSize: const Size(0, 44),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  side: BorderSide(color: const Color(0xFFCC3333).withValues(alpha: 0.15)),
                 ),
-                Expanded(
-                  flex: 3,
-                  child: SingleChildScrollView(
-                    physics: const BouncingScrollPhysics(),
-                    child: PreviewTable(
-                      items: state.receiveItems,
-                      footerSummary: itemSummary,
-                    ),
-                  ),
-                ),
-              ],
+              ),
+              child: const Text('Cancel'),
             ),
           ),
         ],
       ),
     );
+  }
+
+  Future<void> _confirmCancel(BuildContext context, WidgetRef ref) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Cancel Transfer?'),
+        content: const Text('Stop receiving and cancel?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('No'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(foregroundColor: const Color(0xFFCC3333)),
+            child: const Text('Yes, cancel'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      ref.read(driftAppNotifierProvider.notifier).declineReceiveOffer();
+    }
   }
 }
 

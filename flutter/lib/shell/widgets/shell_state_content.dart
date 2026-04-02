@@ -4,7 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../state/drift_app_state.dart';
 import '../../state/drift_providers.dart';
 import '../shell_routing.dart';
-import 'receive_idle_card.dart';
 import 'receive_receiving_card.dart';
 import 'receive_review_card.dart';
 import 'send_code_card.dart';
@@ -44,11 +43,6 @@ class ShellStateContent extends ConsumerWidget {
         onChooseFiles: notifier.pickSendItems,
         onDropPaths: notifier.acceptDroppedSendItems,
         height: availableHeight,
-      ),
-      ShellView.receiveIdle => SizedBox(
-        height: availableHeight,
-        width: double.infinity,
-        child: const ReceiveIdleCard(),
       ),
       ShellView.sendSelected => SizedBox(
         height: availableHeight,

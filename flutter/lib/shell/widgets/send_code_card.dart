@@ -7,6 +7,7 @@ import '../../state/drift_app_state.dart';
 import '../../state/drift_providers.dart';
 import 'preview_list.dart';
 import 'sending_connection_strip.dart';
+import 'transfer_flow_layout.dart';
 
 class SendCodeCard extends ConsumerWidget {
   const SendCodeCard({
@@ -83,147 +84,49 @@ class SendCodeCard extends ConsumerWidget {
       );
     }
 
-    return Column(
-      children: [
-        Expanded(
-          child: SingleChildScrollView(
-            physics: const BouncingScrollPhysics(),
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                // Header Block
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                      decoration: BoxDecoration(
-                        color: dotColor.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Container(
-                            width: 6,
-                            height: 6,
-                            decoration: BoxDecoration(color: dotColor, shape: BoxShape.circle),
-                          ),
-                          const SizedBox(width: 6),
-                          Text(
-                            title,
-                            style: driftSans(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                              color: dotColor,
-                              letterSpacing: 0.2,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 20),
-                Text(
-                  destinationLabel,
-                  style: driftSans(
-                    fontSize: 26,
-                    fontWeight: FontWeight.w700,
-                    color: kInk,
-                    letterSpacing: -0.6,
-                    height: 1.1,
-                  ),
-                ),
-                const SizedBox(height: 14),
-                Text(
-                  status,
-                  style: driftSans(
-                    fontSize: 13.5,
-                    fontWeight: FontWeight.w500,
-                    color: kMuted,
-                    height: 1.4,
-                  ),
-                ),
-                if (stage == TransferStage.waiting && !state.hasSendPayloadProgress) ...[
-                  const SizedBox(height: 12),
-                  Text(
-                    'The receiver must accept before files start transferring.',
-                    style: driftSans(fontSize: 12, color: kSubtle, height: 1.4),
-                  ),
-                ],
-
-                const SizedBox(height: 20),
-                // Illustration Block
-                Center(
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxHeight: 100),
-                    child: SendingConnectionStrip(
-                      localLabel: state.deviceName,
-                      localDeviceType: state.deviceType,
-                      remoteLabel: destinationLabel,
-                      remoteDeviceType: state.sendRemoteDeviceType,
-                      animate: state.animateSendingConnection,
-                      mode: _sendingStripMode(state),
-                      transferProgress: _transferProgressForStrip(state),
-                    ),
-                  ),
-                ),
-                
-                const SizedBox(height: 24),
-                // Manifest Card
-                Container(
-                  decoration: BoxDecoration(
-                    color: kSurface2,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: kBorder.withValues(alpha: 0.8)),
-                  ),
-                  child: Column(
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(18, 16, 18, 0),
-                        child: PreviewTable(
-                          items: state.sendItems,
-                          footerSummary: itemSummary,
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 24),
-              ],
-            ),
-          ),
-        ),
-        // Sticky Footer
-        Container(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-          decoration: BoxDecoration(
-            color: kBg,
-            border: Border(top: BorderSide(color: kBorder.withValues(alpha: 0.5))),
-          ),
-          child: Row(
-            children: [
-              Expanded(
-                child: TextButton(
-                  onPressed: () => _confirmCancel(context, ref),
-                  style: TextButton.styleFrom(
-                    foregroundColor: const Color(0xFFCC3333),
-                    backgroundColor: const Color(0xFFCC3333).withValues(alpha: 0.08),
-                    minimumSize: const Size(0, 44),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      side: BorderSide(color: const Color(0xFFCC3333).withValues(alpha: 0.15)),
-                    ),
-                  ),
-                  child: const Text('Cancel'),
+    return TransferFlowLayout(
+      statusLabel: title,
+      statusColor: dotColor,
+      title: destinationLabel,
+      subtitle: status,
+      explainer: (stage == TransferStage.waiting && !state.hasSendPayloadProgress)
+          ? Text(
+              'The receiver must accept before files start transferring.',
+              style: driftSans(fontSize: 12, color: kSubtle, height: 1.4),
+            )
+          : null,
+      illustration: SendingConnectionStrip(
+        localLabel: state.deviceName,
+        localDeviceType: state.deviceType,
+        remoteLabel: destinationLabel,
+        remoteDeviceType: state.sendRemoteDeviceType,
+        animate: state.animateSendingConnection,
+        mode: _sendingStripMode(state),
+        transferProgress: _transferProgressForStrip(state),
+      ),
+      manifest: PreviewTable(
+        items: state.sendItems,
+        footerSummary: itemSummary,
+      ),
+      footer: Row(
+        children: [
+          Expanded(
+            child: TextButton(
+              onPressed: () => _confirmCancel(context, ref),
+              style: TextButton.styleFrom(
+                foregroundColor: const Color(0xFFCC3333),
+                backgroundColor: const Color(0xFFCC3333).withValues(alpha: 0.08),
+                minimumSize: const Size(0, 44),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  side: BorderSide(color: const Color(0xFFCC3333).withValues(alpha: 0.15)),
                 ),
               ),
-            ],
+              child: const Text('Cancel'),
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
@@ -309,28 +212,6 @@ Color _dotColorFor(TransferStage stage) {
     TransferStage.error => const Color(0xFFCC3333),
     _ => const Color(0xFF4B98AA),
   };
-}
-
-class _SendPayloadLinearBar extends ConsumerWidget {
-  const _SendPayloadLinearBar();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final state = ref.watch(driftAppNotifierProvider);
-    final sent = state.sendPayloadBytesSent ?? 0;
-    final total = state.sendPayloadTotalBytes ?? 0;
-    final progress = total <= 0 ? 0.0 : (sent / total).clamp(0.0, 1.0);
-
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(5),
-      child: LinearProgressIndicator(
-        value: progress,
-        minHeight: 6,
-        backgroundColor: kMuted.withValues(alpha: 0.14),
-        color: kAccentCyanStrong,
-      ),
-    );
-  }
 }
 
 SendingStripMode _sendingStripMode(DriftAppState state) {

@@ -21,7 +21,7 @@ LARGE_SIZE_MB ?= 1024
 NEARBY_SIZE_MB ?= 10
 
 # mDNS scan duration for send-nearby (seconds).
-NEARBY_TIMEOUT_SECS ?= 15
+NEARBY_TIMEOUT_SECS ?= 7
 
 help:
 	@echo "Drift Makefile targets"

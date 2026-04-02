@@ -108,27 +108,7 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
   }
 
   void setMode(TransferDirection mode) {
-    switch (mode) {
-      case TransferDirection.send:
-        resetShell();
-      case TransferDirection.receive:
-        openReceivePanel();
-    }
-  }
-
-  void openReceivePanel() {
-    _cancelNearbyScanTimer();
-    if (state.session is ReceiveIdleSession ||
-        state.session is ReceiveOfferSession ||
-        state.session is ReceiveTransferSession ||
-        state.session is ReceiveResultSession) {
-      return;
-    }
-    _setSession(const ReceiveIdleSession());
-  }
-
-  void closeReceivePanel() {
-    _setSession(const IdleSession());
+    resetShell();
   }
 
   void activateSendDropTarget() {
@@ -239,11 +219,9 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
   void declineReceiveOffer() {
     final session = state.session;
     if (session is ReceiveOfferSession && session.decisionPending) {
-      _setSession(const ReceiveIdleSession());
       unawaited(_respondToIncomingOffer(accept: false));
-      return;
     }
-    closeReceivePanel();
+    resetShell();
   }
 
   void cancelSendInProgress() {
@@ -265,10 +243,8 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
         if (decisionPending) {
           unawaited(_respondToIncomingOffer(accept: false));
         }
-        _setSession(const ReceiveIdleSession());
+        _setSession(const IdleSession());
       case ReceiveResultSession():
-        _setSession(const ReceiveIdleSession());
-      case ReceiveIdleSession():
         _setSession(const IdleSession());
       case SendDraftSession():
         _setSession(const IdleSession());
@@ -537,7 +513,7 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
         resetShell();
         return;
       case rust_receiver.ReceiverTransferPhase.declined:
-        _setSession(const ReceiveIdleSession());
+        resetShell();
         return;
     }
   }

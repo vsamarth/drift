@@ -62,7 +62,6 @@ class DriftAppState {
   String get idleReceiveStatus => receiverBadge.status;
 
   TransferDirection get mode => switch (session) {
-    ReceiveIdleSession() ||
     ReceiveOfferSession() ||
     ReceiveTransferSession() ||
     ReceiveResultSession() => TransferDirection.receive,
@@ -82,7 +81,6 @@ class DriftAppState {
   };
 
   TransferStage get receiveStage => switch (session) {
-    ReceiveIdleSession() => TransferStage.idle,
     ReceiveOfferSession() => TransferStage.review,
     ReceiveTransferSession() => TransferStage.waiting,
     ReceiveResultSession() => TransferStage.completed,
@@ -138,7 +136,6 @@ class DriftAppState {
   };
 
   String get receiveCode => switch (session) {
-    ReceiveIdleSession() => '',
     ReceiveOfferSession(:final summary) => summary.code,
     ReceiveTransferSession(:final summary) => summary.code,
     ReceiveResultSession(:final summary) => summary.code,
@@ -263,8 +260,7 @@ class DriftAppState {
     _ => null,
   };
 
-  bool get hasActiveTransfer =>
-      session is! IdleSession && session is! ReceiveIdleSession;
+  bool get hasActiveTransfer => session is! IdleSession;
 
   bool get canGoBack => session is! IdleSession;
 
@@ -277,8 +273,7 @@ class DriftAppState {
   };
 
   bool get discoverableEnabled =>
-      discoverableByDefault &&
-      (session is IdleSession || session is ReceiveIdleSession);
+      discoverableByDefault && (session is IdleSession);
 
   ShellView get shellView => shellViewFor(this);
 }
@@ -301,10 +296,6 @@ sealed class TransferResultSession extends ShellSessionState {
 
 class IdleSession extends ShellSessionState {
   const IdleSession();
-}
-
-class ReceiveIdleSession extends ShellSessionState {
-  const ReceiveIdleSession();
 }
 
 class SendDraftSession extends ShellSessionState {

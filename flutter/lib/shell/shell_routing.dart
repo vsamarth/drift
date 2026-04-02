@@ -9,7 +9,6 @@ enum ShellView {
   sendWaiting,
   sendCompleted,
   sendError,
-  receiveIdle,
   receiveReview,
   receiveReceiving,
   receiveCompleted,
@@ -21,7 +20,7 @@ ShellView shellViewFor(DriftAppState state) {
       TransferStage.review => ShellView.receiveReview,
       TransferStage.waiting => ShellView.receiveReceiving,
       TransferStage.completed => ShellView.receiveCompleted,
-      _ => ShellView.receiveIdle,
+      _ => ShellView.sendIdle,
     };
   }
   return switch (state.sendStage) {

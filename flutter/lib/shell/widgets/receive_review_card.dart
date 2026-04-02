@@ -5,6 +5,7 @@ import '../../core/theme/drift_theme.dart';
 import '../../state/drift_providers.dart';
 import 'preview_list.dart';
 import 'sending_connection_strip.dart';
+import 'transfer_flow_layout.dart';
 
 class ReceiveReviewCard extends ConsumerWidget {
   const ReceiveReviewCard({super.key});
@@ -22,101 +23,61 @@ class ReceiveReviewCard extends ConsumerWidget {
     final senderDeviceType = state.receiveSenderDeviceType ?? 'laptop';
     final notifier = ref.read(driftAppNotifierProvider.notifier);
 
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 6, 8, 10),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+    const accentColor = Color(0xFF4B98AA);
+
+    return TransferFlowLayout(
+      statusLabel: 'Incoming',
+      statusColor: accentColor,
+      title: senderName,
+      subtitle: _subtitle(itemCount, totalSize, saveRoot),
+      explainer: Text(
+        'Review the files and accept only if you trust the sender.',
+        style: driftSans(fontSize: 12, color: kSubtle, height: 1.4),
+      ),
+      illustration: SendingConnectionStrip(
+        localLabel: senderName,
+        localDeviceType: senderDeviceType,
+        remoteLabel: state.deviceName,
+        remoteDeviceType: state.deviceType,
+        animate: ref.watch(animateSendingConnectionProvider),
+        mode: SendingStripMode.waitingOnRecipient,
+      ),
+      manifest: PreviewTable(
+        items: state.receiveItems,
+        footerSummary: itemSummary,
+      ),
+      footer: Row(
         children: [
-          Row(
-            children: [
-              Container(
-                width: 7,
-                height: 7,
-                decoration: const BoxDecoration(
-                  color: Color(0xFF4B98AA),
-                  shape: BoxShape.circle,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Text(
-                'Incoming',
-                style: driftSans(
-                  fontSize: 11.5,
-                  fontWeight: FontWeight.w600,
-                  color: kMuted,
-                  letterSpacing: 0.2,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 18),
-          Text(
-            senderName,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: driftSans(
-              fontSize: 28,
-              fontWeight: FontWeight.w700,
-              color: kInk,
-              letterSpacing: -0.8,
-              height: 1.1,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            _subtitle(itemCount, totalSize, saveRoot),
-            style: driftSans(fontSize: 13, color: kMuted, height: 1.5),
-          ),
-          const SizedBox(height: 18),
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Expanded(
-                  flex: 2,
-                  child: Center(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 4),
-                      child: SendingConnectionStrip(
-                        localLabel: senderName,
-                        localDeviceType: senderDeviceType,
-                        remoteLabel: state.deviceName,
-                        remoteDeviceType: state.deviceType,
-                        animate: ref.watch(animateSendingConnectionProvider),
-                        mode: SendingStripMode.waitingOnRecipient,
-                      ),
-                    ),
-                  ),
+            flex: 2,
+            child: FilledButton(
+              onPressed: notifier.acceptReceiveOffer,
+              style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFF4A8E9E),
+                foregroundColor: Colors.white,
+                minimumSize: const Size(0, 48),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
                 ),
-                Expanded(
-                  flex: 3,
-                  child: SingleChildScrollView(
-                    physics: const BouncingScrollPhysics(),
-                    child: PreviewTable(
-                      items: state.receiveItems,
-                      footerSummary: itemSummary,
-                    ),
-                  ),
-                ),
-              ],
+              ),
+              child: Text('Save to $saveRoot'),
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.only(top: 6),
-            child: Row(
-              children: [
-                Expanded(
-                  child: FilledButton(
-                    onPressed: notifier.acceptReceiveOffer,
-                    child: Text('Save to $saveRoot'),
-                  ),
+          const SizedBox(width: 12),
+          Expanded(
+            flex: 1,
+            child: TextButton(
+              onPressed: notifier.declineReceiveOffer,
+              style: TextButton.styleFrom(
+                foregroundColor: const Color(0xFFCC3333),
+                backgroundColor: const Color(0xFFCC3333).withValues(alpha: 0.08),
+                minimumSize: const Size(0, 48),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  side: BorderSide(color: const Color(0xFFCC3333).withValues(alpha: 0.15)),
                 ),
-                const SizedBox(width: 10),
-                OutlinedButton(
-                  onPressed: notifier.declineReceiveOffer,
-                  child: const Text('Decline'),
-                ),
-              ],
+              ),
+              child: const Text('Decline'),
             ),
           ),
         ],
