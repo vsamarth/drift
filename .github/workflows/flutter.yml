@@ -40,7 +40,7 @@ jobs:
         run: cargo install cargo-expand
 
       - name: Install flutter_rust_bridge_codegen
-        run: cargo install flutter_rust_bridge_codegen --version 2.11.1
+        run: cargo install flutter_rust_bridge_codegen --version 2.12.0
 
       - name: Fetch dependencies
         run: flutter pub get

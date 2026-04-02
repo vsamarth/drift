@@ -4,7 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/models/transfer_models.dart';
 import '../../core/theme/drift_theme.dart';
-import '../../state/drift_app_state.dart';
 import '../../state/drift_providers.dart';
 import 'receive_code_field.dart';
 
@@ -311,7 +310,7 @@ class NearbyDevicesSection extends ConsumerWidget {
               scrollDirection: Axis.horizontal,
               physics: const BouncingScrollPhysics(),
               itemCount: destinations.length,
-              separatorBuilder: (_, __) => const SizedBox(width: 12),
+              separatorBuilder: (context, _) => const SizedBox(width: 12),
               itemBuilder: (context, index) {
                 final d = destinations[index];
                 final isSelected = state.selectedSendDestination == d;
@@ -519,7 +518,7 @@ class _NearbyStatusPanel extends StatelessWidget {
               ],
             ),
           ),
-          if (action != null) action!,
+          ?action,
         ],
       ),
     );
