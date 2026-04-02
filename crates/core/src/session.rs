@@ -1,39 +1,40 @@
-use std::cmp::min;
-use std::collections::{BTreeMap, HashSet};
-use std::path::{Path, PathBuf};
+use std::collections::BTreeMap;
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result, anyhow, bail};
-use iroh::{Endpoint, RelayMode};
-use std::sync::Arc;
-use tokio::fs::{self, File};
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
-use tokio::time::{Duration, Instant};
+use futures_lite::StreamExt;
+use iroh::{Endpoint, RelayMode, endpoint::presets, protocol::Router};
+use iroh_blobs::{
+    ALPN as BLOBS_ALPN, BlobFormat, BlobsProtocol,
+    api::{
+        TempTag,
+        blobs::{AddPathOptions, ExportMode, ExportOptions, ImportMode},
+        remote::GetProgressItem,
+    },
+    format::collection::Collection,
+    store::fs::FsStore,
+    ticket::BlobTicket,
+};
+use tokio::fs;
+use tokio::io::AsyncWriteExt;
+use tokio::time::{Duration, timeout};
 
 use crate::fs_plan::prepare::PreparedFile;
-use crate::fs_plan::receive::{
-    ExpectedFile, ensure_destination_available, resolve_transfer_destination,
-};
-use crate::util::{describe_remote, human_size};
+use crate::fs_plan::receive::{ExpectedFile, build_expected_files};
+use crate::rendezvous::OfferManifest;
+use crate::util::describe_remote;
 use crate::wire::{
-    ALPN, FileOpen, TRANSFER_CHUNK_SIZE, blake3_from_hex, blake3_to_hex,
-    chunk_count_for_transfer_size, read_file_open, write_file_open,
+    ALPN, BlobTicketMessage, ControlMessage, TransferAck, TransferErrorCode, TransferResult,
+    TransferStatus, read_message, write_message,
 };
 
 const ACK_OK: &[u8] = b"ok";
+const DEMO_HELLO: &[u8] = b"hello";
+const DEMO_DONE: &[u8] = b"done";
+const CONTROL_STREAM_FINISH_TIMEOUT: Duration = Duration::from_secs(2);
 
-const STREAM_CTRL_ACK: u8 = 0;
-const STREAM_CTRL_NACK: u8 = 1;
-
-const MAX_CHUNK_RETRIES: u32 = 5;
-
-/// Payload progress: emit at most ~5× per second or every 256 KiB to avoid flooding UI.
-const PROGRESS_EMIT_INTERVAL: Duration = Duration::from_millis(200);
-const PROGRESS_EMIT_MIN_BYTES: u64 = 256 * 1024;
-
-/// Progress updates emitted while sending file chunks.
-///
-/// `total_bytes_sent` is across the entire transfer session, while `bytes_sent_in_file`
-/// is relative to `file_index` within the prepared file list.
 #[derive(Debug, Clone, Copy)]
 pub struct FileSendProgress {
     pub total_bytes_sent: u64,
@@ -41,7 +42,6 @@ pub struct FileSendProgress {
     pub file_index: usize,
 }
 
-/// Progress updates emitted while receiving file chunks.
 #[derive(Debug, Clone)]
 pub struct FileReceiveProgress {
     pub total_bytes_received: u64,
@@ -51,8 +51,54 @@ pub struct FileReceiveProgress {
     pub file_path: Arc<str>,
 }
 
+#[derive(Debug, Clone)]
+pub struct ExpectedTransferFile {
+    pub path: String,
+    pub size: u64,
+    pub destination: PathBuf,
+}
+
+struct BlobProvider {
+    router: Router,
+    root: TempDir,
+    _collection_tag: TempTag,
+}
+
+struct BlobDownloadStore {
+    store: FsStore,
+    root: TempDir,
+}
+
+struct TempDir {
+    path: PathBuf,
+}
+
+impl TempDir {
+    async fn new(prefix: &str, session_id: &str) -> Result<Self> {
+        let id_digest = blake3::hash(session_id.as_bytes()).to_hex();
+        let unique = format!(
+            "{prefix}-{id_digest}-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .context("system clock before unix epoch")?
+                .as_nanos()
+        );
+        let path = std::env::temp_dir().join(unique);
+        fs::create_dir_all(&path)
+            .await
+            .with_context(|| format!("creating temp directory {}", path.display()))?;
+        Ok(Self { path })
+    }
+}
+
+impl Drop for TempDir {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.path);
+    }
+}
+
 pub async fn bind_endpoint() -> Result<Endpoint> {
-    Endpoint::builder()
+    Endpoint::builder(presets::N0)
         .alpns(vec![ALPN.to_vec()])
         .relay_mode(RelayMode::Default)
         .bind()
@@ -81,661 +127,553 @@ pub async fn connect_to_ticket(
 }
 
 pub async fn send_files_over_connection<F>(
-    connection: iroh::endpoint::Connection,
+    _connection: iroh::endpoint::Connection,
+    control_send: &mut iroh::endpoint::SendStream,
+    control_recv: &mut iroh::endpoint::RecvStream,
+    session_id: &str,
     files: &[PreparedFile],
     mut on_progress: F,
 ) -> Result<()>
 where
     F: FnMut(FileSendProgress),
 {
-    let mut cumulative = 0_u64;
-    let mut last_emit = Instant::now();
-    let mut bytes_since_emit = 0_u64;
+    let provider = prepare_blob_provider(session_id, files).await?;
+    let ticket = provider.ticket().await?;
 
-    for (file_index, prepared) in files.iter().enumerate() {
-        let file_start_total = cumulative;
-        let (mut send_stream, mut recv_stream) = connection.open_bi().await.with_context(|| {
-            format!(
-                "opening transfer stream for {}",
-                prepared.source_path.display()
-            )
-        })?;
+    write_message(
+        control_send,
+        &ControlMessage::BlobTicket(BlobTicketMessage {
+            session_id: session_id.to_owned(),
+            ticket,
+        }),
+    )
+    .await
+    .context("sending blob transfer ticket")?;
 
-        let chunk_count = chunk_count_for_transfer_size(prepared.size)?;
-        let open = FileOpen {
-            path: prepared.transfer_path.clone(),
-            size: prepared.size,
-            chunk_size: TRANSFER_CHUNK_SIZE,
-            chunk_count,
-            file_blake3: blake3_to_hex(&prepared.file_blake3),
-        };
-        write_file_open(&mut send_stream, &open).await?;
-
-        send_file_chunked(
-            &mut send_stream,
-            &mut recv_stream,
-            &prepared.source_path,
-            prepared.size,
-            chunk_count,
-            file_index,
-            file_start_total,
-            &mut cumulative,
-            &mut last_emit,
-            &mut bytes_since_emit,
-            &mut on_progress,
-        )
-        .await?;
-
-        send_stream.finish()?;
-
-        let ack = recv_stream.read_to_end(64).await.with_context(|| {
-            format!(
-                "waiting for receiver ack for {}",
-                prepared.source_path.display()
-            )
-        })?;
-        if ack != ACK_OK {
-            bail!(
-                "receiver returned an unexpected response for {}",
-                prepared.source_path.display()
-            );
+    let result = match read_message::<ControlMessage>(control_recv)
+        .await
+        .context("waiting for final transfer result")?
+    {
+        ControlMessage::TransferResult(result) => {
+            ensure_matching_session_id(&result.session_id, session_id)?;
+            if !matches!(result.status, TransferStatus::Ok) {
+                Err(anyhow!(
+                    "receiver failed transfer: {}",
+                    transfer_status_summary(&result.status)
+                ))
+            } else {
+                Ok(())
+            }
         }
+        other => Err(anyhow!("unexpected final control message: {:?}", other)),
+    };
 
-        println!(
-            "Sent {} ({})",
-            prepared.source_path.display(),
-            human_size(prepared.size)
-        );
+    if result.is_ok() {
+        let total_bytes_sent = files.iter().map(|file| file.size).sum();
+        on_progress(FileSendProgress {
+            total_bytes_sent,
+            bytes_sent_in_file: 0,
+            file_index: 0,
+        });
+
+        send_transfer_ack(control_send, session_id).await?;
+        control_send.finish()?;
+        let _ = timeout(CONTROL_STREAM_FINISH_TIMEOUT, control_send.stopped()).await;
     }
 
+    provider.shutdown().await?;
+    result
+}
+
+pub fn demo_hello_mode_enabled() -> bool {
+    matches!(
+        std::env::var("DRIFT_DEMO_HELLO").ok().as_deref(),
+        Some("1") | Some("true") | Some("TRUE") | Some("yes") | Some("YES")
+    )
+}
+
+pub async fn send_demo_hello_over_connection(connection: iroh::endpoint::Connection) -> Result<()> {
+    let (mut send_stream, mut recv_stream) = connection
+        .open_bi()
+        .await
+        .context("opening demo hello stream")?;
+
+    send_stream
+        .write_all(DEMO_HELLO)
+        .await
+        .context("writing demo hello payload")?;
+    send_stream
+        .flush()
+        .await
+        .context("flushing demo hello payload")?;
+
+    let mut ack = [0_u8; ACK_OK.len()];
+    recv_stream
+        .read_exact(&mut ack)
+        .await
+        .context("waiting for demo hello ACK")?;
+    if ack.as_slice() != ACK_OK {
+        bail!("receiver returned unexpected demo ACK");
+    }
+
+    send_stream
+        .write_all(DEMO_DONE)
+        .await
+        .context("writing demo done marker")?;
+    send_stream
+        .flush()
+        .await
+        .context("flushing demo done marker")?;
+    send_stream.finish()?;
+
+    println!(
+        "Demo hello payload sent: {}",
+        String::from_utf8_lossy(DEMO_HELLO)
+    );
     connection.close(0u32.into(), b"done");
     Ok(())
 }
 
 pub async fn receive_files_over_connection(
     connection: iroh::endpoint::Connection,
+    control_send: &mut iroh::endpoint::SendStream,
+    control_recv: &mut iroh::endpoint::RecvStream,
+    session_id: &str,
     out_dir: PathBuf,
-    expected_files: Option<BTreeMap<String, ExpectedFile>>,
+    manifest: &OfferManifest,
 ) -> Result<()> {
-    receive_files_over_connection_with_progress(connection, out_dir, expected_files, |_| {}).await
+    let expected_files =
+        build_expected_transfer_files(manifest, build_expected_files(manifest, &out_dir).await?)?;
+    receive_files_over_connection_with_progress(
+        connection,
+        control_send,
+        control_recv,
+        session_id,
+        expected_files,
+        |_| {},
+    )
+    .await
 }
 
 pub async fn receive_files_over_connection_with_progress<F>(
-    connection: iroh::endpoint::Connection,
-    out_dir: PathBuf,
-    mut expected_files: Option<BTreeMap<String, ExpectedFile>>,
+    _connection: iroh::endpoint::Connection,
+    control_send: &mut iroh::endpoint::SendStream,
+    control_recv: &mut iroh::endpoint::RecvStream,
+    session_id: &str,
+    expected_files: Vec<ExpectedTransferFile>,
     mut on_progress: F,
 ) -> Result<()>
 where
     F: FnMut(FileReceiveProgress),
 {
-    let total_bytes_to_receive: u64 = expected_files
-        .as_ref()
-        .and_then(|m| {
-            // `try_fold` returns `Option<u64>` (None on overflow); `and_then` flattens the
-            // resulting `Option<Option<u64>>` into `Option<u64>`.
-            m.values().try_fold(0_u64, |acc, e| acc.checked_add(e.size))
-        })
-        .unwrap_or(0_u64);
-
-    let mut received_any = false;
-    let mut seen_paths = HashSet::new();
-    let mut total_bytes_received = 0_u64;
-    let mut last_emit = Instant::now();
-    let mut bytes_since_emit = 0_u64;
-
-    // Initial update so a UI can render immediately.
-    let empty_path: Arc<str> = Arc::from("");
+    let total_bytes_to_receive = expected_files.iter().map(|file| file.size).sum();
     on_progress(FileReceiveProgress {
-        total_bytes_received,
+        total_bytes_received: 0,
         total_bytes_to_receive,
         bytes_received_in_file: 0,
         file_size: 0,
-        file_path: empty_path,
+        file_path: Arc::from(""),
     });
 
-    loop {
-        match connection.accept_bi().await {
-            Ok((mut send_stream, mut recv_stream)) => {
-                received_any = true;
-                let open = read_file_open(&mut recv_stream).await?;
-                if open.chunk_size != TRANSFER_CHUNK_SIZE {
-                    bail!(
-                        "sender used unsupported chunk_size {} (expected {})",
-                        open.chunk_size,
-                        TRANSFER_CHUNK_SIZE
-                    );
-                }
-                let expected_count = chunk_count_for_transfer_size(open.size)?;
-                if open.chunk_count != expected_count {
-                    bail!(
-                        "chunk_count {} does not match size {} (expected {})",
-                        open.chunk_count,
-                        open.size,
-                        expected_count
-                    );
-                }
-                let file_digest = blake3_from_hex(&open.file_blake3)
-                    .context("parsing file_blake3 from sender")?;
+    let ticket_message = match read_message::<ControlMessage>(control_recv)
+        .await
+        .context("waiting for blob transfer ticket")?
+    {
+        ControlMessage::BlobTicket(message) => {
+            ensure_matching_session_id(&message.session_id, session_id)?;
+            message
+        }
+        other => {
+            let status = transfer_error_status(
+                TransferErrorCode::UnexpectedMessage,
+                format!("unexpected control message while waiting for blob ticket: {:?}", other),
+            );
+            send_transfer_result(control_send, session_id, status.clone()).await?;
+            bail!(transfer_status_summary(&status));
+        }
+    };
 
-                let target_path = if let Some(expected_files) = expected_files.as_mut() {
-                    let expected = expected_files
-                        .remove(&open.path)
-                        .ok_or_else(|| anyhow!("sender sent unexpected path {}", open.path))?;
-                    if open.size != expected.size {
-                        bail!(
-                            "sender reported size {} for {}, expected {}",
-                            open.size,
-                            open.path,
-                            expected.size
-                        );
-                    }
-                    expected.destination
-                } else {
-                    if !seen_paths.insert(open.path.clone()) {
-                        bail!("sender sent duplicate path {}", open.path);
-                    }
-                    let target_path = resolve_transfer_destination(&out_dir, &open.path)?;
-                    ensure_destination_available(&out_dir, &target_path).await?;
-                    target_path
-                };
-
-                if let Some(parent) = target_path.parent() {
-                    fs::create_dir_all(parent)
-                        .await
-                        .with_context(|| format!("creating directory {}", parent.display()))?;
-                }
-
-                let file_path: Arc<str> = Arc::from(open.path.as_str());
-                let mut bytes_received_in_file = 0_u64;
-
-                receive_file_chunked(
-                    &mut recv_stream,
-                    &mut send_stream,
-                    &target_path,
-                    &open,
-                    &file_digest,
-                    file_path,
-                    open.size,
-                    total_bytes_to_receive,
-                    &mut total_bytes_received,
-                    &mut bytes_received_in_file,
-                    &mut last_emit,
-                    &mut bytes_since_emit,
-                    &mut on_progress,
-                )
-                .await?;
-
-                send_stream
-                    .write_all(ACK_OK)
-                    .await
-                    .with_context(|| format!("sending ack for {}", target_path.display()))?;
-                send_stream.finish()?;
-
-                println!(
-                    "Received {} ({})",
-                    target_path.display(),
-                    human_size(open.size)
-                );
-            }
-            Err(err) => {
-                if let Some(expected_files) = expected_files.as_ref() {
-                    if !expected_files.is_empty() {
-                        bail!(
-                            "connection closed before all expected files arrived (missing {})",
-                            expected_files.len()
-                        );
-                    }
-                }
-                if received_any {
-                    println!("Transfer session finished");
-                    return Ok(());
-                }
-                return Err(anyhow!(err)).context("connection closed before any file arrived");
-            }
+    let result =
+        receive_blob_collection(&ticket_message.ticket, &expected_files, total_bytes_to_receive, &mut on_progress)
+            .await;
+    match result {
+        Ok(()) => {
+            send_transfer_result(control_send, session_id, TransferStatus::Ok).await?;
+        }
+        Err(err) => {
+            let status = transfer_error_status(TransferErrorCode::IoError, err.to_string());
+            send_transfer_result(control_send, session_id, status.clone()).await?;
+            return Err(err);
         }
     }
-}
 
-async fn read_stream_ctrl<R: AsyncRead + Unpin>(recv_stream: &mut R) -> Result<(u8, u32)> {
-    let tag = recv_stream
-        .read_u8()
+    match read_message::<ControlMessage>(control_recv)
         .await
-        .context("reading stream control tag")?;
-    let index = recv_stream
-        .read_u32()
-        .await
-        .context("reading stream control chunk index")?;
-    Ok((tag, index))
-}
+        .context("waiting for transfer acknowledgement")?
+    {
+        ControlMessage::TransferAck(ack) => ensure_matching_session_id(&ack.session_id, session_id)?,
+        other => bail!(
+            "unexpected control message while waiting for transfer acknowledgement: {:?}",
+            other
+        ),
+    }
 
-async fn write_stream_ctrl<W: AsyncWrite + Unpin>(
-    send_stream: &mut W,
-    tag: u8,
-    chunk_index: u32,
-) -> Result<()> {
-    send_stream
-        .write_u8(tag)
-        .await
-        .context("writing stream control tag")?;
-    send_stream
-        .write_u32(chunk_index)
-        .await
-        .context("writing stream control chunk index")?;
-    send_stream
-        .flush()
-        .await
-        .context("flushing stream control")?;
+    control_send.finish()?;
+    let _ = timeout(CONTROL_STREAM_FINISH_TIMEOUT, control_send.stopped()).await;
+    println!("Transfer session finished");
     Ok(())
 }
 
-async fn write_chunk_frame<W: AsyncWrite + Unpin>(
-    send_stream: &mut W,
-    chunk_index: u32,
-    payload: &[u8],
+pub async fn receive_demo_hello_over_connection(
+    connection: iroh::endpoint::Connection,
 ) -> Result<()> {
-    if payload.len() > TRANSFER_CHUNK_SIZE as usize {
-        bail!("chunk payload exceeds TRANSFER_CHUNK_SIZE");
-    }
-    let hash = *blake3::hash(payload).as_bytes();
-    send_stream
-        .write_u32(chunk_index)
+    let (mut send_stream, mut recv_stream) = connection
+        .accept_bi()
         .await
-        .context("writing chunk index")?;
-    send_stream
-        .write_u32(payload.len() as u32)
-        .await
-        .context("writing chunk length")?;
-    send_stream
-        .write_all(payload)
-        .await
-        .context("writing chunk payload")?;
-    send_stream
-        .write_all(&hash)
-        .await
-        .context("writing chunk blake3")?;
-    send_stream.flush().await.context("flushing chunk frame")?;
-    Ok(())
-}
+        .context("waiting for demo hello stream")?;
 
-async fn read_chunk_frame<R: AsyncRead + Unpin>(
-    recv_stream: &mut R,
-) -> Result<(u32, Vec<u8>, [u8; 32])> {
-    let chunk_index = recv_stream
-        .read_u32()
-        .await
-        .context("reading chunk index")?;
-    let len = recv_stream
-        .read_u32()
-        .await
-        .context("reading chunk payload length")? as usize;
-    if len > TRANSFER_CHUNK_SIZE as usize {
-        bail!(
-            "chunk payload length {} exceeds maximum {}",
-            len,
-            TRANSFER_CHUNK_SIZE
-        );
-    }
-    let mut payload = vec![0_u8; len];
+    let mut payload = [0_u8; DEMO_HELLO.len()];
     recv_stream
         .read_exact(&mut payload)
         .await
-        .context("reading chunk payload")?;
-    let mut hash = [0_u8; 32];
-    recv_stream
-        .read_exact(&mut hash)
+        .context("reading demo hello payload")?;
+    if payload.as_slice() != DEMO_HELLO {
+        bail!("unexpected demo hello payload");
+    }
+
+    println!(
+        "Received demo payload: {}",
+        String::from_utf8_lossy(DEMO_HELLO)
+    );
+
+    send_stream
+        .write_all(ACK_OK)
         .await
-        .context("reading chunk blake3")?;
-    Ok((chunk_index, payload, hash))
+        .context("writing demo hello ACK")?;
+    send_stream
+        .flush()
+        .await
+        .context("flushing demo hello ACK")?;
+    let mut done = [0_u8; DEMO_DONE.len()];
+    recv_stream
+        .read_exact(&mut done)
+        .await
+        .context("waiting for demo done marker")?;
+    if done.as_slice() != DEMO_DONE {
+        bail!("unexpected demo done marker");
+    }
+
+    send_stream.finish()?;
+    Ok(())
 }
 
-async fn send_file_chunked<W, R, F>(
-    chunk_out: &mut W,
-    ctrl_in: &mut R,
-    path: &Path,
-    size: u64,
-    chunk_count: u32,
-    file_index: usize,
-    file_start_total: u64,
-    cumulative: &mut u64,
-    last_emit: &mut Instant,
-    bytes_since_emit: &mut u64,
+pub fn build_expected_transfer_files(
+    manifest: &OfferManifest,
+    mut expected_files: BTreeMap<String, ExpectedFile>,
+) -> Result<Vec<ExpectedTransferFile>> {
+    let mut ordered = Vec::with_capacity(manifest.files.len());
+
+    for manifest_file in &manifest.files {
+        let expected = expected_files
+            .remove(&manifest_file.path)
+            .ok_or_else(|| anyhow!("missing expected file entry for {}", manifest_file.path))?;
+        if expected.size != manifest_file.size {
+            bail!(
+                "expected size mismatch for {}: expected {} manifest {}",
+                manifest_file.path,
+                expected.size,
+                manifest_file.size
+            );
+        }
+
+        ordered.push(ExpectedTransferFile {
+            path: manifest_file.path.clone(),
+            size: manifest_file.size,
+            destination: expected.destination,
+        });
+    }
+
+    if !expected_files.is_empty() {
+        bail!("unexpected extra expected file entries remain");
+    }
+
+    Ok(ordered)
+}
+
+impl BlobProvider {
+    async fn ticket(&self) -> Result<String> {
+        self.router.endpoint().online().await;
+        let ticket = BlobTicket::new(
+            self.router.endpoint().addr(),
+            self._collection_tag.hash(),
+            BlobFormat::HashSeq,
+        );
+        Ok(ticket.to_string())
+    }
+
+    async fn shutdown(self) -> Result<()> {
+        self.router.shutdown().await.context("shutting down blob router")?;
+        drop(self.root);
+        Ok(())
+    }
+}
+
+async fn prepare_blob_provider(session_id: &str, files: &[PreparedFile]) -> Result<BlobProvider> {
+    let root = TempDir::new("drift-blobs-send", session_id).await?;
+    let store = FsStore::load(&root.path)
+        .await
+        .with_context(|| format!("loading blob store {}", root.path.display()))?;
+
+    let mut collection = Collection::default();
+    for prepared in files {
+        let tag = store
+            .add_path_with_opts(AddPathOptions {
+                path: prepared.source_path.clone(),
+                mode: ImportMode::TryReference,
+                format: BlobFormat::Raw,
+            })
+            .temp_tag()
+            .await
+            .with_context(|| format!("importing {}", prepared.source_path.display()))?;
+        collection.extend([(prepared.transfer_path.clone(), tag.hash())]);
+    }
+
+    let collection_tag = collection.store(store.as_ref()).await?;
+
+    let endpoint = Endpoint::builder(presets::N0)
+        .alpns(vec![BLOBS_ALPN.to_vec()])
+        .relay_mode(RelayMode::Default)
+        .bind()
+        .await
+        .context("binding blob provider endpoint")?;
+    let router = Router::builder(endpoint)
+        .accept(BLOBS_ALPN, BlobsProtocol::new(store.as_ref(), None))
+        .spawn();
+
+    Ok(BlobProvider {
+        router,
+        root,
+        _collection_tag: collection_tag,
+    })
+}
+
+async fn receive_blob_collection<F>(
+    ticket: &str,
+    expected_files: &[ExpectedTransferFile],
+    total_bytes_to_receive: u64,
     on_progress: &mut F,
 ) -> Result<()>
 where
-    W: AsyncWrite + Unpin,
-    R: AsyncRead + Unpin,
-    F: FnMut(FileSendProgress),
+    F: FnMut(FileReceiveProgress),
 {
-    let mut file = File::open(path)
+    let blob_ticket: BlobTicket = ticket.parse().context("parsing blob ticket")?;
+    let download = BlobDownloadStore::new("drift-blobs-recv", ticket).await?;
+    let endpoint = Endpoint::builder(presets::N0)
+        .alpns(vec![BLOBS_ALPN.to_vec()])
+        .relay_mode(RelayMode::Default)
+        .bind()
         .await
-        .with_context(|| format!("opening {}", path.display()))?;
+        .context("binding blob receiver endpoint")?;
+    let connection = endpoint
+        .connect(blob_ticket.addr().clone(), BLOBS_ALPN)
+        .await
+        .context("connecting to blob provider")?;
 
-    let mut offset = 0_u64;
-    for chunk_index in 0..chunk_count {
-        let remaining = size.saturating_sub(offset);
-        let this_len = min(TRANSFER_CHUNK_SIZE as u64, remaining) as usize;
-        let mut payload = vec![0_u8; this_len];
-        if this_len > 0 {
-            file.read_exact(&mut payload)
-                .await
-                .with_context(|| format!("reading {}", path.display()))?;
-        }
+    let mut stream = download
+        .store
+        .remote()
+        .fetch(connection, blob_ticket.hash_and_format())
+        .stream();
 
-        let mut retries = 0_u32;
-        loop {
-            write_chunk_frame(chunk_out, chunk_index, &payload)
-                .await
-                .with_context(|| format!("sending chunk {chunk_index} of {}", path.display()))?;
-
-            match read_stream_ctrl(ctrl_in).await.with_context(|| {
-                format!(
-                    "waiting for chunk {chunk_index} control message for {}",
-                    path.display()
-                )
-            })? {
-                (STREAM_CTRL_ACK, i) if i == chunk_index => break,
-                (STREAM_CTRL_NACK, i) if i == chunk_index => {
-                    retries += 1;
-                    if retries > MAX_CHUNK_RETRIES {
-                        bail!(
-                            "exceeded chunk retry limit for {} chunk {}",
-                            path.display(),
-                            chunk_index
-                        );
-                    }
-                    continue;
+    let result = async {
+        while let Some(item) = stream.next().await {
+            match item {
+                GetProgressItem::Progress(offset) => {
+                    on_progress(FileReceiveProgress {
+                        total_bytes_received: offset,
+                        total_bytes_to_receive,
+                        bytes_received_in_file: 0,
+                        file_size: 0,
+                        file_path: Arc::from(""),
+                    });
                 }
-                (tag, i) => {
-                    bail!(
-                        "unexpected stream control for {}: tag={tag} chunk_index={i} (expected ack for chunk {chunk_index})",
-                        path.display()
-                    );
+                GetProgressItem::Done(_) => break,
+                GetProgressItem::Error(err) => {
+                    return Err(anyhow!(err.to_string()));
                 }
             }
         }
 
-        offset += this_len as u64;
-        *cumulative += this_len as u64;
-        *bytes_since_emit += this_len as u64;
-        if last_emit.elapsed() >= PROGRESS_EMIT_INTERVAL
-            || *bytes_since_emit >= PROGRESS_EMIT_MIN_BYTES
-        {
-            on_progress(FileSendProgress {
-                total_bytes_sent: *cumulative,
-                bytes_sent_in_file: *cumulative - file_start_total,
-                file_index,
-            });
-            *last_emit = Instant::now();
-            *bytes_since_emit = 0;
+        export_downloaded_collection(&download.store, blob_ticket.hash(), expected_files).await?;
+        on_progress(FileReceiveProgress {
+            total_bytes_received: total_bytes_to_receive,
+            total_bytes_to_receive,
+            bytes_received_in_file: 0,
+            file_size: 0,
+            file_path: Arc::from(""),
+        });
+        Ok(())
+    }
+    .await;
+
+    endpoint.close().await;
+    download.shutdown().await?;
+    result
+}
+
+fn make_absolute_path(path: &PathBuf) -> Result<PathBuf> {
+    if path.is_absolute() {
+        Ok(path.clone())
+    } else {
+        Ok(std::env::current_dir()
+            .context("resolving current directory")?
+            .join(path))
+    }
+}
+
+async fn export_downloaded_collection(
+    store: &FsStore,
+    root_hash: iroh_blobs::Hash,
+    expected_files: &[ExpectedTransferFile],
+) -> Result<()> {
+    let collection = Collection::load(root_hash, store.as_ref())
+        .await
+        .context("loading downloaded blob collection")?;
+    let hashes_by_path = collection.into_iter().collect::<BTreeMap<_, _>>();
+
+    for expected in expected_files {
+        let hash = hashes_by_path
+            .get(&expected.path)
+            .copied()
+            .ok_or_else(|| anyhow!("missing downloaded blob for {}", expected.path))?;
+        if let Some(parent) = expected.destination.parent() {
+            fs::create_dir_all(parent)
+                .await
+                .with_context(|| format!("creating directory {}", parent.display()))?;
         }
+        let export_target = make_absolute_path(&expected.destination)?;
+        store
+            .export_with_opts(ExportOptions {
+                hash,
+                target: export_target,
+                mode: ExportMode::Copy,
+            })
+            .finish()
+            .await
+            .with_context(|| format!("exporting {}", expected.destination.display()))?;
+        println!("Received {}", expected.destination.display());
     }
 
-    on_progress(FileSendProgress {
-        total_bytes_sent: *cumulative,
-        bytes_sent_in_file: *cumulative - file_start_total,
-        file_index,
-    });
-    *last_emit = Instant::now();
-    *bytes_since_emit = 0;
     Ok(())
 }
 
-async fn receive_file_chunked<R, W>(
-    chunk_in: &mut R,
-    ctrl_out: &mut W,
-    destination: &Path,
-    open: &FileOpen,
-    expected_digest: &[u8; 32],
-    file_path: Arc<str>,
-    file_size: u64,
-    total_bytes_to_receive: u64,
-    total_bytes_received: &mut u64,
-    bytes_received_in_file: &mut u64,
-    last_emit: &mut Instant,
-    bytes_since_emit: &mut u64,
-    on_progress: &mut impl FnMut(FileReceiveProgress),
-) -> Result<()>
-where
-    R: AsyncRead + Unpin,
-    W: AsyncWrite + Unpin,
-{
-    let mut file = File::create(destination)
-        .await
-        .with_context(|| format!("creating {}", destination.display()))?;
-    let mut hasher = blake3::Hasher::new();
-    let mut next_index: u32 = 0;
-
-    while next_index < open.chunk_count {
-        let (chunk_index, payload, claimed_hash) = read_chunk_frame(chunk_in)
+impl BlobDownloadStore {
+    async fn new(prefix: &str, session_id: &str) -> Result<Self> {
+        let root = TempDir::new(prefix, session_id).await?;
+        let store = FsStore::load(&root.path)
             .await
-            .with_context(|| format!("reading chunk {next_index} for {}", destination.display()))?;
-
-        if chunk_index != next_index {
-            bail!(
-                "unexpected chunk index {} for {} (expected {})",
-                chunk_index,
-                destination.display(),
-                next_index
-            );
-        }
-
-        let actual = *blake3::hash(&payload).as_bytes();
-        if actual != claimed_hash {
-            write_stream_ctrl(ctrl_out, STREAM_CTRL_NACK, chunk_index)
-                .await
-                .with_context(|| format!("sending NACK for chunk {chunk_index}"))?;
-            continue;
-        }
-
-        file.write_all(&payload)
-            .await
-            .with_context(|| format!("writing {}", destination.display()))?;
-        hasher.update(&payload);
-
-        let payload_len = payload.len() as u64;
-        *total_bytes_received = total_bytes_received.saturating_add(payload_len);
-        *bytes_received_in_file = bytes_received_in_file.saturating_add(payload_len);
-        *bytes_since_emit = bytes_since_emit.saturating_add(payload_len);
-
-        if last_emit.elapsed() >= PROGRESS_EMIT_INTERVAL
-            || *bytes_since_emit >= PROGRESS_EMIT_MIN_BYTES
-        {
-            on_progress(FileReceiveProgress {
-                total_bytes_received: *total_bytes_received,
-                total_bytes_to_receive,
-                bytes_received_in_file: *bytes_received_in_file,
-                file_size,
-                file_path: file_path.clone(),
-            });
-            *last_emit = Instant::now();
-            *bytes_since_emit = 0;
-        }
-
-        write_stream_ctrl(ctrl_out, STREAM_CTRL_ACK, chunk_index)
-            .await
-            .with_context(|| format!("sending ACK for chunk {chunk_index}"))?;
-
-        next_index += 1;
+            .with_context(|| format!("loading blob store {}", root.path.display()))?;
+        Ok(Self { store, root })
     }
 
-    if hasher.finalize().as_bytes() != expected_digest {
-        bail!(
-            "BLAKE3 mismatch for {} after receiving all chunks",
-            destination.display()
-        );
+    async fn shutdown(self) -> Result<()> {
+        self.store
+            .shutdown()
+            .await
+            .context("shutting down blob download store")?;
+        drop(self.root);
+        Ok(())
     }
+}
 
-    file.flush()
-        .await
-        .with_context(|| format!("flushing {}", destination.display()))?;
-    on_progress(FileReceiveProgress {
-        total_bytes_received: *total_bytes_received,
-        total_bytes_to_receive,
-        bytes_received_in_file: *bytes_received_in_file,
-        file_size,
-        file_path: file_path.clone(),
-    });
-    Ok(())
+fn ensure_matching_session_id(actual: &str, expected: &str) -> Result<()> {
+    if actual == expected {
+        Ok(())
+    } else {
+        bail!("session id mismatch: expected {expected}, got {actual}")
+    }
+}
+
+fn transfer_status_summary(status: &TransferStatus) -> String {
+    match status {
+        TransferStatus::Ok => "ok".to_owned(),
+        TransferStatus::Error { code, message } => format!("{code:?}: {message}"),
+    }
+}
+
+fn transfer_error_status(code: TransferErrorCode, message: String) -> TransferStatus {
+    TransferStatus::Error { code, message }
+}
+
+async fn send_transfer_result(
+    control_send: &mut iroh::endpoint::SendStream,
+    session_id: &str,
+    status: TransferStatus,
+) -> Result<()> {
+    write_message(
+        control_send,
+        &ControlMessage::TransferResult(TransferResult {
+            session_id: session_id.to_owned(),
+            status,
+        }),
+    )
+    .await
+}
+
+async fn send_transfer_ack(
+    control_send: &mut iroh::endpoint::SendStream,
+    session_id: &str,
+) -> Result<()> {
+    write_message(
+        control_send,
+        &ControlMessage::TransferAck(TransferAck {
+            session_id: session_id.to_owned(),
+        }),
+    )
+    .await
 }
 
 #[cfg(test)]
 mod transfer_tests {
     use super::*;
-    use crate::wire::{
-        FileOpen, TRANSFER_CHUNK_SIZE, blake3_from_hex, blake3_to_hex,
-        chunk_count_for_transfer_size, read_json_frame, write_json_frame,
-    };
-    use std::sync::atomic::{AtomicU64, Ordering};
-    use std::time::{SystemTime, UNIX_EPOCH};
 
-    static NEXT_TEMP_ID: AtomicU64 = AtomicU64::new(0);
-
-    struct TestDir {
-        path: PathBuf,
-    }
-
-    impl TestDir {
-        async fn new(prefix: &str) -> Result<Self> {
-            let unique = format!(
-                "{}-{}-{}",
-                prefix,
-                SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .expect("system time")
-                    .as_nanos(),
-                NEXT_TEMP_ID.fetch_add(1, Ordering::Relaxed)
-            );
-            let path = std::env::temp_dir().join(unique);
-            fs::create_dir_all(&path).await?;
-            Ok(Self { path })
-        }
-    }
-
-    impl Drop for TestDir {
-        fn drop(&mut self) {
-            let _ = std::fs::remove_dir_all(&self.path);
-        }
-    }
-
-    async fn assert_transfer_roundtrip(payload: Vec<u8>) -> Result<()> {
-        let temp = TestDir::new("drift-xfer").await?;
-        let src = temp.path.join("in.bin");
-        let dst = temp.path.join("out.bin");
-        fs::write(&src, &payload).await?;
-
-        let digest = *blake3::hash(&payload).as_bytes();
-        let size = payload.len() as u64;
-        let chunk_count = chunk_count_for_transfer_size(size)?;
-        let transfer_path = "xfer/doc.dat".to_owned();
-        let open = FileOpen {
-            path: transfer_path.clone(),
-            size,
-            chunk_size: TRANSFER_CHUNK_SIZE,
-            chunk_count,
-            file_blake3: blake3_to_hex(&digest),
+    #[tokio::test]
+    async fn build_expected_transfer_files_preserves_manifest_order() -> Result<()> {
+        let manifest = OfferManifest {
+            files: vec![
+                crate::rendezvous::OfferFile {
+                    path: "b.txt".to_owned(),
+                    size: 2,
+                },
+                crate::rendezvous::OfferFile {
+                    path: "a.txt".to_owned(),
+                    size: 1,
+                },
+            ],
+            file_count: 2,
+            total_size: 3,
         };
+        let expected = BTreeMap::from([
+            (
+                "a.txt".to_owned(),
+                ExpectedFile {
+                    size: 1,
+                    destination: PathBuf::from("/tmp/a.txt"),
+                },
+            ),
+            (
+                "b.txt".to_owned(),
+                ExpectedFile {
+                    size: 2,
+                    destination: PathBuf::from("/tmp/b.txt"),
+                },
+            ),
+        ]);
 
-        let (mut chunk_tx, mut chunk_rx) = tokio::io::duplex(32 * 1024 * 1024);
-        let (mut ctrl_tx, mut ctrl_rx) = tokio::io::duplex(64 * 1024);
+        let ordered = build_expected_transfer_files(&manifest, expected)?;
 
-        let src_clone = src.clone();
-        let open_clone = open.clone();
-        let mut cumulative = 0_u64;
-        let mut last_emit = Instant::now();
-        let mut bytes_since_emit = 0_u64;
-
-        let send_task = tokio::spawn(async move {
-            write_json_frame(&mut chunk_tx, &open_clone)
-                .await
-                .context("writing FileOpen")?;
-            send_file_chunked(
-                &mut chunk_tx,
-                &mut ctrl_rx,
-                &src_clone,
-                size,
-                chunk_count,
-                0_usize,
-                0_u64,
-                &mut cumulative,
-                &mut last_emit,
-                &mut bytes_since_emit,
-                &mut |_| {},
-            )
-            .await
-            .context("send_file_chunked")?;
-            let mut ok = [0_u8; ACK_OK.len()];
-            ctrl_rx
-                .read_exact(&mut ok)
-                .await
-                .context("reading final ACK_OK")?;
-            if ok.as_slice() != ACK_OK {
-                bail!("expected ACK_OK, got {:?}", ok);
-            }
-            Ok::<(), anyhow::Error>(())
-        });
-
-        let dst_clone = dst.clone();
-        let recv_task = tokio::spawn(async move {
-            let open_r: FileOpen = read_json_frame(&mut chunk_rx)
-                .await
-                .context("reading FileOpen")?;
-            assert_eq!(open_r, open);
-            let file_digest = blake3_from_hex(&open_r.file_blake3)?;
-            let file_path: Arc<str> = Arc::from(open_r.path.as_str());
-            let file_size = open_r.size;
-
-            let mut total_bytes_received = 0_u64;
-            let mut bytes_received_in_file = 0_u64;
-            let mut last_emit = Instant::now();
-            let mut bytes_since_emit = 0_u64;
-            let mut on_progress = |_p: FileReceiveProgress| {};
-            receive_file_chunked(
-                &mut chunk_rx,
-                &mut ctrl_tx,
-                &dst_clone,
-                &open_r,
-                &file_digest,
-                file_path,
-                file_size,
-                file_size,
-                &mut total_bytes_received,
-                &mut bytes_received_in_file,
-                &mut last_emit,
-                &mut bytes_since_emit,
-                &mut on_progress,
-            )
-            .await
-            .context("receive_file_chunked")?;
-            ctrl_tx.write_all(ACK_OK).await.context("writing ACK_OK")?;
-            ctrl_tx.flush().await.context("flush ACK_OK")?;
-            Ok::<(), anyhow::Error>(())
-        });
-
-        send_task.await??;
-        recv_task.await??;
-
-        let got = fs::read(&dst).await?;
-        if got != payload {
-            bail!("output mismatch: len {} vs {}", got.len(), payload.len());
-        }
+        assert_eq!(ordered[0].path, "b.txt");
+        assert_eq!(ordered[1].path, "a.txt");
         Ok(())
-    }
-
-    #[tokio::test]
-    async fn duplex_transfers_small_file() -> Result<()> {
-        assert_transfer_roundtrip(b"hello chunked transfer".to_vec()).await
-    }
-
-    #[tokio::test]
-    async fn duplex_transfers_empty_file() -> Result<()> {
-        assert_transfer_roundtrip(Vec::new()).await
-    }
-
-    #[tokio::test]
-    async fn duplex_transfers_multi_chunk() -> Result<()> {
-        let len = TRANSFER_CHUNK_SIZE as usize + 1024;
-        let payload: Vec<u8> = (0_u8..=255).cycle().take(len).collect();
-        assert_transfer_roundtrip(payload).await
     }
 }

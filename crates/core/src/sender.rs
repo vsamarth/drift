@@ -13,7 +13,10 @@ enum PeerResolution {
     },
     LanTicket(String),
 }
-use crate::session::{bind_endpoint, connect_to_ticket, send_files_over_connection};
+use crate::session::{
+    bind_endpoint, connect_to_ticket, demo_hello_mode_enabled, send_demo_hello_over_connection,
+    send_files_over_connection,
+};
 use crate::transfer::{SenderMachine, SenderState, ensure_session_id, validate_hello};
 use crate::wire::{
     ControlMessage, DeviceType, Hello, Offer, TRANSFER_PROTOCOL_VERSION, TransferRole,
@@ -187,7 +190,6 @@ where
     };
 
     send_offer(&mut control_send, session_id, prepared.manifest.clone()).await?;
-    control_send.finish()?;
     machine.transition(SenderState::WaitingForDecision)?;
     on_progress(progress(
         SendTransferPhase::WaitingForDecision,
@@ -215,18 +217,30 @@ where
                 None,
                 0,
             ));
-            send_files_over_connection(connection, &prepared.files, |p| {
-                on_progress(progress(
-                    SendTransferPhase::Sending,
-                    receiver_hello.device_name.clone(),
-                    prepared,
-                    Some(receiver_hello.device_type),
-                    p.total_bytes_sent,
-                    Some(p.file_index as u64),
-                    p.bytes_sent_in_file,
-                ));
-            })
-            .await?;
+            if demo_hello_mode_enabled() {
+                println!("DRIFT_DEMO_HELLO enabled: sending demo payload instead of files");
+                send_demo_hello_over_connection(connection).await?;
+            } else {
+                send_files_over_connection(
+                    connection,
+                    &mut control_send,
+                    &mut control_recv,
+                    session_id,
+                    &prepared.files,
+                    |p| {
+                        on_progress(progress(
+                            SendTransferPhase::Sending,
+                            receiver_hello.device_name.clone(),
+                            prepared,
+                            Some(receiver_hello.device_type),
+                            p.total_bytes_sent,
+                            Some(p.file_index as u64),
+                            p.bytes_sent_in_file,
+                        ));
+                    },
+                )
+                .await?;
+            }
             machine.transition(SenderState::Completed)?;
             on_progress(progress(
                 SendTransferPhase::Completed,

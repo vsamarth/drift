@@ -10,8 +10,8 @@ crate-type = ["cdylib", "staticlib"]
 anyhow = "1.0"
 drift-app = { path = "../../crates/app" }
 drift-core = { path = "../../crates/core" }
-flutter_rust_bridge = "=2.11.1"
-iroh = "0.96"
+flutter_rust_bridge = "=2.12.0"
+iroh = "0.97"
 rand = "0.8"
 time = { version = "0.3", features = ["formatting", "parsing"] }
 tokio = { version = "1.50", features = ["fs", "rt-multi-thread", "sync", "time"] }

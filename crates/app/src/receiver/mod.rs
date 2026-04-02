@@ -9,7 +9,7 @@ mod tests;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
-use iroh::{Endpoint, RelayMode};
+use iroh::{Endpoint, RelayMode, endpoint::presets};
 use tokio::sync::{broadcast, mpsc, oneshot, watch};
 
 use crate::types::{
@@ -62,7 +62,7 @@ pub struct ReceiverService {
 
 impl ReceiverService {
     pub async fn start(config: ReceiverConfig) -> Result<Self> {
-        let endpoint = Endpoint::builder()
+        let endpoint = Endpoint::builder(presets::N0)
             .alpns(vec![ALPN.to_vec()])
             .relay_mode(RelayMode::Default)
             .secret_key(config.secret_key.clone())

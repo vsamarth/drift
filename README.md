@@ -57,6 +57,7 @@ If the machine has no IPv4 default route, LAN advertising is skipped and receive
 For quick local testing, the root `Makefile` includes `make send-*` wrappers around the `drift send` CLI. Run **`make help`** for a full list. Summary:
 - `make server` (start `drift-server`)
 - `make receive` (start receiver)
+- `make demo-receive` (start receiver with the temporary demo `hello` payload path)
 - `make send CODE=AB2CD3 FILE=sample.txt` (same as `send-file` when `CODE` is set; without `CODE`, prints help and exits)
 - `make send-file CODE=AB2CD3 FILE=sample.txt` (send one path; uses `send -c …`)
 - `make send-files CODE=AB2CD3 FILES="sample.txt photos/"` (send multiple paths)

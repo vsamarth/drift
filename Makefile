@@ -1,4 +1,4 @@
-.PHONY: help check test fmt fmt-check clippy server send send-file send-dir send-files send-nearby send-multiple send-large receive
+.PHONY: help check test fmt fmt-check clippy server send send-file send-dir send-files send-nearby send-multiple send-large receive demo-receive
 
 SERVER_URL ?= http://127.0.0.1:8787
 SERVER_ADDR ?= 127.0.0.1:8787
@@ -28,6 +28,7 @@ help:
 	@echo ""
 	@echo "  server          — drift-server on $(SERVER_ADDR) (override SERVER_ADDR)"
 	@echo "  receive         — receiver → $(OUT)/ (override OUT; SERVER_URL for rendezvous)"
+	@echo "  demo-receive    — demo hello receiver → $(OUT)/ (override OUT; SERVER_URL for rendezvous)"
 	@echo "Send via short code (receiver must show CODE):"
 	@echo "  send-file       — CODE=… FILE=…"
 	@echo "  send-files      — CODE=… FILES=\"path1 path2\""
@@ -121,3 +122,6 @@ send-large:
 
 receive:
 	DRIFT_RENDEZVOUS_URL=$(SERVER_URL) cargo run -p drift -- receive --out "$(OUT)"
+
+demo-receive:
+	DRIFT_DEMO_HELLO=1 DRIFT_RENDEZVOUS_URL=$(SERVER_URL) cargo run -p drift -- receive --out "$(OUT)"

@@ -19,6 +19,7 @@ static RECEIVER_SECRET_KEY: LazyLock<SecretKey> =
 static RECEIVER_STATE: LazyLock<Mutex<Option<BridgeReceiverState>>> =
     LazyLock::new(|| Mutex::new(None));
 static RECEIVER_SERVICE_LOCK: LazyLock<AsyncMutex<()>> = LazyLock::new(|| AsyncMutex::new(()));
+const ENABLE_DEMO_HELLO_PROTOCOL: bool = false;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct BridgeReceiverConfig {
@@ -157,6 +158,11 @@ pub fn start_receiver_transfer_listener(
     device_type: String,
     updates: StreamSink<ReceiverTransferEvent>,
 ) -> Result<(), String> {
+    if ENABLE_DEMO_HELLO_PROTOCOL {
+        std::env::set_var("DRIFT_DEMO_HELLO", "1");
+        println!("[bridge/receive] demo hello protocol enabled");
+    }
+
     RUNTIME.block_on(async move {
         let config = BridgeReceiverConfig {
             device_name,

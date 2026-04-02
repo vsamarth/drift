@@ -37,7 +37,7 @@ dependencies:
     path: rust_builder
   file_selector: ^1.1.0
   flutter_riverpod: ^2.6.1
-  flutter_rust_bridge: 2.11.1
+  flutter_rust_bridge: 2.12.0
   path_provider: ^2.1.5
   shared_preferences: ^2.5.3
   window_manager: ^0.5.1

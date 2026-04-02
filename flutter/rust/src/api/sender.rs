@@ -6,6 +6,7 @@ use super::RUNTIME;
 use crate::frb_generated::StreamSink;
 
 const LOCAL_RENDEZVOUS_URL: &str = "http://127.0.0.1:8787";
+const ENABLE_DEMO_HELLO_PROTOCOL: bool = false;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SendTransferPhase {
@@ -43,6 +44,11 @@ pub fn start_send_transfer(
     request: SendTransferRequest,
     updates: StreamSink<SendTransferEvent>,
 ) -> Result<(), String> {
+    if ENABLE_DEMO_HELLO_PROTOCOL {
+        std::env::set_var("DRIFT_DEMO_HELLO", "1");
+        println!("[bridge/send] demo hello protocol enabled");
+    }
+
     let fallback_destination = fallback_destination_label(&request);
     let session = SendSession::new(
         SendConfig {

@@ -66,7 +66,7 @@ fn discoverability_only_requires_opt_in() {
 
 #[tokio::test]
 async fn stale_offer_updates_are_ignored() {
-    let endpoint = iroh::Endpoint::builder()
+    let endpoint = iroh::Endpoint::builder(iroh::endpoint::presets::N0)
         .secret_key(SecretKey::from_bytes(&rand::random()))
         .bind()
         .await
@@ -83,7 +83,7 @@ async fn stale_offer_updates_are_ignored() {
 
 #[tokio::test]
 async fn busy_runtime_rejects_second_offer() {
-    let endpoint = iroh::Endpoint::builder()
+    let endpoint = iroh::Endpoint::builder(iroh::endpoint::presets::N0)
         .secret_key(SecretKey::from_bytes(&rand::random()))
         .bind()
         .await

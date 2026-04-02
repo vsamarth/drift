@@ -1,28 +1,25 @@
+use anyhow::{Context, Result, bail};
 use std::collections::BTreeMap;
 use std::future::Future;
 use std::path::{Path, PathBuf};
-use std::time::Duration;
-
-use anyhow::{Context, Result, bail};
-use tokio::time::timeout;
 
 use crate::fs_plan::receive::{ExpectedFile, build_expected_files};
 use crate::rendezvous::OfferManifest;
-use crate::session::{FileReceiveProgress, receive_files_over_connection_with_progress};
+use crate::session::{
+    ExpectedTransferFile, FileReceiveProgress, build_expected_transfer_files,
+    demo_hello_mode_enabled, receive_demo_hello_over_connection,
+    receive_files_over_connection_with_progress,
+};
 use crate::transfer::{ReceiverMachine, ReceiverState, ensure_session_id, validate_hello};
 use crate::wire::{
     Accept, ControlMessage, Decline, DeviceType, Hello, TRANSFER_PROTOCOL_VERSION, TransferRole,
     read_message, write_message,
 };
 
-const CONTROL_STREAM_FINISH_TIMEOUT: Duration = Duration::from_secs(2);
-
 /// State after the offer is known and destinations are planned; waiting for user accept/decline.
 pub struct ReceiverPendingDecision {
     connection: iroh::endpoint::Connection,
     control_send: iroh::endpoint::SendStream,
-    /// Held so the control stream stays open until the transfer finishes.
-    #[allow(dead_code)]
     control_recv: iroh::endpoint::RecvStream,
     session_id: String,
     sender_device_name: String,
@@ -209,32 +206,40 @@ where
     send_accept(&mut pending.control_send, &session_id).await?;
     machine.transition(ReceiverState::Approved)?;
     machine.transition(ReceiverState::Receiving)?;
-    receive_files_over_connection_with_progress(
-        pending.connection,
-        pending.out_dir,
-        Some(pending.expected_files),
-        |p: FileReceiveProgress| {
-            let current_file_path = if p.file_path.is_empty() {
-                None
-            } else {
-                Some(p.file_path.to_string())
-            };
-            on_progress(ReceiveTransferProgress {
-                phase: ReceiveTransferPhase::Receiving,
-                sender_device_name: sender_device_name.clone(),
-                sender_device_type,
-                file_count,
-                total_bytes,
-                bytes_received: p.total_bytes_received,
-                bytes_to_receive: p.total_bytes_to_receive,
-                current_file_path,
-                bytes_received_in_file: p.bytes_received_in_file,
-                current_file_size: p.file_size,
-                error_message: None,
-            });
-        },
-    )
-    .await?;
+    if demo_hello_mode_enabled() {
+        println!("DRIFT_DEMO_HELLO enabled: receiving demo payload instead of files");
+        receive_demo_hello_over_connection(pending.connection).await?;
+    } else {
+        let expected_files = expected_transfer_files(&pending.manifest, pending.expected_files)?;
+        receive_files_over_connection_with_progress(
+            pending.connection,
+            &mut pending.control_send,
+            &mut pending.control_recv,
+            &session_id,
+            expected_files,
+            |p: FileReceiveProgress| {
+                let current_file_path = if p.file_path.is_empty() {
+                    None
+                } else {
+                    Some(p.file_path.to_string())
+                };
+                on_progress(ReceiveTransferProgress {
+                    phase: ReceiveTransferPhase::Receiving,
+                    sender_device_name: sender_device_name.clone(),
+                    sender_device_type,
+                    file_count,
+                    total_bytes,
+                    bytes_received: p.total_bytes_received,
+                    bytes_to_receive: p.total_bytes_to_receive,
+                    current_file_path,
+                    bytes_received_in_file: p.bytes_received_in_file,
+                    current_file_size: p.file_size,
+                    error_message: None,
+                });
+            },
+        )
+        .await?;
+    }
 
     machine.transition(ReceiverState::Completed)?;
     on_progress(ReceiveTransferProgress {
@@ -358,10 +363,7 @@ async fn send_accept(send_stream: &mut iroh::endpoint::SendStream, session_id: &
             session_id: session_id.to_owned(),
         }),
     )
-    .await?;
-    send_stream.finish()?;
-    let _ = timeout(CONTROL_STREAM_FINISH_TIMEOUT, send_stream.stopped()).await;
-    Ok(())
+    .await
 }
 
 async fn send_decline(
@@ -378,7 +380,6 @@ async fn send_decline(
     )
     .await?;
     send_stream.finish()?;
-    let _ = timeout(CONTROL_STREAM_FINISH_TIMEOUT, send_stream.stopped()).await;
     Ok(())
 }
 
@@ -400,4 +401,11 @@ async fn send_hello(
         }),
     )
     .await
+}
+
+fn expected_transfer_files(
+    manifest: &OfferManifest,
+    expected_files: BTreeMap<String, ExpectedFile>,
+) -> Result<Vec<ExpectedTransferFile>> {
+    build_expected_transfer_files(manifest, expected_files)
 }
