@@ -25,7 +25,11 @@ pub struct SelectionPreview {
 
 pub fn inspect_selected_paths(paths: &[PathBuf]) -> Result<SelectionPreview> {
     if paths.is_empty() {
-        bail!("provide at least one file to send");
+        return Ok(SelectionPreview {
+            items: Vec::new(),
+            file_count: 0,
+            total_size: 0,
+        });
     }
 
     let mut items = Vec::with_capacity(paths.len());
@@ -43,7 +47,7 @@ pub fn inspect_selected_paths(paths: &[PathBuf]) -> Result<SelectionPreview> {
         items.push(preview);
     }
 
-    if total_file_count == 0 {
+    if !paths.is_empty() && total_file_count == 0 {
         bail!("no regular files found to send");
     }
 

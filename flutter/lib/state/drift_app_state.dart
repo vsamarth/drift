@@ -164,6 +164,11 @@ class DriftAppState {
     _ => const [],
   };
 
+  SendDestinationViewData? get selectedSendDestination => switch (session) {
+    SendDraftSession(:final selectedDestination) => selectedDestination,
+    _ => null,
+  };
+
   TransferSummaryViewData? get sendSummary => switch (session) {
     SendTransferSession(:final summary) => summary,
     SendResultSession(:final summary) => summary,
@@ -310,6 +315,7 @@ class SendDraftSession extends ShellSessionState {
     required this.nearbyScanInFlight,
     required this.nearbyScanCompletedOnce,
     required this.destinationCode,
+    this.selectedDestination,
   });
 
   final List<TransferItemViewData> items;
@@ -318,6 +324,7 @@ class SendDraftSession extends ShellSessionState {
   final bool nearbyScanInFlight;
   final bool nearbyScanCompletedOnce;
   final String destinationCode;
+  final SendDestinationViewData? selectedDestination;
 
   SendDraftSession copyWith({
     List<TransferItemViewData>? items,
@@ -326,6 +333,8 @@ class SendDraftSession extends ShellSessionState {
     bool? nearbyScanInFlight,
     bool? nearbyScanCompletedOnce,
     String? destinationCode,
+    SendDestinationViewData? selectedDestination,
+    bool clearSelectedDestination = false,
   }) {
     return SendDraftSession(
       items: items ?? this.items,
@@ -335,6 +344,9 @@ class SendDraftSession extends ShellSessionState {
       nearbyScanCompletedOnce:
           nearbyScanCompletedOnce ?? this.nearbyScanCompletedOnce,
       destinationCode: destinationCode ?? this.destinationCode,
+      selectedDestination: clearSelectedDestination
+          ? null
+          : (selectedDestination ?? this.selectedDestination),
     );
   }
 }

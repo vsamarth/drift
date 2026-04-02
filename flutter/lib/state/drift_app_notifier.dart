@@ -174,11 +174,35 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
     if (normalized == draft.destinationCode) {
       return;
     }
-    _setSession(draft.copyWith(destinationCode: normalized));
-    if (normalized.length == 6 &&
-        draft.items.isNotEmpty &&
-        !draft.isInspecting) {
-      _startSendTransfer(normalized);
+    _setSession(
+      draft.copyWith(
+        destinationCode: normalized,
+        clearSelectedDestination: true,
+      ),
+    );
+  }
+
+  void clearSendDestinationCode() {
+    final draft = _draftSession;
+    if (draft == null) {
+      return;
+    }
+    _setSession(draft.copyWith(destinationCode: ''));
+  }
+
+  void startSend() {
+    final draft = _draftSession;
+    if (draft == null || draft.items.isEmpty || draft.isInspecting) {
+      return;
+    }
+
+    final selected = draft.selectedDestination;
+    final ticket = selected?.lanTicket?.trim();
+
+    if (selected != null && ticket != null && ticket.isNotEmpty) {
+      _startSendTransferWithTicket(selected, ticket);
+    } else if (draft.destinationCode.length == 6) {
+      _startSendTransfer(draft.destinationCode);
     }
   }
 
@@ -260,24 +284,29 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
 
   void selectNearbyDestination(SendDestinationViewData destination) {
     final draft = _draftSession;
-    final ticket = destination.lanTicket?.trim();
-    if (draft == null ||
-        ticket == null ||
-        ticket.isEmpty ||
-        !state.canBrowseNearbyReceivers) {
+    if (draft == null) {
       return;
     }
-    _startSendTransferWithTicket(destination, ticket);
+    // Toggle selection
+    if (draft.selectedDestination == destination) {
+      _setSession(draft.copyWith(clearSelectedDestination: true));
+    } else {
+      _setSession(
+        draft.copyWith(
+          selectedDestination: destination,
+          destinationCode: '', // Clear code if nearby is selected
+        ),
+      );
+    }
   }
 
   Future<void> _pickSendItems() async {
-    _beginSendInspection(clearExistingItems: true);
     try {
       final items = await _sendItemSource.pickFiles();
       if (items.isEmpty) {
-        clearSendFlow();
         return;
       }
+      _beginSendInspection(clearExistingItems: true);
       _applySelectedSendItems(items);
     } catch (error, stackTrace) {
       clearSendFlow();

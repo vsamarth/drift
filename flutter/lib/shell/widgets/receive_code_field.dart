@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../core/theme/drift_theme.dart';
 
@@ -62,23 +63,36 @@ class _ReceiveCodeFieldState extends State<ReceiveCodeField> {
     return TextField(
       key: widget.fieldKey,
       controller: _ctrl,
-      onChanged: widget.onChanged,
+      onChanged: (val) {
+        final upper = val.toUpperCase();
+        if (upper != val) {
+          _ctrl.value = TextEditingValue(
+            text: upper,
+            selection: TextSelection.collapsed(offset: upper.length),
+          );
+        }
+        widget.onChanged(upper);
+      },
       onSubmitted: widget.onSubmitted,
+      textAlign: TextAlign.center,
       textCapitalization: TextCapitalization.characters,
+      maxLength: 6,
+      inputFormatters: [
+        FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z0-9]')),
+      ],
       style: driftMono(
-        fontSize: 15,
-        fontWeight: FontWeight.w600,
-        letterSpacing: 2.5,
+        fontSize: 18,
+        fontWeight: FontWeight.w700,
+        letterSpacing: 4.0,
         color: kInk,
       ),
       decoration: InputDecoration(
         hintText: widget.hintText,
+        counterText: '',
         fillColor: widget.understated
-            ? kSurface.withValues(alpha: 0.70)
+            ? kSurface.withValues(alpha: 0.6)
             : (widget.compact ? kSurface2 : kSurface),
-        contentPadding: isSmall
-            ? const EdgeInsets.symmetric(horizontal: 14, vertical: 12)
-            : null,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
         hintStyle: driftSans(
           color: kSubtle,
           fontSize: 14,
@@ -86,18 +100,19 @@ class _ReceiveCodeFieldState extends State<ReceiveCodeField> {
           letterSpacing: 0,
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(12),
           borderSide: BorderSide(
             color: widget.hasError
                 ? errorColor
-                : (isSmall ? kBorder.withValues(alpha: 0.62) : kBorder),
+                : (isSmall ? kBorder.withValues(alpha: 0.6) : kBorder),
+            width: 1.2,
           ),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(12),
           borderSide: BorderSide(
             color: widget.hasError ? errorColor : kAccentCyanStrong,
-            width: isSmall ? 1.2 : 1.5,
+            width: 1.8,
           ),
         ),
       ),
