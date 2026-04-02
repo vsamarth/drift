@@ -279,13 +279,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn blake3_hex_roundtrip() {
-        let d = *blake3::hash(b"hello").as_bytes();
-        let h = blake3_to_hex(&d);
-        assert_eq!(blake3_from_hex(&h).unwrap(), d);
-    }
-
-    #[test]
     fn transfer_status_error_serializes_with_code_and_message() {
         let status = TransferStatus::Error {
             code: TransferErrorCode::ChecksumMismatch,

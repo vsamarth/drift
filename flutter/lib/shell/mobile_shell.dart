@@ -106,54 +106,6 @@ class _MobileShellState extends ConsumerState<MobileShell> {
     );
   }
 
-  Widget _buildStepCard({
-    required IconData icon,
-    required String title,
-    required String subtitle,
-  }) {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: kSurface,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: kBorder),
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: kBg,
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: Icon(icon, color: kInk, size: 24),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: driftSans(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700,
-                    color: kInk,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  subtitle,
-                  style: driftSans(fontSize: 14, color: kMuted, height: 1.3),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(driftAppNotifierProvider);

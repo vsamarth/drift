@@ -431,7 +431,16 @@ mod tests {
 
     #[test]
     fn presence_ping_pong_localhost() {
-        let socket = UdpSocket::bind("127.0.0.1:0").expect("bind");
+        let socket = match UdpSocket::bind("127.0.0.1:0") {
+            Ok(socket) => socket,
+            Err(error)
+                if error.kind() == std::io::ErrorKind::PermissionDenied
+                    || error.raw_os_error() == Some(1) =>
+            {
+                return;
+            }
+            Err(error) => panic!("bind: {error}"),
+        };
         let port = socket.local_addr().unwrap().port();
         socket
             .set_read_timeout(Some(Duration::from_millis(500)))

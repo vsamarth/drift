@@ -13,9 +13,7 @@ enum PeerResolution {
     },
     LanTicket(String),
 }
-use crate::session::{
-    bind_endpoint, connect_to_ticket, send_files_over_connection,
-};
+use crate::session::{bind_endpoint, connect_to_ticket, send_files_over_connection};
 use crate::transfer::{SenderMachine, SenderState, ensure_session_id, validate_hello};
 use crate::util::{ConnectionPathKind, classify_connection_path};
 use crate::wire::{

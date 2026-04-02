@@ -291,8 +291,15 @@ where
     A: Future<Output = Result<bool>>,
     F: FnMut(ReceiveTransferProgress),
 {
-    let pending =
-        receiver_run_until_decision(endpoint, connection, out_dir, device_name, device_type, machine).await?;
+    let pending = receiver_run_until_decision(
+        endpoint,
+        connection,
+        out_dir,
+        device_name,
+        device_type,
+        machine,
+    )
+    .await?;
 
     let sender_device_name = pending.sender_device_name.clone();
     let sender_device_type = pending.sender_device_type;

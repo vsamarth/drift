@@ -413,7 +413,8 @@ async fn handle_incoming_offer(
     let mut progress_cb = |progress: ReceiveTransferProgress| {
         let now = std::time::Instant::now();
         let bytes = progress.bytes_received;
-        let interval_elapsed = now.duration_since(last_progress_emit_at) >= PROGRESS_EVENT_MIN_INTERVAL;
+        let interval_elapsed =
+            now.duration_since(last_progress_emit_at) >= PROGRESS_EVENT_MIN_INTERVAL;
         let bytes_advanced = bytes.saturating_sub(last_progress_bytes) >= PROGRESS_EVENT_MIN_BYTES;
         let is_complete = progress.total_bytes > 0 && bytes >= progress.total_bytes;
         if !(interval_elapsed || bytes_advanced || is_complete) {
