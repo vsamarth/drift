@@ -1,19 +1,13 @@
-import 'dart:io';
-
 import 'package:file_selector/file_selector.dart';
-
-import '../state/app_identity.dart';
 
 class StorageAccessSource {
   const StorageAccessSource();
 
   Future<String?> pickDirectory({String? initialDirectory}) async {
-    if (Platform.isAndroid) {
-      return resolvePreferredReceiveDownloadRoot();
-    }
     return getDirectoryPath(
       initialDirectory: initialDirectory,
       confirmButtonText: 'Choose folder',
+      canCreateDirectories: true,
     );
   }
 
