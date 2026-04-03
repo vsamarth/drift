@@ -142,6 +142,15 @@ void main() {
     await tester.enterText(codeField, 'ABCDEF');
     await tester.pump(const Duration(milliseconds: 500));
 
+    expect(find.text('test_file.txt'), findsOneWidget);
+    expect(find.text('Send with code'), findsOneWidget);
+    expect(find.text('Send'), findsOneWidget);
+    expect(find.text('Connecting...'), findsNothing);
+    expect(find.text('Sending...'), findsNothing);
+
+    await tester.tap(find.text('Send'));
+    await tester.pump(const Duration(milliseconds: 500));
+
     mockSendTransferSource.emit(
       const SendTransferUpdate(
         phase: SendTransferUpdatePhase.connecting,
