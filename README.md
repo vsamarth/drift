@@ -1,14 +1,23 @@
-# drift
 
-`drift` is a lightweight file transfer tool built on `iroh`, with a Flutter app UI and Rust CLI/server binaries.
+
+# Drift
+
+> Send files to anyone, anywhere. Like AirDrop, but even more magical.
+
+<p align="center">
+  <img src="flutter/assets/demo.png" width="400" alt="Drift Demo">
+</p>
+
+
+
 
 ## Features
 
-- **Send files to anyone, anywhere in the world.** Just like AirDrop, but even more magical.
+- **Send files directly to anyone, anywhere in the world.** Pick your files, connect, and send directly to the other device, with no uploads and no extra steps.
 - Use **Drift** across **macOS, Linux, Windows, Android, and iOS**.
-- **Simple and fast:** pick your files, connect, and send directly to the other device, with no uploads and no extra steps.
-- **End-to-end encrypted:** only you and the recipient can read your files; no one else can.
-- **Free & open source:** **no ads**, **no limits** on what you send, and **no account** required.
+- **End-to-end encrypted:** Only you and the recipient can read your files; no one else can.
+- **Modern & Fast:** Written in Rust & Flutter and establishes direct QUIC connections between the devices.
+- **Free & open source:** No ads, no limits on what you send, and no account required.
 
 ## Installation
 
