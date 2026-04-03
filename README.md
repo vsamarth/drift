@@ -14,33 +14,33 @@
 
 | Platform | Download |
 | --- | --- |
-| macOS | [drift-macos.dmg](https://github.com/vsamarth/drift/releases/latest/download/drift-macos.dmg) |
-| Windows | *Coming soon* |
+| macOS | [Drift-0.1.0.dmg](https://github.com/vsamarth/drift/releases/download/v0.1.0/Drift-0.1.0.dmg) |
+| Windows | [Drift-0.1.0.msix](https://github.com/vsamarth/drift/releases/download/v0.1.0/Drift-0.1.0.msix) |
 | Linux | *Coming soon* |
-| Android | [drift-android.apk](https://github.com/vsamarth/drift/releases/latest/download/drift-android.apk) |
-| iOS | [drift-ios.ipa](https://github.com/vsamarth/drift/releases/latest/download/drift-ios.ipa) |
+| Android | [Drift-0.1.0.apk](https://github.com/vsamarth/drift/releases/download/v0.1.0/Drift-0.1.0.apk) |
+| iOS | *Coming soon* |
 
 **From source:** Build the app in [`flutter/`](flutter/); see [`flutter/README.md`](flutter/README.md). A concise guide here is coming soon.
 
 ## Getting Started
 
-1. Install Drift on both devices (see [Installation](#installation) above).
-2. On the device that will receive files, open Drift and start receiving. You’ll get a pairing code, or you can use nearby discovery on the same network.
-3. On the device that will send, open Drift, connect using that code or pick a nearby receiver, choose your files, and send.
-4. On the receiver, review what’s incoming and accept to save the files.
+Drift is simple by design. To get started, follow these quick steps:
+
+1. Choose (or drop) the files you want to send.
+2. Select the receiver from nearby devices or use the 6-character pairing code.
+3. The receiver reviews and accepts to start the transfer.
 
 ## How It Works
 
-1. The receiving device registers for pairing through a **discovery server** (short code) and may use **LAN discovery** on the same network.
-2. The sending device looks up the receiver; we open a direct peer-to-peer session between them.
-3. The sending device shares a file manifest; the receiving device explicitly accepts or declines.
-4. After acceptance, we send file data over that end-to-end encrypted channel.
+- **Discovery:** Devices connect via a **discovery server** or **LAN discovery**. We only exchange the network info needed to find your peer—never your files.
+- **Direct P2P:** We establish a direct, **[end-to-end encrypted](https://docs.iroh.computer/deployment/security-privacy)** connection between devices.
+- **Explicit Consent:** No data moves until the receiver reviews the file manifest and accepts the transfer.
 
 ## Security & Privacy
 
-- We use a **discovery server** so two devices can connect from anywhere in the world. The server only receives your `Endpoint` address (what we need to reach the other peer), not your files.
-- After discovery, we open an **[end-to-end encrypted](https://docs.iroh.computer/deployment/security-privacy)** connection between the two devices. Your files are sent only over that link, after the receiver accepts the transfer.
-- If a **direct connection** is not possible, we may route traffic through a **relay**. The relay may see **metadata** (for example IP addresses, timing, file count, or total size), but **not** the contents of your files. Payloads stay end-to-end encrypted and readable only on the sender and receiver.
+- Your files belong to you. Drift establishes a direct, **[end-to-end encrypted](https://docs.iroh.computer/deployment/security-privacy)** connection between devices with no servers in between.
+- We use a simple discovery server and DNS-SD to help devices find each other by sharing their endpoint address.
+- If a direct connection fails, an encrypted relay is used. Relays may see metadata (like IP addresses), but they can never decrypt your files.
 
 ## Roadmap
 
