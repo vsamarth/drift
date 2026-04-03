@@ -1,5 +1,5 @@
 # Stage 1: Build
-FROM rust:1.81-slim AS builder
+FROM rust:1.94-slim AS builder
 
 WORKDIR /usr/src/drift
 COPY . .
