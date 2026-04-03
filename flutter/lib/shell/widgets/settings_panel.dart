@@ -248,6 +248,14 @@ class _SettingsPanelState extends ConsumerState<SettingsPanel> {
               const SizedBox(width: 12),
               FilledButton(
                 onPressed: _isDirty && !_saving ? _saveSettings : null,
+                style: FilledButton.styleFrom(
+                  backgroundColor: const Color(0xFF4A8E9E),
+                  foregroundColor: Colors.white,
+                  minimumSize: const Size(0, 48),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
                 child: Text(_saving ? 'Saving...' : 'Save Changes'),
               ),
             ],

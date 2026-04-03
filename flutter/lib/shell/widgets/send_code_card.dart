@@ -77,7 +77,18 @@ class SendCodeCard extends ConsumerWidget {
             ),
             if (primaryLabel != null && onPrimary != null) ...[
               const SizedBox(height: 20),
-              FilledButton(onPressed: onPrimary, child: Text(primaryLabel!)),
+              FilledButton(
+                onPressed: onPrimary,
+                style: FilledButton.styleFrom(
+                  backgroundColor: const Color(0xFF4A8E9E),
+                  foregroundColor: Colors.white,
+                  minimumSize: const Size(0, 48),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                child: Text(primaryLabel!),
+              ),
             ],
           ],
         ),
