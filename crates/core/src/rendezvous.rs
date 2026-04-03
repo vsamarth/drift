@@ -3,7 +3,7 @@ use reqwest::StatusCode;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
-pub const DEFAULT_RENDEZVOUS_URL: &str = "https://rendezvous.drift.dev";
+pub const DEFAULT_RENDEZVOUS_URL: &str = "https://drift.samarthv.com";
 pub const CODE_LENGTH: usize = 6;
 pub const CODE_ALPHABET: &str = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
 
