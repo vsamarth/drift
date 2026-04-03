@@ -1,0 +1,7 @@
+target/
+flutter/
+.git/
+.DS_Store
+*.png
+*.jpg
+*.svg

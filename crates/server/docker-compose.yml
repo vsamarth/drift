@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  drift-server:
+    build:
+      context: ../../
+      dockerfile: Dockerfile
+    container_name: drift-server
+    restart: unless-stopped
+    environment:
+      - RUST_LOG=info
+    networks:
+      - npm-network
+    # No ports exposed here, NPM will handle access via the network
+
+  npm:
+    image: 'jc21/nginx-proxy-manager:latest'
+    container_name: drift-npm
+    restart: unless-stopped
+    ports:
+      - '80:80'   # HTTP
+      - '81:81'   # Admin Web Port
+      - '443:443' # HTTPS
+    volumes:
+      - ./npm/data:/data
+      - ./npm/letsencrypt:/etc/letsencrypt
+    networks:
+      - npm-network
+
+networks:
+  npm-network:
+    driver: bridge
