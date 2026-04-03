@@ -71,7 +71,7 @@ DriftAppIdentity buildDefaultDriftAppIdentity({
     deviceType: deviceType ?? inferDeviceType(),
     downloadRoot: downloadRoot ?? defaultReceiveDownloadRoot(),
     discoverableByDefault: discoverable ?? true,
-    serverUrl: normalizeServerUrl(serverUrl),
+    serverUrl: normalizeServerUrl(serverUrl ?? 'https://drift.samarthv.com'),
   );
 }
 

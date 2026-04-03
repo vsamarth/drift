@@ -217,7 +217,7 @@ class _SettingsPanelState extends ConsumerState<SettingsPanel> {
                   child: TextField(
                     controller: _serverUrlController,
                     decoration: const InputDecoration(
-                      hintText: 'http://127.0.0.1:8787',
+                      hintText: 'https://drift.samarthv.com',
                     ),
                   ),
                 ),
