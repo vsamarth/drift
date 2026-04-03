@@ -601,29 +601,6 @@ void main() {
     expectNoFlutterError(tester);
   });
 
-  testWidgets('receive tab shows the passive waiting state', (tester) async {
-    final container = buildTestContainer();
-    container
-        .read(driftAppNotifierProvider.notifier)
-        .setMode(TransferDirection.receive);
-    await pumpUtilityApp(tester, container: container);
-    await pumpUiSettled(tester);
-
-    expect(find.text('Receive files'), findsOneWidget);
-    expect(
-      find.text('Incoming transfers will appear here automatically.'),
-      findsOneWidget,
-    );
-    expect(find.text('Waiting for an incoming transfer'), findsOneWidget);
-    expect(
-      find.byKey(const ValueKey<String>('receive-code-field')),
-      findsNothing,
-    );
-    expect(find.text('Receive code'), findsNothing);
-    expect(shellBackButton(), findsOneWidget);
-    expectNoFlutterError(tester);
-  });
-
   testWidgets('after drop state routes straight to manual code entry', (
     tester,
   ) async {
@@ -643,6 +620,12 @@ void main() {
     expect(find.text('Create code'), findsNothing);
 
     await tester.enterText(sendCodeField(), 'ab2cd3');
+    await tester.pump();
+
+    expect(find.text('Send'), findsOneWidget);
+    expect(sendTransferSource.lastRequest, isNull);
+
+    await tester.tap(find.text('Send'));
     await tester.pump();
 
     sendTransferSource.emit(
@@ -706,7 +689,7 @@ void main() {
     expectNoFlutterError(tester);
   });
 
-  testWidgets('valid send code starts automatically without a submit button', (
+  testWidgets('valid send code starts only after tapping Send', (
     tester,
   ) async {
     final sendTransferSource = FakeSendTransferSource();
@@ -719,6 +702,11 @@ void main() {
     await tester.pumpAndSettle();
 
     await tester.enterText(sendCodeField(), 'ab2cd3');
+    await tester.pump();
+
+    expect(sendTransferSource.lastRequest, isNull);
+
+    await tester.tap(find.text('Send'));
     await tester.pump();
 
     expect(sendTransferSource.lastRequest, isNotNull);
@@ -746,6 +734,9 @@ void main() {
     expect(find.text('Send with code'), findsOneWidget);
 
     await tester.enterText(sendCodeField(), 'ab2cd3');
+    await tester.pump();
+
+    await tester.tap(find.text('Send'));
     await tester.pump();
 
     sendTransferSource.emit(
@@ -784,6 +775,9 @@ void main() {
     await tester.enterText(sendCodeField(), 'ab2cd3');
     await tester.pump();
 
+    await tester.tap(find.text('Send'));
+    await tester.pump();
+
     sendTransferSource.emit(
       sendTransferUpdate(
         phase: SendTransferUpdatePhase.connecting,
@@ -797,6 +791,8 @@ void main() {
 
     await tester.tap(find.text('Cancel'));
     await tester.pumpAndSettle();
+    await tester.tap(find.text('Yes, cancel'));
+    await tester.pumpAndSettle();
 
     expect(find.text('Send with code'), findsOneWidget);
     expect(find.text('sample.txt'), findsWidgets);
@@ -805,7 +801,9 @@ void main() {
     expectNoFlutterError(tester);
   });
 
-  testWidgets('nearby device row starts send with LAN ticket', (tester) async {
+  testWidgets('nearby device selection starts send with LAN ticket after Send', (
+    tester,
+  ) async {
     final sendTransferSource = FakeSendTransferSource();
     Future<List<SendDestinationViewData>> fakeScan() async => [
       const SendDestinationViewData(
@@ -830,20 +828,13 @@ void main() {
     expect(find.text('Nearby devices'), findsOneWidget);
     expect(find.text('Lab Mac'), findsOneWidget);
 
-    await tester.ensureVisible(
-      find.byKey(
-        const ValueKey<String>(
-          'nearby-tile-recv-abc123xyz0._drift._udp.local.',
-        ),
-      ),
-    );
-    await tester.tap(
-      find.byKey(
-        const ValueKey<String>(
-          'nearby-tile-recv-abc123xyz0._drift._udp.local.',
-        ),
-      ),
-    );
+    await tester.ensureVisible(find.text('Lab Mac'));
+    await tester.tap(find.text('Lab Mac'));
+    await tester.pump();
+
+    expect(sendTransferSource.lastRequest, isNull);
+
+    await tester.tap(find.text('Send'));
     await tester.pump();
 
     expect(sendTransferSource.lastRequest, isNotNull);
@@ -865,7 +856,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Nearby devices'), findsOneWidget);
-    expect(find.text('No nearby devices found.'), findsOneWidget);
+    expect(find.text('No nearby devices found'), findsOneWidget);
 
     await tester.enterText(sendCodeField(), 'ab2');
     await tester.pump();
@@ -889,6 +880,9 @@ void main() {
       await tester.tap(chooseFilesButton());
       await tester.pumpAndSettle();
       await tester.enterText(sendCodeField(), 'ab2cd3');
+      await tester.pump();
+
+      await tester.tap(find.text('Send'));
       await tester.pump();
 
       sendTransferSource.emit(
@@ -943,6 +937,9 @@ void main() {
     await tester.enterText(sendCodeField(), 'ab2cd3');
     await tester.pump();
 
+    await tester.tap(find.text('Send'));
+    await tester.pump();
+
     sendTransferSource.emit(
       sendTransferUpdate(
         phase: SendTransferUpdatePhase.waitingForDecision,
@@ -969,7 +966,7 @@ void main() {
 
     expect(find.text('Send with code'), findsOneWidget);
     expect(find.text('Nearby devices'), findsOneWidget);
-    expect(find.text('No nearby devices found.'), findsOneWidget);
+    expect(find.text('No nearby devices found'), findsOneWidget);
     expect(sendCodeField(), findsOneWidget);
     container.read(driftAppNotifierProvider.notifier).resetShell();
     await tester.pumpAndSettle();
@@ -1003,7 +1000,7 @@ void main() {
     expectNoFlutterError(tester);
   });
 
-  testWidgets('tapping Add more appends to the current selection', (
+  testWidgets('tapping Add files appends to the current selection', (
     tester,
   ) async {
     const extraItem = TransferItemViewData(
@@ -1033,7 +1030,7 @@ void main() {
 
     await tester.tap(chooseFilesButton());
     await pumpUiSettled(tester);
-    await tester.tap(find.text('Add more'));
+    await tester.tap(find.text('Add files'));
     await pumpUiSettled(tester);
 
     expect(find.text('sample.txt'), findsOneWidget);
@@ -1063,63 +1060,13 @@ void main() {
 
     await tester.tap(chooseFilesButton());
     await pumpUiSettled(tester);
-    await tester.tap(
-      find.byKey(const ValueKey<String>('remove-send-item-sample.txt')),
-    );
+    await tester.tap(find.byIcon(Icons.close_rounded).first);
     await pumpUiSettled(tester);
 
     expect(find.text('sample.txt'), findsNothing);
     expect(find.text('photos'), findsOneWidget);
     container.read(driftAppNotifierProvider.notifier).resetShell();
     await tester.pumpAndSettle();
-  });
-
-  testWidgets('receive back arrow returns to the send idle state', (
-    tester,
-  ) async {
-    final container = buildTestContainer();
-    container
-        .read(driftAppNotifierProvider.notifier)
-        .setMode(TransferDirection.receive);
-    await pumpUtilityApp(tester, container: container);
-    await pumpUiSettled(tester);
-    expect(find.text('Receive files'), findsOneWidget);
-    expect(shellBackButton(), findsOneWidget);
-
-    await tester.tap(shellBackButton());
-    await pumpUiSettled(tester);
-
-    expect(find.text('Drop files to send'), findsOneWidget);
-    expect(find.text('Receive files'), findsNothing);
-    expectNoFlutterError(tester);
-  });
-
-  testWidgets('back arrow returns receive review to the waiting state', (
-    tester,
-  ) async {
-    final receiverService = FakeReceiverServiceSource();
-    final container = buildTestContainer(
-      receiverServiceSource: receiverService,
-      enableIdleIncomingListener: true,
-    );
-    container
-        .read(driftAppNotifierProvider.notifier)
-        .setMode(TransferDirection.receive);
-    await pumpUtilityApp(tester, container: container);
-
-    receiverService.emitIncoming(_incomingOfferEvent());
-    await pumpUiSettled(tester);
-
-    expect(find.text('Wants to send you 1 file (18 KB).'), findsOneWidget);
-    expect(shellBackButton(), findsOneWidget);
-
-    await tester.tap(shellBackButton());
-    await pumpUiSettled(tester);
-
-    expect(find.text('Receive files'), findsOneWidget);
-    expect(find.text('Waiting for an incoming transfer'), findsOneWidget);
-    expect(find.text('Wants to send you 1 file (18 KB).'), findsNothing);
-    expectNoFlutterError(tester);
   });
 
   testWidgets('idle drop surface reacts to hover without shifting layout', (

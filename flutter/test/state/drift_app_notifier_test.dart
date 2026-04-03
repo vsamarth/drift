@@ -599,7 +599,7 @@ void main() {
     await _flushAsyncWork(tester);
   });
 
-  testWidgets('starting send transitions to transfer and then result state', (
+  testWidgets('starting send requires explicit action before transfer state', (
     tester,
   ) async {
     final receiverService = FakeReceiverServiceSource();
@@ -618,6 +618,11 @@ void main() {
     notifier.pickSendItems();
     await _flushAsyncWork(tester);
     notifier.updateSendDestinationCode('ab2cd3');
+    await _flushAsyncWork(tester);
+
+    expect(sendTransferSource.lastRequest, isNull);
+
+    notifier.startSend();
     await _flushAsyncWork(tester);
 
     expect(sendTransferSource.lastRequest?.code, 'AB2CD3');

@@ -52,6 +52,7 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
+  file_selector_platform_interface: ^2.7.0
   integration_test:
     sdk: flutter
   msix: ^3.16.13
