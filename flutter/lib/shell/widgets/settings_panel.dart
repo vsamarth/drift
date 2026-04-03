@@ -140,41 +140,38 @@ class _SettingsPanelState extends ConsumerState<SettingsPanel> {
                     children: [
                       TextField(
                         controller: _downloadRootController,
-                        readOnly: !isMobilePlatform,
-                        enabled: !isMobilePlatform,
-                        onTap: isMobilePlatform ? null : _pickDownloadRoot,
+                        readOnly: isMobilePlatform,
+                        enabled: true,
+                        onTap: isMobilePlatform ? _pickDownloadRoot : null,
                         decoration: InputDecoration(
                           hintText: '/Users/you/Downloads',
-                          suffixIcon: isMobilePlatform
-                              ? null
-                              : Padding(
-                                  padding: const EdgeInsets.only(right: 8),
-                                  child: TextButton(
-                                    onPressed: _pickDownloadRoot,
-                                    style: TextButton.styleFrom(
-                                      minimumSize: const Size(0, 32),
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 10,
-                                        vertical: 6,
-                                      ),
-                                      tapTargetSize:
-                                          MaterialTapTargetSize.shrinkWrap,
-                                      foregroundColor: kInk,
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(8),
-                                        side: const BorderSide(color: kBorder),
-                                      ),
-                                    ),
-                                    child: Text(
-                                      'Choose',
-                                      style: driftSans(
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w600,
-                                        color: kInk,
-                                      ),
-                                    ),
-                                  ),
+                          suffixIcon: Padding(
+                            padding: const EdgeInsets.only(right: 8),
+                            child: TextButton(
+                              onPressed: _pickDownloadRoot,
+                              style: TextButton.styleFrom(
+                                minimumSize: const Size(0, 32),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 6,
                                 ),
+                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                foregroundColor: kInk,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                  side: const BorderSide(color: kBorder),
+                                ),
+                              ),
+                              child: Text(
+                                'Choose',
+                                style: driftSans(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: kInk,
+                                ),
+                              ),
+                            ),
+                          ),
                         ),
                       ),
                     ],
