@@ -80,7 +80,7 @@ pub async fn prepare_files(paths: Vec<PathBuf>) -> Result<PreparedFiles> {
             }
 
             files.push(PreparedFile {
-                source_path,
+                source_path: absolute_source_path(&source_path)?,
                 transfer_path,
                 size: metadata.len(),
             });
@@ -114,6 +114,16 @@ pub async fn prepare_files(paths: Vec<PathBuf>) -> Result<PreparedFiles> {
             files: manifest_files,
         },
     })
+}
+
+fn absolute_source_path(path: &PathBuf) -> Result<PathBuf> {
+    if path.is_absolute() {
+        return Ok(path.clone());
+    }
+
+    Ok(std::env::current_dir()
+        .context("resolving current directory")?
+        .join(path))
 }
 
 #[cfg(test)]
@@ -156,6 +166,14 @@ mod tests {
 
         let err = prepare_files(vec![file.clone(), file]).await.unwrap_err();
         assert!(err.to_string().contains("duplicate transfer path"));
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn prepare_files_normalizes_source_paths_for_imports() -> anyhow::Result<()> {
+        let prepared = prepare_files(vec![PathBuf::from("Cargo.toml")]).await?;
+        assert!(prepared.files[0].source_path.is_absolute());
 
         Ok(())
     }

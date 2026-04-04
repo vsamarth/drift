@@ -1,12 +1,16 @@
 .PHONY: help check test fmt fmt-check clippy server send send-file send-dir send-files send-nearby send-multiple send-large receive demo-receive
 
-SERVER_URL ?= https://drift.samarthv.com
+SERVER_URL ?=
 SERVER_ADDR ?= 0.0.0.0:8787
 FILE ?= Cargo.toml
 DIR ?=
 OUT ?= downloads
 FILES ?= $(FILE)
 TRACE ?= 1
+
+ifneq ($(strip $(SERVER_URL)),)
+RENDEZVOUS_ENV := DRIFT_RENDEZVOUS_URL=$(SERVER_URL)
+endif
 
 ifeq ($(TRACE),0)
 TRACE_ENV := RUST_LOG=off
@@ -47,7 +51,7 @@ help:
 	@echo "Send via LAN (mDNS; receiver must run receive on same network):"
 	@echo "  send-nearby     — generates a fresh $(NEARBY_SIZE_MB)MB random file; NEARBY_TIMEOUT_SECS=$(NEARBY_TIMEOUT_SECS)"
 	@echo ""
-	@echo "Env: SERVER_URL=$(SERVER_URL)"
+	@echo "Env: SERVER_URL=$(if $(SERVER_URL),$(SERVER_URL),<CLI default>)"
 	@echo "     TRACE=$(TRACE) (set TRACE=0 to disable CLI tracing logs)"
 
 check:
@@ -79,16 +83,16 @@ endif
 
 send-file:
 	@if [ -z "$(CODE)" ]; then echo "usage: make send-file CODE=AB2CD3 FILE=path"; exit 1; fi
-	DRIFT_RENDEZVOUS_URL=$(SERVER_URL) $(TRACE_ENV) cargo run -p drift -- send -c "$(CODE)" "$(FILE)"
+	$(RENDEZVOUS_ENV) $(TRACE_ENV) cargo run -p drift -- send -c "$(CODE)" "$(FILE)"
 
 send-dir:
 	@if [ -z "$(CODE)" ]; then echo "usage: make send-dir CODE=AB2CD3 DIR=photos/"; exit 1; fi
 	@if [ -z "$(DIR)" ]; then echo "usage: make send-dir CODE=AB2CD3 DIR=photos/"; exit 1; fi
-	DRIFT_RENDEZVOUS_URL=$(SERVER_URL) $(TRACE_ENV) cargo run -p drift -- send -c "$(CODE)" "$(DIR)"
+	$(RENDEZVOUS_ENV) $(TRACE_ENV) cargo run -p drift -- send -c "$(CODE)" "$(DIR)"
 
 send-files:
 	@if [ -z "$(CODE)" ]; then echo "usage: make send-files CODE=AB2CD3 FILES=\"path1 path2\""; exit 1; fi
-	DRIFT_RENDEZVOUS_URL=$(SERVER_URL) $(TRACE_ENV) cargo run -p drift -- send -c "$(CODE)" $(FILES)
+	$(RENDEZVOUS_ENV) $(TRACE_ENV) cargo run -p drift -- send -c "$(CODE)" $(FILES)
 
 send-nearby:
 	@set -e; \
@@ -98,7 +102,7 @@ send-nearby:
 		echo "Generating $$NEARBY_FILE ($(NEARBY_SIZE_MB)MB) ..."; \
 		dd if=/dev/urandom of="$$NEARBY_FILE" bs=1m count="$(NEARBY_SIZE_MB)" status=none 2>/dev/null || \
 		dd if=/dev/urandom of="$$NEARBY_FILE" bs=1m count="$(NEARBY_SIZE_MB)" >/dev/null 2>&1; \
-		DRIFT_RENDEZVOUS_URL=$(SERVER_URL) $(TRACE_ENV) cargo run -p drift -- send --nearby --nearby-timeout-secs $(NEARBY_TIMEOUT_SECS) "$$NEARBY_FILE"
+		$(RENDEZVOUS_ENV) $(TRACE_ENV) cargo run -p drift -- send --nearby --nearby-timeout-secs $(NEARBY_TIMEOUT_SECS) "$$NEARBY_FILE"
 
 send-multiple:
 	@if [ -z "$(CODE)" ]; then echo "usage: make send-multiple CODE=AB2CD3"; exit 1; fi
@@ -115,7 +119,7 @@ send-multiple:
 			dd if=/dev/urandom of="$$F" bs=1m count="$(MULTIPLE_SIZE_MB)" >/dev/null 2>&1; \
 			i=$$((i+1)); \
 		done; \
-		DRIFT_RENDEZVOUS_URL=$(SERVER_URL) $(TRACE_ENV) cargo run -p drift -- send -c "$(CODE)" "$$TMD_DIR"
+		$(RENDEZVOUS_ENV) $(TRACE_ENV) cargo run -p drift -- send -c "$(CODE)" "$$TMD_DIR"
 
 send-large:
 	@if [ -z "$(CODE)" ]; then echo "usage: make send-large CODE=AB2CD3"; exit 1; fi
@@ -126,10 +130,10 @@ send-large:
 		echo "Generating $$LARGE_FILE ($(LARGE_SIZE_MB)MB) ..."; \
 		dd if=/dev/urandom of="$$LARGE_FILE" bs=1m count="$(LARGE_SIZE_MB)" status=none 2>/dev/null || \
 		dd if=/dev/urandom of="$$LARGE_FILE" bs=1m count="$(LARGE_SIZE_MB)" >/dev/null 2>&1; \
-		DRIFT_RENDEZVOUS_URL=$(SERVER_URL) $(TRACE_ENV) cargo run -p drift -- send -c "$(CODE)" "$$LARGE_FILE"
+		$(RENDEZVOUS_ENV) $(TRACE_ENV) cargo run -p drift -- send -c "$(CODE)" "$$LARGE_FILE"
 
 receive:
-	DRIFT_RENDEZVOUS_URL=$(SERVER_URL) $(TRACE_ENV) cargo run -p drift -- receive --out "$(OUT)"
+	$(RENDEZVOUS_ENV) $(TRACE_ENV) cargo run -p drift -- receive --out "$(OUT)"
 
 demo-receive:
-	DRIFT_RENDEZVOUS_URL=$(SERVER_URL) $(TRACE_ENV) cargo run -p drift -- receive --out "$(OUT)"
+	$(RENDEZVOUS_ENV) $(TRACE_ENV) cargo run -p drift -- receive --out "$(OUT)"
