@@ -108,6 +108,10 @@ fn io_error(reason: impl Into<String>, error: &std::io::Error) -> DriftError {
     DriftError::io(reason, error)
 }
 
+fn io_reason(reason: impl Into<String>) -> DriftError {
+    DriftError::with_reason(DriftErrorKind::Io, reason)
+}
+
 fn map_transfer_status(status: &TransferStatus) -> DriftError {
     match status {
         TransferStatus::Ok => internal_error("unexpected ok transfer status in error path"),
@@ -123,6 +127,26 @@ fn map_transfer_status(status: &TransferStatus) -> DriftError {
             DriftError::with_reason(kind, message.clone())
         }
     }
+}
+
+fn map_internal<T>(result: std::result::Result<T, impl std::fmt::Display>, reason: impl Into<String>) -> Result<T> {
+    result.map_err(|error| internal_error(format!("{}: {error}", reason.into())))
+}
+
+async fn write_control<T: serde::Serialize>(
+    send_stream: &mut iroh::endpoint::SendStream,
+    value: &T,
+    action: &str,
+) -> Result<()> {
+    write_message(send_stream, value)
+        .await
+        .map_err(|error| error.with_prefix(action))
+}
+
+fn finish_stream(send_stream: &mut iroh::endpoint::SendStream, action: &str) -> Result<()> {
+    send_stream
+        .finish()
+        .map_err(|error| io_reason(format!("{action}: {error}")))
 }
 
 impl Drop for TempDir {
@@ -180,15 +204,15 @@ where
         "prepared blob provider ticket"
     );
 
-    write_message(
+    write_control(
         control_send,
         &ControlMessage::BlobTicket(BlobTicketMessage {
             session_id: session_id.to_owned(),
             ticket,
         }),
+        "sending blob transfer ticket",
     )
-    .await
-    .map_err(|error| error.with_prefix("sending blob transfer ticket"))?;
+    .await?;
 
     let result = loop {
         tokio::select! {
@@ -236,9 +260,7 @@ where
 
     let ack_result: Result<()> = if matches!(result, Ok(None)) {
         send_transfer_ack(control_send, session_id).await?;
-        control_send
-            .finish()
-            .map_err(|error| DriftError::with_reason(DriftErrorKind::Io, format!("finishing control stream: {error}")))?;
+        finish_stream(control_send, "finishing control stream")?;
         let _ = timeout(CONTROL_STREAM_FINISH_TIMEOUT, control_send.stopped()).await;
         Ok(())
     } else {
@@ -429,9 +451,7 @@ where
             }
         }
 
-        control_send
-            .finish()
-            .map_err(|error| DriftError::with_reason(DriftErrorKind::Io, format!("finishing control stream: {error}")))?;
+        finish_stream(control_send, "finishing control stream")?;
         let _ = timeout(CONTROL_STREAM_FINISH_TIMEOUT, control_send.stopped()).await;
         println!("Transfer session finished");
     } else {
@@ -506,9 +526,10 @@ async fn prepare_blob_provider(
     files: &[PreparedFile],
 ) -> Result<BlobProvider> {
     let root = TempDir::new("drift-blobs-send", session_id).await?;
-    let store = FsStore::load(&root.path)
-        .await
-        .map_err(|error| internal_error(format!("loading blob store {}: {error}", root.path.display())))?;
+    let store = map_internal(
+        FsStore::load(&root.path).await,
+        format!("loading blob store {}", root.path.display()),
+    )?;
     let mut file_hashes = BTreeMap::new();
 
     let mut collection = Collection::default();
@@ -538,10 +559,7 @@ async fn prepare_blob_provider(
         collection.extend([(prepared.transfer_path.clone(), tag.hash())]);
     }
 
-    let collection_tag = collection
-        .store(store.as_ref())
-        .await
-        .map_err(|error| internal_error(format!("storing blob collection: {error}")))?;
+    let collection_tag = map_internal(collection.store(store.as_ref()).await, "storing blob collection")?;
     let (event_sender, event_rx) = EventSender::channel(
         32,
         EventMask {
@@ -649,9 +667,10 @@ async fn export_downloaded_collection(
     root_hash: iroh_blobs::Hash,
     expected_files: &[ExpectedTransferFile],
 ) -> Result<()> {
-    let collection = Collection::load(root_hash, store.as_ref())
-        .await
-        .map_err(|error| internal_error(format!("loading downloaded blob collection: {error}")))?;
+    let collection = map_internal(
+        Collection::load(root_hash, store.as_ref()).await,
+        "loading downloaded blob collection",
+    )?;
     let hashes_by_path = collection.into_iter().collect::<BTreeMap<_, _>>();
 
     for expected in expected_files {
@@ -688,9 +707,10 @@ async fn export_downloaded_collection(
 impl BlobDownloadStore {
     async fn new(prefix: &str, session_id: &str) -> Result<Self> {
         let root = TempDir::new(prefix, session_id).await?;
-        let store = FsStore::load(&root.path)
-            .await
-            .map_err(|error| internal_error(format!("loading blob store {}: {error}", root.path.display())))?;
+        let store = map_internal(
+            FsStore::load(&root.path).await,
+            format!("loading blob store {}", root.path.display()),
+        )?;
         Ok(Self { store, root })
     }
 
@@ -769,7 +789,7 @@ async fn send_cancel(
     phase: CancelPhase,
     reason: String,
 ) -> Result<()> {
-    write_message(
+    write_control(
         control_send,
         &ControlMessage::Cancel(Cancel {
             session_id: session_id.to_owned(),
@@ -777,9 +797,9 @@ async fn send_cancel(
             phase,
             reason,
         }),
+        "sending cancellation",
     )
     .await
-    .map_err(Into::into)
 }
 
 async fn send_transfer_result(
@@ -787,29 +807,29 @@ async fn send_transfer_result(
     session_id: &str,
     status: TransferStatus,
 ) -> Result<()> {
-    write_message(
+    write_control(
         control_send,
         &ControlMessage::TransferResult(TransferResult {
             session_id: session_id.to_owned(),
             status,
         }),
+        "sending transfer result",
     )
     .await
-    .map_err(Into::into)
 }
 
 async fn send_transfer_ack(
     control_send: &mut iroh::endpoint::SendStream,
     session_id: &str,
 ) -> Result<()> {
-    write_message(
+    write_control(
         control_send,
         &ControlMessage::TransferAck(TransferAck {
             session_id: session_id.to_owned(),
         }),
+        "sending transfer acknowledgement",
     )
     .await
-    .map_err(Into::into)
 }
 
 #[cfg(test)]
