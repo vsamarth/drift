@@ -8,6 +8,7 @@ pub enum SendPhase {
     WaitingForDecision,
     Sending,
     Completed,
+    Cancelled,
     Failed,
 }
 
@@ -56,6 +57,7 @@ pub enum ReceiverOfferPhase {
     OfferReady,
     Receiving,
     Completed,
+    Cancelled,
     Failed,
     Declined,
 }

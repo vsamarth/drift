@@ -2,8 +2,8 @@ use std::time::Duration;
 
 use anyhow::{Context, Result};
 use drift_core::receiver::{
-    ReceiveTransferPhase, ReceiveTransferProgress, receiver_finish_after_decision_with_progress,
-    receiver_run_until_decision,
+    ReceiveTransferOutcome, ReceiveTransferPhase, ReceiveTransferProgress,
+    receiver_finish_after_decision_with_progress, receiver_run_until_decision,
 };
 use drift_core::transfer::{ReceiverMachine, ReceiverState};
 use drift_core::util::human_size;
@@ -44,9 +44,13 @@ pub(super) enum ReceiverCommand {
         decision: OfferDecision,
         reply: oneshot::Sender<Result<()>>,
     },
+    CancelTransfer {
+        reply: oneshot::Sender<Result<()>>,
+    },
     OfferPrepared {
         offer_id: u64,
         decision_tx: oneshot::Sender<OfferResolution>,
+        cancel_tx: watch::Sender<bool>,
         watch_task: JoinHandle<()>,
         event: ReceiverOfferEvent,
     },
@@ -145,8 +149,13 @@ pub(super) async fn run_receiver_actor(
                         let _ = publish_snapshot(&state_tx, &runtime, ReceiverLifecycle::Ready);
                         let _ = reply.send(result);
                     }
-                    ReceiverCommand::OfferPrepared { offer_id, decision_tx, watch_task, event } => {
-                        if runtime.handle_offer_prepared(offer_id, decision_tx, watch_task) {
+                    ReceiverCommand::CancelTransfer { reply } => {
+                        let result = runtime.cancel_active_transfer();
+                        let _ = publish_snapshot(&state_tx, &runtime, ReceiverLifecycle::Ready);
+                        let _ = reply.send(result);
+                    }
+                    ReceiverCommand::OfferPrepared { offer_id, decision_tx, cancel_tx, watch_task, event } => {
+                        if runtime.handle_offer_prepared(offer_id, decision_tx, cancel_tx, watch_task) {
                             let _ = event_tx.send(ReceiverEvent::OfferUpdated(event));
                             let _ = runtime
                                 .refresh_registration_after_offer(&pairing_tx, &event_tx)
@@ -361,6 +370,7 @@ async fn handle_incoming_offer(
         })
         .collect();
     let (decision_tx, decision_rx) = oneshot::channel();
+    let (cancel_tx, cancel_rx) = watch::channel(false);
     let watch_task = spawn_pending_offer_watch_task(
         offer_id,
         pending.connection().clone(),
@@ -391,6 +401,7 @@ async fn handle_incoming_offer(
         .send(ReceiverCommand::OfferPrepared {
             offer_id,
             decision_tx,
+            cancel_tx,
             watch_task,
             event: prepared_event,
         })
@@ -431,25 +442,18 @@ async fn handle_incoming_offer(
         pending,
         &mut machine,
         approved,
+        Some(cancel_rx),
         &mut progress_cb,
     )
     .await
     {
-        Ok(()) => ReceiverOfferEvent {
-            phase: if approved {
-                ReceiverOfferPhase::Completed
-            } else {
-                ReceiverOfferPhase::Declined
-            },
+        Ok(ReceiveTransferOutcome::Completed) => ReceiverOfferEvent {
+            phase: ReceiverOfferPhase::Completed,
             sender_name: String::new(),
             sender_device_type: device_type_to_str(sender_device_type),
             destination_label: sender_label,
             save_root_label,
-            status_message: if approved {
-                "Files saved.".to_owned()
-            } else {
-                "Transfer cancelled.".to_owned()
-            },
+            status_message: "Files saved.".to_owned(),
             item_count: manifest.file_count,
             total_size_bytes: manifest.total_size,
             bytes_received: manifest.total_size,
@@ -457,6 +461,36 @@ async fn handle_incoming_offer(
             total_size_label: human_size(manifest.total_size),
             files: Vec::new(),
             error_message: None,
+        },
+        Ok(ReceiveTransferOutcome::Declined) => ReceiverOfferEvent {
+            phase: ReceiverOfferPhase::Declined,
+            sender_name: String::new(),
+            sender_device_type: device_type_to_str(sender_device_type),
+            destination_label: sender_label,
+            save_root_label,
+            status_message: "Transfer cancelled.".to_owned(),
+            item_count: manifest.file_count,
+            total_size_bytes: manifest.total_size,
+            bytes_received: 0,
+            connection_path: None,
+            total_size_label: human_size(manifest.total_size),
+            files: Vec::new(),
+            error_message: None,
+        },
+        Ok(ReceiveTransferOutcome::Cancelled(cancellation)) => ReceiverOfferEvent {
+            phase: ReceiverOfferPhase::Cancelled,
+            sender_name: String::new(),
+            sender_device_type: device_type_to_str(sender_device_type),
+            destination_label: sender_label,
+            save_root_label,
+            status_message: "Transfer cancelled.".to_owned(),
+            item_count: manifest.file_count,
+            total_size_bytes: manifest.total_size,
+            bytes_received: last_progress_bytes,
+            connection_path: None,
+            total_size_label: human_size(manifest.total_size),
+            files: Vec::new(),
+            error_message: Some(cancellation.reason),
         },
         Err(err) => ReceiverOfferEvent {
             phase: ReceiverOfferPhase::Failed,
@@ -547,6 +581,7 @@ fn map_receiver_offer_progress(
         ReceiveTransferPhase::Receiving => ReceiverOfferPhase::Receiving,
         ReceiveTransferPhase::Completed => ReceiverOfferPhase::Completed,
         ReceiveTransferPhase::Declined => ReceiverOfferPhase::Declined,
+        ReceiveTransferPhase::Cancelled => ReceiverOfferPhase::Cancelled,
         ReceiveTransferPhase::Failed => ReceiverOfferPhase::Failed,
     };
     ReceiverOfferEvent {
@@ -561,6 +596,7 @@ fn map_receiver_offer_progress(
             }
             ReceiveTransferPhase::Completed => "Files saved.".to_owned(),
             ReceiveTransferPhase::Declined => "Transfer cancelled.".to_owned(),
+            ReceiveTransferPhase::Cancelled => "Transfer cancelled.".to_owned(),
             ReceiveTransferPhase::Failed => "Transfer failed.".to_owned(),
         },
         item_count: progress.file_count,

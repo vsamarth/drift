@@ -74,6 +74,7 @@ class DriftAppState {
       SendTransferSessionPhase.connecting => TransferStage.ready,
       SendTransferSessionPhase.waitingForDecision ||
       SendTransferSessionPhase.sending => TransferStage.waiting,
+      SendTransferSessionPhase.cancelling => TransferStage.waiting,
     },
     SendResultSession(:final success) =>
       success ? TransferStage.completed : TransferStage.error,
@@ -244,17 +245,23 @@ class DriftAppState {
         tone: success
             ? TransferResultToneData.success
             : TransferResultToneData.error,
-        title: success ? 'Transfer complete' : 'Transfer failed',
+        title: success
+            ? 'Transfer complete'
+            : _isCancelledMessage(summary.statusMessage)
+            ? 'Transfer cancelled'
+            : 'Transfer failed',
         message: summary.statusMessage,
         metrics: success ? metrics : null,
         primaryLabel: success ? 'Done' : null,
       ),
-    ReceiveResultSession(:final summary, :final metrics) =>
+    ReceiveResultSession(:final success, :final summary, :final metrics) =>
       TransferResultViewData(
-        tone: TransferResultToneData.success,
-        title: 'Files saved',
+        tone: success
+            ? TransferResultToneData.success
+            : TransferResultToneData.error,
+        title: success ? 'Files saved' : 'Transfer cancelled',
         message: summary.statusMessage,
-        metrics: metrics,
+        metrics: success ? metrics : null,
         primaryLabel: 'Done',
       ),
     _ => null,
@@ -277,6 +284,9 @@ class DriftAppState {
 
   ShellView get shellView => shellViewFor(this);
 }
+
+bool _isCancelledMessage(String message) =>
+    message.toLowerCase().contains('cancel');
 
 sealed class ShellSessionState {
   const ShellSessionState();
@@ -342,7 +352,12 @@ class SendDraftSession extends ShellSessionState {
   }
 }
 
-enum SendTransferSessionPhase { connecting, waitingForDecision, sending }
+enum SendTransferSessionPhase {
+  connecting,
+  waitingForDecision,
+  sending,
+  cancelling,
+}
 
 class SendTransferSession extends ShellSessionState {
   const SendTransferSession({
@@ -451,6 +466,7 @@ class ReceiveTransferSession extends ShellSessionState {
 
 class ReceiveResultSession extends TransferResultSession {
   const ReceiveResultSession({
+    required this.success,
     required super.items,
     required super.summary,
     super.metrics,
@@ -459,6 +475,7 @@ class ReceiveResultSession extends TransferResultSession {
     this.senderDeviceType,
   }) : super();
 
+  final bool success;
   final int? payloadBytesReceived;
   final int? payloadTotalBytes;
   final String? senderDeviceType;

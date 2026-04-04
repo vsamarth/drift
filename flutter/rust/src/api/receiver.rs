@@ -54,6 +54,7 @@ pub enum ReceiverTransferPhase {
     OfferReady,
     Receiving,
     Completed,
+    Cancelled,
     Failed,
     Declined,
 }
@@ -202,6 +203,15 @@ pub fn respond_to_receiver_offer(accept: bool) -> Result<(), String> {
             })
             .await
             .map_err(|e| e.to_string())
+    })
+}
+
+pub fn cancel_receiver_transfer() -> Result<(), String> {
+    RUNTIME.block_on(async move {
+        let Some(service) = current_service() else {
+            return Err("receiver is not running".to_owned());
+        };
+        service.cancel_transfer().await.map_err(|e| e.to_string())
     })
 }
 
@@ -441,6 +451,7 @@ fn map_event(event: AppReceiverOfferEvent) -> ReceiverTransferEvent {
             AppReceiverOfferPhase::OfferReady => ReceiverTransferPhase::OfferReady,
             AppReceiverOfferPhase::Receiving => ReceiverTransferPhase::Receiving,
             AppReceiverOfferPhase::Completed => ReceiverTransferPhase::Completed,
+            AppReceiverOfferPhase::Cancelled => ReceiverTransferPhase::Cancelled,
             AppReceiverOfferPhase::Failed => ReceiverTransferPhase::Failed,
             AppReceiverOfferPhase::Declined => ReceiverTransferPhase::Declined,
         },

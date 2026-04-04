@@ -51,11 +51,15 @@ class ReceiveReceivingCard extends ConsumerWidget {
               onPressed: () => _confirmCancel(context, ref),
               style: TextButton.styleFrom(
                 foregroundColor: const Color(0xFFCC3333),
-                backgroundColor: const Color(0xFFCC3333).withValues(alpha: 0.08),
+                backgroundColor: const Color(
+                  0xFFCC3333,
+                ).withValues(alpha: 0.08),
                 minimumSize: const Size(0, 44),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
-                  side: BorderSide(color: const Color(0xFFCC3333).withValues(alpha: 0.15)),
+                  side: BorderSide(
+                    color: const Color(0xFFCC3333).withValues(alpha: 0.15),
+                  ),
                 ),
               ),
               child: const Text('Cancel'),
@@ -79,7 +83,9 @@ class ReceiveReceivingCard extends ConsumerWidget {
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
-            style: TextButton.styleFrom(foregroundColor: const Color(0xFFCC3333)),
+            style: TextButton.styleFrom(
+              foregroundColor: const Color(0xFFCC3333),
+            ),
             child: const Text('Yes, cancel'),
           ),
         ],
@@ -87,7 +93,7 @@ class ReceiveReceivingCard extends ConsumerWidget {
     );
 
     if (confirmed == true) {
-      ref.read(driftAppNotifierProvider.notifier).declineReceiveOffer();
+      ref.read(driftAppNotifierProvider.notifier).cancelReceiveInProgress();
     }
   }
 }

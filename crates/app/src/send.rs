@@ -2,6 +2,7 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Result, bail};
+use tokio::sync::watch;
 
 use crate::error::format_error_chain;
 use crate::types::{
@@ -14,8 +15,8 @@ use drift_core::fs_plan::preview::{
 };
 use drift_core::rendezvous::resolve_server_url;
 use drift_core::sender::{
-    SendTransferPhase as CoreSendTransferPhase, SendTransferProgress, format_code_label,
-    send_files_with_progress, send_files_with_progress_via_lan_ticket,
+    SendTransferPhase as CoreSendTransferPhase, SendTransferProgress, SendTransferResult,
+    format_code_label, send_files_with_progress, send_files_with_progress_via_lan_ticket,
 };
 use drift_core::util::ConnectionPathKind;
 use drift_core::wire::DeviceType;
@@ -24,6 +25,12 @@ use drift_core::wire::DeviceType;
 pub struct SendSession {
     config: SendConfig,
     paths: Vec<PathBuf>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SendSessionOutcome {
+    Completed,
+    Cancelled,
 }
 
 impl SendSession {
@@ -109,12 +116,13 @@ impl SendSession {
         &self,
         code: String,
         server_url: Option<String>,
+        cancel_rx: Option<watch::Receiver<bool>>,
         mut on_event: F,
-    ) -> Result<()>
+    ) -> Result<SendSessionOutcome>
     where
         F: FnMut(SendEvent),
     {
-        self.send_to_code_impl(code, server_url, &mut on_event)
+        self.send_to_code_impl(code, server_url, cancel_rx, &mut on_event)
             .await
     }
 
@@ -122,12 +130,13 @@ impl SendSession {
         &self,
         ticket: String,
         destination_label: String,
+        cancel_rx: Option<watch::Receiver<bool>>,
         mut on_event: F,
-    ) -> Result<()>
+    ) -> Result<SendSessionOutcome>
     where
         F: FnMut(SendEvent),
     {
-        self.send_to_nearby_impl(ticket, destination_label, &mut on_event)
+        self.send_to_nearby_impl(ticket, destination_label, cancel_rx, &mut on_event)
             .await
     }
 
@@ -135,8 +144,9 @@ impl SendSession {
         &self,
         code: String,
         server_url: Option<String>,
+        cancel_rx: Option<watch::Receiver<bool>>,
         on_event: &mut F,
-    ) -> Result<()>
+    ) -> Result<SendSessionOutcome>
     where
         F: FnMut(SendEvent),
     {
@@ -149,12 +159,14 @@ impl SendSession {
             Some(normalized_server),
             self.config.device_name.clone(),
             device_type,
+            cancel_rx,
             |progress| on_event(map_progress(progress)),
         )
         .await;
 
         match result {
-            Ok(_) => Ok(()),
+            Ok(SendTransferResult::Completed(_)) => Ok(SendSessionOutcome::Completed),
+            Ok(SendTransferResult::Cancelled(_)) => Ok(SendSessionOutcome::Cancelled),
             Err(error) => {
                 on_event(failed_event(&fallback_destination_label, &error));
                 Err(error)
@@ -166,8 +178,9 @@ impl SendSession {
         &self,
         ticket: String,
         destination_label: String,
+        cancel_rx: Option<watch::Receiver<bool>>,
         on_event: &mut F,
-    ) -> Result<()>
+    ) -> Result<SendSessionOutcome>
     where
         F: FnMut(SendEvent),
     {
@@ -183,12 +196,14 @@ impl SendSession {
             self.paths.clone(),
             self.config.device_name.clone(),
             device_type,
+            cancel_rx,
             |progress| on_event(map_progress(progress)),
         )
         .await;
 
         match result {
-            Ok(_) => Ok(()),
+            Ok(SendTransferResult::Completed(_)) => Ok(SendSessionOutcome::Completed),
+            Ok(SendTransferResult::Cancelled(_)) => Ok(SendSessionOutcome::Cancelled),
             Err(error) => {
                 on_event(failed_event(&fallback_destination_label, &error));
                 Err(error)
@@ -225,6 +240,9 @@ fn map_progress(progress: SendTransferProgress) -> SendEvent {
         ),
         CoreSendTransferPhase::Completed => {
             (SendPhase::Completed, "Files sent successfully".to_owned())
+        }
+        CoreSendTransferPhase::Cancelled => {
+            (SendPhase::Cancelled, "Transfer cancelled.".to_owned())
         }
     };
 

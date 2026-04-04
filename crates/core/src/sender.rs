@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use anyhow::{Context, Result, bail};
 use rand::random;
+use tokio::sync::watch;
 
 use crate::fs_plan::prepare::{PreparedFiles, prepare_files};
 use crate::rendezvous::{OfferManifest, RendezvousClient, resolve_server_url, validate_code};
@@ -14,11 +15,13 @@ enum PeerResolution {
     LanTicket(String),
 }
 use crate::session::{bind_endpoint, connect_to_ticket, send_files_over_connection};
-use crate::transfer::{SenderMachine, SenderState, ensure_session_id, validate_hello};
+use crate::transfer::{
+    SenderMachine, SenderState, TransferCancellation, ensure_session_id, validate_hello,
+};
 use crate::util::{ConnectionPathKind, classify_connection_path};
 use crate::wire::{
-    ControlMessage, DeviceType, Hello, Offer, TRANSFER_PROTOCOL_VERSION, TransferRole,
-    decode_ticket, read_message, write_message,
+    CancelPhase, ControlMessage, DeviceType, Hello, Offer, TRANSFER_PROTOCOL_VERSION,
+    TransferRole, decode_ticket, read_message, write_message,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -27,6 +30,7 @@ pub enum SendTransferPhase {
     WaitingForDecision,
     Sending,
     Completed,
+    Cancelled,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -54,14 +58,21 @@ pub struct SendTransferOutcome {
     pub connection_path_kind: ConnectionPathKind,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SendTransferResult {
+    Completed(SendTransferOutcome),
+    Cancelled(TransferCancellation),
+}
+
 pub async fn send_files_with_progress<F>(
     code: String,
     files: Vec<PathBuf>,
     server_url: Option<String>,
     device_name: String,
     device_type: DeviceType,
+    cancel_rx: Option<watch::Receiver<bool>>,
     mut on_progress: F,
-) -> Result<SendTransferOutcome>
+) -> Result<SendTransferResult>
 where
     F: FnMut(SendTransferProgress),
 {
@@ -88,6 +99,7 @@ where
         device_type,
         &session_id,
         &prepared,
+        cancel_rx,
         &mut machine,
         &mut on_progress,
     )
@@ -103,8 +115,9 @@ pub async fn send_files_with_progress_via_lan_ticket<F>(
     files: Vec<PathBuf>,
     device_name: String,
     device_type: DeviceType,
+    cancel_rx: Option<watch::Receiver<bool>>,
     mut on_progress: F,
-) -> Result<SendTransferOutcome>
+) -> Result<SendTransferResult>
 where
     F: FnMut(SendTransferProgress),
 {
@@ -129,6 +142,7 @@ where
         device_type,
         &session_id,
         &prepared,
+        cancel_rx,
         &mut machine,
         &mut on_progress,
     )
@@ -141,9 +155,10 @@ async fn send_prepared_files<F>(
     device_type: DeviceType,
     session_id: &str,
     prepared: &PreparedFiles,
+    mut cancel_rx: Option<watch::Receiver<bool>>,
     machine: &mut SenderMachine,
     on_progress: &mut F,
-) -> Result<SendTransferOutcome>
+) -> Result<SendTransferResult>
 where
     F: FnMut(SendTransferProgress),
 {
@@ -164,6 +179,9 @@ where
     let connection = connect_to_ticket(&endpoint, endpoint_addr).await?;
     let connection_path_kind = classify_connection_path(&endpoint, connection.remote_id()).await;
     machine.transition(SenderState::Connected)?;
+    let mut last_bytes_sent = 0_u64;
+    let mut last_file_index = None;
+    let mut last_bytes_sent_in_file = 0_u64;
 
     machine.transition(SenderState::Offering)?;
     let (mut control_send, mut control_recv) = connection
@@ -206,10 +224,57 @@ where
         Some(connection_path_kind),
     ));
 
-    match read_message::<ControlMessage>(&mut control_recv)
-        .await
-        .context("waiting for receiver decision")?
-    {
+    let decision = tokio::select! {
+        cancel_requested = async {
+            let Some(cancel_rx) = cancel_rx.as_mut() else {
+                return false;
+            };
+            if *cancel_rx.borrow() {
+                return true;
+            }
+            loop {
+                if cancel_rx.changed().await.is_err() {
+                    return *cancel_rx.borrow();
+                }
+                if *cancel_rx.borrow() {
+                    return true;
+                }
+            }
+        }, if cancel_rx.is_some() => {
+            if cancel_requested {
+                let cancellation = TransferCancellation {
+                    by: TransferRole::Sender,
+                    phase: CancelPhase::WaitingForDecision,
+                    reason: "sender cancelled before approval".to_owned(),
+                };
+                let _ = send_cancel(
+                    &mut control_send,
+                    session_id,
+                    cancellation.phase,
+                    cancellation.reason.clone(),
+                ).await;
+                machine.transition(SenderState::Cancelled)?;
+                on_progress(progress(
+                    SendTransferPhase::Cancelled,
+                    receiver_hello.device_name.clone(),
+                    prepared,
+                    Some(receiver_hello.device_type),
+                    0,
+                    None,
+                    0,
+                    Some(connection_path_kind),
+                ));
+                endpoint.close().await;
+                return Ok(SendTransferResult::Cancelled(cancellation));
+            }
+            unreachable!()
+        }
+        decision = read_message::<ControlMessage>(&mut control_recv) => {
+            decision.context("waiting for receiver decision")?
+        }
+    };
+
+    match decision {
         ControlMessage::Accept(message) => {
             ensure_session_id(&message.session_id, session_id)?;
             machine.transition(SenderState::Sending)?;
@@ -223,13 +288,17 @@ where
                 0,
                 Some(connection_path_kind),
             ));
-            send_files_over_connection(
+            let session_result = send_files_over_connection(
                 &endpoint,
                 &mut control_send,
                 &mut control_recv,
                 session_id,
                 &prepared.files,
+                cancel_rx.clone(),
                 |p| {
+                    last_bytes_sent = p.total_bytes_sent;
+                    last_file_index = Some(p.file_index as u64);
+                    last_bytes_sent_in_file = p.bytes_sent_in_file;
                     on_progress(progress(
                         SendTransferPhase::Sending,
                         receiver_hello.device_name.clone(),
@@ -243,6 +312,21 @@ where
                 },
             )
             .await?;
+            if let Some(cancellation) = session_result {
+                machine.transition(SenderState::Cancelled)?;
+                on_progress(progress(
+                    SendTransferPhase::Cancelled,
+                    receiver_hello.device_name.clone(),
+                    prepared,
+                    Some(receiver_hello.device_type),
+                    last_bytes_sent,
+                    last_file_index,
+                    last_bytes_sent_in_file,
+                    Some(connection_path_kind),
+                ));
+                endpoint.close().await;
+                return Ok(SendTransferResult::Cancelled(cancellation));
+            }
             machine.transition(SenderState::Completed)?;
             on_progress(progress(
                 SendTransferPhase::Completed,
@@ -261,6 +345,27 @@ where
             endpoint.close().await;
             bail!("receiver declined the offer: {}", message.reason);
         }
+        ControlMessage::Cancel(message) => {
+            ensure_session_id(&message.session_id, session_id)?;
+            let cancellation = TransferCancellation {
+                by: message.by,
+                phase: message.phase,
+                reason: message.reason,
+            };
+            machine.transition(SenderState::Cancelled)?;
+            on_progress(progress(
+                SendTransferPhase::Cancelled,
+                receiver_hello.device_name.clone(),
+                prepared,
+                Some(receiver_hello.device_type),
+                0,
+                None,
+                0,
+                Some(connection_path_kind),
+            ));
+            endpoint.close().await;
+            return Ok(SendTransferResult::Cancelled(cancellation));
+        }
         other => {
             machine.transition(SenderState::Failed)?;
             endpoint.close().await;
@@ -269,11 +374,11 @@ where
     }
 
     endpoint.close().await;
-    Ok(SendTransferOutcome {
+    Ok(SendTransferResult::Completed(SendTransferOutcome {
         receiver_device_name: receiver_hello.device_name,
         manifest: prepared.manifest.clone(),
         connection_path_kind,
-    })
+    }))
 }
 
 fn progress(
@@ -331,6 +436,26 @@ async fn send_offer(
         }),
     )
     .await
+}
+
+async fn send_cancel(
+    send_stream: &mut iroh::endpoint::SendStream,
+    session_id: &str,
+    phase: CancelPhase,
+    reason: String,
+) -> Result<()> {
+    write_message(
+        send_stream,
+        &ControlMessage::Cancel(crate::wire::Cancel {
+            session_id: session_id.to_owned(),
+            by: TransferRole::Sender,
+            phase,
+            reason,
+        }),
+    )
+    .await?;
+    let _ = send_stream.finish();
+    Ok(())
 }
 
 fn make_session_id() -> String {

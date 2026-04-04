@@ -33,6 +33,7 @@ enum SendTransferUpdatePhase {
   waitingForDecision,
   sending,
   completed,
+  cancelled,
   failed,
 }
 
@@ -64,6 +65,8 @@ class SendTransferUpdate {
 
 abstract class SendTransferSource {
   Stream<SendTransferUpdate> startTransfer(SendTransferRequestData request);
+
+  Future<void> cancelTransfer();
 }
 
 class LocalSendTransferSource implements SendTransferSource {
@@ -101,6 +104,11 @@ class LocalSendTransferSource implements SendTransferSource {
         });
   }
 
+  @override
+  Future<void> cancelTransfer() {
+    return rust_sender.cancelActiveSendTransfer();
+  }
+
   static SendTransferUpdate _mapEvent(rust_sender.SendTransferEvent event) {
     return SendTransferUpdate(
       phase: switch (event.phase) {
@@ -112,6 +120,8 @@ class LocalSendTransferSource implements SendTransferSource {
           SendTransferUpdatePhase.sending,
         rust_sender.SendTransferPhase.completed =>
           SendTransferUpdatePhase.completed,
+        rust_sender.SendTransferPhase.cancelled =>
+          SendTransferUpdatePhase.cancelled,
         rust_sender.SendTransferPhase.failed => SendTransferUpdatePhase.failed,
       },
       destinationLabel: event.destinationLabel,

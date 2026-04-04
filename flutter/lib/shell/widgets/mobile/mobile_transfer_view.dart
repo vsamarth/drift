@@ -115,7 +115,7 @@ class MobileTransferView extends ConsumerWidget {
             FilledButton.tonal(
               onPressed: isSending
                   ? notifier.cancelSendInProgress
-                  : notifier.declineReceiveOffer,
+                  : notifier.cancelReceiveInProgress,
               style: FilledButton.styleFrom(
                 foregroundColor: const Color(0xFFCC3333),
                 backgroundColor: const Color(0xFFCC3333).withValues(alpha: 0.1),

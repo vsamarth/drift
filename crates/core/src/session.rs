@@ -19,17 +19,18 @@ use iroh_blobs::{
     ticket::BlobTicket,
 };
 use tokio::fs;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, watch};
 use tokio::time::{Duration, timeout};
 use tracing::trace;
 
 use crate::fs_plan::prepare::PreparedFile;
 use crate::fs_plan::receive::{ExpectedFile, build_expected_files};
 use crate::rendezvous::OfferManifest;
+use crate::transfer::TransferCancellation;
 use crate::util::describe_remote;
 use crate::wire::{
-    ALPN, BlobTicketMessage, ControlMessage, TransferAck, TransferErrorCode, TransferResult,
-    TransferStatus, read_message, write_message,
+    ALPN, BlobTicketMessage, Cancel, CancelPhase, ControlMessage, TransferAck,
+    TransferErrorCode, TransferResult, TransferRole, TransferStatus, read_message, write_message,
 };
 
 const CONTROL_STREAM_FINISH_TIMEOUT: Duration = Duration::from_secs(2);
@@ -132,8 +133,9 @@ pub async fn send_files_over_connection<F>(
     control_recv: &mut iroh::endpoint::RecvStream,
     session_id: &str,
     files: &[PreparedFile],
+    mut cancel_rx: Option<watch::Receiver<bool>>,
     mut on_progress: F,
-) -> Result<()>
+) -> Result<Option<TransferCancellation>>
 where
     F: FnMut(FileSendProgress),
 {
@@ -162,6 +164,19 @@ where
                     on_progress(progress);
                 }
             }
+            cancel_requested = wait_for_cancel(&mut cancel_rx), if cancel_rx.is_some() => {
+                if cancel_requested {
+                    let cancellation = local_cancellation(TransferRole::Sender, CancelPhase::Transferring);
+                    let _ = send_cancel(
+                        control_send,
+                        session_id,
+                        cancellation.by,
+                        cancellation.phase,
+                        cancellation.reason.clone(),
+                    ).await;
+                    break Ok(Some(cancellation));
+                }
+            }
             control_message = read_message::<ControlMessage>(control_recv) => {
                 let outcome = match control_message.context("waiting for final transfer result")? {
                     ControlMessage::TransferResult(result) => {
@@ -172,8 +187,11 @@ where
                                 transfer_status_summary(&result.status)
                             ))
                         } else {
-                            Ok(())
+                            Ok(None)
                         }
+                    }
+                    ControlMessage::Cancel(cancel) => {
+                        Ok(Some(cancellation_from_message(cancel, session_id)?))
                     }
                     other => Err(anyhow!("unexpected final control message: {:?}", other)),
                 };
@@ -182,12 +200,13 @@ where
         }
     };
 
-    let ack_result: Result<()> = if result.is_ok() {
+    let ack_result: Result<()> = if matches!(result, Ok(None)) {
         send_transfer_ack(control_send, session_id).await?;
         control_send.finish()?;
         let _ = timeout(CONTROL_STREAM_FINISH_TIMEOUT, control_send.stopped()).await;
         Ok(())
     } else {
+        let _ = control_send.finish();
         Ok(())
     };
 
@@ -195,8 +214,9 @@ where
     // router/store resources on sender-side protocol errors.
     let shutdown_result = provider.shutdown().await;
     shutdown_result?;
-    result?;
-    ack_result
+    let outcome = result?;
+    ack_result?;
+    Ok(outcome)
 }
 
 pub async fn receive_files_over_connection(
@@ -206,7 +226,7 @@ pub async fn receive_files_over_connection(
     session_id: &str,
     out_dir: PathBuf,
     manifest: &OfferManifest,
-) -> Result<()> {
+) -> Result<Option<TransferCancellation>> {
     let expected_files =
         build_expected_transfer_files(manifest, build_expected_files(manifest, &out_dir).await?)?;
     receive_files_over_connection_with_progress(
@@ -215,6 +235,7 @@ pub async fn receive_files_over_connection(
         control_recv,
         session_id,
         expected_files,
+        None,
         |_| {},
     )
     .await
@@ -226,8 +247,9 @@ pub async fn receive_files_over_connection_with_progress<F>(
     control_recv: &mut iroh::endpoint::RecvStream,
     session_id: &str,
     expected_files: Vec<ExpectedTransferFile>,
+    mut cancel_rx: Option<watch::Receiver<bool>>,
     mut on_progress: F,
-) -> Result<()>
+) -> Result<Option<TransferCancellation>>
 where
     F: FnMut(FileReceiveProgress),
 {
@@ -261,42 +283,121 @@ where
         }
     };
 
-    let result = receive_blob_collection(
-        endpoint,
-        &ticket_message.ticket,
-        &expected_files,
-        total_bytes_to_receive,
-        &mut on_progress,
-    )
-    .await;
-    match result {
-        Ok(()) => {
-            send_transfer_result(control_send, session_id, TransferStatus::Ok).await?;
-        }
-        Err(err) => {
-            let status = transfer_error_status(TransferErrorCode::IoError, err.to_string());
-            send_transfer_result(control_send, session_id, status.clone()).await?;
-            return Err(err);
-        }
-    }
-
-    match read_message::<ControlMessage>(control_recv)
+    let blob_ticket: BlobTicket = ticket_message
+        .ticket
+        .parse()
+        .context("parsing blob ticket")?;
+    let download = BlobDownloadStore::new("drift-blobs-recv", session_id).await?;
+    let connection = endpoint
+        .connect(blob_ticket.addr().clone(), BLOBS_ALPN)
         .await
-        .context("waiting for transfer acknowledgement")?
-    {
-        ControlMessage::TransferAck(ack) => {
-            ensure_matching_session_id(&ack.session_id, session_id)?
+        .context("connecting to blob provider")?;
+    let mut stream = download
+        .store
+        .remote()
+        .fetch(connection, blob_ticket.hash_and_format())
+        .stream();
+
+    let result = loop {
+        tokio::select! {
+            cancel_requested = wait_for_cancel(&mut cancel_rx), if cancel_rx.is_some() => {
+                if cancel_requested {
+                    let cancellation = local_cancellation(TransferRole::Receiver, CancelPhase::Transferring);
+                    let _ = send_cancel(
+                        control_send,
+                        session_id,
+                        cancellation.by,
+                        cancellation.phase,
+                        cancellation.reason.clone(),
+                    ).await;
+                    break Ok(Some(cancellation));
+                }
+            }
+            control_message = read_message::<ControlMessage>(control_recv) => {
+                match control_message.context("waiting for transfer control message")? {
+                    ControlMessage::Cancel(cancel) => {
+                        break Ok(Some(cancellation_from_message(cancel, session_id)?));
+                    }
+                    other => {
+                        let status = transfer_error_status(
+                            TransferErrorCode::UnexpectedMessage,
+                            format!(
+                                "unexpected control message while receiving transfer: {:?}",
+                                other
+                            ),
+                        );
+                        send_transfer_result(control_send, session_id, status.clone()).await?;
+                        break Err(anyhow!(transfer_status_summary(&status)));
+                    }
+                }
+            }
+            item = stream.next() => {
+                match item {
+                    Some(GetProgressItem::Progress(offset)) => {
+                        on_progress(FileReceiveProgress {
+                            total_bytes_received: offset,
+                            total_bytes_to_receive,
+                            bytes_received_in_file: 0,
+                            file_size: 0,
+                            file_path: Arc::from(""),
+                        });
+                    }
+                    Some(GetProgressItem::Done(_)) => break Ok(None),
+                    Some(GetProgressItem::Error(err)) => {
+                        let error = anyhow!(err.to_string());
+                        let status = transfer_error_status(TransferErrorCode::IoError, error.to_string());
+                        send_transfer_result(control_send, session_id, status.clone()).await?;
+                        break Err(error);
+                    }
+                    None => break Ok(None),
+                }
+            }
         }
-        other => bail!(
-            "unexpected control message while waiting for transfer acknowledgement: {:?}",
-            other
-        ),
+    };
+
+    let result = match result {
+        Ok(None) => {
+            export_downloaded_collection(&download.store, blob_ticket.hash(), &expected_files).await?;
+            on_progress(FileReceiveProgress {
+                total_bytes_received: total_bytes_to_receive,
+                total_bytes_to_receive,
+                bytes_received_in_file: 0,
+                file_size: 0,
+                file_path: Arc::from(""),
+            });
+            send_transfer_result(control_send, session_id, TransferStatus::Ok).await?;
+            Ok(None)
+        }
+        other => other,
+    };
+
+    drop(stream);
+    let shutdown_result = download.shutdown().await;
+    shutdown_result?;
+    let outcome = result?;
+
+    if outcome.is_none() {
+        match read_message::<ControlMessage>(control_recv)
+            .await
+            .context("waiting for transfer acknowledgement")?
+        {
+            ControlMessage::TransferAck(ack) => {
+                ensure_matching_session_id(&ack.session_id, session_id)?
+            }
+            other => bail!(
+                "unexpected control message while waiting for transfer acknowledgement: {:?}",
+                other
+            ),
+        }
+
+        control_send.finish()?;
+        let _ = timeout(CONTROL_STREAM_FINISH_TIMEOUT, control_send.stopped()).await;
+        println!("Transfer session finished");
+    } else {
+        let _ = control_send.finish();
     }
 
-    control_send.finish()?;
-    let _ = timeout(CONTROL_STREAM_FINISH_TIMEOUT, control_send.stopped()).await;
-    println!("Transfer session finished");
-    Ok(())
+    Ok(outcome)
 }
 
 pub fn build_expected_transfer_files(
@@ -486,66 +587,6 @@ async fn forward_request_updates(
     }
 }
 
-async fn receive_blob_collection<F>(
-    endpoint: &Endpoint,
-    ticket: &str,
-    expected_files: &[ExpectedTransferFile],
-    total_bytes_to_receive: u64,
-    on_progress: &mut F,
-) -> Result<()>
-where
-    F: FnMut(FileReceiveProgress),
-{
-    let blob_ticket: BlobTicket = ticket.parse().context("parsing blob ticket")?;
-    let download = BlobDownloadStore::new("drift-blobs-recv", ticket).await?;
-    // Reuse the receiver's existing endpoint — open a new BLOBS_ALPN connection to the
-    // same peer rather than binding a second local endpoint.
-    let connection = endpoint
-        .connect(blob_ticket.addr().clone(), BLOBS_ALPN)
-        .await
-        .context("connecting to blob provider")?;
-
-    let mut stream = download
-        .store
-        .remote()
-        .fetch(connection, blob_ticket.hash_and_format())
-        .stream();
-
-    let result = async {
-        while let Some(item) = stream.next().await {
-            match item {
-                GetProgressItem::Progress(offset) => {
-                    on_progress(FileReceiveProgress {
-                        total_bytes_received: offset,
-                        total_bytes_to_receive,
-                        bytes_received_in_file: 0,
-                        file_size: 0,
-                        file_path: Arc::from(""),
-                    });
-                }
-                GetProgressItem::Done(_) => break,
-                GetProgressItem::Error(err) => {
-                    return Err(anyhow!(err.to_string()));
-                }
-            }
-        }
-
-        export_downloaded_collection(&download.store, blob_ticket.hash(), expected_files).await?;
-        on_progress(FileReceiveProgress {
-            total_bytes_received: total_bytes_to_receive,
-            total_bytes_to_receive,
-            bytes_received_in_file: 0,
-            file_size: 0,
-            file_path: Arc::from(""),
-        });
-        Ok(())
-    }
-    .await;
-
-    download.shutdown().await?;
-    result
-}
-
 fn make_absolute_path(path: &PathBuf) -> Result<PathBuf> {
     if path.is_absolute() {
         Ok(path.clone())
@@ -619,6 +660,50 @@ fn ensure_matching_session_id(actual: &str, expected: &str) -> Result<()> {
     }
 }
 
+fn local_cancellation(by: TransferRole, phase: CancelPhase) -> TransferCancellation {
+    let reason = match (by, phase) {
+        (TransferRole::Sender, CancelPhase::WaitingForDecision) => {
+            "sender cancelled before approval".to_owned()
+        }
+        (TransferRole::Sender, CancelPhase::Transferring) => "sender cancelled transfer".to_owned(),
+        (TransferRole::Receiver, CancelPhase::WaitingForDecision) => {
+            "receiver cancelled before approval".to_owned()
+        }
+        (TransferRole::Receiver, CancelPhase::Transferring) => {
+            "receiver cancelled transfer".to_owned()
+        }
+    };
+    TransferCancellation { by, phase, reason }
+}
+
+fn cancellation_from_message(cancel: Cancel, session_id: &str) -> Result<TransferCancellation> {
+    ensure_matching_session_id(&cancel.session_id, session_id)?;
+    Ok(TransferCancellation {
+        by: cancel.by,
+        phase: cancel.phase,
+        reason: cancel.reason,
+    })
+}
+
+async fn wait_for_cancel(cancel_rx: &mut Option<watch::Receiver<bool>>) -> bool {
+    let Some(cancel_rx) = cancel_rx.as_mut() else {
+        return false;
+    };
+
+    if *cancel_rx.borrow() {
+        return true;
+    }
+
+    loop {
+        if cancel_rx.changed().await.is_err() {
+            return *cancel_rx.borrow();
+        }
+        if *cancel_rx.borrow() {
+            return true;
+        }
+    }
+}
+
 fn transfer_status_summary(status: &TransferStatus) -> String {
     match status {
         TransferStatus::Ok => "ok".to_owned(),
@@ -628,6 +713,25 @@ fn transfer_status_summary(status: &TransferStatus) -> String {
 
 fn transfer_error_status(code: TransferErrorCode, message: String) -> TransferStatus {
     TransferStatus::Error { code, message }
+}
+
+async fn send_cancel(
+    control_send: &mut iroh::endpoint::SendStream,
+    session_id: &str,
+    by: TransferRole,
+    phase: CancelPhase,
+    reason: String,
+) -> Result<()> {
+    write_message(
+        control_send,
+        &ControlMessage::Cancel(Cancel {
+            session_id: session_id.to_owned(),
+            by,
+            phase,
+            reason,
+        }),
+    )
+    .await
 }
 
 async fn send_transfer_result(
