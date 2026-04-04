@@ -8,13 +8,14 @@ mod tests;
 
 use std::time::Duration;
 
-use anyhow::{Context, Result};
 use iroh::{Endpoint, RelayMode, endpoint::presets};
 use tokio::sync::{broadcast, mpsc, oneshot, watch};
 
+use crate::error::{actor_reply_dropped, actor_stopped, invalid_device_type};
 use crate::types::{
     NearbyReceiver, PairingCodeState, ReceiverConfig, ReceiverOfferEvent, ReceiverRegistration,
 };
+use drift_core::error::{DriftError, Result};
 use drift_core::wire::ALPN;
 
 use self::actor::{ReceiverCommand, run_receiver_actor, spawn_listener_task};
@@ -68,7 +69,7 @@ impl ReceiverService {
             .secret_key(config.secret_key.clone())
             .bind()
             .await
-            .context("binding receiver v2 endpoint")?;
+            .map_err(|error| DriftError::connection(format!("binding receiver v2 endpoint: {error}")))?;
         let (cmd_tx, cmd_rx) = mpsc::channel(16);
         let (state_tx, state_rx) = watch::channel(ReceiverSnapshot {
             lifecycle: ReceiverLifecycle::Ready,
@@ -152,10 +153,10 @@ impl ReceiverService {
                 reply: reply_tx,
             })
             .await
-            .context("receiver actor stopped before set_discoverable")?;
+            .map_err(|_| actor_stopped("set_discoverable"))?;
         reply_rx
             .await
-            .context("receiver actor dropped set_discoverable reply")?
+            .map_err(|_| actor_reply_dropped("set_discoverable"))?
     }
 
     pub async fn respond_to_offer(&self, decision: OfferDecision) -> Result<()> {
@@ -166,10 +167,10 @@ impl ReceiverService {
                 reply: reply_tx,
             })
             .await
-            .context("receiver actor stopped before respond_to_offer")?;
+            .map_err(|_| actor_stopped("respond_to_offer"))?;
         reply_rx
             .await
-            .context("receiver actor dropped respond_to_offer reply")?
+            .map_err(|_| actor_reply_dropped("respond_to_offer"))?
     }
 
     pub async fn cancel_transfer(&self) -> Result<()> {
@@ -177,10 +178,10 @@ impl ReceiverService {
         self.cmd_tx
             .send(ReceiverCommand::CancelTransfer { reply: reply_tx })
             .await
-            .context("receiver actor stopped before cancel_transfer")?;
+            .map_err(|_| actor_stopped("cancel_transfer"))?;
         reply_rx
             .await
-            .context("receiver actor dropped cancel_transfer reply")?
+            .map_err(|_| actor_reply_dropped("cancel_transfer"))?
     }
 
     pub async fn scan_nearby(&self, timeout_secs: u64) -> Result<Vec<NearbyReceiver>> {
@@ -191,10 +192,10 @@ impl ReceiverService {
                 reply: reply_tx,
             })
             .await
-            .context("receiver actor stopped before scan_nearby")?;
+            .map_err(|_| actor_stopped("scan_nearby"))?;
         reply_rx
             .await
-            .context("receiver actor dropped scan_nearby reply")?
+            .map_err(|_| actor_reply_dropped("scan_nearby"))?
     }
 
     pub async fn shutdown(&self) -> Result<()> {
@@ -202,10 +203,10 @@ impl ReceiverService {
         self.cmd_tx
             .send(ReceiverCommand::Shutdown { reply: reply_tx })
             .await
-            .context("receiver actor stopped before shutdown")?;
+            .map_err(|_| actor_stopped("shutdown"))?;
         reply_rx
             .await
-            .context("receiver actor dropped shutdown reply")?
+            .map_err(|_| actor_reply_dropped("shutdown"))?
     }
 
     async fn call_registration_command(
@@ -216,10 +217,10 @@ impl ReceiverService {
         self.cmd_tx
             .send(command(reply_tx))
             .await
-            .context("receiver actor stopped before registration command")?;
+            .map_err(|_| actor_stopped("registration command"))?;
         reply_rx
             .await
-            .context("receiver actor dropped registration reply")?
+            .map_err(|_| actor_reply_dropped("registration"))?
     }
 }
 
@@ -227,6 +228,6 @@ pub(super) fn parse_device_type(value: &str) -> Result<drift_core::wire::DeviceT
     match value.trim().to_ascii_lowercase().as_str() {
         "phone" => Ok(drift_core::wire::DeviceType::Phone),
         "laptop" => Ok(drift_core::wire::DeviceType::Laptop),
-        other => anyhow::bail!("invalid device_type {other:?} (expected \"phone\" or \"laptop\")"),
+        other => Err(invalid_device_type(other)),
     }
 }

@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::time::Duration;
 
 use crate::types::NearbyReceiver;
-use anyhow::{Context, Result};
+use drift_core::error::{DriftError, Result};
 
 pub async fn scan_nearby_receivers(timeout_secs: u64) -> Result<Vec<NearbyReceiver>> {
     let secs = timeout_secs.max(1);
@@ -10,7 +10,7 @@ pub async fn scan_nearby_receivers(timeout_secs: u64) -> Result<Vec<NearbyReceiv
         drift_core::lan::browse_nearby_receivers(Duration::from_secs(secs), None)
     })
     .await
-    .context("mDNS scan task")??;
+    .map_err(|error| DriftError::internal(format!("mDNS scan task failed: {error}")))??;
 
     let mut by_fullname = BTreeMap::new();
     for receiver in receivers {

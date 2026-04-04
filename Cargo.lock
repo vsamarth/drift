@@ -863,7 +863,6 @@ dependencies = [
 name = "drift"
 version = "0.1.0"
 dependencies = [
- "anyhow",
  "clap",
  "drift-app",
  "drift-core",
@@ -883,7 +882,6 @@ dependencies = [
 name = "drift-app"
 version = "0.1.0"
 dependencies = [
- "anyhow",
  "drift-core",
  "iroh",
  "rand 0.8.5",

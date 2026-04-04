@@ -1,13 +1,13 @@
 use std::io::{self, Write};
 use std::path::PathBuf;
 
-use anyhow::{Context, Result, bail};
 use clap::{Args, ValueEnum};
 use drift_app::{
     ConflictPolicy, OfferDecision, ReceiverConfig, ReceiverEvent, ReceiverOfferEvent,
     ReceiverOfferPhase, ReceiverService, SendConfig, SendEvent, SendPhase, SendSession,
     SendSessionOutcome,
 };
+use drift_core::error::{DriftError, DriftErrorKind, Result};
 use drift_core::util::{confirm_accept, human_size, process_display_device_name};
 use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
 use iroh::SecretKey;
@@ -149,10 +149,10 @@ pub async fn send_nearby(
     let receivers = session.scan_nearby(nearby_timeout_secs).await?;
 
     if receivers.is_empty() {
-        bail!(
-            "no Drift receivers found on the LAN. \
-             On the other machine run `drift receive` (same Wi-Fi / LAN), then try again."
-        );
+        return Err(DriftError::with_reason(
+            DriftErrorKind::NoNearbyReceivers,
+            "no Drift receivers found on the LAN. On the other machine run `drift receive` (same Wi-Fi / LAN), then try again.",
+        ));
     }
 
     eprintln!("Nearby receivers:");
@@ -161,19 +161,23 @@ pub async fn send_nearby(
     }
     let upper = receivers.len();
     eprint!("Enter number (1-{upper}), or q to quit: ");
-    io::stdout().flush().context("flushing prompt")?;
+    io::stdout().flush()?;
 
     let mut line = String::new();
-    io::stdin().read_line(&mut line).context("reading choice")?;
+    io::stdin().read_line(&mut line)?;
     let trimmed = line.trim();
     if trimmed.eq_ignore_ascii_case("q") {
-        bail!("cancelled");
+        return Err(DriftError::new(DriftErrorKind::TransferCancelled));
     }
     let idx: usize = trimmed
         .parse()
-        .with_context(|| format!("expected a number 1-{upper}, got {trimmed:?}"))?;
+        .map_err(|_| {
+            DriftError::invalid_input(format!("expected a number 1-{upper}, got {trimmed:?}"))
+        })?;
     if idx == 0 || idx > upper {
-        bail!("choice must be between 1 and {upper}");
+        return Err(DriftError::invalid_input(format!(
+            "choice must be between 1 and {upper}"
+        )));
     }
 
     let picked = &receivers[idx - 1];
@@ -274,7 +278,11 @@ pub async fn receive(out_dir: PathBuf, server_url: Option<String>) -> Result<()>
                             ReceiverOfferPhase::OfferReady => {
                                 let accept = tokio::task::spawn_blocking(confirm_accept)
                                     .await
-                                    .context("confirm task")??;
+                                    .map_err(|error| {
+                                        DriftError::internal(format!(
+                                            "confirm task failed: {error}"
+                                        ))
+                                    })??;
                                 let decision = if accept {
                                     OfferDecision::Accept
                                 } else {
@@ -292,7 +300,10 @@ pub async fn receive(out_dir: PathBuf, server_url: Option<String>) -> Result<()>
                                     .error_message
                                     .clone()
                                     .unwrap_or_else(|| event.status_message.clone());
-                                break Err(anyhow::anyhow!(message));
+                                break Err(DriftError::with_reason(
+                                    DriftErrorKind::TransferFailed,
+                                    message,
+                                ));
                             }
                             ReceiverOfferPhase::Connecting | ReceiverOfferPhase::Receiving => {}
                         }

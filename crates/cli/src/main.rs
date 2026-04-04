@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
-use anyhow::Result;
 use clap::{Parser, Subcommand};
+use drift_core::error::{DriftError, Result};
 use drift::{LoggingOpts, init_tracing, receive, send};
 
 #[derive(Parser, Debug)]
@@ -53,12 +53,12 @@ async fn main() -> Result<()> {
         } => match (nearby, code.as_ref()) {
             (true, None) => drift::send_nearby(files, nearby_timeout_secs, server).await,
             (false, Some(c)) => send(c.clone(), files, server).await,
-            (true, Some(_)) => {
-                anyhow::bail!("pass either CODE or --nearby, not both");
-            }
-            (false, None) => {
-                anyhow::bail!("pass a short CODE or use --nearby to discover receivers on the LAN");
-            }
+            (true, Some(_)) => Err(DriftError::invalid_input(
+                "pass either CODE or --nearby, not both",
+            )),
+            (false, None) => Err(DriftError::invalid_input(
+                "pass a short CODE or use --nearby to discover receivers on the LAN",
+            )),
         },
         Command::Receive { out, server } => receive(out, server).await,
     }

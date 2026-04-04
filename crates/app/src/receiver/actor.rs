@@ -1,6 +1,5 @@
 use std::time::Duration;
 
-use anyhow::{Context, Result};
 use drift_core::receiver::{
     ReceiveTransferOutcome, ReceiveTransferPhase, ReceiveTransferProgress,
     receiver_finish_after_decision_with_progress, receiver_run_until_decision,
@@ -13,11 +12,12 @@ use tokio::sync::{broadcast, mpsc, oneshot, watch};
 use tokio::task::JoinHandle;
 use tokio::time::{MissedTickBehavior, interval, sleep};
 
-use crate::error::format_error_chain;
+use crate::error::{format_error, receiver_overwrite_policy_unimplemented, snapshot_channel_closed};
 use crate::types::{
     ConflictPolicy, NearbyReceiver, PairingCodeState, ReceiverOfferEvent, ReceiverOfferFile,
     ReceiverOfferPhase, ReceiverRegistration,
 };
+use drift_core::error::{DriftError, Result};
 
 use super::runtime::{OfferResolution, ReceiverRuntime};
 use super::{OfferDecision, ReceiverEvent, ReceiverLifecycle, ReceiverSnapshot, parse_device_type};
@@ -88,7 +88,7 @@ pub(super) fn spawn_listener_task(
     conflict_policy: ConflictPolicy,
 ) -> Result<JoinHandle<()>> {
     if matches!(conflict_policy, ConflictPolicy::Overwrite) {
-        anyhow::bail!("receiver overwrite policy is not implemented yet");
+        return Err(receiver_overwrite_policy_unimplemented());
     }
     let device_type = parse_device_type(&device_type)?;
     Ok(tokio::spawn(async move {
@@ -194,7 +194,7 @@ pub(super) async fn run_receiver_actor(
                             drift_core::lan::browse_nearby_receivers(timeout, exclude)
                         })
                         .await
-                        .context("receiver v2 nearby scan task")
+                        .map_err(|error| DriftError::internal(format!("receiver v2 nearby scan task failed: {error}")))
                         .and_then(|result| result.map_err(Into::into))
                         .map(|receivers| {
                             receivers
@@ -238,7 +238,7 @@ fn publish_snapshot(
             has_registration: runtime.has_registration(),
             has_pending_offer: runtime.has_pending_offer(),
         })
-        .map_err(|_| anyhow::anyhow!("receiver v2 snapshot channel closed"))?;
+        .map_err(|_| snapshot_channel_closed())?;
     Ok(())
 }
 
@@ -350,7 +350,7 @@ async fn handle_incoming_offer(
                         connection_path: None,
                         total_size_label: String::new(),
                         files: Vec::new(),
-                        error_message: Some(format_error_chain(&err)),
+                        error_message: Some(format_error(&err)),
                     },
                 })
                 .await;
@@ -505,7 +505,7 @@ async fn handle_incoming_offer(
             connection_path: None,
             total_size_label: human_size(manifest.total_size),
             files: Vec::new(),
-            error_message: Some(format_error_chain(&err)),
+            error_message: Some(format_error(&err)),
         },
     };
 

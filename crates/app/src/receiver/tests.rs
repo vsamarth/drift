@@ -1,7 +1,8 @@
 use std::path::PathBuf;
 
-use anyhow::Result;
 use iroh::SecretKey;
+
+use drift_core::error::{DriftError, Result};
 
 use super::runtime::{
     OfferResolution, ReceiverRuntime, registration_needs_refresh, should_advertise,
@@ -37,18 +38,19 @@ async fn try_bind_endpoint() -> Result<Option<iroh::Endpoint>> {
     {
         Ok(endpoint) => Ok(Some(endpoint)),
         Err(error) => {
-            let error = anyhow::Error::from(error);
             if bind_unavailable(&error) {
                 Ok(None)
             } else {
-                Err(error)
+                Err(DriftError::internal(format!(
+                    "binding test endpoint failed: {error}"
+                )))
             }
         }
     }
 }
 
-fn bind_unavailable(error: &anyhow::Error) -> bool {
-    let chain = format!("{error:#}");
+fn bind_unavailable(error: &impl std::fmt::Display) -> bool {
+    let chain = error.to_string();
     chain.contains("Failed to bind sockets") || chain.contains("Operation not permitted")
 }
 

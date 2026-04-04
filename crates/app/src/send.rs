@@ -1,14 +1,14 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
-use anyhow::{Result, bail};
 use tokio::sync::watch;
 
-use crate::error::format_error_chain;
+use crate::error::{format_error, invalid_device_type};
 use crate::types::{
     NearbyReceiver, SelectionChange, SelectionItem, SelectionPreview, SendConfig, SendEvent,
     SendPhase,
 };
+use drift_core::error::Result;
 use drift_core::fs_plan::preview::{
     SelectedPathKind, SelectedPathPreview, SelectionPreview as CoreSelectionPreview,
     inspect_selected_paths,
@@ -212,7 +212,7 @@ impl SendSession {
     }
 }
 
-fn failed_event(destination_label: &str, error: &anyhow::Error) -> SendEvent {
+fn failed_event(destination_label: &str, error: &drift_core::error::DriftError) -> SendEvent {
     SendEvent {
         phase: SendPhase::Failed,
         destination_label: destination_label.to_owned(),
@@ -222,7 +222,7 @@ fn failed_event(destination_label: &str, error: &anyhow::Error) -> SendEvent {
         bytes_sent: 0,
         remote_device_type: None,
         connection_path: None,
-        error_message: Some(format_error_chain(error)),
+        error_message: Some(format_error(error)),
     }
 }
 
@@ -285,7 +285,7 @@ fn parse_device_type(value: &str) -> Result<DeviceType> {
     match value.trim().to_ascii_lowercase().as_str() {
         "phone" => Ok(DeviceType::Phone),
         "laptop" => Ok(DeviceType::Laptop),
-        other => bail!("invalid device_type {other:?} (expected \"phone\" or \"laptop\")"),
+        other => Err(invalid_device_type(other)),
     }
 }
 

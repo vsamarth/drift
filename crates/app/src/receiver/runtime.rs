@@ -1,4 +1,3 @@
-use anyhow::{Context, Result};
 use drift_core::lan::LanReceiveAdvertisement;
 use drift_core::rendezvous::{RendezvousClient, resolve_server_url};
 use drift_core::wire::make_ticket;
@@ -9,7 +8,9 @@ use tokio::sync::{broadcast, oneshot, watch};
 use tokio::task::JoinHandle;
 use tracing::warn;
 
+use crate::error::{no_active_transfer, no_pending_offer, offer_no_longer_active, receiver_setup_missing};
 use crate::types::{PairingCodeState, ReceiverConfig, ReceiverRegistration};
+use drift_core::error::Result;
 
 use super::{OfferDecision, ReceiverEvent};
 
@@ -154,7 +155,7 @@ impl ReceiverRuntime {
         let resolved_url = self
             .server_url
             .clone()
-            .context("receiver setup has not been completed")?;
+            .ok_or_else(receiver_setup_missing)?;
         let ticket = make_ticket(&self.endpoint).await?;
         let registration = RendezvousClient::new(resolved_url)
             .register_peer(ticket)
@@ -235,7 +236,7 @@ impl ReceiverRuntime {
         let OfferState::Pending(pending_offer) =
             std::mem::replace(&mut self.offer_state, OfferState::Idle)
         else {
-            return Err(anyhow::anyhow!("no pending offer"));
+            return Err(no_pending_offer());
         };
         pending_offer.watch_task.abort();
         let offer_id = pending_offer.offer_id;
@@ -251,7 +252,7 @@ impl ReceiverRuntime {
         pending_offer
             .decision_tx
             .send(resolution)
-            .map_err(|_| anyhow::anyhow!("offer is no longer active"))?;
+            .map_err(|_| offer_no_longer_active())?;
         Ok(())
     }
 
@@ -332,7 +333,7 @@ impl ReceiverRuntime {
                 let _ = cancel_tx.send(true);
                 Ok(())
             }
-            _ => Err(anyhow::anyhow!("no active transfer")),
+            _ => Err(no_active_transfer()),
         }
     }
 
