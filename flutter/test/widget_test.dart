@@ -921,7 +921,7 @@ void main() {
       await sendTransferSource.finish();
       await tester.pumpAndSettle();
 
-      expect(find.text('Transfer failed'), findsOneWidget);
+      expect(find.text('Transfer declined'), findsOneWidget);
       expect(
         find.text('receiver declined the offer: receiver declined the offer'),
         findsOneWidget,

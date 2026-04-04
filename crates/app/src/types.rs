@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use iroh::SecretKey;
+use drift_core::error::DriftError;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SendPhase {
@@ -28,6 +29,7 @@ pub struct SendEvent {
     pub bytes_sent: u64,
     pub remote_device_type: Option<String>,
     pub connection_path: Option<String>,
+    pub error: Option<DriftError>,
     pub error_message: Option<String>,
 }
 
@@ -82,6 +84,7 @@ pub struct ReceiverOfferEvent {
     pub connection_path: Option<String>,
     pub total_size_label: String,
     pub files: Vec<ReceiverOfferFile>,
+    pub error: Option<DriftError>,
     pub error_message: Option<String>,
 }
 

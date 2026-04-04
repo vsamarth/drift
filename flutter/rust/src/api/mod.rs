@@ -3,6 +3,7 @@ use std::sync::LazyLock;
 use tokio::runtime::Runtime;
 
 pub mod device;
+pub mod error;
 pub mod lan;
 pub mod preview;
 pub mod receiver;

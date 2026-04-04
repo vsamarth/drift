@@ -4,6 +4,7 @@
 // ignore_for_file: unused_import, unused_element, unnecessary_import, duplicate_ignore, invalid_use_of_internal_member, annotate_overrides, non_constant_identifier_names, curly_braces_in_flow_control_structures, prefer_const_literals_to_create_immutables, unused_field
 
 import 'api/device.dart';
+import 'api/error.dart';
 import 'api/lan.dart';
 import 'api/preview.dart';
 import 'api/receiver.dart';
@@ -174,7 +175,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_selection_preview,
-          decodeErrorData: sse_decode_String,
+          decodeErrorData: sse_decode_bridge_error,
         ),
         constMeta: kCrateApiPreviewAppendPathsConstMeta,
         argValues: [existingPaths, newPaths],
@@ -203,7 +204,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_unit,
-          decodeErrorData: sse_decode_String,
+          decodeErrorData: sse_decode_bridge_error,
         ),
         constMeta: kCrateApiSenderCancelActiveSendTransferConstMeta,
         argValues: [],
@@ -233,7 +234,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_unit,
-          decodeErrorData: sse_decode_String,
+          decodeErrorData: sse_decode_bridge_error,
         ),
         constMeta: kCrateApiReceiverCancelReceiverTransferConstMeta,
         argValues: [],
@@ -295,7 +296,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_receiver_registration,
-          decodeErrorData: sse_decode_String,
+          decodeErrorData: sse_decode_bridge_error,
         ),
         constMeta: kCrateApiReceiverEnsureReceiverRegistrationConstMeta,
         argValues: [serverUrl, deviceName],
@@ -378,7 +379,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_selection_preview,
-          decodeErrorData: sse_decode_String,
+          decodeErrorData: sse_decode_bridge_error,
         ),
         constMeta: kCrateApiPreviewInspectPathsConstMeta,
         argValues: [paths],
@@ -432,7 +433,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_receiver_registration,
-          decodeErrorData: sse_decode_String,
+          decodeErrorData: sse_decode_bridge_error,
         ),
         constMeta: kCrateApiReceiverRegisterReceiverConstMeta,
         argValues: [serverUrl, deviceName],
@@ -467,7 +468,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_selection_preview,
-          decodeErrorData: sse_decode_String,
+          decodeErrorData: sse_decode_bridge_error,
         ),
         constMeta: kCrateApiPreviewRemovePathConstMeta,
         argValues: [existingPaths, removedPath],
@@ -497,7 +498,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_unit,
-          decodeErrorData: sse_decode_String,
+          decodeErrorData: sse_decode_bridge_error,
         ),
         constMeta: kCrateApiReceiverRespondToReceiverOfferConstMeta,
         argValues: [accept],
@@ -530,7 +531,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_list_nearby_receiver_info,
-          decodeErrorData: sse_decode_String,
+          decodeErrorData: sse_decode_bridge_error,
         ),
         constMeta: kCrateApiLanScanNearbyReceiversConstMeta,
         argValues: [timeoutSecs],
@@ -563,7 +564,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_unit,
-          decodeErrorData: sse_decode_String,
+          decodeErrorData: sse_decode_bridge_error,
         ),
         constMeta: kCrateApiReceiverSetReceiverDiscoverableConstMeta,
         argValues: [enabled],
@@ -608,7 +609,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           },
           codec: SseCodec(
             decodeSuccessData: sse_decode_unit,
-            decodeErrorData: sse_decode_String,
+            decodeErrorData: sse_decode_bridge_error,
           ),
           constMeta: kCrateApiReceiverStartReceiverTransferListenerConstMeta,
           argValues: [serverUrl, downloadRoot, deviceName, deviceType, updates],
@@ -652,7 +653,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           },
           codec: SseCodec(
             decodeSuccessData: sse_decode_unit,
-            decodeErrorData: sse_decode_String,
+            decodeErrorData: sse_decode_bridge_error,
           ),
           constMeta: kCrateApiSenderStartSendTransferConstMeta,
           argValues: [request, updates],
@@ -699,7 +700,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           },
           codec: SseCodec(
             decodeSuccessData: sse_decode_unit,
-            decodeErrorData: sse_decode_String,
+            decodeErrorData: sse_decode_bridge_error,
           ),
           constMeta: kCrateApiReceiverWatchReceiverPairingConstMeta,
           argValues: [serverUrl, downloadRoot, deviceName, deviceType, updates],
@@ -762,6 +763,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  BridgeError dco_decode_box_autoadd_bridge_error(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_bridge_error(raw);
+  }
+
+  @protected
   ReceiverRegistration dco_decode_box_autoadd_receiver_registration(
     dynamic raw,
   ) {
@@ -775,6 +782,24 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return dco_decode_send_transfer_request(raw);
+  }
+
+  @protected
+  BridgeError dco_decode_bridge_error(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 2)
+      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    return BridgeError(
+      kind: dco_decode_bridge_error_kind(arr[0]),
+      reason: dco_decode_opt_String(arr[1]),
+    );
+  }
+
+  @protected
+  BridgeErrorKind dco_decode_bridge_error_kind(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return BridgeErrorKind.values[raw as int];
   }
 
   @protected
@@ -838,6 +863,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  BridgeError? dco_decode_opt_box_autoadd_bridge_error(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null ? null : dco_decode_box_autoadd_bridge_error(raw);
+  }
+
+  @protected
   ReceiverRegistration? dco_decode_opt_box_autoadd_receiver_registration(
     dynamic raw,
   ) {
@@ -875,8 +906,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ReceiverTransferEvent dco_decode_receiver_transfer_event(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 12)
-      throw Exception('unexpected arr length: expect 12 but see ${arr.length}');
+    if (arr.length != 13)
+      throw Exception('unexpected arr length: expect 13 but see ${arr.length}');
     return ReceiverTransferEvent(
       phase: dco_decode_receiver_transfer_phase(arr[0]),
       senderName: dco_decode_String(arr[1]),
@@ -889,7 +920,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       bytesReceived: dco_decode_u_64(arr[8]),
       totalSizeLabel: dco_decode_String(arr[9]),
       files: dco_decode_list_receiver_transfer_file(arr[10]),
-      errorMessage: dco_decode_opt_String(arr[11]),
+      error: dco_decode_opt_box_autoadd_bridge_error(arr[11]),
+      errorMessage: dco_decode_opt_String(arr[12]),
     );
   }
 
@@ -943,8 +975,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   SendTransferEvent dco_decode_send_transfer_event(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 8)
-      throw Exception('unexpected arr length: expect 8 but see ${arr.length}');
+    if (arr.length != 9)
+      throw Exception('unexpected arr length: expect 9 but see ${arr.length}');
     return SendTransferEvent(
       phase: dco_decode_send_transfer_phase(arr[0]),
       destinationLabel: dco_decode_String(arr[1]),
@@ -953,7 +985,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       totalSize: dco_decode_u_64(arr[4]),
       bytesSent: dco_decode_u_64(arr[5]),
       remoteDeviceType: dco_decode_opt_String(arr[6]),
-      errorMessage: dco_decode_opt_String(arr[7]),
+      error: dco_decode_opt_box_autoadd_bridge_error(arr[7]),
+      errorMessage: dco_decode_opt_String(arr[8]),
     );
   }
 
@@ -1044,6 +1077,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  BridgeError sse_decode_box_autoadd_bridge_error(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_bridge_error(deserializer));
+  }
+
+  @protected
   ReceiverRegistration sse_decode_box_autoadd_receiver_registration(
     SseDeserializer deserializer,
   ) {
@@ -1057,6 +1098,21 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return (sse_decode_send_transfer_request(deserializer));
+  }
+
+  @protected
+  BridgeError sse_decode_bridge_error(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_kind = sse_decode_bridge_error_kind(deserializer);
+    var var_reason = sse_decode_opt_String(deserializer);
+    return BridgeError(kind: var_kind, reason: var_reason);
+  }
+
+  @protected
+  BridgeErrorKind sse_decode_bridge_error_kind(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var inner = sse_decode_i_32(deserializer);
+    return BridgeErrorKind.values[inner];
   }
 
   @protected
@@ -1155,6 +1211,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  BridgeError? sse_decode_opt_box_autoadd_bridge_error(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_box_autoadd_bridge_error(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
   ReceiverRegistration? sse_decode_opt_box_autoadd_receiver_registration(
     SseDeserializer deserializer,
   ) {
@@ -1203,6 +1272,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_bytesReceived = sse_decode_u_64(deserializer);
     var var_totalSizeLabel = sse_decode_String(deserializer);
     var var_files = sse_decode_list_receiver_transfer_file(deserializer);
+    var var_error = sse_decode_opt_box_autoadd_bridge_error(deserializer);
     var var_errorMessage = sse_decode_opt_String(deserializer);
     return ReceiverTransferEvent(
       phase: var_phase,
@@ -1216,6 +1286,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       bytesReceived: var_bytesReceived,
       totalSizeLabel: var_totalSizeLabel,
       files: var_files,
+      error: var_error,
       errorMessage: var_errorMessage,
     );
   }
@@ -1281,6 +1352,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_totalSize = sse_decode_u_64(deserializer);
     var var_bytesSent = sse_decode_u_64(deserializer);
     var var_remoteDeviceType = sse_decode_opt_String(deserializer);
+    var var_error = sse_decode_opt_box_autoadd_bridge_error(deserializer);
     var var_errorMessage = sse_decode_opt_String(deserializer);
     return SendTransferEvent(
       phase: var_phase,
@@ -1290,6 +1362,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       totalSize: var_totalSize,
       bytesSent: var_bytesSent,
       remoteDeviceType: var_remoteDeviceType,
+      error: var_error,
       errorMessage: var_errorMessage,
     );
   }
@@ -1416,6 +1489,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_box_autoadd_bridge_error(
+    BridgeError self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_bridge_error(self, serializer);
+  }
+
+  @protected
   void sse_encode_box_autoadd_receiver_registration(
     ReceiverRegistration self,
     SseSerializer serializer,
@@ -1431,6 +1513,22 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_send_transfer_request(self, serializer);
+  }
+
+  @protected
+  void sse_encode_bridge_error(BridgeError self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_bridge_error_kind(self.kind, serializer);
+    sse_encode_opt_String(self.reason, serializer);
+  }
+
+  @protected
+  void sse_encode_bridge_error_kind(
+    BridgeErrorKind self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.index, serializer);
   }
 
   @protected
@@ -1517,6 +1615,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_opt_box_autoadd_bridge_error(
+    BridgeError? self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_box_autoadd_bridge_error(self, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_opt_box_autoadd_receiver_registration(
     ReceiverRegistration? self,
     SseSerializer serializer,
@@ -1566,6 +1677,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_u_64(self.bytesReceived, serializer);
     sse_encode_String(self.totalSizeLabel, serializer);
     sse_encode_list_receiver_transfer_file(self.files, serializer);
+    sse_encode_opt_box_autoadd_bridge_error(self.error, serializer);
     sse_encode_opt_String(self.errorMessage, serializer);
   }
 
@@ -1622,6 +1734,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_u_64(self.totalSize, serializer);
     sse_encode_u_64(self.bytesSent, serializer);
     sse_encode_opt_String(self.remoteDeviceType, serializer);
+    sse_encode_opt_box_autoadd_bridge_error(self.error, serializer);
     sse_encode_opt_String(self.errorMessage, serializer);
   }
 

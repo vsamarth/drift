@@ -12,7 +12,9 @@ use tokio::sync::Mutex as AsyncMutex;
 use tokio::task::JoinHandle;
 
 use super::RUNTIME;
+use crate::api::error::BridgeError;
 use crate::frb_generated::StreamSink;
+use drift_core::error::DriftError;
 
 static RECEIVER_SECRET_KEY: LazyLock<SecretKey> =
     LazyLock::new(|| SecretKey::from_bytes(&rand::random()));
@@ -78,20 +80,21 @@ pub struct ReceiverTransferEvent {
     pub bytes_received: u64,
     pub total_size_label: String,
     pub files: Vec<ReceiverTransferFile>,
+    pub error: Option<BridgeError>,
     pub error_message: Option<String>,
 }
 
 pub fn register_receiver(
     server_url: Option<String>,
     device_name: String,
-) -> Result<ReceiverRegistration, String> {
+) -> Result<ReceiverRegistration, BridgeError> {
     ensure_receiver_registration(server_url, device_name)
 }
 
 pub fn ensure_receiver_registration(
     server_url: Option<String>,
     device_name: String,
-) -> Result<ReceiverRegistration, String> {
+) -> Result<ReceiverRegistration, BridgeError> {
     RUNTIME.block_on(async move {
         let service = ensure_receiver_service(BridgeReceiverConfig {
             device_name,
@@ -105,7 +108,7 @@ pub fn ensure_receiver_registration(
             .ensure_registered(server_url)
             .await
             .map(map_registration)
-            .map_err(|e| e.to_string())
+            .map_err(Into::into)
     })
 }
 
@@ -121,7 +124,7 @@ pub fn watch_receiver_pairing(
     device_name: String,
     device_type: String,
     updates: StreamSink<ReceiverPairingState>,
-) -> Result<(), String> {
+) -> Result<(), BridgeError> {
     RUNTIME.block_on(async move {
         let config = BridgeReceiverConfig {
             device_name,
@@ -141,14 +144,14 @@ pub fn watch_receiver_pairing(
         service
             .set_discoverable(true)
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(BridgeError::from)?;
 
         replace_pairing_task(config, service, updates);
         Ok(())
     })
 }
 
-pub fn set_receiver_discoverable(enabled: bool) -> Result<(), String> {
+pub fn set_receiver_discoverable(enabled: bool) -> Result<(), BridgeError> {
     set_discoverable(enabled)
 }
 
@@ -158,7 +161,7 @@ pub fn start_receiver_transfer_listener(
     device_name: String,
     device_type: String,
     updates: StreamSink<ReceiverTransferEvent>,
-) -> Result<(), String> {
+) -> Result<(), BridgeError> {
     if ENABLE_DEMO_HELLO_PROTOCOL {
         std::env::set_var("DRIFT_DEMO_HELLO", "1");
         println!("[bridge/receive] demo hello protocol enabled");
@@ -183,17 +186,17 @@ pub fn start_receiver_transfer_listener(
         service
             .set_discoverable(true)
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(BridgeError::from)?;
 
         replace_updates_task(config, service, updates);
         Ok(())
     })
 }
 
-pub fn respond_to_receiver_offer(accept: bool) -> Result<(), String> {
+pub fn respond_to_receiver_offer(accept: bool) -> Result<(), BridgeError> {
     RUNTIME.block_on(async move {
         let Some(service) = current_service() else {
-            return Err("receiver is not running".to_owned());
+            return Err(BridgeError::from(DriftError::internal("receiver is not running")));
         };
         service
             .respond_to_offer(if accept {
@@ -202,22 +205,22 @@ pub fn respond_to_receiver_offer(accept: bool) -> Result<(), String> {
                 OfferDecision::Decline
             })
             .await
-            .map_err(|e| e.to_string())
+            .map_err(BridgeError::from)
     })
 }
 
-pub fn cancel_receiver_transfer() -> Result<(), String> {
+pub fn cancel_receiver_transfer() -> Result<(), BridgeError> {
     RUNTIME.block_on(async move {
         let Some(service) = current_service() else {
-            return Err("receiver is not running".to_owned());
+            return Err(BridgeError::from(DriftError::internal("receiver is not running")));
         };
-        service.cancel_transfer().await.map_err(|e| e.to_string())
+        service.cancel_transfer().await.map_err(BridgeError::from)
     })
 }
 
 pub(crate) async fn scan_nearby_with_receiver(
     timeout_secs: u64,
-) -> Result<Vec<crate::api::lan::NearbyReceiverInfo>, String> {
+) -> Result<Vec<crate::api::lan::NearbyReceiverInfo>, BridgeError> {
     println!(
         "[bridge] scanning nearby receivers (timeout={}s)",
         timeout_secs
@@ -234,11 +237,11 @@ pub(crate) async fn scan_nearby_with_receiver(
                 secret_key: RECEIVER_SECRET_KEY.clone(),
             })
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(BridgeError::from)?;
             let receivers = temp
                 .scan_nearby(timeout_secs)
                 .await
-                .map_err(|e| e.to_string())?;
+                .map_err(BridgeError::from)?;
             println!("[bridge] scan found {} receivers", receivers.len());
             for r in &receivers {
                 println!(
@@ -257,7 +260,7 @@ pub(crate) async fn scan_nearby_with_receiver(
     let receivers = service
         .scan_nearby(timeout_secs)
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(BridgeError::from)?;
 
     println!("[bridge] scan found {} receivers", receivers.len());
     for r in &receivers {
@@ -275,7 +278,7 @@ pub(crate) async fn scan_nearby_with_receiver(
 
 async fn ensure_receiver_service(
     config: BridgeReceiverConfig,
-) -> Result<Arc<ReceiverService>, String> {
+) -> Result<Arc<ReceiverService>, BridgeError> {
     let _lock = RECEIVER_SERVICE_LOCK.lock().await;
 
     if let Some(service) = existing_service_for_config(&config) {
@@ -290,7 +293,11 @@ async fn ensure_receiver_service(
     let old_state = {
         let mut guard = RECEIVER_STATE
             .lock()
-            .map_err(|_| "receiver bridge mutex poisoned".to_owned())?;
+            .map_err(|_| {
+                BridgeError::from(drift_core::error::DriftError::internal(
+                    "receiver bridge mutex poisoned",
+                ))
+            })?;
         guard.take()
     };
 
@@ -312,15 +319,18 @@ async fn ensure_receiver_service(
             conflict_policy: ConflictPolicy::Reject,
             secret_key: RECEIVER_SECRET_KEY.clone(),
         })
-        .await
-        .map_err(|e| e.to_string())?,
+        .await?,
     );
 
     println!("[bridge] receiver service started");
 
     let mut guard = RECEIVER_STATE
         .lock()
-        .map_err(|_| "receiver bridge mutex poisoned".to_owned())?;
+        .map_err(|_| {
+            BridgeError::from(drift_core::error::DriftError::internal(
+                "receiver bridge mutex poisoned",
+            ))
+        })?;
     *guard = Some(BridgeReceiverState {
         config,
         service: service.clone(),
@@ -403,7 +413,7 @@ fn current_service() -> Option<Arc<ReceiverService>> {
         .and_then(|guard| guard.as_ref().map(|state| state.service.clone()))
 }
 
-fn set_discoverable(enabled: bool) -> Result<(), String> {
+fn set_discoverable(enabled: bool) -> Result<(), BridgeError> {
     println!("[bridge] setting discoverable: {}", enabled);
     RUNTIME.block_on(async move {
         let Some(service) = current_service() else {
@@ -413,7 +423,7 @@ fn set_discoverable(enabled: bool) -> Result<(), String> {
         service
             .set_discoverable(enabled)
             .await
-            .map_err(|e| e.to_string())
+            .map_err(Into::into)
     })
 }
 
@@ -465,6 +475,7 @@ fn map_event(event: AppReceiverOfferEvent) -> ReceiverTransferEvent {
         bytes_received: event.bytes_received,
         total_size_label: event.total_size_label,
         files: event.files.into_iter().map(map_file_row).collect(),
+        error: event.error.map(Into::into),
         error_message: event.error_message,
     }
 }

@@ -222,6 +222,7 @@ fn failed_event(destination_label: &str, error: &drift_core::error::DriftError) 
         bytes_sent: 0,
         remote_device_type: None,
         connection_path: None,
+        error: Some(error.clone()),
         error_message: Some(format_error(error)),
     }
 }
@@ -255,6 +256,7 @@ fn map_progress(progress: SendTransferProgress) -> SendEvent {
         bytes_sent: progress.bytes_sent,
         remote_device_type: progress.remote_device_type.map(device_type_to_str),
         connection_path: progress.connection_path_kind.map(connection_path_to_str),
+        error: None,
         error_message: None,
     }
 }

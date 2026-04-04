@@ -245,11 +245,7 @@ class DriftAppState {
         tone: success
             ? TransferResultToneData.success
             : TransferResultToneData.error,
-        title: success
-            ? 'Transfer complete'
-            : _isCancelledMessage(summary.statusMessage)
-            ? 'Transfer cancelled'
-            : 'Transfer failed',
+        title: success ? 'Transfer complete' : _resultTitle(summary.statusMessage),
         message: summary.statusMessage,
         metrics: success ? metrics : null,
         primaryLabel: success ? 'Done' : null,
@@ -259,7 +255,7 @@ class DriftAppState {
         tone: success
             ? TransferResultToneData.success
             : TransferResultToneData.error,
-        title: success ? 'Files saved' : 'Transfer cancelled',
+        title: success ? 'Files saved' : _resultTitle(summary.statusMessage),
         message: summary.statusMessage,
         metrics: success ? metrics : null,
         primaryLabel: 'Done',
@@ -285,8 +281,21 @@ class DriftAppState {
   ShellView get shellView => shellViewFor(this);
 }
 
-bool _isCancelledMessage(String message) =>
+bool _isCancelledLikeMessage(String message) =>
     message.toLowerCase().contains('cancel');
+
+bool _isDeclinedLikeMessage(String message) =>
+    message.toLowerCase().contains('declin');
+
+String _resultTitle(String message) {
+  if (_isDeclinedLikeMessage(message)) {
+    return 'Transfer declined';
+  }
+  if (_isCancelledLikeMessage(message)) {
+    return 'Transfer cancelled';
+  }
+  return 'Transfer failed';
+}
 
 sealed class ShellSessionState {
   const ShellSessionState();

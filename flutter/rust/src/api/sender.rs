@@ -8,6 +8,7 @@ use drift_app::{
 use tokio::sync::watch;
 
 use super::RUNTIME;
+use crate::api::error::BridgeError;
 use crate::frb_generated::StreamSink;
 
 const LOCAL_RENDEZVOUS_URL: &str = "http://127.0.0.1:8787";
@@ -45,13 +46,14 @@ pub struct SendTransferEvent {
     pub total_size: u64,
     pub bytes_sent: u64,
     pub remote_device_type: Option<String>,
+    pub error: Option<BridgeError>,
     pub error_message: Option<String>,
 }
 
 pub fn start_send_transfer(
     request: SendTransferRequest,
     updates: StreamSink<SendTransferEvent>,
-) -> Result<(), String> {
+) -> Result<(), BridgeError> {
     if ENABLE_DEMO_HELLO_PROTOCOL {
         std::env::set_var("DRIFT_DEMO_HELLO", "1");
         println!("[bridge/send] demo hello protocol enabled");
@@ -129,6 +131,11 @@ pub fn start_send_transfer(
             Ok(SendSessionOutcome::Completed | SendSessionOutcome::Cancelled) => Ok(()),
             Err(error) => {
                 if !emitted_failed_event && !emitted_cancelled_event {
+                    let bridge_error: BridgeError = error.clone().into();
+                    let error_message = bridge_error
+                        .reason
+                        .clone()
+                        .unwrap_or_else(|| error.to_string());
                     let _ = updates.add(SendTransferEvent {
                         phase: SendTransferPhase::Failed,
                         destination_label: fallback_destination,
@@ -137,25 +144,32 @@ pub fn start_send_transfer(
                         total_size: 0,
                         bytes_sent: 0,
                         remote_device_type: None,
-                        error_message: Some(error.to_string()),
+                        error: Some(bridge_error),
+                        error_message: Some(error_message),
                     });
                 }
-                Ok(())
+                Err(error.into())
             }
         }
     })
 }
 
-pub fn cancel_active_send_transfer() -> Result<(), String> {
+pub fn cancel_active_send_transfer() -> Result<(), BridgeError> {
     let guard = ACTIVE_SEND_CANCEL
         .lock()
-        .map_err(|_| "send transfer mutex poisoned".to_owned())?;
+        .map_err(|_| BridgeError::from(drift_core::error::DriftError::internal("send transfer mutex poisoned")))?;
     let Some(cancel_tx) = guard.as_ref() else {
-        return Err("no active send transfer".to_owned());
+        return Err(BridgeError::from(drift_core::error::DriftError::internal(
+            "no active send transfer",
+        )));
     };
     cancel_tx
         .send(true)
-        .map_err(|_| "send transfer is no longer active".to_owned())
+        .map_err(|_| {
+            BridgeError::from(drift_core::error::DriftError::protocol(
+                "send transfer is no longer active",
+            ))
+        })
 }
 
 fn fallback_destination_label(request: &SendTransferRequest) -> String {
@@ -196,6 +210,7 @@ fn map_event(event: AppSendEvent) -> SendTransferEvent {
         total_size: event.total_size,
         bytes_sent: event.bytes_sent,
         remote_device_type: event.remote_device_type,
+        error: event.error.map(Into::into),
         error_message: event.error_message,
     }
 }

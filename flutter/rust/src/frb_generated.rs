@@ -72,7 +72,7 @@ fn wire__crate__api__preview__append_paths_impl(
             let api_new_paths = <Vec<String>>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
-                transform_result_sse::<_, String>((move || {
+                transform_result_sse::<_, crate::api::error::BridgeError>((move || {
                     let output_ok =
                         crate::api::preview::append_paths(api_existing_paths, api_new_paths)?;
                     Ok(output_ok)
@@ -105,7 +105,7 @@ fn wire__crate__api__sender__cancel_active_send_transfer_impl(
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             deserializer.end();
             move |context| {
-                transform_result_sse::<_, String>((move || {
+                transform_result_sse::<_, crate::api::error::BridgeError>((move || {
                     let output_ok = crate::api::sender::cancel_active_send_transfer()?;
                     Ok(output_ok)
                 })())
@@ -137,7 +137,7 @@ fn wire__crate__api__receiver__cancel_receiver_transfer_impl(
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             deserializer.end();
             move |context| {
-                transform_result_sse::<_, String>((move || {
+                transform_result_sse::<_, crate::api::error::BridgeError>((move || {
                     let output_ok = crate::api::receiver::cancel_receiver_transfer()?;
                     Ok(output_ok)
                 })())
@@ -204,7 +204,7 @@ fn wire__crate__api__receiver__ensure_receiver_registration_impl(
             let api_device_name = <String>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
-                transform_result_sse::<_, String>((move || {
+                transform_result_sse::<_, crate::api::error::BridgeError>((move || {
                     let output_ok = crate::api::receiver::ensure_receiver_registration(
                         api_server_url,
                         api_device_name,
@@ -304,7 +304,7 @@ fn wire__crate__api__preview__inspect_paths_impl(
             let api_paths = <Vec<String>>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
-                transform_result_sse::<_, String>((move || {
+                transform_result_sse::<_, crate::api::error::BridgeError>((move || {
                     let output_ok = crate::api::preview::inspect_paths(api_paths)?;
                     Ok(output_ok)
                 })())
@@ -367,7 +367,7 @@ fn wire__crate__api__receiver__register_receiver_impl(
             let api_device_name = <String>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
-                transform_result_sse::<_, String>((move || {
+                transform_result_sse::<_, crate::api::error::BridgeError>((move || {
                     let output_ok =
                         crate::api::receiver::register_receiver(api_server_url, api_device_name)?;
                     Ok(output_ok)
@@ -402,7 +402,7 @@ fn wire__crate__api__preview__remove_path_impl(
             let api_removed_path = <String>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
-                transform_result_sse::<_, String>((move || {
+                transform_result_sse::<_, crate::api::error::BridgeError>((move || {
                     let output_ok =
                         crate::api::preview::remove_path(api_existing_paths, api_removed_path)?;
                     Ok(output_ok)
@@ -436,7 +436,7 @@ fn wire__crate__api__receiver__respond_to_receiver_offer_impl(
             let api_accept = <bool>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
-                transform_result_sse::<_, String>((move || {
+                transform_result_sse::<_, crate::api::error::BridgeError>((move || {
                     let output_ok = crate::api::receiver::respond_to_receiver_offer(api_accept)?;
                     Ok(output_ok)
                 })())
@@ -469,7 +469,7 @@ fn wire__crate__api__lan__scan_nearby_receivers_impl(
             let api_timeout_secs = <u64>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
-                transform_result_sse::<_, String>((move || {
+                transform_result_sse::<_, crate::api::error::BridgeError>((move || {
                     let output_ok = crate::api::lan::scan_nearby_receivers(api_timeout_secs)?;
                     Ok(output_ok)
                 })())
@@ -502,7 +502,7 @@ fn wire__crate__api__receiver__set_receiver_discoverable_impl(
             let api_enabled = <bool>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
-                transform_result_sse::<_, String>((move || {
+                transform_result_sse::<_, crate::api::error::BridgeError>((move || {
                     let output_ok = crate::api::receiver::set_receiver_discoverable(api_enabled)?;
                     Ok(output_ok)
                 })())
@@ -542,7 +542,7 @@ fn wire__crate__api__receiver__start_receiver_transfer_listener_impl(
             >>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
-                transform_result_sse::<_, String>((move || {
+                transform_result_sse::<_, crate::api::error::BridgeError>((move || {
                     let output_ok = crate::api::receiver::start_receiver_transfer_listener(
                         api_server_url,
                         api_download_root,
@@ -586,7 +586,7 @@ fn wire__crate__api__sender__start_send_transfer_impl(
             >>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
-                transform_result_sse::<_, String>((move || {
+                transform_result_sse::<_, crate::api::error::BridgeError>((move || {
                     let output_ok =
                         crate::api::sender::start_send_transfer(api_request, api_updates)?;
                     Ok(output_ok)
@@ -627,7 +627,7 @@ fn wire__crate__api__receiver__watch_receiver_pairing_impl(
             >>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
-                transform_result_sse::<_, String>((move || {
+                transform_result_sse::<_, crate::api::error::BridgeError>((move || {
                     let output_ok = crate::api::receiver::watch_receiver_pairing(
                         api_server_url,
                         api_download_root,
@@ -703,6 +703,46 @@ impl SseDecode for bool {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         deserializer.cursor.read_u8().unwrap() != 0
+    }
+}
+
+impl SseDecode for crate::api::error::BridgeError {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_kind = <crate::api::error::BridgeErrorKind>::sse_decode(deserializer);
+        let mut var_reason = <Option<String>>::sse_decode(deserializer);
+        return crate::api::error::BridgeError {
+            kind: var_kind,
+            reason: var_reason,
+        };
+    }
+}
+
+impl SseDecode for crate::api::error::BridgeErrorKind {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => crate::api::error::BridgeErrorKind::InvalidInput,
+            1 => crate::api::error::BridgeErrorKind::InvalidCode,
+            2 => crate::api::error::BridgeErrorKind::RendezvousUnavailable,
+            3 => crate::api::error::BridgeErrorKind::RendezvousRejected,
+            4 => crate::api::error::BridgeErrorKind::PeerNotFound,
+            5 => crate::api::error::BridgeErrorKind::PeerAlreadyClaimed,
+            6 => crate::api::error::BridgeErrorKind::LanUnavailable,
+            7 => crate::api::error::BridgeErrorKind::NoNearbyReceivers,
+            8 => crate::api::error::BridgeErrorKind::ConnectionFailed,
+            9 => crate::api::error::BridgeErrorKind::ProtocolViolation,
+            10 => crate::api::error::BridgeErrorKind::TransferDeclined,
+            11 => crate::api::error::BridgeErrorKind::TransferCancelled,
+            12 => crate::api::error::BridgeErrorKind::TransferFailed,
+            13 => crate::api::error::BridgeErrorKind::FileConflict,
+            14 => crate::api::error::BridgeErrorKind::FileNotFound,
+            15 => crate::api::error::BridgeErrorKind::PermissionDenied,
+            16 => crate::api::error::BridgeErrorKind::Io,
+            17 => crate::api::error::BridgeErrorKind::Internal,
+            _ => unreachable!("Invalid variant for BridgeErrorKind: {}", inner),
+        };
     }
 }
 
@@ -806,6 +846,17 @@ impl SseDecode for Option<String> {
     }
 }
 
+impl SseDecode for Option<crate::api::error::BridgeError> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(<crate::api::error::BridgeError>::sse_decode(deserializer));
+        } else {
+            return None;
+        }
+    }
+}
+
 impl SseDecode for Option<crate::api::receiver::ReceiverRegistration> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -858,6 +909,7 @@ impl SseDecode for crate::api::receiver::ReceiverTransferEvent {
         let mut var_totalSizeLabel = <String>::sse_decode(deserializer);
         let mut var_files =
             <Vec<crate::api::receiver::ReceiverTransferFile>>::sse_decode(deserializer);
+        let mut var_error = <Option<crate::api::error::BridgeError>>::sse_decode(deserializer);
         let mut var_errorMessage = <Option<String>>::sse_decode(deserializer);
         return crate::api::receiver::ReceiverTransferEvent {
             phase: var_phase,
@@ -871,6 +923,7 @@ impl SseDecode for crate::api::receiver::ReceiverTransferEvent {
             bytes_received: var_bytesReceived,
             total_size_label: var_totalSizeLabel,
             files: var_files,
+            error: var_error,
             error_message: var_errorMessage,
         };
     }
@@ -947,6 +1000,7 @@ impl SseDecode for crate::api::sender::SendTransferEvent {
         let mut var_totalSize = <u64>::sse_decode(deserializer);
         let mut var_bytesSent = <u64>::sse_decode(deserializer);
         let mut var_remoteDeviceType = <Option<String>>::sse_decode(deserializer);
+        let mut var_error = <Option<crate::api::error::BridgeError>>::sse_decode(deserializer);
         let mut var_errorMessage = <Option<String>>::sse_decode(deserializer);
         return crate::api::sender::SendTransferEvent {
             phase: var_phase,
@@ -956,6 +1010,7 @@ impl SseDecode for crate::api::sender::SendTransferEvent {
             total_size: var_totalSize,
             bytes_sent: var_bytesSent,
             remote_device_type: var_remoteDeviceType,
+            error: var_error,
             error_message: var_errorMessage,
         };
     }
@@ -1103,6 +1158,64 @@ fn pde_ffi_dispatcher_sync_impl(
 // Section: rust2dart
 
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::error::BridgeError {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.kind.into_into_dart().into_dart(),
+            self.reason.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::error::BridgeError
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::error::BridgeError>
+    for crate::api::error::BridgeError
+{
+    fn into_into_dart(self) -> crate::api::error::BridgeError {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::error::BridgeErrorKind {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            Self::InvalidInput => 0.into_dart(),
+            Self::InvalidCode => 1.into_dart(),
+            Self::RendezvousUnavailable => 2.into_dart(),
+            Self::RendezvousRejected => 3.into_dart(),
+            Self::PeerNotFound => 4.into_dart(),
+            Self::PeerAlreadyClaimed => 5.into_dart(),
+            Self::LanUnavailable => 6.into_dart(),
+            Self::NoNearbyReceivers => 7.into_dart(),
+            Self::ConnectionFailed => 8.into_dart(),
+            Self::ProtocolViolation => 9.into_dart(),
+            Self::TransferDeclined => 10.into_dart(),
+            Self::TransferCancelled => 11.into_dart(),
+            Self::TransferFailed => 12.into_dart(),
+            Self::FileConflict => 13.into_dart(),
+            Self::FileNotFound => 14.into_dart(),
+            Self::PermissionDenied => 15.into_dart(),
+            Self::Io => 16.into_dart(),
+            Self::Internal => 17.into_dart(),
+            _ => unreachable!(),
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::error::BridgeErrorKind
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::error::BridgeErrorKind>
+    for crate::api::error::BridgeErrorKind
+{
+    fn into_into_dart(self) -> crate::api::error::BridgeErrorKind {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::api::lan::NearbyReceiverInfo {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
@@ -1182,6 +1295,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::receiver::ReceiverTransferEve
             self.bytes_received.into_into_dart().into_dart(),
             self.total_size_label.into_into_dart().into_dart(),
             self.files.into_into_dart().into_dart(),
+            self.error.into_into_dart().into_dart(),
             self.error_message.into_into_dart().into_dart(),
         ]
         .into_dart()
@@ -1302,6 +1416,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::sender::SendTransferEvent {
             self.total_size.into_into_dart().into_dart(),
             self.bytes_sent.into_into_dart().into_dart(),
             self.remote_device_type.into_into_dart().into_dart(),
+            self.error.into_into_dart().into_dart(),
             self.error_message.into_into_dart().into_dart(),
         ]
         .into_dart()
@@ -1427,6 +1542,46 @@ impl SseEncode for bool {
     }
 }
 
+impl SseEncode for crate::api::error::BridgeError {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <crate::api::error::BridgeErrorKind>::sse_encode(self.kind, serializer);
+        <Option<String>>::sse_encode(self.reason, serializer);
+    }
+}
+
+impl SseEncode for crate::api::error::BridgeErrorKind {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(
+            match self {
+                crate::api::error::BridgeErrorKind::InvalidInput => 0,
+                crate::api::error::BridgeErrorKind::InvalidCode => 1,
+                crate::api::error::BridgeErrorKind::RendezvousUnavailable => 2,
+                crate::api::error::BridgeErrorKind::RendezvousRejected => 3,
+                crate::api::error::BridgeErrorKind::PeerNotFound => 4,
+                crate::api::error::BridgeErrorKind::PeerAlreadyClaimed => 5,
+                crate::api::error::BridgeErrorKind::LanUnavailable => 6,
+                crate::api::error::BridgeErrorKind::NoNearbyReceivers => 7,
+                crate::api::error::BridgeErrorKind::ConnectionFailed => 8,
+                crate::api::error::BridgeErrorKind::ProtocolViolation => 9,
+                crate::api::error::BridgeErrorKind::TransferDeclined => 10,
+                crate::api::error::BridgeErrorKind::TransferCancelled => 11,
+                crate::api::error::BridgeErrorKind::TransferFailed => 12,
+                crate::api::error::BridgeErrorKind::FileConflict => 13,
+                crate::api::error::BridgeErrorKind::FileNotFound => 14,
+                crate::api::error::BridgeErrorKind::PermissionDenied => 15,
+                crate::api::error::BridgeErrorKind::Io => 16,
+                crate::api::error::BridgeErrorKind::Internal => 17,
+                _ => {
+                    unimplemented!("");
+                }
+            },
+            serializer,
+        );
+    }
+}
+
 impl SseEncode for i32 {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -1504,6 +1659,16 @@ impl SseEncode for Option<String> {
     }
 }
 
+impl SseEncode for Option<crate::api::error::BridgeError> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <crate::api::error::BridgeError>::sse_encode(value, serializer);
+        }
+    }
+}
+
 impl SseEncode for Option<crate::api::receiver::ReceiverRegistration> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -1544,6 +1709,7 @@ impl SseEncode for crate::api::receiver::ReceiverTransferEvent {
         <u64>::sse_encode(self.bytes_received, serializer);
         <String>::sse_encode(self.total_size_label, serializer);
         <Vec<crate::api::receiver::ReceiverTransferFile>>::sse_encode(self.files, serializer);
+        <Option<crate::api::error::BridgeError>>::sse_encode(self.error, serializer);
         <Option<String>>::sse_encode(self.error_message, serializer);
     }
 }
@@ -1607,6 +1773,7 @@ impl SseEncode for crate::api::sender::SendTransferEvent {
         <u64>::sse_encode(self.total_size, serializer);
         <u64>::sse_encode(self.bytes_sent, serializer);
         <Option<String>>::sse_encode(self.remote_device_type, serializer);
+        <Option<crate::api::error::BridgeError>>::sse_encode(self.error, serializer);
         <Option<String>>::sse_encode(self.error_message, serializer);
     }
 }

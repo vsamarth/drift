@@ -7,8 +7,10 @@ import '../core/models/transfer_models.dart';
 import '../platform/app_focus.dart';
 import '../platform/send_item_source.dart';
 import '../platform/send_transfer_source.dart';
+import '../src/rust/api/error.dart' as rust_error;
 import '../src/rust/api/receiver.dart' as rust_receiver;
 import '../state/drift_sample_data.dart';
+import 'bridge_error_messages.dart';
 import 'app_identity.dart';
 import 'drift_dependencies.dart';
 import 'drift_app_state.dart';
@@ -494,6 +496,13 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
           onError: (Object error, StackTrace stackTrace) {
             debugPrint('watchBadge failed: $error');
             debugPrintStack(stackTrace: stackTrace);
+            final bridgeError = error is rust_error.BridgeError ? error : null;
+            if (bridgeError != null) {
+              debugPrint(
+                '[drift/notifier] receiver badge error: '
+                '${bridgeErrorMessage(bridgeError, fallback: error.toString())}',
+              );
+            }
             state = state.copyWith(
               receiverBadge: const ReceiverBadgeState.unavailable(),
             );
@@ -512,7 +521,28 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
           onError: (Object error, StackTrace stackTrace) {
             debugPrint('watchIncomingTransfers failed: $error');
             debugPrintStack(stackTrace: stackTrace);
-            resetShell();
+            _applyIncomingFailed(
+              rust_receiver.ReceiverTransferEvent(
+                phase: rust_receiver.ReceiverTransferPhase.failed,
+                senderName: '',
+                senderDeviceType: '',
+                destinationLabel: '',
+                saveRootLabel: 'Downloads',
+                statusMessage: error is rust_error.BridgeError
+                    ? bridgeErrorMessage(
+                        error,
+                        fallback: 'Transfer failed.',
+                      )
+                    : 'Transfer failed.',
+                itemCount: BigInt.zero,
+                totalSizeBytes: BigInt.zero,
+                bytesReceived: BigInt.zero,
+                totalSizeLabel: '',
+                files: const [],
+                error: error is rust_error.BridgeError ? error : null,
+                errorMessage: error.toString(),
+              ),
+            );
           },
         );
   }
@@ -534,11 +564,7 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
         _applyIncomingCancelled(event);
         return;
       case rust_receiver.ReceiverTransferPhase.failed:
-        debugPrint(
-          '[drift/notifier] incoming receive failed: '
-          '${event.errorMessage ?? event.statusMessage}',
-        );
-        resetShell();
+        _applyIncomingFailed(event);
         return;
       case rust_receiver.ReceiverTransferPhase.declined:
         resetShell();
@@ -643,6 +669,10 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
   void _applyIncomingCancelled(rust_receiver.ReceiverTransferEvent event) {
     final bytesReceived = _bigIntToInt(event.bytesReceived);
     final totalBytes = _bigIntToInt(event.totalSizeBytes);
+    final message = bridgeErrorMessage(
+      event.error,
+      fallback: event.errorMessage ?? event.statusMessage,
+    );
     final summary =
         state.receiveSummary ??
         TransferSummaryViewData(
@@ -651,7 +681,7 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
           code: state.idleReceiveCode,
           expiresAt: '',
           destinationLabel: event.saveRootLabel,
-          statusMessage: event.errorMessage ?? event.statusMessage,
+          statusMessage: message,
           senderName: event.senderName,
         );
     _setSession(
@@ -660,7 +690,48 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
         items: state.receiveItems,
         summary: summary.copyWith(
           destinationLabel: event.saveRootLabel,
-          statusMessage: event.errorMessage ?? event.statusMessage,
+          statusMessage: message,
+        ),
+        payloadBytesReceived: bytesReceived,
+        payloadTotalBytes: totalBytes,
+        senderDeviceType: event.senderDeviceType,
+      ),
+    );
+  }
+
+  void _applyIncomingFailed(rust_receiver.ReceiverTransferEvent event) {
+    final bytesReceived = _bigIntToInt(event.bytesReceived);
+    final totalBytes = _bigIntToInt(event.totalSizeBytes);
+    final message = bridgeErrorMessage(
+      event.error,
+      fallback: event.errorMessage ?? event.statusMessage,
+    );
+    final summary =
+        state.receiveSummary ??
+        TransferSummaryViewData(
+          itemCount: _bigIntToInt(event.itemCount),
+          totalSize: event.totalSizeLabel,
+          code: state.idleReceiveCode,
+          expiresAt: '',
+          destinationLabel: event.saveRootLabel.isNotEmpty
+              ? event.saveRootLabel
+              : 'Downloads',
+          statusMessage: message,
+          senderName: event.senderName,
+        );
+    _setSession(
+      ReceiveResultSession(
+        success: false,
+        items: state.receiveItems,
+        summary: summary.copyWith(
+          destinationLabel: event.saveRootLabel.isNotEmpty
+              ? event.saveRootLabel
+              : summary.destinationLabel,
+          statusMessage: message,
+        ),
+        metrics: _buildReceiveCompletionMetrics(
+          summary: summary,
+          bytesReceived: bytesReceived,
         ),
         payloadBytesReceived: bytesReceived,
         payloadTotalBytes: totalBytes,
@@ -689,7 +760,11 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
     try {
       await _receiverServiceSource.respondToOffer(accept: accept);
     } catch (error, stackTrace) {
-      debugPrint('respondToOffer failed: $error');
+      final bridgeError = error is rust_error.BridgeError ? error : null;
+      debugPrint(
+        'respondToOffer failed: '
+        '${bridgeErrorMessage(bridgeError, fallback: error.toString())}',
+      );
       debugPrintStack(stackTrace: stackTrace);
       resetShell();
     }
@@ -699,7 +774,11 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
     try {
       await _sendTransferSource.cancelTransfer();
     } catch (error, stackTrace) {
-      debugPrint('cancelTransfer failed: $error');
+      final bridgeError = error is rust_error.BridgeError ? error : null;
+      debugPrint(
+        'cancelTransfer failed: '
+        '${bridgeErrorMessage(bridgeError, fallback: error.toString())}',
+      );
       debugPrintStack(stackTrace: stackTrace);
       _returnToSendSelection();
     }
@@ -709,7 +788,11 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
     try {
       await _receiverServiceSource.cancelTransfer();
     } catch (error, stackTrace) {
-      debugPrint('cancelReceiveTransfer failed: $error');
+      final bridgeError = error is rust_error.BridgeError ? error : null;
+      debugPrint(
+        'cancelReceiveTransfer failed: '
+        '${bridgeErrorMessage(bridgeError, fallback: error.toString())}',
+      );
       debugPrintStack(stackTrace: stackTrace);
       resetShell();
     }
@@ -773,7 +856,12 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
         ),
       );
     } catch (error, stackTrace) {
-      debugPrint('[drift/notifier] nearby scan failed: $error');
+      final bridgeError = error is rust_error.BridgeError ? error : null;
+      final message = bridgeErrorMessage(
+        bridgeError,
+        fallback: error.toString(),
+      );
+      debugPrint('[drift/notifier] nearby scan failed: $message');
       debugPrintStack(stackTrace: stackTrace);
       final current = _draftSession;
       if (current != null) {
@@ -861,6 +949,7 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
             }
             debugPrint('[drift/notifier] failed to send files: $error');
             debugPrintStack(stackTrace: stackTrace);
+            final bridgeError = error is rust_error.BridgeError ? error : null;
             _applySendUpdate(
               SendTransferUpdate(
                 phase: SendTransferUpdatePhase.failed,
@@ -871,7 +960,13 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
                 totalSize: sampleSendSummary.totalSize,
                 bytesSent: 0,
                 totalBytes: 0,
-                errorMessage: error.toString(),
+                error: bridgeError,
+                errorMessage: bridgeError == null
+                    ? error.toString()
+                    : bridgeErrorMessage(
+                        bridgeError,
+                        fallback: error.toString(),
+                      ),
               ),
             );
           },
@@ -882,12 +977,16 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
     final items = state.sendItems.isEmpty ? sampleSendItems : state.sendItems;
     final existingSummary = state.sendSummary ?? sampleSendSummary;
     final payloadStartedAt = _sendPayloadStartedAt;
+    final message = bridgeErrorMessage(
+      update.error,
+      fallback: update.errorMessage ?? update.statusMessage,
+    );
     final summary = existingSummary.copyWith(
       itemCount: update.itemCount,
       totalSize: update.totalSize,
       code: state.sendDestinationCode,
       destinationLabel: update.destinationLabel,
-      statusMessage: update.errorMessage ?? update.statusMessage,
+      statusMessage: message,
     );
     final progress = _updateSendTransferMetrics(update);
 
@@ -942,7 +1041,7 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
             success: false,
             items: items,
             summary: summary.copyWith(
-              statusMessage: update.errorMessage ?? 'Transfer cancelled.',
+              statusMessage: message,
             ),
             remoteDeviceType: update.remoteDeviceType,
           ),
@@ -1129,7 +1228,11 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
       state.sendItems.map((item) => item.path).toList(growable: false);
 
   void _reportSendSelectionError(Object error, StackTrace stackTrace) {
-    debugPrint('Failed to inspect selected send items: $error');
+    final bridgeError = error is rust_error.BridgeError ? error : null;
+    debugPrint(
+      'Failed to inspect selected send items: '
+      '${bridgeErrorMessage(bridgeError, fallback: error.toString())}',
+    );
     debugPrintStack(stackTrace: stackTrace);
   }
 

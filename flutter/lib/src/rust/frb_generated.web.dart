@@ -7,6 +7,7 @@
 // ignore_for_file: argument_type_not_assignable
 
 import 'api/device.dart';
+import 'api/error.dart';
 import 'api/lan.dart';
 import 'api/preview.dart';
 import 'api/receiver.dart';
@@ -47,12 +48,21 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   bool dco_decode_bool(dynamic raw);
 
   @protected
+  BridgeError dco_decode_box_autoadd_bridge_error(dynamic raw);
+
+  @protected
   ReceiverRegistration dco_decode_box_autoadd_receiver_registration(
     dynamic raw,
   );
 
   @protected
   SendTransferRequest dco_decode_box_autoadd_send_transfer_request(dynamic raw);
+
+  @protected
+  BridgeError dco_decode_bridge_error(dynamic raw);
+
+  @protected
+  BridgeErrorKind dco_decode_bridge_error_kind(dynamic raw);
 
   @protected
   int dco_decode_i_32(dynamic raw);
@@ -79,6 +89,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   String? dco_decode_opt_String(dynamic raw);
+
+  @protected
+  BridgeError? dco_decode_opt_box_autoadd_bridge_error(dynamic raw);
 
   @protected
   ReceiverRegistration? dco_decode_opt_box_autoadd_receiver_registration(
@@ -150,6 +163,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   bool sse_decode_bool(SseDeserializer deserializer);
 
   @protected
+  BridgeError sse_decode_box_autoadd_bridge_error(SseDeserializer deserializer);
+
+  @protected
   ReceiverRegistration sse_decode_box_autoadd_receiver_registration(
     SseDeserializer deserializer,
   );
@@ -158,6 +174,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   SendTransferRequest sse_decode_box_autoadd_send_transfer_request(
     SseDeserializer deserializer,
   );
+
+  @protected
+  BridgeError sse_decode_bridge_error(SseDeserializer deserializer);
+
+  @protected
+  BridgeErrorKind sse_decode_bridge_error_kind(SseDeserializer deserializer);
 
   @protected
   int sse_decode_i_32(SseDeserializer deserializer);
@@ -190,6 +212,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   String? sse_decode_opt_String(SseDeserializer deserializer);
+
+  @protected
+  BridgeError? sse_decode_opt_box_autoadd_bridge_error(
+    SseDeserializer deserializer,
+  );
 
   @protected
   ReceiverRegistration? sse_decode_opt_box_autoadd_receiver_registration(
@@ -282,6 +309,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_bool(bool self, SseSerializer serializer);
 
   @protected
+  void sse_encode_box_autoadd_bridge_error(
+    BridgeError self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_box_autoadd_receiver_registration(
     ReceiverRegistration self,
     SseSerializer serializer,
@@ -290,6 +323,15 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_box_autoadd_send_transfer_request(
     SendTransferRequest self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_bridge_error(BridgeError self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_bridge_error_kind(
+    BridgeErrorKind self,
     SseSerializer serializer,
   );
 
@@ -331,6 +373,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_opt_String(String? self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_opt_box_autoadd_bridge_error(
+    BridgeError? self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_opt_box_autoadd_receiver_registration(

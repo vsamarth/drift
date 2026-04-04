@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 import '../src/rust/api/sender.dart' as rust_sender;
+import '../src/rust/api/error.dart' as rust_error;
 
 class SendTransferRequestData {
   const SendTransferRequestData({
@@ -47,6 +48,7 @@ class SendTransferUpdate {
     required this.bytesSent,
     required this.totalBytes,
     this.remoteDeviceType,
+    this.error,
     this.errorMessage,
   });
 
@@ -60,6 +62,7 @@ class SendTransferUpdate {
 
   /// `"phone"` or `"laptop"`, when known yet.
   final String? remoteDeviceType;
+  final rust_error.BridgeError? error;
   final String? errorMessage;
 }
 
@@ -131,6 +134,7 @@ class LocalSendTransferSource implements SendTransferSource {
       bytesSent: _asDartInt(event.bytesSent),
       totalBytes: _asDartInt(event.totalSize),
       remoteDeviceType: event.remoteDeviceType,
+      error: event.error,
       errorMessage: event.errorMessage,
     );
   }

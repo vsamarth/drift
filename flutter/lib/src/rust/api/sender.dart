@@ -4,6 +4,7 @@
 // ignore_for_file: invalid_use_of_internal_member, unused_import, unnecessary_import
 
 import '../frb_generated.dart';
+import 'error.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 // These functions are ignored because they are not marked as `pub`: `fallback_destination_label`, `format_code_label`, `map_event`
@@ -24,6 +25,7 @@ class SendTransferEvent {
   final BigInt totalSize;
   final BigInt bytesSent;
   final String? remoteDeviceType;
+  final BridgeError? error;
   final String? errorMessage;
 
   const SendTransferEvent({
@@ -34,6 +36,7 @@ class SendTransferEvent {
     required this.totalSize,
     required this.bytesSent,
     this.remoteDeviceType,
+    this.error,
     this.errorMessage,
   });
 
@@ -46,6 +49,7 @@ class SendTransferEvent {
       totalSize.hashCode ^
       bytesSent.hashCode ^
       remoteDeviceType.hashCode ^
+      error.hashCode ^
       errorMessage.hashCode;
 
   @override
@@ -60,6 +64,7 @@ class SendTransferEvent {
           totalSize == other.totalSize &&
           bytesSent == other.bytesSent &&
           remoteDeviceType == other.remoteDeviceType &&
+          error == other.error &&
           errorMessage == other.errorMessage;
 }
 

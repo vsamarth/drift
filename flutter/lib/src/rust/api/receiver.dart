@@ -4,6 +4,7 @@
 // ignore_for_file: invalid_use_of_internal_member, unused_import, unnecessary_import
 
 import '../frb_generated.dart';
+import 'error.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 // These functions are ignored because they are not marked as `pub`: `current_service`, `ensure_receiver_service`, `existing_service_for_config`, `map_event`, `map_file_row`, `map_pairing_state`, `map_registration`, `pairing_registration`, `replace_pairing_task`, `replace_updates_task`, `scan_nearby_with_receiver`, `set_discoverable`
@@ -112,6 +113,7 @@ class ReceiverTransferEvent {
   final BigInt bytesReceived;
   final String totalSizeLabel;
   final List<ReceiverTransferFile> files;
+  final BridgeError? error;
   final String? errorMessage;
 
   const ReceiverTransferEvent({
@@ -126,6 +128,7 @@ class ReceiverTransferEvent {
     required this.bytesReceived,
     required this.totalSizeLabel,
     required this.files,
+    this.error,
     this.errorMessage,
   });
 
@@ -142,6 +145,7 @@ class ReceiverTransferEvent {
       bytesReceived.hashCode ^
       totalSizeLabel.hashCode ^
       files.hashCode ^
+      error.hashCode ^
       errorMessage.hashCode;
 
   @override
@@ -160,6 +164,7 @@ class ReceiverTransferEvent {
           bytesReceived == other.bytesReceived &&
           totalSizeLabel == other.totalSizeLabel &&
           files == other.files &&
+          error == other.error &&
           errorMessage == other.errorMessage;
 }
 

@@ -17,7 +17,7 @@ use crate::types::{
     ConflictPolicy, NearbyReceiver, PairingCodeState, ReceiverOfferEvent, ReceiverOfferFile,
     ReceiverOfferPhase, ReceiverRegistration,
 };
-use drift_core::error::{DriftError, Result};
+use drift_core::error::{DriftError, DriftErrorKind, Result};
 
 use super::runtime::{OfferResolution, ReceiverRuntime};
 use super::{OfferDecision, ReceiverEvent, ReceiverLifecycle, ReceiverSnapshot, parse_device_type};
@@ -251,6 +251,8 @@ async fn run_listener_loop(
 ) {
     let save_root_label = save_root_display(&out_dir);
     if let Err(err) = tokio::fs::create_dir_all(&out_dir).await {
+        let error = DriftError::from(err);
+        let error_message = error.to_string();
         let _ = cmd_tx
             .send(ReceiverCommand::OfferFinished {
                 offer_id: 0,
@@ -267,7 +269,8 @@ async fn run_listener_loop(
                     connection_path: None,
                     total_size_label: String::new(),
                     files: Vec::new(),
-                    error_message: Some(err.to_string()),
+                    error: Some(error),
+                    error_message: Some(error_message),
                 },
             })
             .await;
@@ -350,6 +353,7 @@ async fn handle_incoming_offer(
                         connection_path: None,
                         total_size_label: String::new(),
                         files: Vec::new(),
+                        error: Some(err.clone()),
                         error_message: Some(format_error(&err)),
                     },
                 })
@@ -395,6 +399,7 @@ async fn handle_incoming_offer(
         connection_path: None,
         total_size_label: human_size(manifest.total_size),
         files,
+        error: None,
         error_message: None,
     };
     if cmd_tx
@@ -460,6 +465,7 @@ async fn handle_incoming_offer(
             connection_path: None,
             total_size_label: human_size(manifest.total_size),
             files: Vec::new(),
+            error: None,
             error_message: None,
         },
         Ok(ReceiveTransferOutcome::Declined) => ReceiverOfferEvent {
@@ -475,6 +481,7 @@ async fn handle_incoming_offer(
             connection_path: None,
             total_size_label: human_size(manifest.total_size),
             files: Vec::new(),
+            error: None,
             error_message: None,
         },
         Ok(ReceiveTransferOutcome::Cancelled(cancellation)) => ReceiverOfferEvent {
@@ -490,6 +497,7 @@ async fn handle_incoming_offer(
             connection_path: None,
             total_size_label: human_size(manifest.total_size),
             files: Vec::new(),
+            error: Some(DriftError::transfer_cancelled(cancellation.reason.clone())),
             error_message: Some(cancellation.reason),
         },
         Err(err) => ReceiverOfferEvent {
@@ -505,6 +513,7 @@ async fn handle_incoming_offer(
             connection_path: None,
             total_size_label: human_size(manifest.total_size),
             files: Vec::new(),
+            error: Some(err.clone()),
             error_message: Some(format_error(&err)),
         },
     };
@@ -542,6 +551,7 @@ fn spawn_pending_offer_watch_task(
             connection_path: None,
             total_size_label: human_size(total_size_bytes),
             files: Vec::new(),
+            error: Some(DriftError::connection("sender disconnected before approval")),
             error_message: Some("sender disconnected before approval".to_owned()),
         };
         let expired_event = ReceiverOfferEvent {
@@ -557,6 +567,10 @@ fn spawn_pending_offer_watch_task(
             connection_path: None,
             total_size_label: human_size(total_size_bytes),
             files: Vec::new(),
+            error: Some(DriftError::with_reason(
+                DriftErrorKind::TransferFailed,
+                "offer timed out before approval",
+            )),
             error_message: Some("offer timed out before approval".to_owned()),
         };
 
@@ -609,6 +623,7 @@ fn map_receiver_offer_progress(
         }),
         total_size_label: human_size(progress.total_bytes),
         files: Vec::new(),
+        error: None,
         error_message: progress.error_message.clone(),
     }
 }
