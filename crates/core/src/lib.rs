@@ -1,3 +1,4 @@
+pub mod error;
 pub mod discovery;
 pub mod fs_plan;
 pub mod lan;

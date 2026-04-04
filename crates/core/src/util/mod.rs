@@ -4,8 +4,9 @@ pub use device_name::{normalize_hostname_label, process_display_device_name, ran
 
 use std::io::{self, Write};
 
-use anyhow::{Context, Result};
 use iroh::TransportAddr;
+
+use crate::error::{DriftError, DriftErrorKind, Result};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConnectionPathKind {
@@ -43,12 +44,16 @@ pub async fn classify_connection_path(
 
 pub fn confirm_accept() -> Result<bool> {
     print!("Accept? [y/N]: ");
-    io::stdout().flush().context("flushing prompt")?;
+    io::stdout().flush().map_err(|error| {
+        DriftError::with_reason(DriftErrorKind::Io, format!("flushing prompt: {error}"))
+    })?;
 
     let mut input = String::new();
     io::stdin()
         .read_line(&mut input)
-        .context("reading confirmation")?;
+        .map_err(|error| {
+            DriftError::with_reason(DriftErrorKind::Io, format!("reading confirmation: {error}"))
+        })?;
 
     let response = input.trim().to_ascii_lowercase();
     Ok(matches!(response.as_str(), "y" | "yes"))

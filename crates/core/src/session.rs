@@ -3,7 +3,6 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use anyhow::{Context, Result, anyhow, bail};
 use futures_lite::StreamExt;
 use iroh::{Endpoint, RelayMode, endpoint::presets, protocol::Router};
 use iroh_blobs::{
@@ -23,6 +22,7 @@ use tokio::sync::{mpsc, watch};
 use tokio::time::{Duration, timeout};
 use tracing::trace;
 
+use crate::error::{DriftError, DriftErrorKind, Result};
 use crate::fs_plan::prepare::PreparedFile;
 use crate::fs_plan::receive::{ExpectedFile, build_expected_files};
 use crate::rendezvous::OfferManifest;
@@ -81,14 +81,47 @@ impl TempDir {
             "{prefix}-{id_digest}-{}",
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
-                .context("system clock before unix epoch")?
+                .map_err(|error| internal_error(format!("system clock before unix epoch: {error}")))?
                 .as_nanos()
         );
         let path = std::env::temp_dir().join(unique);
         fs::create_dir_all(&path)
             .await
-            .with_context(|| format!("creating temp directory {}", path.display()))?;
+            .map_err(|error| io_error(format!("creating temp directory {}", path.display()), &error))?;
         Ok(Self { path })
+    }
+}
+
+fn internal_error(reason: impl Into<String>) -> DriftError {
+    DriftError::internal(reason)
+}
+
+fn connection_error(reason: impl Into<String>) -> DriftError {
+    DriftError::connection(reason)
+}
+
+fn protocol_error(reason: impl Into<String>) -> DriftError {
+    DriftError::protocol(reason)
+}
+
+fn io_error(reason: impl Into<String>, error: &std::io::Error) -> DriftError {
+    DriftError::io(reason, error)
+}
+
+fn map_transfer_status(status: &TransferStatus) -> DriftError {
+    match status {
+        TransferStatus::Ok => internal_error("unexpected ok transfer status in error path"),
+        TransferStatus::Error { code, message } => {
+            let kind = match code {
+                TransferErrorCode::ProtocolViolation | TransferErrorCode::UnexpectedMessage => {
+                    DriftErrorKind::ProtocolViolation
+                }
+                TransferErrorCode::FileConflict => DriftErrorKind::FileConflict,
+                TransferErrorCode::IoError | TransferErrorCode::ChecksumMismatch => DriftErrorKind::Io,
+                TransferErrorCode::Cancelled => DriftErrorKind::TransferCancelled,
+            };
+            DriftError::with_reason(kind, message.clone())
+        }
     }
 }
 
@@ -104,7 +137,7 @@ pub async fn bind_endpoint() -> Result<Endpoint> {
         .relay_mode(RelayMode::Default)
         .bind()
         .await
-        .context("binding iroh endpoint")
+        .map_err(|error| connection_error(format!("binding iroh endpoint: {error}")))
 }
 
 pub async fn connect_to_ticket(
@@ -114,7 +147,7 @@ pub async fn connect_to_ticket(
     let connection = endpoint
         .connect(ticket, ALPN)
         .await
-        .context("connecting to peer")?;
+        .map_err(|error| connection_error(format!("connecting to peer: {error}")))?;
 
     println!(
         "Connected to {}",
@@ -155,7 +188,7 @@ where
         }),
     )
     .await
-    .context("sending blob transfer ticket")?;
+    .map_err(|error| error.with_prefix("sending blob transfer ticket"))?;
 
     let result = loop {
         tokio::select! {
@@ -178,14 +211,12 @@ where
                 }
             }
             control_message = read_message::<ControlMessage>(control_recv) => {
-                let outcome = match control_message.context("waiting for final transfer result")? {
+                let outcome = match control_message
+                    .map_err(|error| error.with_prefix("waiting for final transfer result"))? {
                     ControlMessage::TransferResult(result) => {
                         ensure_matching_session_id(&result.session_id, session_id)?;
                         if !matches!(result.status, TransferStatus::Ok) {
-                            Err(anyhow!(
-                                "receiver failed transfer: {}",
-                                transfer_status_summary(&result.status)
-                            ))
+                            Err(map_transfer_status(&result.status).with_prefix("receiver failed transfer"))
                         } else {
                             Ok(None)
                         }
@@ -193,7 +224,10 @@ where
                     ControlMessage::Cancel(cancel) => {
                         Ok(Some(cancellation_from_message(cancel, session_id)?))
                     }
-                    other => Err(anyhow!("unexpected final control message: {:?}", other)),
+                    other => Err(protocol_error(format!(
+                        "unexpected final control message: {:?}",
+                        other
+                    ))),
                 };
                 break outcome;
             }
@@ -202,7 +236,9 @@ where
 
     let ack_result: Result<()> = if matches!(result, Ok(None)) {
         send_transfer_ack(control_send, session_id).await?;
-        control_send.finish()?;
+        control_send
+            .finish()
+            .map_err(|error| DriftError::with_reason(DriftErrorKind::Io, format!("finishing control stream: {error}")))?;
         let _ = timeout(CONTROL_STREAM_FINISH_TIMEOUT, control_send.stopped()).await;
         Ok(())
     } else {
@@ -264,7 +300,7 @@ where
 
     let ticket_message = match read_message::<ControlMessage>(control_recv)
         .await
-        .context("waiting for blob transfer ticket")?
+        .map_err(|error| error.with_prefix("waiting for blob transfer ticket"))?
     {
         ControlMessage::BlobTicket(message) => {
             ensure_matching_session_id(&message.session_id, session_id)?;
@@ -279,19 +315,19 @@ where
                 ),
             );
             send_transfer_result(control_send, session_id, status.clone()).await?;
-            bail!(transfer_status_summary(&status));
+            return Err(map_transfer_status(&status).with_prefix("receiver rejected transfer"));
         }
     };
 
     let blob_ticket: BlobTicket = ticket_message
         .ticket
         .parse()
-        .context("parsing blob ticket")?;
+        .map_err(|error| protocol_error(format!("parsing blob ticket: {error}")))?;
     let download = BlobDownloadStore::new("drift-blobs-recv", session_id).await?;
     let connection = endpoint
         .connect(blob_ticket.addr().clone(), BLOBS_ALPN)
         .await
-        .context("connecting to blob provider")?;
+        .map_err(|error| connection_error(format!("connecting to blob provider: {error}")))?;
     let mut stream = download
         .store
         .remote()
@@ -314,7 +350,8 @@ where
                 }
             }
             control_message = read_message::<ControlMessage>(control_recv) => {
-                match control_message.context("waiting for transfer control message")? {
+                match control_message
+                    .map_err(|error| error.with_prefix("waiting for transfer control message"))? {
                     ControlMessage::Cancel(cancel) => {
                         break Ok(Some(cancellation_from_message(cancel, session_id)?));
                     }
@@ -327,7 +364,7 @@ where
                             ),
                         );
                         send_transfer_result(control_send, session_id, status.clone()).await?;
-                        break Err(anyhow!(transfer_status_summary(&status)));
+                        break Err(map_transfer_status(&status).with_prefix("receiver rejected transfer"));
                     }
                 }
             }
@@ -344,7 +381,7 @@ where
                     }
                     Some(GetProgressItem::Done(_)) => break Ok(None),
                     Some(GetProgressItem::Error(err)) => {
-                        let error = anyhow!(err.to_string());
+                        let error = DriftError::with_reason(DriftErrorKind::Io, err.to_string());
                         let status = transfer_error_status(TransferErrorCode::IoError, error.to_string());
                         send_transfer_result(control_send, session_id, status.clone()).await?;
                         break Err(error);
@@ -379,18 +416,22 @@ where
     if outcome.is_none() {
         match read_message::<ControlMessage>(control_recv)
             .await
-            .context("waiting for transfer acknowledgement")?
+            .map_err(|error| error.with_prefix("waiting for transfer acknowledgement"))?
         {
             ControlMessage::TransferAck(ack) => {
                 ensure_matching_session_id(&ack.session_id, session_id)?
             }
-            other => bail!(
-                "unexpected control message while waiting for transfer acknowledgement: {:?}",
-                other
-            ),
+            other => {
+                return Err(protocol_error(format!(
+                    "unexpected control message while waiting for transfer acknowledgement: {:?}",
+                    other
+                )));
+            }
         }
 
-        control_send.finish()?;
+        control_send
+            .finish()
+            .map_err(|error| DriftError::with_reason(DriftErrorKind::Io, format!("finishing control stream: {error}")))?;
         let _ = timeout(CONTROL_STREAM_FINISH_TIMEOUT, control_send.stopped()).await;
         println!("Transfer session finished");
     } else {
@@ -409,14 +450,12 @@ pub fn build_expected_transfer_files(
     for manifest_file in &manifest.files {
         let expected = expected_files
             .remove(&manifest_file.path)
-            .ok_or_else(|| anyhow!("missing expected file entry for {}", manifest_file.path))?;
+            .ok_or_else(|| internal_error(format!("missing expected file entry for {}", manifest_file.path)))?;
         if expected.size != manifest_file.size {
-            bail!(
+            return Err(internal_error(format!(
                 "expected size mismatch for {}: expected {} manifest {}",
-                manifest_file.path,
-                expected.size,
-                manifest_file.size
-            );
+                manifest_file.path, expected.size, manifest_file.size
+            )));
         }
 
         ordered.push(ExpectedTransferFile {
@@ -427,7 +466,7 @@ pub fn build_expected_transfer_files(
     }
 
     if !expected_files.is_empty() {
-        bail!("unexpected extra expected file entries remain");
+        return Err(internal_error("unexpected extra expected file entries remain"));
     }
 
     Ok(ordered)
@@ -448,7 +487,7 @@ impl BlobProvider {
         self.router
             .shutdown()
             .await
-            .context("shutting down blob router")?;
+            .map_err(|error| internal_error(format!("shutting down blob router: {error}")))?;
         drop(self.root);
         Ok(())
     }
@@ -469,7 +508,7 @@ async fn prepare_blob_provider(
     let root = TempDir::new("drift-blobs-send", session_id).await?;
     let store = FsStore::load(&root.path)
         .await
-        .with_context(|| format!("loading blob store {}", root.path.display()))?;
+        .map_err(|error| internal_error(format!("loading blob store {}: {error}", root.path.display())))?;
     let mut file_hashes = BTreeMap::new();
 
     let mut collection = Collection::default();
@@ -482,7 +521,12 @@ async fn prepare_blob_provider(
             })
             .temp_tag()
             .await
-            .with_context(|| format!("importing {}", prepared.source_path.display()))?;
+            .map_err(|error| {
+                DriftError::with_reason(
+                    DriftErrorKind::Io,
+                    format!("importing {}: {error}", prepared.source_path.display()),
+                )
+            })?;
         file_hashes.insert(
             tag.hash(),
             BlobProgressState {
@@ -494,7 +538,10 @@ async fn prepare_blob_provider(
         collection.extend([(prepared.transfer_path.clone(), tag.hash())]);
     }
 
-    let collection_tag = collection.store(store.as_ref()).await?;
+    let collection_tag = collection
+        .store(store.as_ref())
+        .await
+        .map_err(|error| internal_error(format!("storing blob collection: {error}")))?;
     let (event_sender, event_rx) = EventSender::channel(
         32,
         EventMask {
@@ -592,7 +639,7 @@ fn make_absolute_path(path: &PathBuf) -> Result<PathBuf> {
         Ok(path.clone())
     } else {
         Ok(std::env::current_dir()
-            .context("resolving current directory")?
+            .map_err(|error| io_error("resolving current directory", &error))?
             .join(path))
     }
 }
@@ -604,18 +651,18 @@ async fn export_downloaded_collection(
 ) -> Result<()> {
     let collection = Collection::load(root_hash, store.as_ref())
         .await
-        .context("loading downloaded blob collection")?;
+        .map_err(|error| internal_error(format!("loading downloaded blob collection: {error}")))?;
     let hashes_by_path = collection.into_iter().collect::<BTreeMap<_, _>>();
 
     for expected in expected_files {
         let hash = hashes_by_path
             .get(&expected.path)
             .copied()
-            .ok_or_else(|| anyhow!("missing downloaded blob for {}", expected.path))?;
+            .ok_or_else(|| internal_error(format!("missing downloaded blob for {}", expected.path)))?;
         if let Some(parent) = expected.destination.parent() {
             fs::create_dir_all(parent)
                 .await
-                .with_context(|| format!("creating directory {}", parent.display()))?;
+                .map_err(|error| io_error(format!("creating directory {}", parent.display()), &error))?;
         }
         let export_target = make_absolute_path(&expected.destination)?;
         store
@@ -626,7 +673,12 @@ async fn export_downloaded_collection(
             })
             .finish()
             .await
-            .with_context(|| format!("exporting {}", expected.destination.display()))?;
+            .map_err(|error| {
+                DriftError::with_reason(
+                    DriftErrorKind::Io,
+                    format!("exporting {}: {error}", expected.destination.display()),
+                )
+            })?;
         println!("Received {}", expected.destination.display());
     }
 
@@ -638,7 +690,7 @@ impl BlobDownloadStore {
         let root = TempDir::new(prefix, session_id).await?;
         let store = FsStore::load(&root.path)
             .await
-            .with_context(|| format!("loading blob store {}", root.path.display()))?;
+            .map_err(|error| internal_error(format!("loading blob store {}: {error}", root.path.display())))?;
         Ok(Self { store, root })
     }
 
@@ -646,7 +698,7 @@ impl BlobDownloadStore {
         self.store
             .shutdown()
             .await
-            .context("shutting down blob download store")?;
+            .map_err(|error| internal_error(format!("shutting down blob download store: {error}")))?;
         drop(self.root);
         Ok(())
     }
@@ -656,7 +708,9 @@ fn ensure_matching_session_id(actual: &str, expected: &str) -> Result<()> {
     if actual == expected {
         Ok(())
     } else {
-        bail!("session id mismatch: expected {expected}, got {actual}")
+        Err(protocol_error(format!(
+            "session id mismatch: expected {expected}, got {actual}"
+        )))
     }
 }
 
@@ -704,13 +758,6 @@ async fn wait_for_cancel(cancel_rx: &mut Option<watch::Receiver<bool>>) -> bool 
     }
 }
 
-fn transfer_status_summary(status: &TransferStatus) -> String {
-    match status {
-        TransferStatus::Ok => "ok".to_owned(),
-        TransferStatus::Error { code, message } => format!("{code:?}: {message}"),
-    }
-}
-
 fn transfer_error_status(code: TransferErrorCode, message: String) -> TransferStatus {
     TransferStatus::Error { code, message }
 }
@@ -732,6 +779,7 @@ async fn send_cancel(
         }),
     )
     .await
+    .map_err(Into::into)
 }
 
 async fn send_transfer_result(
@@ -747,6 +795,7 @@ async fn send_transfer_result(
         }),
     )
     .await
+    .map_err(Into::into)
 }
 
 async fn send_transfer_ack(
@@ -760,6 +809,7 @@ async fn send_transfer_ack(
         }),
     )
     .await
+    .map_err(Into::into)
 }
 
 #[cfg(test)]
@@ -860,10 +910,10 @@ mod transfer_tests {
         let provider = prepare_blob_provider(&endpoint, "session-test", &files).await?;
         let store = FsStore::load(&provider.root.path)
             .await
-            .context("loading provider store for verification")?;
+            .map_err(|error| internal_error(format!("loading provider store for verification: {error}")))?;
         let collection = Collection::load(provider._collection_tag.hash(), store.as_ref())
             .await
-            .context("loading provider collection for verification")?;
+            .map_err(|error| internal_error(format!("loading provider collection for verification: {error}")))?;
         let by_path = collection.into_iter().collect::<BTreeMap<_, _>>();
 
         assert_eq!(by_path.len(), files.len());

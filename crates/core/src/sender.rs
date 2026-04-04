@@ -1,9 +1,9 @@
 use std::path::PathBuf;
 
-use anyhow::{Context, Result, bail};
 use rand::random;
 use tokio::sync::watch;
 
+use crate::error::{DriftError, Result};
 use crate::fs_plan::prepare::{PreparedFiles, prepare_files};
 use crate::rendezvous::{OfferManifest, RendezvousClient, resolve_server_url, validate_code};
 
@@ -175,7 +175,7 @@ where
     machine.transition(SenderState::Connecting)?;
     let endpoint = bind_endpoint()
         .await
-        .context("binding local iroh endpoint")?;
+        .map_err(|error| error.with_prefix("binding local iroh endpoint"))?;
     let connection = connect_to_ticket(&endpoint, endpoint_addr).await?;
     let connection_path_kind = classify_connection_path(&endpoint, connection.remote_id()).await;
     machine.transition(SenderState::Connected)?;
@@ -187,7 +187,7 @@ where
     let (mut control_send, mut control_recv) = connection
         .open_bi()
         .await
-        .context("opening transfer control stream")?;
+        .map_err(|error| DriftError::connection(format!("opening transfer control stream: {error}")))?;
     send_hello(
         &mut control_send,
         session_id,
@@ -198,7 +198,7 @@ where
     .await?;
     let receiver_hello = match read_message::<ControlMessage>(&mut control_recv)
         .await
-        .context("waiting for receiver hello")?
+        .map_err(|error| error.with_prefix("waiting for receiver hello"))?
     {
         ControlMessage::Hello(message) => {
             validate_hello(&message, TransferRole::Receiver)?;
@@ -207,7 +207,10 @@ where
         }
         other => {
             machine.transition(SenderState::Failed)?;
-            bail!("expected hello from receiver, got {:?}", other);
+            return Err(DriftError::protocol(format!(
+                "expected hello from receiver, got {:?}",
+                other
+            )));
         }
     };
 
@@ -270,7 +273,7 @@ where
             unreachable!()
         }
         decision = read_message::<ControlMessage>(&mut control_recv) => {
-            decision.context("waiting for receiver decision")?
+            decision.map_err(|error| error.with_prefix("waiting for receiver decision"))?
         }
     };
 
@@ -343,7 +346,10 @@ where
             ensure_session_id(&message.session_id, session_id)?;
             machine.transition(SenderState::Declined)?;
             endpoint.close().await;
-            bail!("receiver declined the offer: {}", message.reason);
+            return Err(DriftError::transfer_declined(format!(
+                "receiver declined the offer: {}",
+                message.reason
+            )));
         }
         ControlMessage::Cancel(message) => {
             ensure_session_id(&message.session_id, session_id)?;
@@ -369,7 +375,10 @@ where
         other => {
             machine.transition(SenderState::Failed)?;
             endpoint.close().await;
-            bail!("unexpected control message from receiver: {:?}", other);
+            return Err(DriftError::protocol(format!(
+                "unexpected control message from receiver: {:?}",
+                other
+            )));
         }
     }
 
@@ -421,6 +430,7 @@ async fn send_hello(
         }),
     )
     .await
+    .map_err(|error| error.with_prefix("sending hello"))
 }
 
 async fn send_offer(
@@ -436,6 +446,7 @@ async fn send_offer(
         }),
     )
     .await
+    .map_err(|error| error.with_prefix("sending offer"))
 }
 
 async fn send_cancel(
@@ -453,7 +464,8 @@ async fn send_cancel(
             reason,
         }),
     )
-    .await?;
+    .await
+    .map_err(|error| error.with_prefix("sending cancellation"))?;
     let _ = send_stream.finish();
     Ok(())
 }

@@ -1,7 +1,8 @@
-use anyhow::{Context, Result, bail};
 use reqwest::StatusCode;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
+
+use crate::error::{DriftError, DriftErrorKind, Result};
 
 pub const DEFAULT_RENDEZVOUS_URL: &str = "https://drift.samarthv.com";
 pub const CODE_LENGTH: usize = 6;
@@ -74,7 +75,12 @@ impl RendezvousClient {
             .json(&request)
             .send()
             .await
-            .context("registering peer with rendezvous server")?;
+            .map_err(|error| {
+                DriftError::with_reason(
+                    DriftErrorKind::RendezvousUnavailable,
+                    format!("registering peer with rendezvous server: {error}"),
+                )
+            })?;
         parse_json(response).await
     }
 
@@ -85,7 +91,12 @@ impl RendezvousClient {
             .post(self.url(&format!("/v1/pairs/{code}/claim")))
             .send()
             .await
-            .with_context(|| format!("claiming peer for code {code}"))?;
+            .map_err(|error| {
+                DriftError::with_reason(
+                    DriftErrorKind::RendezvousUnavailable,
+                    format!("claiming peer for code {code}: {error}"),
+                )
+            })?;
         parse_json(response).await
     }
 
@@ -96,7 +107,12 @@ impl RendezvousClient {
             .get(self.url(&format!("/v1/pairs/{code}/status")))
             .send()
             .await
-            .with_context(|| format!("checking status for peer {code}"))?;
+            .map_err(|error| {
+                DriftError::with_reason(
+                    DriftErrorKind::RendezvousUnavailable,
+                    format!("checking status for peer {code}: {error}"),
+                )
+            })?;
 
         if response.status() == StatusCode::NOT_FOUND {
             return Ok(None);
@@ -120,11 +136,13 @@ pub fn validate_code(code: &str) -> Result<()> {
     if valid {
         Ok(())
     } else {
-        bail!(
-            "short code must be exactly {} characters from {}",
-            CODE_LENGTH,
-            CODE_ALPHABET
-        )
+        Err(DriftError::with_reason(
+            DriftErrorKind::InvalidCode,
+            format!(
+                "short code must be exactly {} characters from {}",
+                CODE_LENGTH, CODE_ALPHABET
+            ),
+        ))
     }
 }
 
@@ -153,20 +171,39 @@ async fn parse_json<T: DeserializeOwned>(response: reqwest::Response) -> Result<
         return response
             .json::<T>()
             .await
-            .context("parsing rendezvous response");
+            .map_err(|error| {
+                DriftError::with_reason(
+                    DriftErrorKind::Internal,
+                    format!("parsing rendezvous response: {error}"),
+                )
+            });
     }
 
-    let message = error_message(response).await;
-    bail!("{message}");
+    Err(error_from_response(response).await)
 }
 
-async fn error_message(response: reqwest::Response) -> String {
+async fn error_from_response(response: reqwest::Response) -> DriftError {
     let status = response.status();
-    match response.json::<ApiErrorBody>().await {
+    let reason = match response.json::<ApiErrorBody>().await {
         Ok(body) if !body.error.is_empty() => {
             format!("rendezvous server error ({status}): {}", body.error)
         }
         _ => format!("rendezvous server error ({status})"),
+    };
+    DriftError::with_reason(error_kind_for_status(status), reason)
+}
+
+fn error_kind_for_status(status: StatusCode) -> DriftErrorKind {
+    match status {
+        StatusCode::NOT_FOUND => DriftErrorKind::PeerNotFound,
+        StatusCode::CONFLICT => DriftErrorKind::PeerAlreadyClaimed,
+        StatusCode::REQUEST_TIMEOUT | StatusCode::GATEWAY_TIMEOUT => {
+            DriftErrorKind::RendezvousUnavailable
+        }
+        StatusCode::BAD_REQUEST | StatusCode::UNPROCESSABLE_ENTITY => DriftErrorKind::InvalidInput,
+        StatusCode::TOO_MANY_REQUESTS => DriftErrorKind::RendezvousRejected,
+        status if status.is_server_error() => DriftErrorKind::RendezvousUnavailable,
+        _ => DriftErrorKind::RendezvousRejected,
     }
 }
 

@@ -12,12 +12,13 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
-use anyhow::{Context, Result, bail};
 use flume::RecvTimeoutError;
 use iroh::EndpointId;
 use mdns_sd::{ServiceDaemon, ServiceEvent, ServiceInfo, TxtProperties};
 use rand::seq::SliceRandom;
 use tracing::info;
+
+use crate::error::{DriftError, DriftErrorKind, Result};
 /// DNS-SD type for drift receivers on the LAN (`drift` ≤ 15 bytes per RFC 6763).
 pub const DRIFT_MDNS_SERVICE_TYPE: &str = "_drift._udp.local.";
 
@@ -61,7 +62,10 @@ fn default_route_ipv4() -> Result<Ipv4Addr> {
         }
     }
 
-    bail!("could not determine a usable IPv4 address for LAN discovery")
+    Err(DriftError::with_reason(
+        DriftErrorKind::LanUnavailable,
+        "could not determine a usable IPv4 address for LAN discovery",
+    ))
 }
 
 fn chunk_ascii(s: &str, max: usize) -> Vec<String> {
@@ -119,26 +123,29 @@ fn parse_presence_pong(buf: &[u8], expected_nonce: u64) -> bool {
 
 /// Returns true if the peer echoed our nonce over UDP within `timeout`.
 pub fn presence_ping(target: SocketAddr, timeout: Duration) -> Result<()> {
-    let socket = UdpSocket::bind("0.0.0.0:0").context("presence ping bind")?;
+    let socket = UdpSocket::bind("0.0.0.0:0")
+        .map_err(|error| DriftError::io("presence ping bind", &error))?;
     socket
         .set_read_timeout(Some(timeout))
-        .context("presence ping set_read_timeout")?;
+        .map_err(|error| DriftError::io("presence ping set_read_timeout", &error))?;
 
     let nonce: u64 = rand::random();
     let pkt = build_presence_packet(OP_PING, nonce);
     socket
         .send_to(&pkt, target)
-        .context("presence ping send_to")?;
+        .map_err(|error| DriftError::io("presence ping send_to", &error))?;
 
     let mut buf = [0u8; PRESENCE_PKT_LEN];
     let (n, from) = socket
         .recv_from(&mut buf)
-        .context("presence ping recv_from")?;
+        .map_err(|error| DriftError::io("presence ping recv_from", &error))?;
     if from != target {
-        bail!("presence ping reply from unexpected address");
+        return Err(DriftError::protocol(
+            "presence ping reply from unexpected address",
+        ));
     }
     if !parse_presence_pong(&buf[..n], nonce) {
-        bail!("presence ping invalid pong");
+        return Err(DriftError::protocol("presence ping invalid pong"));
     }
     Ok(())
 }
@@ -167,17 +174,22 @@ pub struct PresenceResponder {
 impl PresenceResponder {
     pub fn bind(port: u16) -> Result<Self> {
         let socket = UdpSocket::bind(SocketAddr::from(([0, 0, 0, 0], port)))
-            .with_context(|| format!("binding presence UDP on port {port}"))?;
+            .map_err(|error| DriftError::io(format!("binding presence UDP on port {port}"), &error))?;
         socket
             .set_read_timeout(Some(Duration::from_millis(500)))
-            .context("presence responder set_read_timeout")?;
+            .map_err(|error| DriftError::io("presence responder set_read_timeout", &error))?;
 
         let stop = Arc::new(AtomicBool::new(false));
         let stop_t = Arc::clone(&stop);
         let join = std::thread::Builder::new()
             .name("drift-lan-presence".into())
             .spawn(move || run_presence_loop(socket, stop_t))
-            .context("spawn presence thread")?;
+            .map_err(|error| {
+                DriftError::with_reason(
+                    DriftErrorKind::LanUnavailable,
+                    format!("spawn presence thread: {error}"),
+                )
+            })?;
 
         Ok(Self {
             stop,
@@ -248,7 +260,7 @@ impl LanReceiveAdvertisement {
         info!(%ip, %device_label, "lan_advertisement.starting");
 
         let presence = PresenceResponder::bind(DRIFT_LAN_PRESENCE_PORT)
-            .context("starting LAN presence responder")?;
+            .map_err(|error| error.with_prefix("starting LAN presence responder"))?;
 
         let host_name = format!("{ip}.local.");
         let instance = random_mdns_instance_name();
@@ -276,13 +288,22 @@ impl LanReceiveAdvertisement {
             DRIFT_LAN_PRESENCE_PORT,
             txt.as_slice(),
         )
-        .context("building mDNS service info")?
+        .map_err(|error| {
+            DriftError::with_reason(
+                DriftErrorKind::LanUnavailable,
+                format!("building mDNS service info: {error}"),
+            )
+        })?
         .enable_addr_auto();
 
         let fullname = service.get_fullname().to_owned();
-        let daemon = ServiceDaemon::new().context("creating mDNS daemon")?;
+        let daemon = ServiceDaemon::new().map_err(|error| {
+            DriftError::lan(format!("creating mDNS daemon: {error}"))
+        })?;
         if let Err(e) = daemon.register(service) {
-            return Err(e).context("registering mDNS drift receive service");
+            return Err(DriftError::lan(format!(
+                "registering mDNS drift receive service: {e}"
+            )));
         }
 
         Ok(Some(Self {
@@ -331,10 +352,11 @@ pub fn browse_nearby_receivers(
     scan: Duration,
     exclude_endpoint_id: Option<EndpointId>,
 ) -> Result<Vec<NearbyReceiver>> {
-    let daemon = ServiceDaemon::new().context("creating mDNS daemon")?;
+    let daemon = ServiceDaemon::new()
+        .map_err(|error| DriftError::lan(format!("creating mDNS daemon: {error}")))?;
     let browse_rx = daemon
         .browse(DRIFT_MDNS_SERVICE_TYPE)
-        .context("starting mDNS browse")?;
+        .map_err(|error| DriftError::lan(format!("starting mDNS browse: {error}")))?;
 
     let deadline = Instant::now() + scan;
     let mut peers: HashMap<String, NearbyReceiver> = HashMap::new();

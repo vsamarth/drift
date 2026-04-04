@@ -1,5 +1,4 @@
-use anyhow::{Result, bail};
-
+use crate::error::{DriftError, DriftErrorKind, Result};
 use crate::wire::{CancelPhase, Hello, TRANSFER_PROTOCOL_VERSION, TransferRole};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -71,7 +70,10 @@ impl SenderMachine {
         );
 
         if !allowed {
-            bail!("invalid sender transition: {:?} -> {:?}", self.state, next);
+            return Err(DriftError::with_reason(
+                DriftErrorKind::Internal,
+                format!("invalid sender transition: {:?} -> {:?}", self.state, next),
+            ));
         }
 
         self.state = next;
@@ -118,11 +120,10 @@ impl ReceiverMachine {
         );
 
         if !allowed {
-            bail!(
-                "invalid receiver transition: {:?} -> {:?}",
-                self.state,
-                next
-            );
+            return Err(DriftError::with_reason(
+                DriftErrorKind::Internal,
+                format!("invalid receiver transition: {:?} -> {:?}", self.state, next),
+            ));
         }
 
         self.state = next;
@@ -138,23 +139,34 @@ impl Default for ReceiverMachine {
 
 pub fn validate_hello(message: &Hello, expected_role: TransferRole) -> Result<()> {
     if message.version != TRANSFER_PROTOCOL_VERSION {
-        bail!("unsupported transfer protocol version {}", message.version);
+        return Err(DriftError::with_reason(
+            DriftErrorKind::ProtocolViolation,
+            format!("unsupported transfer protocol version {}", message.version),
+        ));
     }
 
     if message.role != expected_role {
-        bail!(
-            "unexpected transfer role {:?}, expected {:?}",
-            message.role,
-            expected_role
-        );
+        return Err(DriftError::with_reason(
+            DriftErrorKind::ProtocolViolation,
+            format!(
+                "unexpected transfer role {:?}, expected {:?}",
+                message.role, expected_role
+            ),
+        ));
     }
 
     if message.session_id.trim().is_empty() {
-        bail!("transfer session id must not be empty");
+        return Err(DriftError::with_reason(
+            DriftErrorKind::ProtocolViolation,
+            "transfer session id must not be empty",
+        ));
     }
 
     if message.device_name.trim().is_empty() {
-        bail!("transfer device name must not be empty");
+        return Err(DriftError::with_reason(
+            DriftErrorKind::ProtocolViolation,
+            "transfer device name must not be empty",
+        ));
     }
 
     Ok(())
@@ -164,7 +176,10 @@ pub fn ensure_session_id(actual: &str, expected: &str) -> Result<()> {
     if actual == expected {
         Ok(())
     } else {
-        bail!("session id mismatch: expected {expected}, got {actual}")
+        Err(DriftError::with_reason(
+            DriftErrorKind::ProtocolViolation,
+            format!("session id mismatch: expected {expected}, got {actual}"),
+        ))
     }
 }
 

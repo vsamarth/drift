@@ -1,4 +1,3 @@
-use anyhow::{Context, Result, bail};
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use iroh::{Endpoint, EndpointAddr, TransportAddr};
@@ -6,6 +5,7 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
+use crate::error::{DriftError, DriftErrorKind, Result};
 use crate::rendezvous::OfferManifest;
 
 pub const ALPN: &[u8] = b"drift/transfer/v1";
@@ -150,20 +150,35 @@ fn make_ticket_from_addr(addr: EndpointAddr) -> Result<String> {
             .collect(),
     };
 
-    let bytes = bincode::serialize(&ticket).context("serializing transfer ticket")?;
+    let bytes = bincode::serialize(&ticket).map_err(|error| {
+        DriftError::with_reason(
+            DriftErrorKind::Internal,
+            format!("serializing transfer ticket: {error}"),
+        )
+    })?;
     Ok(URL_SAFE_NO_PAD.encode(bytes))
 }
 
 pub fn decode_ticket(ticket: &str) -> Result<EndpointAddr> {
     let bytes = URL_SAFE_NO_PAD
         .decode(ticket)
-        .context("decoding ticket from base64")?;
+        .map_err(|error| {
+            DriftError::with_reason(
+                DriftErrorKind::InvalidInput,
+                format!("decoding ticket from base64: {error}"),
+            )
+        })?;
     let ticket = parse_transfer_ticket(&bytes)?;
 
     let node_id = ticket
         .node_id
         .parse()
-        .with_context(|| format!("parsing node id {}", ticket.node_id))?;
+        .map_err(|error| {
+            DriftError::with_reason(
+                DriftErrorKind::InvalidInput,
+                format!("parsing node id {}: {error}", ticket.node_id),
+            )
+        })?;
 
     let addrs = ticket
         .addrs
@@ -184,8 +199,12 @@ fn parse_transfer_ticket(bytes: &[u8]) -> Result<TransferTicket> {
     if let Ok(ticket) = serde_json::from_slice::<TransferTicket>(bytes) {
         return Ok(ticket);
     }
-    let legacy =
-        serde_json::from_slice::<LegacyTransferTicket>(bytes).context("parsing ticket payload")?;
+    let legacy = serde_json::from_slice::<LegacyTransferTicket>(bytes).map_err(|error| {
+        DriftError::with_reason(
+            DriftErrorKind::InvalidInput,
+            format!("parsing ticket payload: {error}"),
+        )
+    })?;
     Ok(TransferTicket::from(legacy))
 }
 
@@ -200,17 +219,27 @@ impl From<TransportAddr> for EncodedTransportAddr {
 }
 
 impl TryFrom<EncodedTransportAddr> for TransportAddr {
-    type Error = anyhow::Error;
+    type Error = DriftError;
 
     fn try_from(value: EncodedTransportAddr) -> Result<Self> {
         match value {
             EncodedTransportAddr::Relay(url) => Ok(TransportAddr::Relay(
                 url.parse()
-                    .with_context(|| format!("parsing relay url {url}"))?,
+                    .map_err(|error| {
+                        DriftError::with_reason(
+                            DriftErrorKind::InvalidInput,
+                            format!("parsing relay url {url}: {error}"),
+                        )
+                    })?,
             )),
             EncodedTransportAddr::Ip(addr) => Ok(TransportAddr::Ip(
                 addr.parse()
-                    .with_context(|| format!("parsing socket addr {addr}"))?,
+                    .map_err(|error| {
+                        DriftError::with_reason(
+                            DriftErrorKind::InvalidInput,
+                            format!("parsing socket addr {addr}: {error}"),
+                        )
+                    })?,
             )),
         }
     }
@@ -235,20 +264,29 @@ const MAX_JSON_FRAME_BYTES: usize = 16 * 1024 * 1024;
 pub async fn read_json_frame<R: AsyncRead + Unpin, T: DeserializeOwned>(
     reader: &mut R,
 ) -> Result<T> {
-    let message_len = reader.read_u32().await.context("reading message length")? as usize;
+    let message_len = reader.read_u32().await.map_err(|error| {
+        DriftError::io("reading message length", &error)
+    })? as usize;
     if message_len > MAX_JSON_FRAME_BYTES {
-        bail!(
-            "message length {} exceeds maximum {}",
-            message_len,
-            MAX_JSON_FRAME_BYTES
-        );
+        return Err(DriftError::with_reason(
+            DriftErrorKind::ProtocolViolation,
+            format!(
+                "message length {} exceeds maximum {}",
+                message_len, MAX_JSON_FRAME_BYTES
+            ),
+        ));
     }
     let mut message_buf = vec![0_u8; message_len];
     reader
         .read_exact(&mut message_buf)
         .await
-        .context("reading message bytes")?;
-    serde_json::from_slice(&message_buf).context("parsing message body")
+        .map_err(|error| DriftError::io("reading message bytes", &error))?;
+    serde_json::from_slice(&message_buf).map_err(|error| {
+        DriftError::with_reason(
+            DriftErrorKind::ProtocolViolation,
+            format!("parsing message body: {error}"),
+        )
+    })
 }
 
 /// Length-prefixed JSON frame (same encoding as control messages), for any async writer.
@@ -256,16 +294,24 @@ pub async fn write_json_frame<W: AsyncWrite + Unpin, T: Serialize>(
     writer: &mut W,
     value: &T,
 ) -> Result<()> {
-    let bytes = serde_json::to_vec(value).context("serializing message body")?;
+    let bytes = serde_json::to_vec(value).map_err(|error| {
+        DriftError::with_reason(
+            DriftErrorKind::Internal,
+            format!("serializing message body: {error}"),
+        )
+    })?;
     writer
         .write_u32(bytes.len() as u32)
         .await
-        .context("writing message length")?;
+        .map_err(|error| DriftError::io("writing message length", &error))?;
     writer
         .write_all(&bytes)
         .await
-        .context("writing message bytes")?;
-    writer.flush().await.context("flushing message")?;
+        .map_err(|error| DriftError::io("writing message bytes", &error))?;
+    writer
+        .flush()
+        .await
+        .map_err(|error| DriftError::io("flushing message", &error))?;
     Ok(())
 }
 

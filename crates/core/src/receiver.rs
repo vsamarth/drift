@@ -1,9 +1,9 @@
-use anyhow::{Context, Result, bail};
 use std::collections::BTreeMap;
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use tokio::sync::watch;
 
+use crate::error::{DriftError, Result};
 use crate::fs_plan::receive::{ExpectedFile, build_expected_files};
 use crate::rendezvous::OfferManifest;
 use iroh::Endpoint;
@@ -62,8 +62,15 @@ impl ReceiverPendingDecision {
         self.control_recv
             .read_exact(&mut byte)
             .await
-            .context("waiting for sender disconnect")?;
-        bail!("unexpected control data while waiting for decision")
+            .map_err(|error| {
+                DriftError::with_reason(
+                    crate::error::DriftErrorKind::Io,
+                    format!("waiting for sender disconnect: {error}"),
+                )
+            })?;
+        Err(DriftError::protocol(
+            "unexpected control data while waiting for decision",
+        ))
     }
 }
 
@@ -117,11 +124,11 @@ pub async fn receiver_run_until_decision(
     let (mut control_send, mut control_recv) = connection
         .accept_bi()
         .await
-        .context("waiting for transfer control stream")?;
+        .map_err(|error| DriftError::connection(format!("waiting for transfer control stream: {error}")))?;
 
     let hello = match read_message::<ControlMessage>(&mut control_recv)
         .await
-        .context("reading sender hello")?
+        .map_err(|error| error.with_prefix("reading sender hello"))?
     {
         ControlMessage::Hello(message) => {
             validate_hello(&message, TransferRole::Sender)?;
@@ -129,7 +136,10 @@ pub async fn receiver_run_until_decision(
         }
         other => {
             machine.transition(ReceiverState::Failed)?;
-            bail!("expected hello from sender, got {:?}", other);
+            return Err(DriftError::protocol(format!(
+                "expected hello from sender, got {:?}",
+                other
+            )));
         }
     };
 
@@ -145,7 +155,7 @@ pub async fn receiver_run_until_decision(
     machine.transition(ReceiverState::ReviewingOffer)?;
     let offer = match read_message::<ControlMessage>(&mut control_recv)
         .await
-        .context("reading sender offer")?
+        .map_err(|error| error.with_prefix("reading sender offer"))?
     {
         ControlMessage::Offer(message) => {
             ensure_session_id(&message.session_id, &hello.session_id)?;
@@ -153,7 +163,10 @@ pub async fn receiver_run_until_decision(
         }
         other => {
             machine.transition(ReceiverState::Failed)?;
-            bail!("expected offer from sender, got {:?}", other);
+            return Err(DriftError::protocol(format!(
+                "expected offer from sender, got {:?}",
+                other
+            )));
         }
     };
 
@@ -162,7 +175,7 @@ pub async fn receiver_run_until_decision(
         Err(err) => {
             machine.transition(ReceiverState::Declined)?;
             send_decline(&mut control_send, &hello.session_id, err.to_string()).await?;
-            return Err(err);
+            return Err(err.into());
         }
     };
     let connection_path_kind = classify_connection_path(&endpoint, connection.remote_id()).await;
@@ -420,6 +433,7 @@ async fn send_accept(send_stream: &mut iroh::endpoint::SendStream, session_id: &
         }),
     )
     .await
+    .map_err(|error| error.with_prefix("sending accept"))
 }
 
 async fn send_decline(
@@ -434,8 +448,11 @@ async fn send_decline(
             reason,
         }),
     )
-    .await?;
-    send_stream.finish()?;
+    .await
+    .map_err(|error| error.with_prefix("sending decline"))?;
+    send_stream
+        .finish()
+        .map_err(|error| DriftError::with_reason(crate::error::DriftErrorKind::Io, format!("finishing decline stream: {error}")))?;
     Ok(())
 }
 
@@ -457,6 +474,7 @@ async fn send_hello(
         }),
     )
     .await
+    .map_err(|error| error.with_prefix("sending hello"))
 }
 
 fn expected_transfer_files(

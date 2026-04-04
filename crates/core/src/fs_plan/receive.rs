@@ -1,9 +1,9 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result, anyhow, bail};
 use tokio::fs;
 
+use crate::error::{DriftError, DriftErrorKind, Result};
 use crate::rendezvous::OfferManifest;
 
 use super::transfer_path::validate_transfer_path;
@@ -19,7 +19,9 @@ pub async fn build_expected_files(
     out_dir: &Path,
 ) -> Result<BTreeMap<String, ExpectedFile>> {
     if manifest.file_count != manifest.files.len() as u64 {
-        bail!("offer manifest file count does not match the file list");
+        return Err(DriftError::invalid_input(
+            "offer manifest file count does not match the file list",
+        ));
     }
 
     let mut total_size = 0_u64;
@@ -28,7 +30,12 @@ pub async fn build_expected_files(
     for file in &manifest.files {
         total_size = total_size
             .checked_add(file.size)
-            .ok_or_else(|| anyhow!("offer manifest total size exceeds u64"))?;
+            .ok_or_else(|| {
+                DriftError::with_reason(
+                    DriftErrorKind::Internal,
+                    "offer manifest total size exceeds u64",
+                )
+            })?;
 
         let segments = validate_transfer_path(&file.path)?;
         if expected.contains_key(&file.path)
@@ -36,13 +43,19 @@ pub async fn build_expected_files(
                 .keys()
                 .any(|existing: &String| existing.starts_with(&format!("{}/", file.path)))
         {
-            bail!("offer manifest contains a conflicting path {}", file.path);
+            return Err(DriftError::with_reason(
+                DriftErrorKind::FileConflict,
+                format!("offer manifest contains a conflicting path {}", file.path),
+            ));
         }
 
         for depth in 1..segments.len() {
             let parent = segments[..depth].join("/");
             if expected.contains_key(&parent) {
-                bail!("offer manifest contains a conflicting path {}", file.path);
+                return Err(DriftError::with_reason(
+                    DriftErrorKind::FileConflict,
+                    format!("offer manifest contains a conflicting path {}", file.path),
+                ));
             }
         }
 
@@ -59,7 +72,9 @@ pub async fn build_expected_files(
     }
 
     if total_size != manifest.total_size {
-        bail!("offer manifest total size does not match the file list");
+        return Err(DriftError::invalid_input(
+            "offer manifest total size does not match the file list",
+        ));
     }
 
     Ok(expected)
@@ -76,7 +91,10 @@ pub fn resolve_transfer_destination(out_dir: &Path, transfer_path: &str) -> Resu
 
 pub async fn ensure_destination_available(out_dir: &Path, destination: &Path) -> Result<()> {
     if path_exists(destination).await? {
-        bail!("destination already exists: {}", destination.display());
+        return Err(DriftError::with_reason(
+            DriftErrorKind::FileConflict,
+            format!("destination already exists: {}", destination.display()),
+        ));
     }
 
     let mut current = destination.parent();
@@ -88,15 +106,21 @@ pub async fn ensure_destination_available(out_dir: &Path, destination: &Path) ->
         match fs::metadata(parent).await {
             Ok(metadata) => {
                 if !metadata.is_dir() {
-                    bail!(
+                    return Err(DriftError::with_reason(
+                        DriftErrorKind::FileConflict,
+                        format!(
                         "destination parent is not a directory: {}",
                         parent.display()
-                    );
+                        ),
+                    ));
                 }
             }
             Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
             Err(err) => {
-                return Err(err).with_context(|| format!("checking {}", parent.display()));
+                return Err(DriftError::io(
+                    format!("checking {}", parent.display()),
+                    &err,
+                ));
             }
         }
 
@@ -110,7 +134,7 @@ async fn path_exists(path: &Path) -> Result<bool> {
     match fs::metadata(path).await {
         Ok(_) => Ok(true),
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(false),
-        Err(err) => Err(err).with_context(|| format!("checking {}", path.display())),
+        Err(err) => Err(DriftError::io(format!("checking {}", path.display()), &err)),
     }
 }
 
@@ -121,7 +145,7 @@ mod tests {
     use crate::rendezvous::{OfferFile, OfferManifest};
 
     #[tokio::test]
-    async fn build_expected_files_rejects_existing_destinations() -> anyhow::Result<()> {
+    async fn build_expected_files_rejects_existing_destinations() -> Result<()> {
         let temp = TestDir::new("drift-expected").await?;
         let out_dir = temp.path.join("downloads");
         fs::create_dir_all(&out_dir).await?;
@@ -143,7 +167,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn build_expected_files_rejects_conflicting_incoming_paths() -> anyhow::Result<()> {
+    async fn build_expected_files_rejects_conflicting_incoming_paths() -> Result<()> {
         let temp = TestDir::new("drift-conflicts").await?;
         let out_dir = temp.path.join("downloads");
         fs::create_dir_all(&out_dir).await?;

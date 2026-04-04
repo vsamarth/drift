@@ -1,5 +1,6 @@
-use anyhow::{Result, bail};
 use time::OffsetDateTime;
+
+use crate::error::{DriftError, DriftErrorKind, Result};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DiscoveryState {
@@ -28,11 +29,17 @@ impl DiscoverySession {
         expires_at: OffsetDateTime,
     ) -> Result<Self> {
         if ticket.trim().is_empty() {
-            bail!("ticket must not be empty");
+            return Err(DriftError::with_reason(
+                DriftErrorKind::InvalidInput,
+                "ticket must not be empty",
+            ));
         }
 
         if expires_at <= created_at {
-            bail!("expiry must be after creation time");
+            return Err(DriftError::with_reason(
+                DriftErrorKind::InvalidInput,
+                "expiry must be after creation time",
+            ));
         }
 
         Ok(Self {
@@ -47,7 +54,7 @@ impl DiscoverySession {
         self.state
     }
 
-    pub fn claim(&mut self, now: OffsetDateTime) -> Result<String, DiscoveryError> {
+    pub fn claim(&mut self, now: OffsetDateTime) -> std::result::Result<String, DiscoveryError> {
         self.refresh(now);
 
         match self.state {
