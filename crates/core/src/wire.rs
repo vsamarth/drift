@@ -45,7 +45,7 @@ pub struct Hello {
     pub device_type: DeviceType,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum TransferRole {
     Sender,
@@ -66,6 +66,21 @@ pub struct Accept {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Decline {
     pub session_id: String,
+    pub reason: String,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum CancelPhase {
+    WaitingForDecision,
+    Transferring,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct Cancel {
+    pub session_id: String,
+    pub by: TransferRole,
+    pub phase: CancelPhase,
     pub reason: String,
 }
 
@@ -114,6 +129,7 @@ pub enum ControlMessage {
     Offer(Offer),
     Accept(Accept),
     Decline(Decline),
+    Cancel(Cancel),
     BlobTicket(BlobTicketMessage),
     TransferResult(TransferResult),
     TransferAck(TransferAck),

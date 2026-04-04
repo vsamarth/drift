@@ -195,6 +195,7 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
     if (!session.decisionPending) {
       _setSession(
         ReceiveResultSession(
+          success: true,
           items: session.items,
           summary: session.summary.copyWith(
             statusMessage: 'Saved to ${session.summary.destinationLabel}',
@@ -225,10 +226,34 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
   }
 
   void cancelSendInProgress() {
-    if (state.session is! SendTransferSession) {
+    final session = state.session;
+    if (session is! SendTransferSession) {
       return;
     }
-    _returnToSendSelection();
+    _setSession(
+      session.copyWith(
+        phase: SendTransferSessionPhase.cancelling,
+        summary: session.summary.copyWith(
+          statusMessage: 'Cancelling transfer...',
+        ),
+      ),
+    );
+    unawaited(_cancelNativeSendTransfer());
+  }
+
+  void cancelReceiveInProgress() {
+    final session = state.session;
+    if (session is! ReceiveTransferSession) {
+      return;
+    }
+    _setSession(
+      session.copyWith(
+        summary: session.summary.copyWith(
+          statusMessage: 'Cancelling transfer...',
+        ),
+      ),
+    );
+    unawaited(_cancelNativeReceiveTransfer());
   }
 
   void resetShell() {
@@ -505,6 +530,9 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
       case rust_receiver.ReceiverTransferPhase.completed:
         _applyIncomingCompleted(event);
         return;
+      case rust_receiver.ReceiverTransferPhase.cancelled:
+        _applyIncomingCancelled(event);
+        return;
       case rust_receiver.ReceiverTransferPhase.failed:
         debugPrint(
           '[drift/notifier] incoming receive failed: '
@@ -598,11 +626,41 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
     );
     _setSession(
       ReceiveResultSession(
+        success: true,
         items: state.receiveItems,
         summary: completedSummary,
         metrics: _buildReceiveCompletionMetrics(
           summary: completedSummary,
           bytesReceived: bytesReceived,
+        ),
+        payloadBytesReceived: bytesReceived,
+        payloadTotalBytes: totalBytes,
+        senderDeviceType: event.senderDeviceType,
+      ),
+    );
+  }
+
+  void _applyIncomingCancelled(rust_receiver.ReceiverTransferEvent event) {
+    final bytesReceived = _bigIntToInt(event.bytesReceived);
+    final totalBytes = _bigIntToInt(event.totalSizeBytes);
+    final summary =
+        state.receiveSummary ??
+        TransferSummaryViewData(
+          itemCount: _bigIntToInt(event.itemCount),
+          totalSize: event.totalSizeLabel,
+          code: state.idleReceiveCode,
+          expiresAt: '',
+          destinationLabel: event.saveRootLabel,
+          statusMessage: event.errorMessage ?? event.statusMessage,
+          senderName: event.senderName,
+        );
+    _setSession(
+      ReceiveResultSession(
+        success: false,
+        items: state.receiveItems,
+        summary: summary.copyWith(
+          destinationLabel: event.saveRootLabel,
+          statusMessage: event.errorMessage ?? event.statusMessage,
         ),
         payloadBytesReceived: bytesReceived,
         payloadTotalBytes: totalBytes,
@@ -632,6 +690,26 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
       await _receiverServiceSource.respondToOffer(accept: accept);
     } catch (error, stackTrace) {
       debugPrint('respondToOffer failed: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      resetShell();
+    }
+  }
+
+  Future<void> _cancelNativeSendTransfer() async {
+    try {
+      await _sendTransferSource.cancelTransfer();
+    } catch (error, stackTrace) {
+      debugPrint('cancelTransfer failed: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      _returnToSendSelection();
+    }
+  }
+
+  Future<void> _cancelNativeReceiveTransfer() async {
+    try {
+      await _receiverServiceSource.cancelTransfer();
+    } catch (error, stackTrace) {
+      debugPrint('cancelReceiveTransfer failed: $error');
       debugPrintStack(stackTrace: stackTrace);
       resetShell();
     }
@@ -858,6 +936,17 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
             remoteDeviceType: update.remoteDeviceType,
           ),
         );
+      case SendTransferUpdatePhase.cancelled:
+        _setSession(
+          SendResultSession(
+            success: false,
+            items: items,
+            summary: summary.copyWith(
+              statusMessage: update.errorMessage ?? 'Transfer cancelled.',
+            ),
+            remoteDeviceType: update.remoteDeviceType,
+          ),
+        );
       case SendTransferUpdatePhase.failed:
         _setSession(
           SendResultSession(
@@ -913,6 +1002,7 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
         );
       case SendTransferUpdatePhase.completed:
       case SendTransferUpdatePhase.failed:
+      case SendTransferUpdatePhase.cancelled:
         _clearSendMetricState();
         return const _SendTransferProgress();
     }

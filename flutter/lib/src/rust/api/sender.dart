@@ -13,6 +13,9 @@ Stream<SendTransferEvent> startSendTransfer({
   required SendTransferRequest request,
 }) => RustLib.instance.api.crateApiSenderStartSendTransfer(request: request);
 
+Future<void> cancelActiveSendTransfer() =>
+    RustLib.instance.api.crateApiSenderCancelActiveSendTransfer();
+
 class SendTransferEvent {
   final SendTransferPhase phase;
   final String destinationLabel;
@@ -65,6 +68,7 @@ enum SendTransferPhase {
   waitingForDecision,
   sending,
   completed,
+  cancelled,
   failed,
 }
 

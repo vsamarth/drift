@@ -296,6 +296,19 @@ class FakeSendTransferSource implements SendTransferSource {
     return _controller!.stream;
   }
 
+  @override
+  Future<void> cancelTransfer() async {
+    _controller?.add(
+      sendTransferUpdate(
+        phase: SendTransferUpdatePhase.cancelled,
+        destinationLabel: lastRequest?.code.isNotEmpty == true
+            ? 'Code AB2 CD3'
+            : (lastRequest?.lanDestinationLabel ?? 'Nearby receiver'),
+        statusMessage: 'Transfer cancelled.',
+      ),
+    );
+  }
+
   void emit(SendTransferUpdate update) {
     _controller?.add(update);
   }
@@ -322,6 +335,9 @@ class FakeReceiverServiceSource implements ReceiverServiceSource {
       StreamController<rust_receiver.ReceiverTransferEvent>.broadcast();
   final List<bool> discoverableCalls = <bool>[];
   final List<bool> respondToOfferCalls = <bool>[];
+
+  @override
+  Future<void> cancelTransfer() async {}
 
   void emitBadge(ReceiverBadgeState badge) {
     _badgeController.add(badge);
@@ -689,9 +705,7 @@ void main() {
     expectNoFlutterError(tester);
   });
 
-  testWidgets('valid send code starts only after tapping Send', (
-    tester,
-  ) async {
+  testWidgets('valid send code starts only after tapping Send', (tester) async {
     final sendTransferSource = FakeSendTransferSource();
     await pumpUtilityApp(
       tester,
@@ -763,7 +777,7 @@ void main() {
     expectNoFlutterError(tester);
   });
 
-  testWidgets('cancel during send returns to file selection', (tester) async {
+  testWidgets('cancel during send shows a cancelled result', (tester) async {
     final sendTransferSource = FakeSendTransferSource();
     final container = buildTestContainer(
       sendTransferSource: sendTransferSource,
@@ -794,56 +808,57 @@ void main() {
     await tester.tap(find.text('Yes, cancel'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Send with code'), findsOneWidget);
-    expect(find.text('sample.txt'), findsWidgets);
+    expect(find.text('Transfer cancelled'), findsOneWidget);
+    expect(find.text('Transfer cancelled.'), findsOneWidget);
     container.read(driftAppNotifierProvider.notifier).resetShell();
     await tester.pumpAndSettle();
     expectNoFlutterError(tester);
   });
 
-  testWidgets('nearby device selection starts send with LAN ticket after Send', (
-    tester,
-  ) async {
-    final sendTransferSource = FakeSendTransferSource();
-    Future<List<SendDestinationViewData>> fakeScan() async => [
-      const SendDestinationViewData(
-        name: 'Lab Mac',
-        kind: SendDestinationKind.laptop,
-        lanTicket: 'ticket-abc',
-        lanFullname: 'recv-abc123xyz0._drift._udp.local.',
-      ),
-    ];
+  testWidgets(
+    'nearby device selection starts send with LAN ticket after Send',
+    (tester) async {
+      final sendTransferSource = FakeSendTransferSource();
+      Future<List<SendDestinationViewData>> fakeScan() async => [
+        const SendDestinationViewData(
+          name: 'Lab Mac',
+          kind: SendDestinationKind.laptop,
+          lanTicket: 'ticket-abc',
+          lanFullname: 'recv-abc123xyz0._drift._udp.local.',
+        ),
+      ];
 
-    await pumpUtilityApp(
-      tester,
-      container: buildTestContainer(
-        sendTransferSource: sendTransferSource,
-        nearbySendScan: fakeScan,
-      ),
-    );
+      await pumpUtilityApp(
+        tester,
+        container: buildTestContainer(
+          sendTransferSource: sendTransferSource,
+          nearbySendScan: fakeScan,
+        ),
+      );
 
-    await tester.tap(chooseFilesButton());
-    await tester.pumpAndSettle();
+      await tester.tap(chooseFilesButton());
+      await tester.pumpAndSettle();
 
-    expect(find.text('Nearby devices'), findsOneWidget);
-    expect(find.text('Lab Mac'), findsOneWidget);
+      expect(find.text('Nearby devices'), findsOneWidget);
+      expect(find.text('Lab Mac'), findsOneWidget);
 
-    await tester.ensureVisible(find.text('Lab Mac'));
-    await tester.tap(find.text('Lab Mac'));
-    await tester.pump();
+      await tester.ensureVisible(find.text('Lab Mac'));
+      await tester.tap(find.text('Lab Mac'));
+      await tester.pump();
 
-    expect(sendTransferSource.lastRequest, isNull);
+      expect(sendTransferSource.lastRequest, isNull);
 
-    await tester.tap(find.text('Send'));
-    await tester.pump();
+      await tester.tap(find.text('Send'));
+      await tester.pump();
 
-    expect(sendTransferSource.lastRequest, isNotNull);
-    expect(sendTransferSource.lastRequest?.ticket, 'ticket-abc');
-    expect(sendTransferSource.lastRequest?.lanDestinationLabel, 'Lab Mac');
-    expect(sendTransferSource.lastRequest?.code, '');
-    expect(sendTransferSource.lastRequest?.paths, ['sample.txt', 'photos/']);
-    expectNoFlutterError(tester);
-  });
+      expect(sendTransferSource.lastRequest, isNotNull);
+      expect(sendTransferSource.lastRequest?.ticket, 'ticket-abc');
+      expect(sendTransferSource.lastRequest?.lanDestinationLabel, 'Lab Mac');
+      expect(sendTransferSource.lastRequest?.code, '');
+      expect(sendTransferSource.lastRequest?.paths, ['sample.txt', 'photos/']);
+      expectNoFlutterError(tester);
+    },
+  );
 
   testWidgets('partial send code does not begin the transfer', (tester) async {
     final sendTransferSource = FakeSendTransferSource();

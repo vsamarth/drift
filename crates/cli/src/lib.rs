@@ -6,10 +6,12 @@ use clap::{Args, ValueEnum};
 use drift_app::{
     ConflictPolicy, OfferDecision, ReceiverConfig, ReceiverEvent, ReceiverOfferEvent,
     ReceiverOfferPhase, ReceiverService, SendConfig, SendEvent, SendPhase, SendSession,
+    SendSessionOutcome,
 };
 use drift_core::util::{confirm_accept, human_size, process_display_device_name};
 use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
 use iroh::SecretKey;
+use tokio::sync::watch;
 use tokio::time::Duration;
 use tracing::{debug, info, warn};
 use tracing_subscriber::EnvFilter;
@@ -94,19 +96,34 @@ pub async fn send(code: String, files: Vec<PathBuf>, server_url: Option<String>)
 
     let mut progress_bar = None;
     let mut last_phase = None;
-    let outcome = session
-        .send_to_code(code, server_url, |event| {
+    let (cancel_tx, cancel_rx) = watch::channel(false);
+    let outcome = {
+        let send_future = session.send_to_code(code, server_url, Some(cancel_rx), |event| {
             render_send_event(&mut last_phase, &mut progress_bar, &event)
-        })
-        .await;
+        });
+        tokio::pin!(send_future);
+        let mut cancellation_requested = false;
+        let result = loop {
+            tokio::select! {
+                result = &mut send_future => break result,
+                _ = tokio::signal::ctrl_c(), if !cancellation_requested => {
+                    cancellation_requested = true;
+                    info!("send.cancel_requested");
+                    let _ = cancel_tx.send(true);
+                }
+            }
+        };
+        drop(send_future);
+        result
+    };
     finish_progress_bar(&mut progress_bar);
 
     match &outcome {
-        Ok(()) => info!("send.completed"),
+        Ok(SendSessionOutcome::Completed) => info!("send.completed"),
+        Ok(SendSessionOutcome::Cancelled) => info!("send.cancelled"),
         Err(e) => warn!(error = %e, error_chain = %format!("{e:#}"), "send.failed"),
     }
-
-    outcome
+    outcome.map(|_| ())
 }
 
 pub async fn send_nearby(
@@ -164,21 +181,38 @@ pub async fn send_nearby(
 
     let mut progress_bar = None;
     let mut last_phase = None;
-    let outcome = session
-        .send_to_nearby(
+    let (cancel_tx, cancel_rx) = watch::channel(false);
+    let outcome = {
+        let send_future = session.send_to_nearby(
             picked.ticket.clone(),
             format!("Nearby: {}", picked.label),
+            Some(cancel_rx),
             |event| render_send_event(&mut last_phase, &mut progress_bar, &event),
-        )
-        .await;
+        );
+        tokio::pin!(send_future);
+        let mut cancellation_requested = false;
+        let result = loop {
+            tokio::select! {
+                result = &mut send_future => break result,
+                _ = tokio::signal::ctrl_c(), if !cancellation_requested => {
+                    cancellation_requested = true;
+                    info!("send.cancel_requested");
+                    let _ = cancel_tx.send(true);
+                }
+            }
+        };
+        drop(send_future);
+        result
+    };
     finish_progress_bar(&mut progress_bar);
 
     match &outcome {
-        Ok(()) => info!("send.completed"),
+        Ok(SendSessionOutcome::Completed) => info!("send.completed"),
+        Ok(SendSessionOutcome::Cancelled) => info!("send.cancelled"),
         Err(e) => warn!(error = %e, error_chain = %format!("{e:#}"), "send.failed"),
     }
 
-    outcome
+    outcome.map(|_| ())
 }
 
 pub async fn receive(out_dir: PathBuf, server_url: Option<String>) -> Result<()> {
@@ -212,14 +246,29 @@ pub async fn receive(out_dir: PathBuf, server_url: Option<String>) -> Result<()>
     }
 
     let mut event_rx = service.subscribe_events();
+    let mut current_offer_phase = None;
+    let mut cancellation_requested = false;
     let outcome = loop {
         tokio::select! {
             _ = tokio::signal::ctrl_c() => {
-                break Ok(());
+                match current_offer_phase {
+                    Some(ReceiverOfferPhase::OfferReady) if !cancellation_requested => {
+                        cancellation_requested = true;
+                        info!("receive.decline_requested");
+                        service.respond_to_offer(OfferDecision::Decline).await?;
+                    }
+                    Some(ReceiverOfferPhase::Receiving) if !cancellation_requested => {
+                        cancellation_requested = true;
+                        info!("receive.cancel_requested");
+                        service.cancel_transfer().await?;
+                    }
+                    _ => break Ok(()),
+                }
             }
             event = event_rx.recv() => {
                 match event {
                     Ok(ReceiverEvent::OfferUpdated(event)) => {
+                        current_offer_phase = Some(event.phase);
                         render_receive_event(&mut last_phase, &mut progress_bar, &event);
                         match event.phase {
                             ReceiverOfferPhase::OfferReady => {
@@ -233,7 +282,9 @@ pub async fn receive(out_dir: PathBuf, server_url: Option<String>) -> Result<()>
                                 };
                                 service.respond_to_offer(decision).await?;
                             }
-                            ReceiverOfferPhase::Completed | ReceiverOfferPhase::Declined => {
+                            ReceiverOfferPhase::Completed
+                            | ReceiverOfferPhase::Declined
+                            | ReceiverOfferPhase::Cancelled => {
                                 break Ok(());
                             }
                             ReceiverOfferPhase::Failed => {
@@ -308,6 +359,9 @@ fn render_send_event(
                     "send.phase"
                 );
             }
+            SendPhase::Cancelled => {
+                info!(phase = "cancelled", receiver = %event.destination_label, "send.phase");
+            }
             SendPhase::Failed => {
                 warn!(phase = "failed", receiver = %event.destination_label, error = ?event.error_message, "send.phase");
             }
@@ -321,7 +375,7 @@ fn render_send_event(
             pb.set_position(event.bytes_sent);
             pb.set_message(event.status_message.clone());
         }
-        SendPhase::Completed | SendPhase::Failed => finish_progress_bar(progress_bar),
+        SendPhase::Completed | SendPhase::Cancelled | SendPhase::Failed => finish_progress_bar(progress_bar),
         SendPhase::Connecting | SendPhase::WaitingForDecision => {}
     }
 }
@@ -361,6 +415,9 @@ fn render_receive_event(
             ReceiverOfferPhase::Declined => {
                 info!(phase = "declined", sender = %event.sender_name, "receive.phase");
             }
+            ReceiverOfferPhase::Cancelled => {
+                info!(phase = "cancelled", sender = %event.sender_name, "receive.phase");
+            }
             ReceiverOfferPhase::Failed => {
                 warn!(phase = "failed", sender = %event.sender_name, error = ?event.error_message, "receive.phase");
             }
@@ -376,6 +433,7 @@ fn render_receive_event(
             pb.set_message(event.status_message.clone());
         }
         ReceiverOfferPhase::Completed
+        | ReceiverOfferPhase::Cancelled
         | ReceiverOfferPhase::Declined
         | ReceiverOfferPhase::Failed => finish_progress_bar(progress_bar),
         ReceiverOfferPhase::OfferReady | ReceiverOfferPhase::Connecting => {}

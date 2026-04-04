@@ -1,12 +1,19 @@
 use std::path::PathBuf;
+use std::sync::{LazyLock, Mutex};
 
-use drift_app::{SendConfig, SendEvent as AppSendEvent, SendPhase as AppSendPhase, SendSession};
+use drift_app::{
+    SendConfig, SendEvent as AppSendEvent, SendPhase as AppSendPhase, SendSession,
+    SendSessionOutcome,
+};
+use tokio::sync::watch;
 
 use super::RUNTIME;
 use crate::frb_generated::StreamSink;
 
 const LOCAL_RENDEZVOUS_URL: &str = "http://127.0.0.1:8787";
 const ENABLE_DEMO_HELLO_PROTOCOL: bool = false;
+static ACTIVE_SEND_CANCEL: LazyLock<Mutex<Option<watch::Sender<bool>>>> =
+    LazyLock::new(|| Mutex::new(None));
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SendTransferPhase {
@@ -14,6 +21,7 @@ pub enum SendTransferPhase {
     WaitingForDecision,
     Sending,
     Completed,
+    Cancelled,
     Failed,
 }
 
@@ -57,9 +65,16 @@ pub fn start_send_transfer(
         },
         request.paths.into_iter().map(PathBuf::from).collect(),
     );
+    let (cancel_tx, cancel_rx) = watch::channel(false);
+    if let Ok(mut guard) = ACTIVE_SEND_CANCEL.lock() {
+        if let Some(existing) = guard.replace(cancel_tx.clone()) {
+            let _ = existing.send(true);
+        }
+    }
 
     RUNTIME.block_on(async move {
         let mut emitted_failed_event = false;
+        let mut emitted_cancelled_event = false;
         let result = match request
             .ticket
             .as_deref()
@@ -73,9 +88,13 @@ pub fn start_send_transfer(
                         request
                             .lan_destination_label
                             .unwrap_or_else(|| "Nearby receiver".to_owned()),
+                        Some(cancel_rx.clone()),
                         |event| {
                             if matches!(event.phase, AppSendPhase::Failed) {
                                 emitted_failed_event = true;
+                            }
+                            if matches!(event.phase, AppSendPhase::Cancelled) {
+                                emitted_cancelled_event = true;
                             }
                             let _ = updates.add(map_event(event));
                         },
@@ -87,9 +106,13 @@ pub fn start_send_transfer(
                     .send_to_code(
                         request.code,
                         request.server_url.or(Some(LOCAL_RENDEZVOUS_URL.to_owned())),
+                        Some(cancel_rx),
                         |event| {
                             if matches!(event.phase, AppSendPhase::Failed) {
                                 emitted_failed_event = true;
+                            }
+                            if matches!(event.phase, AppSendPhase::Cancelled) {
+                                emitted_cancelled_event = true;
                             }
                             let _ = updates.add(map_event(event));
                         },
@@ -98,10 +121,14 @@ pub fn start_send_transfer(
             }
         };
 
+        if let Ok(mut guard) = ACTIVE_SEND_CANCEL.lock() {
+            guard.take();
+        }
+
         match result {
-            Ok(()) => Ok(()),
+            Ok(SendSessionOutcome::Completed | SendSessionOutcome::Cancelled) => Ok(()),
             Err(error) => {
-                if !emitted_failed_event {
+                if !emitted_failed_event && !emitted_cancelled_event {
                     let _ = updates.add(SendTransferEvent {
                         phase: SendTransferPhase::Failed,
                         destination_label: fallback_destination,
@@ -117,6 +144,18 @@ pub fn start_send_transfer(
             }
         }
     })
+}
+
+pub fn cancel_active_send_transfer() -> Result<(), String> {
+    let guard = ACTIVE_SEND_CANCEL
+        .lock()
+        .map_err(|_| "send transfer mutex poisoned".to_owned())?;
+    let Some(cancel_tx) = guard.as_ref() else {
+        return Err("no active send transfer".to_owned());
+    };
+    cancel_tx
+        .send(true)
+        .map_err(|_| "send transfer is no longer active".to_owned())
 }
 
 fn fallback_destination_label(request: &SendTransferRequest) -> String {
@@ -148,6 +187,7 @@ fn map_event(event: AppSendEvent) -> SendTransferEvent {
             AppSendPhase::WaitingForDecision => SendTransferPhase::WaitingForDecision,
             AppSendPhase::Sending => SendTransferPhase::Sending,
             AppSendPhase::Completed => SendTransferPhase::Completed,
+            AppSendPhase::Cancelled => SendTransferPhase::Cancelled,
             AppSendPhase::Failed => SendTransferPhase::Failed,
         },
         destination_label: event.destination_label,

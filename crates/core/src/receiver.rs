@@ -2,6 +2,7 @@ use anyhow::{Context, Result, bail};
 use std::collections::BTreeMap;
 use std::future::Future;
 use std::path::{Path, PathBuf};
+use tokio::sync::watch;
 
 use crate::fs_plan::receive::{ExpectedFile, build_expected_files};
 use crate::rendezvous::OfferManifest;
@@ -11,7 +12,9 @@ use crate::session::{
     ExpectedTransferFile, FileReceiveProgress, build_expected_transfer_files,
     receive_files_over_connection_with_progress,
 };
-use crate::transfer::{ReceiverMachine, ReceiverState, ensure_session_id, validate_hello};
+use crate::transfer::{
+    ReceiverMachine, ReceiverState, TransferCancellation, ensure_session_id, validate_hello,
+};
 use crate::util::{ConnectionPathKind, classify_connection_path};
 use crate::wire::{
     Accept, ControlMessage, Decline, DeviceType, Hello, TRANSFER_PROTOCOL_VERSION, TransferRole,
@@ -70,7 +73,15 @@ pub enum ReceiveTransferPhase {
     Receiving,
     Completed,
     Declined,
+    Cancelled,
     Failed,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ReceiveTransferOutcome {
+    Completed,
+    Declined,
+    Cancelled(TransferCancellation),
 }
 
 /// High-level receiving metrics suitable for CLI/UI progress rendering.
@@ -177,8 +188,9 @@ pub async fn receiver_finish_after_decision_with_progress<F>(
     mut pending: ReceiverPendingDecision,
     machine: &mut ReceiverMachine,
     approved: bool,
+    cancel_rx: Option<watch::Receiver<bool>>,
     on_progress: &mut F,
-) -> Result<()>
+) -> Result<ReceiveTransferOutcome>
 where
     F: FnMut(ReceiveTransferProgress),
 {
@@ -210,7 +222,7 @@ where
             connection_path_kind,
             error_message: None,
         });
-        return Ok(());
+        return Ok(ReceiveTransferOutcome::Declined);
     }
 
     let session_id = pending.session_id.clone();
@@ -218,18 +230,21 @@ where
     machine.transition(ReceiverState::Approved)?;
     machine.transition(ReceiverState::Receiving)?;
     let expected_files = expected_transfer_files(&pending.manifest, pending.expected_files)?;
-    receive_files_over_connection_with_progress(
+    let mut last_bytes_received = 0_u64;
+    let transfer_result = receive_files_over_connection_with_progress(
         &pending.endpoint,
         &mut pending.control_send,
         &mut pending.control_recv,
         &session_id,
         expected_files,
+        cancel_rx,
         |p: FileReceiveProgress| {
             let current_file_path = if p.file_path.is_empty() {
                 None
             } else {
                 Some(p.file_path.to_string())
             };
+            last_bytes_received = p.total_bytes_received;
             on_progress(ReceiveTransferProgress {
                 phase: ReceiveTransferPhase::Receiving,
                 sender_device_name: sender_device_name.clone(),
@@ -247,6 +262,24 @@ where
         },
     )
     .await?;
+    if let Some(cancellation) = transfer_result {
+        machine.transition(ReceiverState::Cancelled)?;
+        on_progress(ReceiveTransferProgress {
+            phase: ReceiveTransferPhase::Cancelled,
+            sender_device_name,
+            sender_device_type,
+            file_count,
+            total_bytes,
+            bytes_received: last_bytes_received,
+            bytes_to_receive: total_bytes,
+            current_file_path: None,
+            bytes_received_in_file: 0,
+            current_file_size: 0,
+            connection_path_kind,
+            error_message: Some(cancellation.reason.clone()),
+        });
+        return Ok(ReceiveTransferOutcome::Cancelled(cancellation));
+    }
 
     machine.transition(ReceiverState::Completed)?;
     on_progress(ReceiveTransferProgress {
@@ -263,7 +296,7 @@ where
         connection_path_kind,
         error_message: None,
     });
-    Ok(())
+    Ok(ReceiveTransferOutcome::Completed)
 }
 
 /// Send accept/decline and optionally receive payload.
@@ -271,9 +304,9 @@ pub async fn receiver_finish_after_decision(
     pending: ReceiverPendingDecision,
     machine: &mut ReceiverMachine,
     approved: bool,
-) -> Result<()> {
+) -> Result<ReceiveTransferOutcome> {
     let mut noop = |_| {};
-    receiver_finish_after_decision_with_progress(pending, machine, approved, &mut noop).await
+    receiver_finish_after_decision_with_progress(pending, machine, approved, None, &mut noop).await
 }
 
 /// Like [handle_receiver_connection], but also reports receiving progress.
@@ -285,8 +318,9 @@ pub async fn handle_receiver_connection_with_progress<A, F>(
     device_type: DeviceType,
     machine: &mut ReceiverMachine,
     approve: A,
+    cancel_rx: Option<watch::Receiver<bool>>,
     mut on_progress: F,
-) -> Result<()>
+) -> Result<ReceiveTransferOutcome>
 where
     A: Future<Output = Result<bool>>,
     F: FnMut(ReceiveTransferProgress),
@@ -325,7 +359,7 @@ where
     let approved = approve.await?;
 
     let res =
-        receiver_finish_after_decision_with_progress(pending, machine, approved, &mut on_progress)
+        receiver_finish_after_decision_with_progress(pending, machine, approved, cancel_rx, &mut on_progress)
             .await;
 
     if let Err(err) = &res {
@@ -360,7 +394,7 @@ pub async fn handle_receiver_connection<A>(
     device_type: DeviceType,
     machine: &mut ReceiverMachine,
     approve: A,
-) -> Result<()>
+) -> Result<ReceiveTransferOutcome>
 where
     A: Future<Output = Result<bool>>,
 {
@@ -372,6 +406,7 @@ where
         device_type,
         machine,
         approve,
+        None,
         |_| {},
     )
     .await

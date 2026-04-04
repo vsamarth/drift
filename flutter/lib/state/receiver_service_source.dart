@@ -61,6 +61,8 @@ abstract class ReceiverServiceSource {
   Future<void> setDiscoverable({required bool enabled});
 
   Future<void> respondToOffer({required bool accept});
+
+  Future<void> cancelTransfer();
 }
 
 class LocalReceiverServiceSource implements ReceiverServiceSource {
@@ -108,6 +110,11 @@ class LocalReceiverServiceSource implements ReceiverServiceSource {
   @override
   Future<void> respondToOffer({required bool accept}) {
     return rust_receiver.respondToReceiverOffer(accept: accept);
+  }
+
+  @override
+  Future<void> cancelTransfer() {
+    return rust_receiver.cancelReceiverTransfer();
   }
 }
 

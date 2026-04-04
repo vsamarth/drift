@@ -47,6 +47,9 @@ class MockSendTransferSource implements SendTransferSource {
   @override
   Stream<SendTransferUpdate> startTransfer(SendTransferRequestData request) =>
       _controller.stream;
+
+  @override
+  Future<void> cancelTransfer() async {}
 }
 
 class MockNearbyDiscoverySource implements NearbyDiscoverySource {
@@ -77,6 +80,8 @@ class MockReceiverServiceSource implements ReceiverServiceSource {
   Future<void> setDiscoverable({required bool enabled}) async {}
   @override
   Future<void> respondToOffer({required bool accept}) async {}
+  @override
+  Future<void> cancelTransfer() async {}
 }
 
 void main() {

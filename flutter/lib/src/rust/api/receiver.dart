@@ -61,6 +61,9 @@ Stream<ReceiverTransferEvent> startReceiverTransferListener({
 Future<void> respondToReceiverOffer({required bool accept}) =>
     RustLib.instance.api.crateApiReceiverRespondToReceiverOffer(accept: accept);
 
+Future<void> cancelReceiverTransfer() =>
+    RustLib.instance.api.crateApiReceiverCancelReceiverTransfer();
+
 class ReceiverPairingState {
   final String? code;
   final String? expiresAt;
@@ -183,6 +186,7 @@ enum ReceiverTransferPhase {
   offerReady,
   receiving,
   completed,
+  cancelled,
   failed,
   declined,
 }

@@ -172,6 +172,17 @@ impl ReceiverService {
             .context("receiver actor dropped respond_to_offer reply")?
     }
 
+    pub async fn cancel_transfer(&self) -> Result<()> {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.cmd_tx
+            .send(ReceiverCommand::CancelTransfer { reply: reply_tx })
+            .await
+            .context("receiver actor stopped before cancel_transfer")?;
+        reply_rx
+            .await
+            .context("receiver actor dropped cancel_transfer reply")?
+    }
+
     pub async fn scan_nearby(&self, timeout_secs: u64) -> Result<Vec<NearbyReceiver>> {
         let (reply_tx, reply_rx) = oneshot::channel();
         self.cmd_tx

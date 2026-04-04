@@ -184,6 +184,9 @@ class FakeSendTransferSource implements SendTransferSource {
     return controller.stream;
   }
 
+  @override
+  Future<void> cancelTransfer() async {}
+
   Future<void> dispose() async {
     await controller.close();
   }
@@ -226,6 +229,9 @@ class FakeReceiverServiceSource implements ReceiverServiceSource {
   Future<void> respondToOffer({required bool accept}) async {
     respondToOfferCalls.add(accept);
   }
+
+  @override
+  Future<void> cancelTransfer() async {}
 
   @override
   Future<void> setDiscoverable({required bool enabled}) async {

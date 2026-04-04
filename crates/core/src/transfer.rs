@@ -1,6 +1,6 @@
 use anyhow::{Result, bail};
 
-use crate::wire::{Hello, TRANSFER_PROTOCOL_VERSION, TransferRole};
+use crate::wire::{CancelPhase, Hello, TRANSFER_PROTOCOL_VERSION, TransferRole};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SenderState {
@@ -13,6 +13,7 @@ pub enum SenderState {
     Sending,
     Completed,
     Declined,
+    Cancelled,
     Failed,
 }
 
@@ -28,7 +29,15 @@ pub enum ReceiverState {
     Receiving,
     Completed,
     Declined,
+    Cancelled,
     Failed,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TransferCancellation {
+    pub by: TransferRole,
+    pub phase: CancelPhase,
+    pub reason: String,
 }
 
 #[derive(Debug)]
@@ -55,6 +64,8 @@ impl SenderMachine {
                 | (Offering, WaitingForDecision)
                 | (WaitingForDecision, Sending)
                 | (WaitingForDecision, Declined)
+                | (WaitingForDecision, Cancelled)
+                | (Sending, Cancelled)
                 | (Sending, Completed)
                 | (_, Failed)
         );
@@ -99,7 +110,9 @@ impl ReceiverMachine {
                 | (ReviewingOffer, Declined)
                 | (AwaitingDecision, Approved)
                 | (AwaitingDecision, Declined)
+                | (AwaitingDecision, Cancelled)
                 | (Approved, Receiving)
+                | (Receiving, Cancelled)
                 | (Receiving, Completed)
                 | (_, Failed)
         );

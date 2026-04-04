@@ -34,12 +34,16 @@ pub(super) enum OfferResolution {
 pub(super) enum OfferState {
     Idle,
     Pending(PendingOfferState),
-    Receiving { offer_id: u64 },
+    Receiving {
+        offer_id: u64,
+        cancel_tx: watch::Sender<bool>,
+    },
 }
 
 pub(super) struct PendingOfferState {
     offer_id: u64,
     decision_tx: oneshot::Sender<OfferResolution>,
+    cancel_tx: watch::Sender<bool>,
     watch_task: JoinHandle<()>,
 }
 
@@ -236,7 +240,10 @@ impl ReceiverRuntime {
         pending_offer.watch_task.abort();
         let offer_id = pending_offer.offer_id;
         let resolution = if matches!(decision, OfferDecision::Accept) {
-            self.offer_state = OfferState::Receiving { offer_id };
+            self.offer_state = OfferState::Receiving {
+                offer_id,
+                cancel_tx: pending_offer.cancel_tx.clone(),
+            };
             OfferResolution::Accept
         } else {
             OfferResolution::Decline
@@ -252,6 +259,7 @@ impl ReceiverRuntime {
         &mut self,
         offer_id: u64,
         decision_tx: oneshot::Sender<OfferResolution>,
+        cancel_tx: watch::Sender<bool>,
         watch_task: JoinHandle<()>,
     ) -> bool {
         if !matches!(self.offer_state, OfferState::Idle) {
@@ -263,6 +271,7 @@ impl ReceiverRuntime {
         self.offer_state = OfferState::Pending(PendingOfferState {
             offer_id,
             decision_tx,
+            cancel_tx,
             watch_task,
         });
         true
@@ -272,11 +281,15 @@ impl ReceiverRuntime {
         match &mut self.offer_state {
             OfferState::Pending(pending) if pending.offer_id == offer_id => {
                 pending.watch_task.abort();
-                self.offer_state = OfferState::Receiving { offer_id };
+                self.offer_state = OfferState::Receiving {
+                    offer_id,
+                    cancel_tx: pending.cancel_tx.clone(),
+                };
                 true
             }
             OfferState::Receiving {
                 offer_id: active_offer_id,
+                ..
             } if *active_offer_id == offer_id => true,
             _ => false,
         }
@@ -296,6 +309,7 @@ impl ReceiverRuntime {
             }
             OfferState::Receiving {
                 offer_id: active_offer_id,
+                ..
             } if *active_offer_id == offer_id => {
                 self.offer_state = OfferState::Idle;
                 true
@@ -310,6 +324,16 @@ impl ReceiverRuntime {
 
     pub(super) fn handle_offer_expired(&mut self, offer_id: u64) -> bool {
         self.cancel_pending_offer(offer_id)
+    }
+
+    pub(super) fn cancel_active_transfer(&mut self) -> Result<()> {
+        match &self.offer_state {
+            OfferState::Receiving { cancel_tx, .. } => {
+                let _ = cancel_tx.send(true);
+                Ok(())
+            }
+            _ => Err(anyhow::anyhow!("no active transfer")),
+        }
     }
 
     fn cancel_pending_offer(&mut self, offer_id: u64) -> bool {
