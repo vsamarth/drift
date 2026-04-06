@@ -25,9 +25,9 @@ use tracing::trace;
 
 use crate::fs_plan::prepare::PreparedFile;
 use crate::fs_plan::receive::{ExpectedFile, build_expected_files};
+use crate::protocol::{message as protocol_message, wire as protocol_wire};
 use crate::rendezvous::OfferManifest;
 use crate::transfer::TransferCancellation;
-use crate::protocol::{message as protocol_message, wire as protocol_wire};
 use crate::util::describe_remote;
 use crate::wire::ALPN;
 
@@ -272,11 +272,11 @@ where
             message
         }
         other => {
-                let status = transfer_error_status(
-                    protocol_message::TransferErrorCode::UnexpectedMessage,
-                    format!(
-                        "unexpected control message while waiting for blob ticket: {:?}",
-                        other
+            let status = transfer_error_status(
+                protocol_message::TransferErrorCode::UnexpectedMessage,
+                format!(
+                    "unexpected control message while waiting for blob ticket: {:?}",
+                    other
                 ),
             );
             send_transfer_result(control_send, session_id, status.clone()).await?;
@@ -373,8 +373,12 @@ where
                 file_size: 0,
                 file_path: Arc::from(""),
             });
-            send_transfer_result(control_send, session_id, protocol_message::TransferStatus::Ok)
-                .await?;
+            send_transfer_result(
+                control_send,
+                session_id,
+                protocol_message::TransferStatus::Ok,
+            )
+            .await?;
             Ok(None)
         }
         other => other,
@@ -677,23 +681,15 @@ fn local_cancellation(
         (
             protocol_message::TransferRole::Sender,
             protocol_message::CancelPhase::WaitingForDecision,
-        ) => {
-            "sender cancelled before approval".to_owned()
+        ) => "sender cancelled before approval".to_owned(),
+        (protocol_message::TransferRole::Sender, protocol_message::CancelPhase::Transferring) => {
+            "sender cancelled transfer".to_owned()
         }
-        (
-            protocol_message::TransferRole::Sender,
-            protocol_message::CancelPhase::Transferring,
-        ) => "sender cancelled transfer".to_owned(),
         (
             protocol_message::TransferRole::Receiver,
             protocol_message::CancelPhase::WaitingForDecision,
-        ) => {
-            "receiver cancelled before approval".to_owned()
-        }
-        (
-            protocol_message::TransferRole::Receiver,
-            protocol_message::CancelPhase::Transferring,
-        ) => {
+        ) => "receiver cancelled before approval".to_owned(),
+        (protocol_message::TransferRole::Receiver, protocol_message::CancelPhase::Transferring) => {
             "receiver cancelled transfer".to_owned()
         }
     };

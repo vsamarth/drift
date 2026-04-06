@@ -169,8 +169,8 @@ mod tests {
         write_sender_message,
     };
     use crate::protocol::message::{
-        MessageEnvelope, MessageKind, Offer, PROTOCOL_VERSION, ReceiverMessage, SenderMessage,
-        TransferErrorCode, TransferFile, TransferManifest, TransferResult, TransferRole,
+        ManifestItem, MessageEnvelope, MessageKind, Offer, PROTOCOL_VERSION, ReceiverMessage,
+        SenderMessage, TransferErrorCode, TransferManifest, TransferResult, TransferRole,
         TransferStatus,
     };
     use tokio::io::duplex;
@@ -181,12 +181,10 @@ mod tests {
         let message = SenderMessage::Offer(Offer {
             session_id: "session-1".to_owned(),
             manifest: TransferManifest {
-                files: vec![TransferFile {
+                items: vec![ManifestItem::File {
                     path: "a.txt".to_owned(),
                     size: 1,
                 }],
-                file_count: 1,
-                total_size: 1,
             },
         });
 
@@ -277,9 +275,7 @@ mod tests {
                 "type": "offer",
                 "session_id": "session-1",
                 "manifest": {
-                    "files": [],
-                    "file_count": 0,
-                    "total_size": 0
+                    "items": []
                 }
             }),
         };

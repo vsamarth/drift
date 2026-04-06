@@ -168,5 +168,4 @@ mod tests {
         machine.transition(ReceiverState::Connected).unwrap();
         assert!(machine.transition(ReceiverState::Receiving).is_err());
     }
-
 }

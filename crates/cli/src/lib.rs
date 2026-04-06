@@ -8,9 +8,17 @@ use drift_app::{
     ReceiverOfferPhase, ReceiverService, SendConfig, SendEvent, SendPhase, SendSession,
     SendSessionOutcome,
 };
-use drift_core::util::{confirm_accept, human_size, process_display_device_name};
+use drift_core::transfer_flow::{
+    Receiver as DemoReceiver, ReceiverDecision as DemoReceiverDecision,
+    ReceiverOffer as DemoReceiverOffer, ReceiverOfferItem as DemoReceiverOfferItem,
+    ReceiverRequest as DemoReceiverRequest, SendRequest as DemoSendRequest,
+    Sender as DemoSender, SenderOutcome as DemoSenderOutcome,
+};
+use drift_core::util::{human_size, process_display_device_name};
+use drift_core::wire::DeviceType;
 use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
 use iroh::SecretKey;
+use std::collections::BTreeMap;
 use tokio::sync::watch;
 use tokio::time::Duration;
 use tracing::{debug, info, warn};
@@ -272,15 +280,8 @@ pub async fn receive(out_dir: PathBuf, server_url: Option<String>) -> Result<()>
                         render_receive_event(&mut last_phase, &mut progress_bar, &event);
                         match event.phase {
                             ReceiverOfferPhase::OfferReady => {
-                                let accept = tokio::task::spawn_blocking(confirm_accept)
-                                    .await
-                                    .context("confirm task")??;
-                                let decision = if accept {
-                                    OfferDecision::Accept
-                                } else {
-                                    OfferDecision::Decline
-                                };
-                                service.respond_to_offer(decision).await?;
+                                info!("receive.auto_accepting");
+                                service.respond_to_offer(OfferDecision::Accept).await?;
                             }
                             ReceiverOfferPhase::Completed
                             | ReceiverOfferPhase::Declined
@@ -324,6 +325,175 @@ pub async fn receive(out_dir: PathBuf, server_url: Option<String>) -> Result<()>
     }
 
     outcome
+}
+
+pub async fn demo_send(peer_endpoint_id: String, files: Vec<PathBuf>) -> Result<()> {
+    let device_name = process_display_device_name();
+    let peer_endpoint_id: iroh::EndpointId = peer_endpoint_id
+        .parse()
+        .context("parsing peer endpoint id")?;
+    let sender = DemoSender::new(
+        device_name.clone(),
+        DeviceType::Laptop,
+        DemoSendRequest {
+            peer_endpoint_id,
+            files,
+        },
+    );
+
+    info!(
+        session_id = %sender.session_id(),
+        peer_endpoint_id = %sender.request().peer_endpoint_id,
+        device = %device_name,
+        "demo.send.started"
+    );
+
+    match sender.run().await? {
+        DemoSenderOutcome::Accepted {
+            receiver_device_name,
+            receiver_endpoint_id,
+        } => {
+            info!(
+                receiver_device_name = %receiver_device_name,
+                receiver_endpoint_id = %receiver_endpoint_id,
+                "demo.send.accepted"
+            );
+        }
+        DemoSenderOutcome::Declined { reason } => {
+            info!(reason = %reason, "demo.send.declined");
+        }
+    }
+
+    Ok(())
+}
+
+pub async fn demo_receive() -> Result<()> {
+    let device_name = process_display_device_name();
+    let receiver = DemoReceiver::new(DemoReceiverRequest {
+        device_name: device_name.clone(),
+        device_type: DeviceType::Laptop,
+    });
+
+    info!(device = %device_name, "demo.receive.started");
+
+    receiver
+        .run_with_decision(|offer: DemoReceiverOffer| async move {
+            render_demo_offer(&offer);
+            info!("demo.receive.auto_accepting");
+            DemoReceiverDecision::Accept
+        })
+        .await
+        .map(|decision| {
+            match decision {
+                DemoReceiverDecision::Accept => info!("demo.receive.accepted"),
+                DemoReceiverDecision::Decline => info!("demo.receive.declined"),
+            }
+        })
+}
+
+fn render_demo_offer(offer: &DemoReceiverOffer) {
+    info!(
+        session_id = %offer.session_id,
+        sender_device_name = %offer.sender_device_name,
+        sender_endpoint_id = %offer.sender_endpoint_id,
+        file_count = offer.file_count,
+        total_size = offer.total_size,
+        "demo.receive.offer"
+    );
+
+    let tree = build_offer_tree(&offer.items);
+    print_demo_offer(&offer.sender_device_name, &tree);
+}
+
+#[derive(Default)]
+struct OfferTreeNode {
+    dirs: BTreeMap<String, OfferTreeNode>,
+    files: Vec<OfferTreeFile>,
+}
+
+#[derive(Clone)]
+struct OfferTreeFile {
+    name: String,
+    size: u64,
+}
+
+fn build_offer_tree(items: &[DemoReceiverOfferItem]) -> OfferTreeNode {
+    let mut root = OfferTreeNode::default();
+    for item in items {
+        let parts = item
+            .path
+            .split('/')
+            .filter(|part| !part.is_empty())
+            .collect::<Vec<_>>();
+        insert_offer_item(&mut root, &parts, item.size);
+    }
+    root
+}
+
+fn insert_offer_item(node: &mut OfferTreeNode, parts: &[&str], size: u64) {
+    if parts.is_empty() {
+        return;
+    }
+    if parts.len() == 1 {
+        node.files.push(OfferTreeFile {
+            name: parts[0].to_owned(),
+            size,
+        });
+        node.files.sort_by(|left, right| left.name.cmp(&right.name));
+        return;
+    }
+
+    let dir = parts[0].to_owned();
+    let child = node.dirs.entry(dir).or_default();
+    insert_offer_item(child, &parts[1..], size);
+}
+
+fn print_demo_offer(sender_device_name: &str, tree: &OfferTreeNode) {
+    print!("Offer from {sender_device_name}:\n");
+    print_offer_tree(tree, "");
+    let _ = io::stdout().flush();
+}
+
+fn print_offer_tree(node: &OfferTreeNode, prefix: &str) {
+    let mut entries = Vec::new();
+    for (dir, child) in &node.dirs {
+        entries.push(OfferTreeEntry::Dir {
+            name: dir,
+            node: child,
+        });
+    }
+    for file in &node.files {
+        entries.push(OfferTreeEntry::File { file });
+    }
+
+    for (index, entry) in entries.iter().enumerate() {
+        let last = index + 1 == entries.len();
+        let branch = if last { "└── " } else { "├── " };
+        let next_prefix = if last {
+            format!("{prefix}    ")
+        } else {
+            format!("{prefix}│   ")
+        };
+        match entry {
+            OfferTreeEntry::Dir { name, node } => {
+                print!("{prefix}{branch}{name}/\n");
+                print_offer_tree(node, &next_prefix);
+            }
+            OfferTreeEntry::File { file } => {
+                print!("{prefix}{branch}{} ({})\n", file.name, human_size(file.size));
+            }
+        }
+    }
+}
+
+enum OfferTreeEntry<'a> {
+    Dir {
+        name: &'a str,
+        node: &'a OfferTreeNode,
+    },
+    File {
+        file: &'a OfferTreeFile,
+    },
 }
 
 fn render_send_event(

@@ -117,10 +117,12 @@ pub async fn receiver_run_until_decision(
         .await
         .context("waiting for transfer control stream")?;
 
+    let local_endpoint_id = endpoint.addr().id;
     let mut handshake = protocol_receiver::Receiver::new(protocol_identity(
         device_name,
         device_type,
         protocol_message::TransferRole::Receiver,
+        local_endpoint_id,
     ));
     let peer_hello = handshake.read_peer_hello(&mut control_recv).await?;
     handshake
@@ -432,9 +434,11 @@ fn protocol_identity(
     device_name: &str,
     device_type: DeviceType,
     role: protocol_message::TransferRole,
+    endpoint_id: iroh::EndpointId,
 ) -> protocol_message::Identity {
     protocol_message::Identity {
         role,
+        endpoint_id,
         device_name: device_name.to_owned(),
         device_type: to_protocol_device_type(device_type),
     }
@@ -455,17 +459,23 @@ fn to_protocol_device_type(device_type: DeviceType) -> protocol_message::DeviceT
 }
 
 fn to_local_manifest(manifest: &protocol_message::Offer) -> OfferManifest {
+    let files: Vec<_> = manifest
+        .manifest
+        .items
+        .iter()
+        .map(|item| match item {
+            protocol_message::ManifestItem::File { path, size } => crate::rendezvous::OfferFile {
+                path: path.clone(),
+                size: *size,
+            },
+        })
+        .collect();
+    let file_count = files.len() as u64;
+    let total_size = files.iter().map(|file| file.size).sum();
+
     OfferManifest {
-        files: manifest
-            .manifest
-            .files
-            .iter()
-            .map(|file| crate::rendezvous::OfferFile {
-                path: file.path.clone(),
-                size: file.size,
-            })
-            .collect(),
-        file_count: manifest.manifest.file_count,
-        total_size: manifest.manifest.total_size,
+        files,
+        file_count,
+        total_size,
     }
 }

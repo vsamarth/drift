@@ -4,7 +4,7 @@ use anyhow::{Context, Result, bail};
 use tokio::io::{AsyncRead, AsyncWrite};
 
 use super::message::{
-    Accept, Cancel, Decline, Hello, Identity, Offer, PROTOCOL_VERSION, SenderMessage, TransferRole,
+    Accept, Decline, Hello, Identity, Offer, PROTOCOL_VERSION, SenderMessage, TransferRole,
 };
 use super::wire::{read_sender_message, write_receiver_message};
 
@@ -17,7 +17,6 @@ pub(crate) enum ReceiverState {
     AwaitingDecision,
     Accepted,
     Declined,
-    Cancelled,
     Failed,
 }
 
@@ -44,7 +43,6 @@ impl ReceiverMachine {
                 | (OfferReceived, AwaitingDecision)
                 | (AwaitingDecision, Accepted)
                 | (AwaitingDecision, Declined)
-                | (AwaitingDecision, Cancelled)
                 | (_, Failed)
         );
 
@@ -98,7 +96,6 @@ pub(crate) enum ReceiverControlOutcome {
     Pending(ReceiverPendingDecision),
     Accepted(ReceiverPeer),
     Declined(Decline),
-    Cancelled(Cancel),
 }
 
 #[derive(Debug)]
@@ -282,12 +279,13 @@ fn ensure_session_id(actual: &str, expected: &str) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Receiver, ReceiverMachine, ReceiverState};
+    use super::{Receiver, ReceiverControlOutcome, ReceiverMachine, ReceiverState};
     use crate::protocol::message::{
-        DeviceType, Hello, Identity, Offer, PROTOCOL_VERSION, ReceiverMessage, SenderMessage,
-        TransferFile, TransferManifest, TransferRole,
+        DeviceType, Hello, Identity, ManifestItem, Offer, PROTOCOL_VERSION, ReceiverMessage,
+        SenderMessage, TransferManifest, TransferRole,
     };
     use crate::protocol::wire::{read_receiver_message, write_sender_message};
+    use iroh::SecretKey;
     use tokio::io::duplex;
 
     #[test]
@@ -310,6 +308,7 @@ mod tests {
 
         let mut handler = Receiver::new(Identity {
             role: TransferRole::Receiver,
+            endpoint_id: SecretKey::from_bytes(&[2; 32]).public(),
             device_name: "receiver".to_owned(),
             device_type: DeviceType::Laptop,
         });
@@ -322,6 +321,7 @@ mod tests {
                     session_id: "session-1".to_owned(),
                     identity: Identity {
                         role: TransferRole::Sender,
+                        endpoint_id: SecretKey::from_bytes(&[1; 32]).public(),
                         device_name: "sender".to_owned(),
                         device_type: DeviceType::Phone,
                     },
@@ -338,12 +338,10 @@ mod tests {
                 &SenderMessage::Offer(Offer {
                     session_id: "session-1".to_owned(),
                     manifest: TransferManifest {
-                        files: vec![TransferFile {
+                        items: vec![ManifestItem::File {
                             path: "a.txt".to_owned(),
                             size: 1,
                         }],
-                        file_count: 1,
-                        total_size: 1,
                     },
                 }),
             )
@@ -364,10 +362,7 @@ mod tests {
         let outcome = handler
             .accept(&mut local_write, pending.session_id())
             .await?;
-        assert!(matches!(
-            outcome,
-            receive::ReceiverControlOutcome::Accepted(_)
-        ));
+        assert!(matches!(outcome, ReceiverControlOutcome::Accepted(_)));
 
         sender_task.await.unwrap();
         Ok(())

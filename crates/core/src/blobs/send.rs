@@ -23,13 +23,13 @@ pub enum SenderEvent {
     StorePrepared {
         session_id: String,
         root_hash: iroh_blobs::Hash,
+        /// Sum of file payload sizes (raw blobs); receiver uses this for progress totals.
+        total_bytes: u64,
+        collection: Collection,
     },
     TicketReady {
         session_id: String,
         ticket: String,
-        /// Sum of file payload sizes (raw blobs); receiver uses this for progress totals.
-        total_bytes: u64,
-        collection: Collection,
     },
     Completed {
         session_id: String,
@@ -65,6 +65,134 @@ fn ensure_receiver_session_id(expected: &str, event: &ReceiverEvent) -> Result<(
 }
 
 #[derive(Debug)]
+pub(crate) struct PreparedStore {
+    session_id: String,
+    store: FsStore,
+    collection_tag: TempTag,
+    collection: Collection,
+    total_bytes: u64,
+}
+
+impl PreparedStore {
+    pub(crate) async fn prepare(
+        session_id: String,
+        root_dir: &Path,
+        files: Vec<PathBuf>,
+    ) -> Result<Self> {
+        let store = FsStore::load(root_dir)
+            .await
+            .with_context(|| format!("loading blob store at {}", root_dir.display()))?;
+
+        let mut collection = Collection::default();
+        let mut seen_transfer_paths = HashSet::new();
+        let mut total_bytes = 0_u64;
+        for path in files {
+            trace!(input_path = %path.display(), "processing import input path");
+            let imported = import_files(&store, path).await?;
+            for file in imported {
+                if !seen_transfer_paths.insert(file.transfer_path.clone()) {
+                    bail!(
+                        "duplicate transfer path in manifest: {}",
+                        file.transfer_path
+                    );
+                }
+                total_bytes = total_bytes
+                    .checked_add(file.size_bytes)
+                    .ok_or_else(|| anyhow!("total transfer size exceeds u64"))?;
+                collection.extend([(file.transfer_path, file.temp_tag.hash())]);
+            }
+        }
+
+        let collection_tag = collection.store(store.as_ref()).await?;
+        let collection = Collection::load(collection_tag.hash(), store.as_ref())
+            .await
+            .context("loading collection after store")?;
+        trace!(
+            collection_hash = %collection_tag.hash(),
+            item_count = seen_transfer_paths.len(),
+            total_bytes,
+            "stored collection in blob store"
+        );
+
+        Ok(Self {
+            session_id,
+            store,
+            collection_tag,
+            collection,
+            total_bytes,
+        })
+    }
+
+    pub(crate) fn session_id(&self) -> &str {
+        &self.session_id
+    }
+
+    pub(crate) fn store(&self) -> &FsStore {
+        &self.store
+    }
+
+    pub(crate) fn collection_tag(&self) -> &TempTag {
+        &self.collection_tag
+    }
+
+    pub(crate) fn collection(&self) -> &Collection {
+        &self.collection
+    }
+
+    pub(crate) fn total_bytes(&self) -> u64 {
+        self.total_bytes
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct BlobService {
+    endpoint: Endpoint,
+}
+
+#[derive(Debug)]
+pub(crate) struct BlobRegistration {
+    #[allow(dead_code)]
+    prepared: PreparedStore,
+    router: Router,
+    ticket: BlobTicket,
+}
+
+impl BlobService {
+    pub(crate) fn new(endpoint: Endpoint) -> Self {
+        Self { endpoint }
+    }
+
+    pub(crate) async fn register(self, prepared: PreparedStore) -> Result<BlobRegistration> {
+        let router = Router::builder(self.endpoint)
+            .accept(ALPN, BlobsProtocol::new(prepared.store().as_ref(), None))
+            .spawn();
+
+        let ticket = BlobTicket::new(
+            router.endpoint().addr(),
+            prepared.collection_tag().hash(),
+            BlobFormat::HashSeq,
+        );
+
+        Ok(BlobRegistration {
+            prepared,
+            router,
+            ticket,
+        })
+    }
+}
+
+impl BlobRegistration {
+    pub(crate) fn ticket(&self) -> &BlobTicket {
+        &self.ticket
+    }
+
+    pub(crate) async fn shutdown(self) -> Result<()> {
+        self.router.shutdown().await?;
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
 pub struct Sender {
     endpoint: Endpoint,
 }
@@ -95,51 +223,11 @@ impl Manifest {
     }
 }
 
+
+
 impl Sender {
     pub fn new(endpoint: Endpoint) -> Self {
         Self { endpoint }
-    }
-
-    #[instrument(skip(self, files), fields(root_dir = %root_dir.display(), input_count = files.len()))]
-    async fn prepare_store(
-        &self,
-        root_dir: &Path,
-        files: Vec<PathBuf>,
-    ) -> Result<(FsStore, TempTag, Collection, u64)> {
-        let store = FsStore::load(root_dir)
-            .await
-            .with_context(|| format!("loading blob store at {}", root_dir.display()))?;
-
-        let mut collection = Collection::default();
-        let mut seen_transfer_paths = HashSet::new();
-        let mut total_bytes = 0_u64;
-        for path in files {
-            trace!(input_path = %path.display(), "processing import input path");
-            let imported = import_files(&store, path).await?;
-            for file in imported {
-                if !seen_transfer_paths.insert(file.transfer_path.clone()) {
-                    bail!(
-                        "duplicate transfer path in manifest: {}",
-                        file.transfer_path
-                    );
-                }
-                total_bytes = total_bytes
-                    .checked_add(file.size_bytes)
-                    .ok_or_else(|| anyhow!("total transfer size exceeds u64"))?;
-                collection.extend([(file.transfer_path, file.temp_tag.hash())]);
-            }
-        }
-        let collection_tag = collection.store(store.as_ref()).await?;
-        let collection = Collection::load(collection_tag.hash(), store.as_ref())
-            .await
-            .context("loading collection after store")?;
-        trace!(
-            collection_hash = %collection_tag.hash(),
-            item_count = seen_transfer_paths.len(),
-            total_bytes,
-            "stored collection in blob store"
-        );
-        Ok((store, collection_tag, collection, total_bytes))
     }
 
     #[instrument(skip(self, manifest, event_tx, receiver_event_rx), fields(root_dir = %manifest.root_dir.display(), file_count = manifest.files.len()))]
@@ -150,53 +238,66 @@ impl Sender {
         receiver_event_rx: &mut mpsc::UnboundedReceiver<ReceiverEvent>,
     ) -> Result<()> {
         let session_id = manifest.session_id.clone();
-        let input_count = manifest.files.len();
         emit_event(
             &event_tx,
             SenderEvent::Preparing {
                 session_id: session_id.clone(),
-                input_count,
+                input_count: manifest.files.len(),
             },
         );
 
-        let (store, tag, collection, total_bytes) =
-            match self.prepare_store(&manifest.root_dir, manifest.files).await {
-                Ok(value) => value,
-                Err(error) => {
-                    emit_event(
-                        &event_tx,
-                        SenderEvent::Failed {
-                            session_id,
-                            message: format!("{error:#}"),
-                        },
-                    );
-                    return Err(error);
-                }
-            };
+        let prepared = PreparedStore::prepare(
+            session_id.clone(),
+            &manifest.root_dir,
+            manifest.files,
+        )
+        .await
+        .map_err(|error| {
+            emit_event(
+                &event_tx,
+                SenderEvent::Failed {
+                    session_id: session_id.clone(),
+                    message: format!("{error:#}"),
+                },
+            );
+            error
+        })?;
+        self.send_prepared(prepared, event_tx, receiver_event_rx)
+            .await
+    }
+
+    #[instrument(skip(self, prepared, event_tx, receiver_event_rx), fields(session_id = %prepared.session_id()))]
+    pub(crate) async fn send_prepared(
+        &self,
+        prepared: PreparedStore,
+        event_tx: Option<mpsc::UnboundedSender<SenderEvent>>,
+        receiver_event_rx: &mut mpsc::UnboundedReceiver<ReceiverEvent>,
+    ) -> Result<()> {
+        let session_id = prepared.session_id().to_owned();
         emit_event(
             &event_tx,
             SenderEvent::StorePrepared {
                 session_id: session_id.clone(),
-                root_hash: tag.hash(),
+                root_hash: prepared.collection_tag().hash(),
+                total_bytes: prepared.total_bytes(),
+                collection: prepared.collection().clone(),
             },
         );
 
-        let router = Router::builder(self.endpoint.clone())
-            .accept(ALPN, BlobsProtocol::new(store.as_ref(), None))
-            .spawn();
-
-        let ticket = BlobTicket::new(router.endpoint().addr(), tag.hash(), BlobFormat::HashSeq);
+        let registration = BlobService::new(self.endpoint.clone())
+            .register(prepared)
+            .await
+            .context("registering blob service")?;
+        let ticket = registration.ticket().to_string();
         trace!(%ticket, "constructed blob ticket for transfer");
         emit_event(
             &event_tx,
             SenderEvent::TicketReady {
                 session_id: session_id.clone(),
-                ticket: ticket.to_string(),
-                total_bytes,
-                collection,
+                ticket,
             },
         );
-        let _collection_pin = tag;
+
         let transfer_result: Result<()> = loop {
             let receiver_event = match receiver_event_rx.recv().await {
                 Some(event) => event,
@@ -268,7 +369,7 @@ impl Sender {
             }
         };
 
-        if let Err(error) = router.shutdown().await {
+        if let Err(error) = registration.shutdown().await {
             trace!(%error, "failed to shut down sender router");
             if transfer_result.is_ok() {
                 return Err(error.into());
@@ -288,7 +389,7 @@ mod tests {
     use anyhow::Result;
     use tokio::sync::mpsc;
 
-    use super::{Manifest, Sender, SenderEvent};
+    use super::{Manifest, PreparedStore, Sender, SenderEvent};
     use crate::blobs::receive::ReceiverEvent;
 
     fn unique_temp_dir(prefix: &str) -> PathBuf {
@@ -369,15 +470,20 @@ mod tests {
             Some(endpoint) => endpoint,
             None => return Ok(()),
         };
-        let sender = Sender::new(endpoint.clone());
         let store_root = root.join("store");
-        let err = sender
-            .prepare_store(&store_root, vec![source.clone(), source])
-            .await
+        std::fs::create_dir_all(&store_root)?;
+        let sender = Sender::new(endpoint.clone());
+        let err = PreparedStore::prepare(
+            "session-duplicate-paths".to_owned(),
+            &store_root,
+            vec![source.clone(), source],
+        )
+        .await
             .expect_err("expected duplicate transfer path failure");
         let err_text = format!("{err:#}");
         assert!(err_text.contains("duplicate transfer path in manifest: source/same.txt"));
 
+        drop(sender);
         finish_case(&root, endpoint).await;
         Ok(())
     }

@@ -129,6 +129,8 @@ impl Receiver {
             .with_context(|| format!("creating output directory {}", out_dir.display()))?;
 
         let session_owned = session_id.to_owned();
+        let mut prepared_collection: Option<Collection> = None;
+        let mut prepared_total_bytes: Option<u64> = None;
         loop {
             let sender_event = match sender_event_rx.recv().await {
                 Some(event) => event,
@@ -157,15 +159,25 @@ impl Receiver {
             }
 
             match sender_event {
-                SenderEvent::Preparing { .. } | SenderEvent::StorePrepared { .. } => {
+                SenderEvent::Preparing { .. } => {
                     trace!(%session_id, "waiting for ticket");
                 }
-                SenderEvent::TicketReady {
-                    ticket,
+                SenderEvent::StorePrepared {
                     collection,
                     total_bytes,
                     ..
                 } => {
+                    prepared_collection = Some(collection);
+                    prepared_total_bytes = Some(total_bytes);
+                    trace!(%session_id, "stored collection metadata");
+                }
+                SenderEvent::TicketReady { ticket, .. } => {
+                    let collection = prepared_collection.clone().ok_or_else(|| {
+                        anyhow!("sender published ticket before store was prepared")
+                    })?;
+                    let total_bytes = prepared_total_bytes.ok_or_else(|| {
+                        anyhow!("sender published ticket before total bytes were prepared")
+                    })?;
                     let blob_ticket: BlobTicket =
                         match ticket.parse().context("parsing blob ticket") {
                             Ok(v) => v,
@@ -473,14 +485,14 @@ mod tests {
             .send(SenderEvent::StorePrepared {
                 session_id: session_id.clone(),
                 root_hash: collection_tag.hash(),
+                total_bytes,
+                collection,
             })
             .expect("store prepared");
         sender_ev_tx
             .send(SenderEvent::TicketReady {
                 session_id: session_id.clone(),
                 ticket: ticket.to_string(),
-                total_bytes,
-                collection,
             })
             .expect("ticket ready");
 
@@ -563,14 +575,18 @@ mod tests {
         let (event_tx, mut event_rx) = mpsc::unbounded_channel();
         let session_id = "receiver-session-invalid-ticket".to_owned();
 
-        use iroh_blobs::format::collection::Collection;
-
+        sender_tx
+            .send(SenderEvent::StorePrepared {
+                session_id: session_id.clone(),
+                root_hash: iroh_blobs::Hash::new(b"bad-ticket"),
+                total_bytes: 0,
+                collection: Collection::default(),
+            })
+            .expect("send store prepared");
         sender_tx
             .send(SenderEvent::TicketReady {
                 session_id: session_id.clone(),
                 ticket: "not-a-valid-blob-ticket".to_owned(),
-                total_bytes: 0,
-                collection: Collection::default(),
             })
             .expect("send bad ticket");
 

@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 
+use iroh::EndpointId;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -35,6 +36,7 @@ pub(crate) enum MessageKind {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub(crate) struct Identity {
     pub(crate) role: TransferRole,
+    pub(crate) endpoint_id: EndpointId,
     pub(crate) device_name: String,
     pub(crate) device_type: DeviceType,
 }
@@ -68,16 +70,14 @@ pub(crate) enum TransferStatus {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub(crate) struct TransferFile {
-    pub(crate) path: String,
-    pub(crate) size: u64,
+pub(crate) struct TransferManifest {
+    pub(crate) items: Vec<ManifestItem>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub(crate) struct TransferManifest {
-    pub(crate) files: Vec<TransferFile>,
-    pub(crate) file_count: u64,
-    pub(crate) total_size: u64,
+#[serde(tag = "type", rename_all = "snake_case")]
+pub(crate) enum ManifestItem {
+    File { path: String, size: u64 },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -194,14 +194,16 @@ impl ReceiverMessage {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use iroh::SecretKey;
 
     #[test]
     fn sender_message_serializes_with_directional_tag() {
         let message = SenderMessage::Hello(Hello {
-            version: PROTOCOL_VERSION,
-            session_id: "session-1".to_owned(),
-            identity: Identity {
-                role: TransferRole::Sender,
+                version: PROTOCOL_VERSION,
+                session_id: "session-1".to_owned(),
+                identity: Identity {
+                    role: TransferRole::Sender,
+                endpoint_id: SecretKey::from_bytes(&[1; 32]).public(),
                 device_name: "sam-mac".to_owned(),
                 device_type: DeviceType::Laptop,
             },
@@ -229,12 +231,10 @@ mod tests {
     #[test]
     fn message_enums_cover_current_transfer_flow() {
         let manifest = TransferManifest {
-            files: vec![TransferFile {
+            items: vec![ManifestItem::File {
                 path: "a.txt".to_owned(),
                 size: 1,
             }],
-            file_count: 1,
-            total_size: 1,
         };
 
         let sender_messages = [
@@ -243,6 +243,7 @@ mod tests {
                 session_id: "session-1".to_owned(),
                 identity: Identity {
                     role: TransferRole::Sender,
+                    endpoint_id: SecretKey::from_bytes(&[1; 32]).public(),
                     device_name: "sam-mac".to_owned(),
                     device_type: DeviceType::Laptop,
                 },
@@ -272,6 +273,7 @@ mod tests {
                 session_id: "session-1".to_owned(),
                 identity: Identity {
                     role: TransferRole::Receiver,
+                    endpoint_id: SecretKey::from_bytes(&[2; 32]).public(),
                     device_name: "phone".to_owned(),
                     device_type: DeviceType::Phone,
                 },

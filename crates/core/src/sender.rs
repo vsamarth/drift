@@ -182,6 +182,7 @@ where
     let mut last_bytes_sent_in_file = 0_u64;
 
     machine.transition(SenderState::Offering)?;
+    let local_endpoint_id = endpoint.addr().id;
     let (mut control_send, mut control_recv) = connection
         .open_bi()
         .await
@@ -192,6 +193,7 @@ where
             device_name,
             device_type,
             protocol_message::TransferRole::Sender,
+            local_endpoint_id,
         ),
     );
     handshake.send_hello(&mut control_send).await?;
@@ -333,26 +335,6 @@ where
             endpoint.close().await;
             bail!("receiver declined the offer: {}", message.reason);
         }
-        protocol_sender::SenderControlOutcome::Cancelled(message) => {
-            let cancellation = TransferCancellation {
-                by: message.by,
-                phase: message.phase,
-                reason: message.reason,
-            };
-            machine.transition(SenderState::Cancelled)?;
-            on_progress(progress(
-                SendTransferPhase::Cancelled,
-                receiver_hello.identity.device_name.clone(),
-                prepared,
-                Some(to_local_device_type(receiver_hello.identity.device_type)),
-                0,
-                None,
-                0,
-                Some(connection_path_kind),
-            ));
-            endpoint.close().await;
-            return Ok(SendTransferResult::Cancelled(cancellation));
-        }
     }
 
     endpoint.close().await;
@@ -393,9 +375,11 @@ fn to_protocol_identity(
     device_name: &str,
     device_type: DeviceType,
     role: protocol_message::TransferRole,
+    endpoint_id: iroh::EndpointId,
 ) -> protocol_message::Identity {
     protocol_message::Identity {
         role,
+        endpoint_id,
         device_name: device_name.to_owned(),
         device_type: to_protocol_device_type(device_type),
     }
@@ -417,16 +401,14 @@ fn to_local_device_type(device_type: protocol_message::DeviceType) -> DeviceType
 
 fn to_protocol_manifest(manifest: &OfferManifest) -> protocol_message::TransferManifest {
     protocol_message::TransferManifest {
-        files: manifest
+        items: manifest
             .files
             .iter()
-            .map(|file| protocol_message::TransferFile {
+            .map(|file| protocol_message::ManifestItem::File {
                 path: file.path.clone(),
                 size: file.size,
             })
             .collect(),
-        file_count: manifest.file_count,
-        total_size: manifest.total_size,
     }
 }
 
