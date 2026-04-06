@@ -11,3 +11,4 @@ pub mod util;
 pub mod wire;
 
 pub mod blobs;
+pub mod protocol;
