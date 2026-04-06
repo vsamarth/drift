@@ -31,17 +31,16 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Install cargo-expand
-        run: cargo install cargo-expand
+      - name: Install Rust tools
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-expand,flutter_rust_bridge_codegen@${{ env.FLUTTER_RUST_BRIDGE_CODEGEN_VERSION }}
 
       - name: Install Flutter
         uses: subosito/flutter-action@v2
         with:
           channel: stable
           cache: true
-
-      - name: Install flutter_rust_bridge_codegen
-        run: cargo install flutter_rust_bridge_codegen --version ${{ env.FLUTTER_RUST_BRIDGE_CODEGEN_VERSION }}
 
       - name: Get Flutter dependencies
         run: flutter pub get
@@ -95,17 +94,16 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Install cargo-expand
-        run: cargo install cargo-expand
+      - name: Install Rust tools
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-expand,flutter_rust_bridge_codegen@${{ env.FLUTTER_RUST_BRIDGE_CODEGEN_VERSION }}
 
       - name: Install Flutter
         uses: subosito/flutter-action@v2
         with:
           channel: stable
           cache: true
-
-      - name: Install flutter_rust_bridge_codegen
-        run: cargo install flutter_rust_bridge_codegen --version ${{ env.FLUTTER_RUST_BRIDGE_CODEGEN_VERSION }}
 
       - name: Get Flutter dependencies
         run: flutter pub get
@@ -142,17 +140,16 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Install cargo-expand
-        run: cargo install cargo-expand
+      - name: Install Rust tools
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-expand,flutter_rust_bridge_codegen@${{ env.FLUTTER_RUST_BRIDGE_CODEGEN_VERSION }}
 
       - name: Install Flutter
         uses: subosito/flutter-action@v2
         with:
           channel: stable
           cache: true
-
-      - name: Install flutter_rust_bridge_codegen
-        run: cargo install flutter_rust_bridge_codegen --version ${{ env.FLUTTER_RUST_BRIDGE_CODEGEN_VERSION }}
 
       - name: Get Flutter dependencies
         run: flutter pub get
@@ -201,17 +198,16 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Install cargo-expand
-        run: cargo install cargo-expand
+      - name: Install Rust tools
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-expand,flutter_rust_bridge_codegen@${{ env.FLUTTER_RUST_BRIDGE_CODEGEN_VERSION }}
 
       - name: Install Flutter
         uses: subosito/flutter-action@v2
         with:
           channel: stable
           cache: true
-
-      - name: Install flutter_rust_bridge_codegen
-        run: cargo install flutter_rust_bridge_codegen --version ${{ env.FLUTTER_RUST_BRIDGE_CODEGEN_VERSION }}
 
       - name: Get Flutter dependencies
         run: flutter pub get
