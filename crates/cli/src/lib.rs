@@ -375,7 +375,9 @@ fn render_send_event(
             pb.set_position(event.bytes_sent);
             pb.set_message(event.status_message.clone());
         }
-        SendPhase::Completed | SendPhase::Cancelled | SendPhase::Failed => finish_progress_bar(progress_bar),
+        SendPhase::Completed | SendPhase::Cancelled | SendPhase::Failed => {
+            finish_progress_bar(progress_bar)
+        }
         SendPhase::Connecting | SendPhase::WaitingForDecision => {}
     }
 }

@@ -358,9 +358,14 @@ where
 
     let approved = approve.await?;
 
-    let res =
-        receiver_finish_after_decision_with_progress(pending, machine, approved, cancel_rx, &mut on_progress)
-            .await;
+    let res = receiver_finish_after_decision_with_progress(
+        pending,
+        machine,
+        approved,
+        cancel_rx,
+        &mut on_progress,
+    )
+    .await;
 
     if let Err(err) = &res {
         on_progress(ReceiveTransferProgress {
