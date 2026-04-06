@@ -574,7 +574,8 @@ async fn forward_request_updates(
                 if let Some(current_file) = current {
                     let next = progress.end_offset.min(current_file.file_size);
                     let update = {
-                        let mut aggregate = aggregate.lock().expect("send progress aggregate poisoned");
+                        let mut aggregate =
+                            aggregate.lock().expect("send progress aggregate poisoned");
                         aggregate.record(current_file, next)
                     };
                     if let Some(update) = update {
@@ -700,7 +701,9 @@ mod tests {
         assert_eq!(second_update.bytes_sent_in_file, 600);
         assert_eq!(second_update.file_index, 1);
 
-        let resumed_first = aggregate.record(first, 1_000).expect("resumed first update");
+        let resumed_first = aggregate
+            .record(first, 1_000)
+            .expect("resumed first update");
         assert_eq!(resumed_first.total_bytes_sent, 1_600);
         assert_eq!(resumed_first.bytes_sent_in_file, 1_000);
         assert_eq!(resumed_first.file_index, 0);

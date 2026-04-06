@@ -562,7 +562,8 @@ fn build_transfer_progress_message(
     bytes_transferred: u64,
     total_size: u64,
 ) -> String {
-    let Some(bps) = smoothed_bps.filter(|bps| *bps >= TransferProgressMetrics::MIN_VISIBLE_BPS) else {
+    let Some(bps) = smoothed_bps.filter(|bps| *bps >= TransferProgressMetrics::MIN_VISIBLE_BPS)
+    else {
         return status_message.to_owned();
     };
 
@@ -690,8 +691,12 @@ mod tests {
         assert_eq!(third, "Sending to Receiver. 320.0 KB/s");
 
         metrics.reset();
-        let completed_message =
-            metrics.message_for("Files sent successfully", 4_000, 4_000, start + Duration::from_millis(300));
+        let completed_message = metrics.message_for(
+            "Files sent successfully",
+            4_000,
+            4_000,
+            start + Duration::from_millis(300),
+        );
         assert_eq!(completed_message, "Files sent successfully");
 
         let restarted = metrics.message_for(
@@ -705,7 +710,8 @@ mod tests {
 
     #[test]
     fn build_message_omits_eta_when_transfer_is_complete() {
-        let message = build_transfer_progress_message("Sending to Receiver.", Some(2_048.0), 10, 10);
+        let message =
+            build_transfer_progress_message("Sending to Receiver.", Some(2_048.0), 10, 10);
         assert_eq!(message, "Sending to Receiver. 2.0 KB/s");
     }
 
