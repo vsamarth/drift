@@ -4,6 +4,7 @@ use std::future::Future;
 use std::path::{Path, PathBuf};
 use tokio::sync::watch;
 
+use crate::fs_plan::ConflictPolicy;
 use crate::fs_plan::receive::{ExpectedFile, build_expected_files};
 use crate::rendezvous::OfferManifest;
 use iroh::Endpoint;
@@ -112,6 +113,7 @@ pub async fn receiver_run_until_decision(
     out_dir: PathBuf,
     device_name: &str,
     device_type: DeviceType,
+    policy: ConflictPolicy,
     machine: &mut ReceiverMachine,
 ) -> Result<ReceiverPendingDecision> {
     let (mut control_send, mut control_recv) = connection
@@ -157,7 +159,7 @@ pub async fn receiver_run_until_decision(
         }
     };
 
-    let expected_files = match build_expected_files(&offer.manifest, &out_dir).await {
+    let expected_files = match build_expected_files(&offer.manifest, &out_dir, policy).await {
         Ok(expected_files) => expected_files,
         Err(err) => {
             machine.transition(ReceiverState::Declined)?;
@@ -316,6 +318,7 @@ pub async fn handle_receiver_connection_with_progress<A, F>(
     out_dir: PathBuf,
     device_name: &str,
     device_type: DeviceType,
+    policy: ConflictPolicy,
     machine: &mut ReceiverMachine,
     approve: A,
     cancel_rx: Option<watch::Receiver<bool>>,
@@ -331,6 +334,7 @@ where
         out_dir,
         device_name,
         device_type,
+        policy,
         machine,
     )
     .await?;
@@ -397,26 +401,28 @@ pub async fn handle_receiver_connection<A>(
     out_dir: PathBuf,
     device_name: &str,
     device_type: DeviceType,
+    policy: ConflictPolicy,
     machine: &mut ReceiverMachine,
     approve: A,
 ) -> Result<ReceiveTransferOutcome>
 where
     A: Future<Output = Result<bool>>,
 {
+    let mut noop = |_| {};
     handle_receiver_connection_with_progress(
         endpoint,
         connection,
         out_dir,
         device_name,
         device_type,
+        policy,
         machine,
         approve,
         None,
-        |_| {},
+        &mut noop,
     )
     .await
 }
-
 async fn send_accept(send_stream: &mut iroh::endpoint::SendStream, session_id: &str) -> Result<()> {
     write_message(
         send_stream,

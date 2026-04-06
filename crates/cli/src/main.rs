@@ -33,6 +33,9 @@ enum Command {
     Receive {
         #[arg(short, long, default_value = ".")]
         out: PathBuf,
+        /// Conflict resolution strategy: rename, overwrite, or reject.
+        #[arg(long, default_value = "rename")]
+        conflict: String,
         #[arg(long)]
         server: Option<String>,
     },
@@ -60,6 +63,10 @@ async fn main() -> Result<()> {
                 anyhow::bail!("pass a short CODE or use --nearby to discover receivers on the LAN");
             }
         },
-        Command::Receive { out, server } => receive(out, server).await,
+        Command::Receive {
+            out,
+            conflict,
+            server,
+        } => receive(out, conflict, server).await,
     }
 }

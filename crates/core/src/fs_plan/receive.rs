@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, anyhow, bail};
 use tokio::fs;
 
+use crate::fs_plan::ConflictPolicy;
 use crate::rendezvous::OfferManifest;
 
 use super::transfer_path::validate_transfer_path;
@@ -17,6 +18,7 @@ pub struct ExpectedFile {
 pub async fn build_expected_files(
     manifest: &OfferManifest,
     out_dir: &Path,
+    policy: ConflictPolicy,
 ) -> Result<BTreeMap<String, ExpectedFile>> {
     if manifest.file_count != manifest.files.len() as u64 {
         bail!("offer manifest file count does not match the file list");
@@ -47,7 +49,7 @@ pub async fn build_expected_files(
         }
 
         let destination = resolve_transfer_destination(out_dir, &file.path)?;
-        ensure_destination_available(out_dir, &destination).await?;
+        let destination = ensure_destination_available(out_dir, &destination, policy).await?;
 
         expected.insert(
             file.path.clone(),
@@ -74,12 +76,14 @@ pub fn resolve_transfer_destination(out_dir: &Path, transfer_path: &str) -> Resu
     Ok(destination)
 }
 
-pub async fn ensure_destination_available(out_dir: &Path, destination: &Path) -> Result<()> {
-    if path_exists(destination).await? {
-        bail!("destination already exists: {}", destination.display());
-    }
+pub async fn ensure_destination_available(
+    out_dir: &Path,
+    destination: &Path,
+    policy: ConflictPolicy,
+) -> Result<PathBuf> {
+    let final_destination = policy.resolve(destination).await?;
 
-    let mut current = destination.parent();
+    let mut current = final_destination.parent();
     while let Some(parent) = current {
         if parent == out_dir {
             break;
@@ -103,15 +107,7 @@ pub async fn ensure_destination_available(out_dir: &Path, destination: &Path) ->
         current = parent.parent();
     }
 
-    Ok(())
-}
-
-async fn path_exists(path: &Path) -> Result<bool> {
-    match fs::metadata(path).await {
-        Ok(_) => Ok(true),
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(false),
-        Err(err) => Err(err).with_context(|| format!("checking {}", path.display())),
-    }
+    Ok(final_destination)
 }
 
 #[cfg(test)]
@@ -136,8 +132,58 @@ mod tests {
             total_size: 3,
         };
 
-        let err = build_expected_files(&manifest, &out_dir).await.unwrap_err();
+        let err = build_expected_files(&manifest, &out_dir, ConflictPolicy::Reject)
+            .await
+            .unwrap_err();
         assert!(err.to_string().contains("destination already exists"));
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn build_expected_files_allows_overwrite() -> anyhow::Result<()> {
+        let temp = TestDir::new("drift-expected-overwrite").await?;
+        let out_dir = temp.path.join("downloads");
+        fs::create_dir_all(&out_dir).await?;
+        let dest = out_dir.join("photos/cat.jpg");
+        write_test_file(&dest, "existing").await?;
+
+        let manifest = OfferManifest {
+            files: vec![OfferFile {
+                path: "photos/cat.jpg".to_owned(),
+                size: 3,
+            }],
+            file_count: 1,
+            total_size: 3,
+        };
+
+        let expected = build_expected_files(&manifest, &out_dir, ConflictPolicy::Overwrite).await?;
+        assert_eq!(expected.get("photos/cat.jpg").unwrap().destination, dest);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn build_expected_files_handles_rename() -> anyhow::Result<()> {
+        let temp = TestDir::new("drift-expected-rename").await?;
+        let out_dir = temp.path.join("downloads");
+        fs::create_dir_all(&out_dir).await?;
+        write_test_file(&out_dir.join("cat.jpg"), "existing").await?;
+
+        let manifest = OfferManifest {
+            files: vec![OfferFile {
+                path: "cat.jpg".to_owned(),
+                size: 3,
+            }],
+            file_count: 1,
+            total_size: 3,
+        };
+
+        let expected = build_expected_files(&manifest, &out_dir, ConflictPolicy::Rename).await?;
+        assert_eq!(
+            expected.get("cat.jpg").unwrap().destination,
+            out_dir.join("cat (1).jpg")
+        );
 
         Ok(())
     }
@@ -163,7 +209,9 @@ mod tests {
             total_size: 6,
         };
 
-        let err = build_expected_files(&manifest, &out_dir).await.unwrap_err();
+        let err = build_expected_files(&manifest, &out_dir, ConflictPolicy::Reject)
+            .await
+            .unwrap_err();
         assert!(err.to_string().contains("conflicting path"));
 
         Ok(())

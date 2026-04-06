@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+pub use drift_core::fs_plan::ConflictPolicy;
 use iroh::SecretKey;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -83,12 +84,6 @@ pub struct ReceiverOfferEvent {
     pub total_size_label: String,
     pub files: Vec<ReceiverOfferFile>,
     pub error_message: Option<String>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ConflictPolicy {
-    Reject,
-    Overwrite,
 }
 
 #[derive(Debug, Clone)]

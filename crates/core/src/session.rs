@@ -23,6 +23,7 @@ use tokio::sync::{mpsc, watch};
 use tokio::time::{Duration, timeout};
 use tracing::trace;
 
+use crate::fs_plan::ConflictPolicy;
 use crate::fs_plan::prepare::PreparedFile;
 use crate::fs_plan::receive::{ExpectedFile, build_expected_files};
 use crate::rendezvous::OfferManifest;
@@ -226,9 +227,12 @@ pub async fn receive_files_over_connection(
     session_id: &str,
     out_dir: PathBuf,
     manifest: &OfferManifest,
+    policy: ConflictPolicy,
 ) -> Result<Option<TransferCancellation>> {
-    let expected_files =
-        build_expected_transfer_files(manifest, build_expected_files(manifest, &out_dir).await?)?;
+    let expected_files = build_expected_transfer_files(
+        manifest,
+        build_expected_files(manifest, &out_dir, policy).await?,
+    )?;
     receive_files_over_connection_with_progress(
         endpoint,
         control_send,
