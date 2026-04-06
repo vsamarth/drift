@@ -215,12 +215,23 @@ pub async fn send_nearby(
     outcome.map(|_| ())
 }
 
-pub async fn receive(out_dir: PathBuf, server_url: Option<String>) -> Result<()> {
+pub async fn receive(
+    out_dir: PathBuf,
+    conflict: String,
+    server_url: Option<String>,
+) -> Result<()> {
     let device_name = process_display_device_name();
+    let conflict_policy = match conflict.to_lowercase().as_str() {
+        "rename" => ConflictPolicy::Rename,
+        "overwrite" => ConflictPolicy::Overwrite,
+        "reject" => ConflictPolicy::Reject,
+        _ => bail!("invalid conflict strategy: {conflict}. Use: rename, overwrite, or reject"),
+    };
     info!(
         out_dir = %out_dir.display(),
         server = ?server_url,
         device = %device_name,
+        conflict_strategy = ?conflict_policy,
         "receive.started"
     );
 
@@ -230,7 +241,7 @@ pub async fn receive(out_dir: PathBuf, server_url: Option<String>) -> Result<()>
         device_name,
         device_type: "laptop".to_owned(),
         download_root: out_dir,
-        conflict_policy: ConflictPolicy::Reject,
+        conflict_policy,
         secret_key: SecretKey::from_bytes(&rand::random()),
     })
     .await?;
