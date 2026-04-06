@@ -1,14 +1,18 @@
 #![allow(dead_code)]
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, anyhow};
 use iroh::{
     Endpoint, EndpointAddr, EndpointId, RelayMode, SecretKey, address_lookup::MdnsAddressLookup,
     endpoint::presets,
 };
 use std::path::{Path, PathBuf};
 use rand::random;
-use tokio::{sync::oneshot, task::JoinHandle};
+use tokio::{
+    sync::{mpsc, oneshot},
+    task::JoinHandle,
+};
 use tokio::time::{timeout, Duration};
+use tokio_stream::wrappers::UnboundedReceiverStream;
 use tracing::info;
 
 use crate::{
@@ -35,6 +39,43 @@ pub enum SenderOutcome {
     Declined {
         reason: String,
     },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SenderEvent {
+    TransferStarted {
+        session_id: String,
+        file_count: u64,
+        total_bytes: u64,
+    },
+    TransferProgress {
+        session_id: String,
+        bytes_sent: u64,
+        total_bytes: u64,
+    },
+    TransferCompleted {
+        session_id: String,
+    },
+}
+
+pub type SenderEventStream = UnboundedReceiverStream<Result<SenderEvent>>;
+
+#[derive(Debug)]
+pub struct SenderRun {
+    pub events: SenderEventStream,
+    outcome_rx: oneshot::Receiver<Result<SenderOutcome>>,
+}
+
+impl SenderRun {
+    pub fn into_parts(self) -> (SenderEventStream, oneshot::Receiver<Result<SenderOutcome>>) {
+        (self.events, self.outcome_rx)
+    }
+
+    pub async fn outcome(self) -> Result<SenderOutcome> {
+        self.outcome_rx
+            .await
+            .context("waiting for sender outcome")?
+    }
 }
 
 #[derive(Debug)]
@@ -74,6 +115,29 @@ impl Sender {
     }
 
     pub async fn run(&self) -> Result<SenderOutcome> {
+        self.run_core(None).await
+    }
+
+    pub fn run_with_events(self) -> SenderRun
+    where
+        Self: Send + 'static,
+    {
+        let (event_tx, event_rx) = mpsc::unbounded_channel();
+        let (outcome_tx, outcome_rx) = oneshot::channel();
+        tokio::spawn(async move {
+            let outcome = self.run_core(Some(event_tx.clone())).await;
+            if let Err(error) = &outcome {
+                emit_sender_error(&Some(event_tx.clone()), anyhow!("{error:#}"));
+            }
+            let _ = outcome_tx.send(outcome);
+        });
+        SenderRun {
+            events: UnboundedReceiverStream::new(event_rx),
+            outcome_rx,
+        }
+    }
+
+    async fn run_core(&self, event_tx: Option<mpsc::UnboundedSender<Result<SenderEvent>>>) -> Result<SenderOutcome> {
         let store_root = TempDir::new(self.session_id.clone())?;
         let prepared_store = PreparedStore::prepare(
             self.session_id.clone(),
@@ -88,8 +152,8 @@ impl Sender {
             session_id = %self.session_id,
             peer_endpoint_id = %self.request.peer_endpoint_id,
             local_endpoint_id = %endpoint.addr().id,
-            file_count = manifest.items.len(),
-            total_size = prepared_store.total_bytes(),
+            file_count = manifest.count(),
+            total_size = manifest.total_size(),
             "demo.send.connecting"
         );
 
@@ -112,10 +176,12 @@ impl Sender {
             protocol_sender::SenderControlOutcome::Accepted(peer) => {
                 self.handle_accepted(
                     &endpoint,
+                    connection.clone(),
                     &mut control_send,
                     &mut control_recv,
                     peer,
                     prepared_store,
+                    event_tx,
                 )
                 .await
             }
@@ -137,15 +203,22 @@ impl Sender {
     async fn handle_accepted(
         &self,
         endpoint: &Endpoint,
+        connection: iroh::endpoint::Connection,
         control_send: &mut iroh::endpoint::SendStream,
         control_recv: &mut iroh::endpoint::RecvStream,
         peer: protocol_sender::SenderPeer,
         prepared_store: PreparedStore,
+        event_tx: Option<mpsc::UnboundedSender<Result<SenderEvent>>>,
     ) -> Result<SenderOutcome> {
         let registration = BlobService::new(endpoint.clone())
             .register(prepared_store)
             .await
             .context("registering blob service")?;
+        let progress_task = SenderProgressTask::spawn(
+            connection,
+            self.session_id.clone(),
+            event_tx.clone(),
+        );
         let blob_task = BlobTransferTask::spawn(registration);
         let result = async {
             let ticket = blob_task.ticket().to_string();
@@ -167,6 +240,7 @@ impl Sender {
                 anyhow::bail!("receiver reported transfer failure: {:?}", completion.status);
             }
 
+            progress_task.wait().await.context("reading sender progress")?;
             info!(session_id = %self.session_id, "demo.send.completed");
             self.finish_control_stream(control_send).await?;
             info!(
@@ -226,6 +300,105 @@ impl Sender {
         control_send.finish().context("finishing control send")?;
         let _ = timeout(CONTROL_STREAM_FINISH_TIMEOUT, control_send.stopped()).await;
         Ok(())
+    }
+}
+
+struct SenderProgressTask {
+    shutdown: JoinHandle<Result<()>>,
+}
+
+impl SenderProgressTask {
+    fn spawn(
+        connection: iroh::endpoint::Connection,
+        session_id: String,
+        event_tx: Option<mpsc::UnboundedSender<Result<SenderEvent>>>,
+    ) -> Self {
+        let shutdown = tokio::spawn(async move {
+            let mut progress_recv = connection
+                .accept_uni()
+                .await
+                .context("accepting sender progress stream")?;
+
+            loop {
+                match protocol_wire::read_receiver_message(&mut progress_recv).await? {
+                    protocol_message::ReceiverMessage::TransferStarted(message) => {
+                        ensure_session_id(&message.session_id, &session_id)?;
+                        emit_sender_event(
+                            &event_tx,
+                            SenderEvent::TransferStarted {
+                                session_id: message.session_id,
+                                file_count: message.file_count,
+                                total_bytes: message.total_bytes,
+                            },
+                        );
+                    }
+                    protocol_message::ReceiverMessage::TransferProgress(message) => {
+                        ensure_session_id(&message.session_id, &session_id)?;
+                        emit_sender_event(
+                            &event_tx,
+                            SenderEvent::TransferProgress {
+                                session_id: message.session_id,
+                                bytes_sent: message.bytes_sent,
+                                total_bytes: message.total_bytes,
+                            },
+                        );
+                    }
+                    protocol_message::ReceiverMessage::TransferCompleted(message) => {
+                        ensure_session_id(&message.session_id, &session_id)?;
+                        emit_sender_event(
+                            &event_tx,
+                            SenderEvent::TransferCompleted {
+                                session_id: message.session_id,
+                            },
+                        );
+                        break Ok(());
+                    }
+                    other => {
+                        let error = anyhow!(
+                            "unexpected sender progress message: {:?}",
+                            other
+                        );
+                        emit_sender_error(&event_tx, anyhow!("{error:#}"));
+                        break Err(error);
+                    }
+                }
+            }
+        });
+
+        Self { shutdown }
+    }
+
+    async fn wait(self) -> Result<()> {
+        match self.shutdown.await {
+            Ok(result) => result,
+            Err(error) => Err(error.into()),
+        }
+    }
+}
+
+fn emit_sender_event(
+    event_tx: &Option<mpsc::UnboundedSender<Result<SenderEvent>>>,
+    event: SenderEvent,
+) {
+    if let Some(tx) = event_tx {
+        let _ = tx.send(Ok(event));
+    }
+}
+
+fn emit_sender_error(
+    event_tx: &Option<mpsc::UnboundedSender<Result<SenderEvent>>>,
+    error: anyhow::Error,
+) {
+    if let Some(tx) = event_tx {
+        let _ = tx.send(Err(error));
+    }
+}
+
+fn ensure_session_id(actual: &str, expected: &str) -> Result<()> {
+    if actual == expected {
+        Ok(())
+    } else {
+        anyhow::bail!("session id mismatch: expected {expected}, got {actual}")
     }
 }
 

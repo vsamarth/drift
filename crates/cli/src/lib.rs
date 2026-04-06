@@ -10,9 +10,10 @@ use drift_app::{
 };
 use drift_core::transfer_flow::{
     Receiver as DemoReceiver, ReceiverDecision as DemoReceiverDecision,
-    ReceiverOffer as DemoReceiverOffer, ReceiverOfferItem as DemoReceiverOfferItem,
+    ReceiverEvent as DemoReceiverEvent, ReceiverOffer as DemoReceiverOffer,
+    ReceiverOfferItem as DemoReceiverOfferItem,
     ReceiverRequest as DemoReceiverRequest, SendRequest as DemoSendRequest,
-    Sender as DemoSender, SenderOutcome as DemoSenderOutcome,
+    Sender as DemoSender, SenderEvent as DemoSenderEvent, SenderOutcome as DemoSenderOutcome,
 };
 use drift_core::util::{human_size, process_display_device_name};
 use drift_core::wire::DeviceType;
@@ -21,6 +22,7 @@ use iroh::SecretKey;
 use std::collections::BTreeMap;
 use tokio::sync::watch;
 use tokio::time::Duration;
+use tokio_stream::StreamExt;
 use tracing::{debug, info, warn};
 use tracing_subscriber::EnvFilter;
 
@@ -348,7 +350,23 @@ pub async fn demo_send(peer_endpoint_id: String, files: Vec<PathBuf>) -> Result<
         "demo.send.started"
     );
 
-    match sender.run().await? {
+    let sender_run = sender.run_with_events();
+    let (mut events, outcome_rx) = sender_run.into_parts();
+    let mut progress_bar = None;
+    ensure_demo_sender_progress_bar(&mut progress_bar).set_message("waiting for receiver");
+    while let Some(event) = events.next().await {
+        match event {
+            Ok(event) => render_demo_sender_event(&mut progress_bar, &event),
+            Err(error) => {
+                warn!(error = %error, error_chain = %format!("{error:#}"), "demo.send.failed");
+                finish_demo_sender_progress_bar(&mut progress_bar);
+                return Err(error);
+            }
+        }
+    }
+    finish_demo_sender_progress_bar(&mut progress_bar);
+
+    match outcome_rx.await.context("waiting for demo sender outcome")?? {
         DemoSenderOutcome::Accepted {
             receiver_device_name,
             receiver_endpoint_id,
@@ -377,19 +395,26 @@ pub async fn demo_receive() -> Result<()> {
 
     info!(device = %device_name, "demo.receive.started");
 
-    receiver
-        .run_with_decision(|offer: DemoReceiverOffer| async move {
-            render_demo_offer(&offer);
-            info!("demo.receive.auto_accepting");
-            DemoReceiverDecision::Accept
-        })
-        .await
-        .map(|decision| {
-            match decision {
-                DemoReceiverDecision::Accept => info!("demo.receive.accepted"),
-                DemoReceiverDecision::Decline => info!("demo.receive.declined"),
+    let mut progress_bar = None;
+    let mut events = receiver.run_with_events(|offer: DemoReceiverOffer| async move {
+        render_demo_offer(&offer);
+        info!("demo.receive.auto_accepting");
+        DemoReceiverDecision::Accept
+    });
+
+    while let Some(event) = events.next().await {
+        match event {
+            Ok(event) => render_demo_receive_event(&mut progress_bar, &event),
+            Err(error) => {
+                warn!(error = %error, error_chain = %format!("{error:#}"), "demo.receive.failed");
+                finish_demo_receive_progress_bar(&mut progress_bar);
+                return Err(error);
             }
-        })
+        }
+    }
+
+    finish_demo_receive_progress_bar(&mut progress_bar);
+    Ok(())
 }
 
 fn render_demo_offer(offer: &DemoReceiverOffer) {
@@ -404,6 +429,74 @@ fn render_demo_offer(offer: &DemoReceiverOffer) {
 
     let tree = build_offer_tree(&offer.items);
     print_demo_offer(&offer.sender_device_name, &tree);
+}
+
+fn render_demo_sender_event(progress_bar: &mut Option<ProgressBar>, event: &DemoSenderEvent) {
+    match event {
+        DemoSenderEvent::TransferStarted {
+            session_id,
+            file_count,
+            total_bytes,
+        } => {
+            let pb = ensure_demo_sender_progress_bar(progress_bar);
+            configure_demo_sender_transfer_bar(pb, (*total_bytes).max(1));
+            pb.set_message(format!("sending {file_count} files"));
+            info!(
+                session_id = %session_id,
+                file_count = file_count,
+                total_bytes = total_bytes,
+                "demo.send.transfer_started"
+            );
+        }
+        DemoSenderEvent::TransferProgress {
+            session_id: _,
+            bytes_sent,
+            total_bytes,
+        } => {
+            let pb = ensure_demo_sender_progress_bar(progress_bar);
+            configure_demo_sender_transfer_bar(pb, (*total_bytes).max(1));
+            pb.set_position((*bytes_sent).min(*total_bytes));
+            pb.set_message(format!(
+                "{} / {}",
+                human_size(*bytes_sent),
+                human_size(*total_bytes)
+            ));
+        }
+        DemoSenderEvent::TransferCompleted { session_id } => {
+            finish_demo_sender_progress_bar(progress_bar);
+            info!(session_id = %session_id, "demo.send.transfer_completed");
+        }
+    }
+}
+
+fn ensure_demo_sender_progress_bar(progress_bar: &mut Option<ProgressBar>) -> &ProgressBar {
+    if progress_bar.is_none() {
+        let pb = ProgressBar::new_spinner();
+        pb.set_draw_target(ProgressDrawTarget::stderr());
+        pb.set_style(
+            ProgressStyle::with_template("{spinner:.green} {msg}")
+                .expect("valid indicatif spinner template"),
+        );
+        pb.enable_steady_tick(Duration::from_millis(100));
+        *progress_bar = Some(pb);
+    }
+    progress_bar.as_ref().expect("progress bar set")
+}
+
+fn configure_demo_sender_transfer_bar(progress_bar: &ProgressBar, total: u64) {
+    progress_bar.set_style(
+        ProgressStyle::with_template(
+            "{spinner:.green} [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({percent}%) {msg}",
+        )
+        .expect("valid indicatif transfer template"),
+    );
+    progress_bar.set_length(total.max(1));
+}
+
+fn finish_demo_sender_progress_bar(progress_bar: &mut Option<ProgressBar>) {
+    if let Some(pb) = progress_bar.take() {
+        pb.finish_and_clear();
+    }
 }
 
 #[derive(Default)]
@@ -495,6 +588,78 @@ enum OfferTreeEntry<'a> {
     File {
         file: &'a OfferTreeFile,
     },
+}
+
+fn render_demo_receive_event(
+    progress_bar: &mut Option<ProgressBar>,
+    event: &DemoReceiverEvent,
+) {
+    match event {
+        DemoReceiverEvent::Listening { .. } => {
+            let pb = ensure_demo_receive_progress_bar(progress_bar);
+            pb.set_message("waiting for sender");
+        }
+        DemoReceiverEvent::OfferReceived { sender_device_name, .. } => {
+            let pb = ensure_demo_receive_progress_bar(progress_bar);
+            pb.set_message(format!("offer received from {sender_device_name}"));
+        }
+        DemoReceiverEvent::TransferStarted {
+            file_count,
+            total_bytes,
+            ..
+        } => {
+            let pb = ensure_demo_receive_progress_bar(progress_bar);
+            configure_demo_receive_transfer_bar(pb, *total_bytes);
+            pb.set_message(format!("transferring {file_count} files"));
+        }
+        DemoReceiverEvent::TransferProgress {
+            bytes_received,
+            total_bytes,
+            ..
+        } => {
+            let pb = ensure_demo_receive_progress_bar(progress_bar);
+            configure_demo_receive_transfer_bar(pb, *total_bytes);
+            pb.set_position((*bytes_received).min(*total_bytes));
+            pb.set_message(format!(
+                "{} / {}",
+                human_size(*bytes_received),
+                human_size(*total_bytes)
+            ));
+        }
+        DemoReceiverEvent::Completed { .. } => {
+            finish_demo_receive_progress_bar(progress_bar);
+        }
+    }
+}
+
+fn ensure_demo_receive_progress_bar(progress_bar: &mut Option<ProgressBar>) -> &ProgressBar {
+    if progress_bar.is_none() {
+        let pb = ProgressBar::new_spinner();
+        pb.set_draw_target(ProgressDrawTarget::stderr());
+        pb.set_style(
+            ProgressStyle::with_template("{spinner:.green} {msg}")
+                .expect("valid indicatif spinner template"),
+        );
+        pb.enable_steady_tick(Duration::from_millis(100));
+        *progress_bar = Some(pb);
+    }
+    progress_bar.as_ref().expect("progress bar set")
+}
+
+fn configure_demo_receive_transfer_bar(progress_bar: &ProgressBar, total: u64) {
+    progress_bar.set_style(
+        ProgressStyle::with_template(
+            "{spinner:.green} [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({percent}%) {msg}",
+        )
+        .expect("valid indicatif transfer template"),
+    );
+    progress_bar.set_length(total.max(1));
+}
+
+fn finish_demo_receive_progress_bar(progress_bar: &mut Option<ProgressBar>) {
+    if let Some(pb) = progress_bar.take() {
+        pb.finish_and_clear();
+    }
 }
 
 fn render_send_event(

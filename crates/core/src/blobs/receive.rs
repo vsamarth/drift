@@ -137,13 +137,7 @@ impl BlobReceiver {
             out_dir,
             manifest,
         } = self;
-        let total_bytes = manifest
-            .items
-            .iter()
-            .map(|item| match item {
-                ManifestItem::File { size, .. } => *size,
-            })
-            .sum();
+        let total_bytes = manifest.total_size();
         let expected_files = expected_files_from_manifest(&manifest, &out_dir);
 
         fs::create_dir_all(&out_dir)

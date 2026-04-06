@@ -28,6 +28,9 @@ pub(crate) enum MessageKind {
     Accept,
     Decline,
     Cancel,
+    TransferStarted,
+    TransferProgress,
+    TransferCompleted,
     BlobTicket,
     TransferResult,
     TransferAck,
@@ -74,6 +77,21 @@ pub(crate) struct TransferManifest {
     pub(crate) items: Vec<ManifestItem>,
 }
 
+impl TransferManifest {
+    pub(crate) fn count(&self) -> usize {
+        self.items.len()
+    }
+
+    pub(crate) fn total_size(&self) -> u64 {
+        self.items
+            .iter()
+            .map(|item| match item {
+                ManifestItem::File { size, .. } => *size,
+            })
+            .sum()
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub(crate) enum ManifestItem {
@@ -102,6 +120,25 @@ pub(crate) struct Accept {
 pub(crate) struct Decline {
     pub(crate) session_id: String,
     pub(crate) reason: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub(crate) struct TransferStarted {
+    pub(crate) session_id: String,
+    pub(crate) file_count: u64,
+    pub(crate) total_bytes: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub(crate) struct TransferProgress {
+    pub(crate) session_id: String,
+    pub(crate) bytes_sent: u64,
+    pub(crate) total_bytes: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub(crate) struct TransferCompleted {
+    pub(crate) session_id: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -171,6 +208,9 @@ pub(crate) enum ReceiverMessage {
     Hello(Hello),
     Accept(Accept),
     Decline(Decline),
+    TransferStarted(TransferStarted),
+    TransferProgress(TransferProgress),
+    TransferCompleted(TransferCompleted),
     Cancel(Cancel),
     TransferResult(TransferResult),
 }
@@ -181,6 +221,9 @@ impl ReceiverMessage {
             Self::Hello(_) => MessageKind::Hello,
             Self::Accept(_) => MessageKind::Accept,
             Self::Decline(_) => MessageKind::Decline,
+            Self::TransferStarted(_) => MessageKind::TransferStarted,
+            Self::TransferProgress(_) => MessageKind::TransferProgress,
+            Self::TransferCompleted(_) => MessageKind::TransferCompleted,
             Self::Cancel(_) => MessageKind::Cancel,
             Self::TransferResult(_) => MessageKind::TransferResult,
         }
@@ -285,6 +328,19 @@ mod tests {
                 session_id: "session-1".to_owned(),
                 reason: "not now".to_owned(),
             }),
+            ReceiverMessage::TransferStarted(TransferStarted {
+                session_id: "session-1".to_owned(),
+                file_count: 1,
+                total_bytes: 1,
+            }),
+            ReceiverMessage::TransferProgress(TransferProgress {
+                session_id: "session-1".to_owned(),
+                bytes_sent: 1,
+                total_bytes: 1,
+            }),
+            ReceiverMessage::TransferCompleted(TransferCompleted {
+                session_id: "session-1".to_owned(),
+            }),
             ReceiverMessage::Cancel(Cancel {
                 session_id: "session-1".to_owned(),
                 by: TransferRole::Receiver,
@@ -298,6 +354,6 @@ mod tests {
         ];
 
         assert_eq!(sender_messages.len(), 5);
-        assert_eq!(receiver_messages.len(), 5);
+        assert_eq!(receiver_messages.len(), 8);
     }
 }
