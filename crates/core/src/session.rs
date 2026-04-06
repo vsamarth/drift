@@ -29,8 +29,8 @@ use crate::rendezvous::OfferManifest;
 use crate::transfer::TransferCancellation;
 use crate::util::describe_remote;
 use crate::wire::{
-    ALPN, BlobTicketMessage, Cancel, CancelPhase, ControlMessage, TransferAck,
-    TransferErrorCode, TransferResult, TransferRole, TransferStatus, read_message, write_message,
+    ALPN, BlobTicketMessage, Cancel, CancelPhase, ControlMessage, TransferAck, TransferErrorCode,
+    TransferResult, TransferRole, TransferStatus, read_message, write_message,
 };
 
 const CONTROL_STREAM_FINISH_TIMEOUT: Duration = Duration::from_secs(2);
@@ -357,7 +357,8 @@ where
 
     let result = match result {
         Ok(None) => {
-            export_downloaded_collection(&download.store, blob_ticket.hash(), &expected_files).await?;
+            export_downloaded_collection(&download.store, blob_ticket.hash(), &expected_files)
+                .await?;
             on_progress(FileReceiveProgress {
                 total_bytes_received: total_bytes_to_receive,
                 total_bytes_to_receive,
