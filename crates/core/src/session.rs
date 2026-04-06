@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result, anyhow, bail};
@@ -530,6 +530,7 @@ fn spawn_blob_progress_forwarder(
     file_hashes: BTreeMap<Hash, BlobProgressState>,
 ) -> mpsc::Receiver<FileSendProgress> {
     let (progress_tx, progress_rx) = mpsc::channel(64);
+    let aggregate = Arc::new(Mutex::new(SendProgressAggregate::default()));
     tokio::spawn(async move {
         while let Some(message) = event_rx.recv().await {
             match message {
@@ -537,6 +538,7 @@ fn spawn_blob_progress_forwarder(
                     tokio::spawn(forward_request_updates(
                         msg.rx,
                         file_hashes.clone(),
+                        aggregate.clone(),
                         progress_tx.clone(),
                     ));
                 }
@@ -544,6 +546,7 @@ fn spawn_blob_progress_forwarder(
                     tokio::spawn(forward_request_updates(
                         msg.rx,
                         file_hashes.clone(),
+                        aggregate.clone(),
                         progress_tx.clone(),
                     ));
                 }
@@ -557,11 +560,10 @@ fn spawn_blob_progress_forwarder(
 async fn forward_request_updates(
     mut updates_rx: irpc::channel::mpsc::Receiver<RequestUpdate>,
     file_hashes: BTreeMap<Hash, BlobProgressState>,
+    aggregate: Arc<Mutex<SendProgressAggregate>>,
     progress_tx: mpsc::Sender<FileSendProgress>,
 ) {
     let mut current: Option<BlobProgressState> = None;
-    let mut bytes_by_hash = BTreeMap::<Hash, u64>::new();
-    let mut total_bytes_sent = 0_u64;
 
     while let Ok(Some(update)) = updates_rx.recv().await {
         match update {
@@ -571,15 +573,16 @@ async fn forward_request_updates(
             RequestUpdate::Progress(progress) => {
                 if let Some(current_file) = current {
                     let next = progress.end_offset.min(current_file.file_size);
-                    let prev = bytes_by_hash.get(&current_file.hash).copied().unwrap_or(0);
-                    if next > prev {
-                        total_bytes_sent += next - prev;
-                        bytes_by_hash.insert(current_file.hash, next);
+                    let update = {
+                        let mut aggregate = aggregate.lock().expect("send progress aggregate poisoned");
+                        aggregate.record(current_file, next)
+                    };
+                    if let Some(update) = update {
                         let _ = progress_tx
                             .send(FileSendProgress {
-                                total_bytes_sent,
-                                bytes_sent_in_file: next,
-                                file_index: current_file.file_index,
+                                total_bytes_sent: update.total_bytes_sent,
+                                bytes_sent_in_file: update.bytes_sent_in_file,
+                                file_index: update.file_index,
                             })
                             .await;
                     }
@@ -589,6 +592,36 @@ async fn forward_request_updates(
                 current = None;
             }
         }
+    }
+}
+
+#[derive(Debug, Default)]
+struct SendProgressAggregate {
+    bytes_by_hash: BTreeMap<Hash, u64>,
+    total_bytes_sent: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct SendProgressUpdate {
+    total_bytes_sent: u64,
+    bytes_sent_in_file: u64,
+    file_index: usize,
+}
+
+impl SendProgressAggregate {
+    fn record(&mut self, file: BlobProgressState, next: u64) -> Option<SendProgressUpdate> {
+        let prev = self.bytes_by_hash.get(&file.hash).copied().unwrap_or(0);
+        if next <= prev {
+            return None;
+        }
+
+        self.total_bytes_sent += next - prev;
+        self.bytes_by_hash.insert(file.hash, next);
+        Some(SendProgressUpdate {
+            total_bytes_sent: self.total_bytes_sent,
+            bytes_sent_in_file: next,
+            file_index: file.file_index,
+        })
     }
 }
 
@@ -636,6 +669,52 @@ async fn export_downloaded_collection(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{BlobProgressState, SendProgressAggregate};
+    use iroh_blobs::Hash;
+
+    fn blob(file_index: usize, file_size: u64, seed: u8) -> BlobProgressState {
+        BlobProgressState {
+            hash: Hash::new([seed; 32]),
+            file_index,
+            file_size,
+        }
+    }
+
+    #[test]
+    fn send_progress_aggregate_tracks_total_across_multiple_files() {
+        let mut aggregate = SendProgressAggregate::default();
+        let first = blob(0, 1_000, 1);
+        let second = blob(1, 2_000, 2);
+
+        let first_update = aggregate.record(first, 400).expect("first update");
+        assert_eq!(first_update.total_bytes_sent, 400);
+        assert_eq!(first_update.bytes_sent_in_file, 400);
+        assert_eq!(first_update.file_index, 0);
+
+        let second_update = aggregate.record(second, 600).expect("second update");
+        assert_eq!(second_update.total_bytes_sent, 1_000);
+        assert_eq!(second_update.bytes_sent_in_file, 600);
+        assert_eq!(second_update.file_index, 1);
+
+        let resumed_first = aggregate.record(first, 1_000).expect("resumed first update");
+        assert_eq!(resumed_first.total_bytes_sent, 1_600);
+        assert_eq!(resumed_first.bytes_sent_in_file, 1_000);
+        assert_eq!(resumed_first.file_index, 0);
+    }
+
+    #[test]
+    fn send_progress_aggregate_ignores_duplicate_or_stale_offsets() {
+        let mut aggregate = SendProgressAggregate::default();
+        let file = blob(0, 1_000, 3);
+
+        assert!(aggregate.record(file, 250).is_some());
+        assert!(aggregate.record(file, 250).is_none());
+        assert!(aggregate.record(file, 200).is_none());
+    }
 }
 
 impl BlobDownloadStore {

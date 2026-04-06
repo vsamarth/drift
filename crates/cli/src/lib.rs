@@ -96,10 +96,11 @@ pub async fn send(code: String, files: Vec<PathBuf>, server_url: Option<String>)
 
     let mut progress_bar = None;
     let mut last_phase = None;
+    let mut metrics = SendProgressMetrics::default();
     let (cancel_tx, cancel_rx) = watch::channel(false);
     let outcome = {
         let send_future = session.send_to_code(code, server_url, Some(cancel_rx), |event| {
-            render_send_event(&mut last_phase, &mut progress_bar, &event)
+            render_send_event(&mut last_phase, &mut progress_bar, &mut metrics, &event)
         });
         tokio::pin!(send_future);
         let mut cancellation_requested = false;
@@ -181,13 +182,14 @@ pub async fn send_nearby(
 
     let mut progress_bar = None;
     let mut last_phase = None;
+    let mut metrics = SendProgressMetrics::default();
     let (cancel_tx, cancel_rx) = watch::channel(false);
     let outcome = {
         let send_future = session.send_to_nearby(
             picked.ticket.clone(),
             format!("Nearby: {}", picked.label),
             Some(cancel_rx),
-            |event| render_send_event(&mut last_phase, &mut progress_bar, &event),
+            |event| render_send_event(&mut last_phase, &mut progress_bar, &mut metrics, &event),
         );
         tokio::pin!(send_future);
         let mut cancellation_requested = false;
@@ -336,6 +338,7 @@ pub async fn receive(out_dir: PathBuf, conflict: String, server_url: Option<Stri
 fn render_send_event(
     last_phase: &mut Option<SendPhase>,
     progress_bar: &mut Option<ProgressBar>,
+    metrics: &mut SendProgressMetrics,
     event: &SendEvent,
 ) {
     if last_phase.as_ref() != Some(&event.phase) {
@@ -380,12 +383,17 @@ fn render_send_event(
         SendPhase::Sending => {
             let pb = ensure_progress_bar(progress_bar, event.total_size);
             pb.set_position(event.bytes_sent);
-            pb.set_message(event.status_message.clone());
+            let now = std::time::Instant::now();
+            let message = metrics.message_for(event, now);
+            pb.set_message(message);
         }
         SendPhase::Completed | SendPhase::Cancelled | SendPhase::Failed => {
+            metrics.reset();
             finish_progress_bar(progress_bar)
         }
-        SendPhase::Connecting | SendPhase::WaitingForDecision => {}
+        SendPhase::Connecting | SendPhase::WaitingForDecision => {
+            metrics.reset();
+        }
     }
 }
 
@@ -472,5 +480,226 @@ fn ensure_progress_bar(progress_bar: &mut Option<ProgressBar>, total: u64) -> &P
 fn finish_progress_bar(progress_bar: &mut Option<ProgressBar>) {
     if let Some(pb) = progress_bar.take() {
         pb.finish_and_clear();
+    }
+}
+
+#[derive(Debug, Default)]
+struct SendProgressMetrics {
+    sample_started_at: Option<std::time::Instant>,
+    sample_started_bytes: Option<u64>,
+    smoothed_bps: Option<f64>,
+}
+
+impl SendProgressMetrics {
+    const MIN_SAMPLE_INTERVAL: std::time::Duration = std::time::Duration::from_millis(80);
+    const MIN_VISIBLE_BPS: f64 = 16.0;
+    const EWMA_ALPHA: f64 = 0.22;
+
+    fn reset(&mut self) {
+        self.sample_started_at = None;
+        self.sample_started_bytes = None;
+        self.smoothed_bps = None;
+    }
+
+    fn message_for(&mut self, event: &SendEvent, now: std::time::Instant) -> String {
+        if event.phase != SendPhase::Sending {
+            self.reset();
+            return event.status_message.clone();
+        }
+
+        let prev_at = self.sample_started_at;
+        let prev_bytes = self.sample_started_bytes;
+        if let (Some(prev_at), Some(prev_bytes)) = (prev_at, prev_bytes) {
+            let dt = now.saturating_duration_since(prev_at);
+            let d_bytes = event.bytes_sent.saturating_sub(prev_bytes);
+            if dt >= Self::MIN_SAMPLE_INTERVAL && d_bytes > 0 {
+                let inst_bps = d_bytes as f64 / dt.as_secs_f64();
+                self.smoothed_bps = Some(match self.smoothed_bps {
+                    Some(prev) => Self::EWMA_ALPHA * inst_bps + (1.0 - Self::EWMA_ALPHA) * prev,
+                    None => inst_bps,
+                });
+                self.sample_started_at = Some(now);
+                self.sample_started_bytes = Some(event.bytes_sent);
+            }
+        } else {
+            self.sample_started_at = Some(now);
+            self.sample_started_bytes = Some(event.bytes_sent);
+        }
+
+        build_send_progress_message(
+            &event.status_message,
+            self.smoothed_bps,
+            event.bytes_sent,
+            event.total_size,
+        )
+    }
+}
+
+fn build_send_progress_message(
+    status_message: &str,
+    smoothed_bps: Option<f64>,
+    bytes_sent: u64,
+    total_size: u64,
+) -> String {
+    let Some(bps) = smoothed_bps.filter(|bps| *bps >= SendProgressMetrics::MIN_VISIBLE_BPS) else {
+        return status_message.to_owned();
+    };
+
+    let speed = format_bytes_per_second(bps);
+    let remaining = total_size.saturating_sub(bytes_sent);
+    let eta = if remaining == 0 {
+        None
+    } else {
+        Some(format_eta_seconds(remaining as f64 / bps))
+    };
+
+    match eta {
+        Some(eta) => format!("{status_message} {speed}, ETA {eta}"),
+        None => format!("{status_message} {speed}"),
+    }
+}
+
+fn format_bytes_per_second(bytes_per_second: f64) -> String {
+    let rounded = bytes_per_second.max(0.0).round();
+    format!("{}/s", human_size(rounded as u64))
+}
+
+fn format_eta_seconds(seconds: f64) -> String {
+    let total_seconds = seconds.max(0.0).round() as u64;
+    let hours = total_seconds / 3600;
+    let minutes = (total_seconds % 3600) / 60;
+    let secs = total_seconds % 60;
+
+    if hours > 0 {
+        format!("{hours}:{minutes:02}:{secs:02}")
+    } else {
+        format!("{minutes:02}:{secs:02}")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        SendProgressMetrics, build_send_progress_message, format_bytes_per_second,
+        format_eta_seconds,
+    };
+    use drift_app::{SendEvent, SendPhase};
+    use std::time::{Duration, Instant};
+
+    fn sending_event(bytes_sent: u64, total_size: u64) -> SendEvent {
+        SendEvent {
+            phase: SendPhase::Sending,
+            destination_label: "Receiver".to_owned(),
+            status_message: "Sending to Receiver.".to_owned(),
+            item_count: 1,
+            total_size,
+            bytes_sent,
+            remote_device_type: None,
+            connection_path: None,
+            error_message: None,
+        }
+    }
+
+    #[test]
+    fn metrics_hide_speed_until_sample_window_is_large_enough() {
+        let mut metrics = SendProgressMetrics::default();
+        let start = Instant::now();
+
+        let initial = metrics.message_for(&sending_event(0, 2_000), start);
+        let early = metrics.message_for(
+            &sending_event(500, 2_000),
+            start + Duration::from_millis(40),
+        );
+
+        assert_eq!(initial, "Sending to Receiver.");
+        assert_eq!(early, "Sending to Receiver.");
+    }
+
+    #[test]
+    fn metrics_show_speed_and_eta_after_valid_progress_samples() {
+        let mut metrics = SendProgressMetrics::default();
+        let start = Instant::now();
+
+        let first = metrics.message_for(&sending_event(0, 2_000), start);
+        let second = metrics.message_for(
+            &sending_event(1_000, 2_000),
+            start + Duration::from_millis(100),
+        );
+
+        assert_eq!(first, "Sending to Receiver.");
+        assert_eq!(second, "Sending to Receiver. 9.8 KB/s, ETA 00:00");
+    }
+
+    #[test]
+    fn metrics_accumulate_across_fast_callbacks_until_sample_window_opens() {
+        let mut metrics = SendProgressMetrics::default();
+        let start = Instant::now();
+
+        let _ = metrics.message_for(&sending_event(0, 50_000), start);
+        let _ = metrics.message_for(
+            &sending_event(16_384, 50_000),
+            start + Duration::from_millis(20),
+        );
+        let _ = metrics.message_for(
+            &sending_event(32_768, 50_000),
+            start + Duration::from_millis(40),
+        );
+        let final_message = metrics.message_for(
+            &sending_event(49_152, 50_000),
+            start + Duration::from_millis(100),
+        );
+
+        assert_eq!(final_message, "Sending to Receiver. 480.0 KB/s, ETA 00:00");
+    }
+
+    #[test]
+    fn metrics_apply_ewma_and_reset_outside_sending_phase() {
+        let mut metrics = SendProgressMetrics::default();
+        let start = Instant::now();
+
+        let _ = metrics.message_for(&sending_event(0, 4_000), start);
+        let _ = metrics.message_for(
+            &sending_event(1_000, 4_000),
+            start + Duration::from_millis(100),
+        );
+        let third = metrics.message_for(
+            &sending_event(2_000, 4_000),
+            start + Duration::from_millis(200),
+        );
+
+        assert_eq!(third, "Sending to Receiver. 9.8 KB/s, ETA 00:00");
+
+        let completed = SendEvent {
+            phase: SendPhase::Completed,
+            destination_label: "Receiver".to_owned(),
+            status_message: "Files sent successfully".to_owned(),
+            item_count: 1,
+            total_size: 4_000,
+            bytes_sent: 4_000,
+            remote_device_type: None,
+            connection_path: None,
+            error_message: None,
+        };
+        let completed_message = metrics.message_for(&completed, start + Duration::from_millis(300));
+        assert_eq!(completed_message, "Files sent successfully");
+
+        let restarted = metrics.message_for(
+            &sending_event(500, 4_000),
+            start + Duration::from_millis(400),
+        );
+        assert_eq!(restarted, "Sending to Receiver.");
+    }
+
+    #[test]
+    fn build_message_omits_eta_when_transfer_is_complete() {
+        let message = build_send_progress_message("Sending to Receiver.", Some(2_048.0), 10, 10);
+        assert_eq!(message, "Sending to Receiver. 2.0 KB/s");
+    }
+
+    #[test]
+    fn formatting_helpers_match_cli_output_expectations() {
+        assert_eq!(format_bytes_per_second(1_536.0), "1.5 KB/s");
+        assert_eq!(format_eta_seconds(5.0), "00:05");
+        assert_eq!(format_eta_seconds(3_725.0), "1:02:05");
     }
 }
