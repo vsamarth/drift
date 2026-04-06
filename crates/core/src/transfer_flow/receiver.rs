@@ -11,6 +11,7 @@ use tokio::sync::oneshot;
 use tracing::info;
 
 use crate::{
+    blobs::receive::BlobReceiver,
     protocol::{message as protocol_message, receive as protocol_receiver},
     protocol::wire as protocol_wire,
     wire::ALPN,
@@ -20,6 +21,7 @@ use crate::{
 pub struct ReceiverRequest {
     pub device_name: String,
     pub device_type: crate::wire::DeviceType,
+    pub out_dir: std::path::PathBuf,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -53,7 +55,9 @@ pub struct Receiver {
 
 #[derive(Debug)]
 struct ReceiverHandler {
+    endpoint: Endpoint,
     identity: protocol_message::Identity,
+    out_dir: std::path::PathBuf,
     offer_tx: Mutex<Option<oneshot::Sender<ReceiverOffer>>>,
     decision_rx: Mutex<Option<oneshot::Receiver<ReceiverDecision>>>,
     done_tx: Mutex<Option<oneshot::Sender<()>>>,
@@ -98,7 +102,9 @@ impl Receiver {
             .accept(
                 ALPN,
                 ReceiverHandler {
+                    endpoint: endpoint.clone(),
                     identity: self.identity,
+                    out_dir: self.request.out_dir.clone(),
                     offer_tx: Mutex::new(Some(offer_tx)),
                     decision_rx: Mutex::new(Some(decision_rx)),
                     done_tx: Mutex::new(Some(done_tx)),
@@ -212,7 +218,7 @@ impl ProtocolHandler for ReceiverHandler {
                         "demo.receive.accepted"
                     );
                 }
-                let ticket_message = match protocol_wire::read_sender_message(&mut control_recv)
+        let ticket_message = match protocol_wire::read_sender_message(&mut control_recv)
                     .await
                     .map_err(|error| {
                         AcceptError::from_err(std::io::Error::other(format!(
@@ -254,14 +260,35 @@ impl ProtocolHandler for ReceiverHandler {
                 println!("Ticket: {}", ticket_message.ticket);
                 let _ = std::io::stdout().flush();
 
-                protocol_wire::write_receiver_message(
-                    &mut control_send,
-                    &protocol_message::ReceiverMessage::TransferResult(
+                let blob_receiver = BlobReceiver::new(
+                    self.endpoint.clone(),
+                    pending.session_id().to_owned(),
+                    blob_ticket,
+                    self.out_dir.clone(),
+                    pending.manifest().manifest.clone(),
+                );
+
+                let completion_result = blob_receiver.run(None).await;
+                let completion_message = match completion_result {
+                    Ok(()) => {
+                        info!(session_id = %pending.session_id(), "demo.receive.completed");
                         protocol_message::TransferResult {
                             session_id: pending.session_id().to_owned(),
                             status: protocol_message::TransferStatus::Ok,
+                        }
+                    }
+                    Err(error) => protocol_message::TransferResult {
+                        session_id: pending.session_id().to_owned(),
+                        status: protocol_message::TransferStatus::Error {
+                            code: protocol_message::TransferErrorCode::IoError,
+                            message: format!("{error:#}"),
                         },
-                    ),
+                    },
+                };
+
+                protocol_wire::write_receiver_message(
+                    &mut control_send,
+                    &protocol_message::ReceiverMessage::TransferResult(completion_message),
                 )
                 .await
                 .map_err(|error| {
@@ -269,7 +296,6 @@ impl ProtocolHandler for ReceiverHandler {
                         "sending receiver completion: {error:#}"
                     )))
                 })?;
-                info!(session_id = %pending.session_id(), "demo.receive.completed");
             }
             ReceiverDecision::Decline => {
                 let outcome = handshake

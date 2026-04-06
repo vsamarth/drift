@@ -7,12 +7,12 @@ use iroh::{
 };
 use std::path::{Path, PathBuf};
 use rand::random;
+use tokio::{sync::oneshot, task::JoinHandle};
 use tokio::time::{timeout, Duration};
 use tracing::info;
 
 use crate::{
-    blobs::send::{BlobService, PreparedStore},
-    fs_plan::prepare::prepare_files,
+    blobs::send::{BlobRegistration, BlobService, PreparedStore},
     protocol::{message as protocol_message, send as protocol_sender},
     protocol::wire as protocol_wire,
     wire::ALPN,
@@ -74,15 +74,22 @@ impl Sender {
     }
 
     pub async fn run(&self) -> Result<SenderOutcome> {
-        let prepared_files = prepare_files(self.request.files.clone()).await?;
-        let manifest = prepared_files.manifest.clone();
+        let store_root = TempDir::new(self.session_id.clone())?;
+        let prepared_store = PreparedStore::prepare(
+            self.session_id.clone(),
+            store_root.path(),
+            self.request.files.clone(),
+        )
+        .await
+        .context("preparing blob store")?;
+        let manifest = prepared_store.manifest();
         let endpoint = bind_endpoint(self.secret_key.clone()).await?;
         info!(
             session_id = %self.session_id,
             peer_endpoint_id = %self.request.peer_endpoint_id,
             local_endpoint_id = %endpoint.addr().id,
-            file_count = manifest.file_count,
-            total_size = manifest.total_size,
+            file_count = manifest.items.len(),
+            total_size = prepared_store.total_bytes(),
             "demo.send.connecting"
         );
 
@@ -98,11 +105,7 @@ impl Sender {
 
         let mut handshake = protocol_sender::Sender::new(self.session_id.clone(), self.identity.clone());
         let outcome = handshake
-            .run_control(
-                &mut control_send,
-                &mut control_recv,
-                to_protocol_manifest(&manifest),
-            )
+            .run_control(&mut control_send, &mut control_recv, manifest)
             .await?;
 
         match outcome {
@@ -112,7 +115,7 @@ impl Sender {
                     &mut control_send,
                     &mut control_recv,
                     peer,
-                    self.request.files.clone(),
+                    prepared_store,
                 )
                 .await
             }
@@ -137,60 +140,60 @@ impl Sender {
         control_send: &mut iroh::endpoint::SendStream,
         control_recv: &mut iroh::endpoint::RecvStream,
         peer: protocol_sender::SenderPeer,
-        files: Vec<PathBuf>,
+        prepared_store: PreparedStore,
     ) -> Result<SenderOutcome> {
-        let store_root = TempDir::new(self.session_id.clone())?;
-        let store = PreparedStore::prepare(self.session_id.clone(), store_root.path(), files)
-            .await
-            .context("preparing blob store")?;
         let registration = BlobService::new(endpoint.clone())
-            .register(store)
+            .register(prepared_store)
             .await
             .context("registering blob service")?;
-        let ticket = registration.ticket().to_string();
-        info!(session_id = %self.session_id, ticket = %ticket, "demo.send.ticket_ready");
-        protocol_wire::write_sender_message(
-            control_send,
-            &protocol_message::SenderMessage::BlobTicket(
-                protocol_message::BlobTicketMessage {
-                    session_id: self.session_id.clone(),
-                    ticket,
-                },
-            ),
-        )
-        .await
-        .context("sending blob ticket")?;
+        let blob_task = BlobTransferTask::spawn(registration);
+        let result = async {
+            let ticket = blob_task.ticket().to_string();
+            info!(session_id = %self.session_id, ticket = %ticket, "demo.send.ticket_ready");
+            protocol_wire::write_sender_message(
+                control_send,
+                &protocol_message::SenderMessage::BlobTicket(
+                    protocol_message::BlobTicketMessage {
+                        session_id: self.session_id.clone(),
+                        ticket,
+                    },
+                ),
+            )
+            .await
+            .context("sending blob ticket")?;
 
-        let completion = match self.read_transfer_result(control_recv).await {
-            Ok(result) => result,
-            Err(error) => {
-                let _ = registration.shutdown().await;
-                endpoint.close().await;
-                return Err(error);
+            let completion = self.read_transfer_result(control_recv).await?;
+            if !matches!(completion.status, protocol_message::TransferStatus::Ok) {
+                anyhow::bail!("receiver reported transfer failure: {:?}", completion.status);
             }
-        };
 
-        if !matches!(completion.status, protocol_message::TransferStatus::Ok) {
-            let _ = registration.shutdown().await;
+            info!(session_id = %self.session_id, "demo.send.completed");
+            self.finish_control_stream(control_send).await?;
+            info!(
+                session_id = %self.session_id,
+                receiver_device_name = %peer.identity.device_name,
+                receiver_endpoint_id = %peer.identity.endpoint_id,
+                "demo.send.accepted"
+            );
             endpoint.close().await;
-            anyhow::bail!("receiver reported transfer failure: {:?}", completion.status);
+            Ok(SenderOutcome::Accepted {
+                receiver_device_name: peer.identity.device_name,
+                receiver_endpoint_id: peer.identity.endpoint_id,
+            })
         }
+        .await;
 
-        info!(session_id = %self.session_id, "demo.send.completed");
-        let shutdown_result = registration.shutdown().await;
-        self.finish_control_stream(control_send).await?;
-        info!(
-            session_id = %self.session_id,
-            receiver_device_name = %peer.identity.device_name,
-            receiver_endpoint_id = %peer.identity.endpoint_id,
-            "demo.send.accepted"
-        );
-        endpoint.close().await;
-        shutdown_result.context("shutting down blob service")?;
-        Ok(SenderOutcome::Accepted {
-            receiver_device_name: peer.identity.device_name,
-            receiver_endpoint_id: peer.identity.endpoint_id,
-        })
+        let stop_result = blob_task.stop().await;
+        match result {
+            Ok(outcome) => {
+                stop_result.context("stopping blob service")?;
+                Ok(outcome)
+            }
+            Err(error) => {
+                let _ = stop_result;
+                Err(error)
+            }
+        }
     }
 
     async fn read_transfer_result(
@@ -223,6 +226,44 @@ impl Sender {
         control_send.finish().context("finishing control send")?;
         let _ = timeout(CONTROL_STREAM_FINISH_TIMEOUT, control_send.stopped()).await;
         Ok(())
+    }
+}
+
+struct BlobTransferTask {
+    ticket: String,
+    stop_tx: Option<oneshot::Sender<()>>,
+    shutdown: JoinHandle<Result<()>>,
+}
+
+impl BlobTransferTask {
+    fn spawn(registration: BlobRegistration) -> Self {
+        let ticket = registration.ticket().to_string();
+        let (stop_tx, stop_rx) = oneshot::channel();
+        let shutdown = tokio::spawn(async move {
+            let _ = stop_rx.await;
+            registration.shutdown().await
+        });
+
+        Self {
+            ticket,
+            stop_tx: Some(stop_tx),
+            shutdown,
+        }
+    }
+
+    fn ticket(&self) -> &str {
+        &self.ticket
+    }
+
+    async fn stop(mut self) -> Result<()> {
+        if let Some(stop_tx) = self.stop_tx.take() {
+            let _ = stop_tx.send(());
+        }
+
+        match self.shutdown.await {
+            Ok(result) => result,
+            Err(error) => Err(error.into()),
+        }
     }
 }
 
@@ -276,21 +317,6 @@ fn to_protocol_device_type(
     match device_type {
         crate::wire::DeviceType::Phone => protocol_message::DeviceType::Phone,
         crate::wire::DeviceType::Laptop => protocol_message::DeviceType::Laptop,
-    }
-}
-
-fn to_protocol_manifest(
-    manifest: &crate::rendezvous::OfferManifest,
-) -> protocol_message::TransferManifest {
-    protocol_message::TransferManifest {
-        items: manifest
-            .files
-            .iter()
-            .map(|file| protocol_message::ManifestItem::File {
-                path: file.path.clone(),
-                size: file.size,
-            })
-            .collect(),
     }
 }
 

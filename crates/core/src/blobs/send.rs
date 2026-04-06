@@ -71,6 +71,13 @@ pub(crate) struct PreparedStore {
     collection_tag: TempTag,
     collection: Collection,
     total_bytes: u64,
+    files: Vec<PreparedFile>,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct PreparedFile {
+    pub(crate) path: String,
+    pub(crate) size: u64,
 }
 
 impl PreparedStore {
@@ -86,22 +93,30 @@ impl PreparedStore {
         let mut collection = Collection::default();
         let mut seen_transfer_paths = HashSet::new();
         let mut total_bytes = 0_u64;
+        let mut files_out = Vec::new();
         for path in files {
             trace!(input_path = %path.display(), "processing import input path");
             let imported = import_files(&store, path).await?;
             for file in imported {
-                if !seen_transfer_paths.insert(file.transfer_path.clone()) {
+                let transfer_path = file.transfer_path.clone();
+                if !seen_transfer_paths.insert(transfer_path.clone()) {
                     bail!(
                         "duplicate transfer path in manifest: {}",
-                        file.transfer_path
+                        transfer_path
                     );
                 }
                 total_bytes = total_bytes
                     .checked_add(file.size_bytes)
                     .ok_or_else(|| anyhow!("total transfer size exceeds u64"))?;
-                collection.extend([(file.transfer_path, file.temp_tag.hash())]);
+                collection.extend([(transfer_path.clone(), file.temp_tag.hash())]);
+                files_out.push(PreparedFile {
+                    path: transfer_path,
+                    size: file.size_bytes,
+                });
             }
         }
+
+        files_out.sort_by(|left, right| left.path.cmp(&right.path));
 
         let collection_tag = collection.store(store.as_ref()).await?;
         let collection = Collection::load(collection_tag.hash(), store.as_ref())
@@ -120,6 +135,7 @@ impl PreparedStore {
             collection_tag,
             collection,
             total_bytes,
+            files: files_out,
         })
     }
 
@@ -141,6 +157,19 @@ impl PreparedStore {
 
     pub(crate) fn total_bytes(&self) -> u64 {
         self.total_bytes
+    }
+
+    pub(crate) fn manifest(&self) -> crate::protocol::message::TransferManifest {
+        crate::protocol::message::TransferManifest {
+            items: self
+                .files
+                .iter()
+                .map(|file| crate::protocol::message::ManifestItem::File {
+                    path: file.path.clone(),
+                    size: file.size,
+                })
+                .collect(),
+        }
     }
 }
 

@@ -372,6 +372,7 @@ pub async fn demo_receive() -> Result<()> {
     let receiver = DemoReceiver::new(DemoReceiverRequest {
         device_name: device_name.clone(),
         device_type: DeviceType::Laptop,
+        out_dir: PathBuf::from("downloads"),
     });
 
     info!(device = %device_name, "demo.receive.started");

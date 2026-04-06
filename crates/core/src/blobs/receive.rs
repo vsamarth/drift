@@ -11,6 +11,7 @@ use tokio::fs;
 use tokio::sync::mpsc;
 use tracing::{instrument, trace};
 
+use crate::protocol::message::{ManifestItem, TransferManifest};
 use crate::session::{ExpectedTransferFile, export_downloaded_collection};
 
 use super::send::SenderEvent;
@@ -73,6 +74,16 @@ pub struct Receiver {
     endpoint: Endpoint,
 }
 
+/// Blob-only downloader that connects to a ticket and exports the fetched collection.
+#[derive(Debug)]
+pub struct BlobReceiver {
+    endpoint: Endpoint,
+    session_id: String,
+    ticket: BlobTicket,
+    out_dir: PathBuf,
+    manifest: TransferManifest,
+}
+
 struct TempRecvStore {
     store: FsStore,
     root: ScratchDir,
@@ -97,16 +108,183 @@ impl TempRecvStore {
     }
 }
 
-fn expected_files_from_collection(
-    collection: Collection,
+impl BlobReceiver {
+    pub(crate) fn new(
+        endpoint: Endpoint,
+        session_id: impl Into<String>,
+        ticket: BlobTicket,
+        out_dir: PathBuf,
+        manifest: TransferManifest,
+    ) -> Self {
+        Self {
+            endpoint,
+            session_id: session_id.into(),
+            ticket,
+            out_dir,
+            manifest,
+        }
+    }
+
+    #[instrument(skip(self, event_tx), fields(session_id = %self.session_id, out_dir = %self.out_dir.display()))]
+    pub async fn run(
+        self,
+        event_tx: Option<mpsc::UnboundedSender<ReceiverEvent>>,
+    ) -> Result<()> {
+        let BlobReceiver {
+            endpoint,
+            session_id,
+            ticket,
+            out_dir,
+            manifest,
+        } = self;
+        let total_bytes = manifest
+            .items
+            .iter()
+            .map(|item| match item {
+                ManifestItem::File { size, .. } => *size,
+            })
+            .sum();
+        let expected_files = expected_files_from_manifest(&manifest, &out_dir);
+
+        fs::create_dir_all(&out_dir)
+            .await
+            .with_context(|| format!("creating output directory {}", out_dir.display()))?;
+
+        emit_receiver_event(
+            &event_tx,
+            ReceiverEvent::Ready {
+                session_id: session_id.clone(),
+            },
+        );
+
+        let collection_root_hash = ticket.hash();
+
+        let recv_store = match TempRecvStore::open("drift-one-shot-recv", &session_id).await {
+            Ok(v) => v,
+            Err(error) => {
+                emit_receiver_event(
+                    &event_tx,
+                    ReceiverEvent::Failed {
+                        session_id: session_id.clone(),
+                        message: format!("{error:#}"),
+                    },
+                );
+                return Err(error);
+            }
+        };
+
+        let connection = match endpoint
+            .connect(ticket.addr().clone(), BLOBS_ALPN)
+            .await
+            .context("connecting to blob provider")
+        {
+            Ok(v) => v,
+            Err(error) => {
+                emit_receiver_event(
+                    &event_tx,
+                    ReceiverEvent::Failed {
+                        session_id: session_id.clone(),
+                        message: format!("{error:#}"),
+                    },
+                );
+                let _ = recv_store.shutdown().await;
+                return Err(error);
+            }
+        };
+
+        let mut stream = recv_store.store.remote().fetch(connection, ticket).stream();
+
+        let fetch_outcome: Result<()> = loop {
+            match stream.next().await {
+                Some(GetProgressItem::Progress(offset)) => {
+                    emit_receiver_event(
+                        &event_tx,
+                        ReceiverEvent::Progress {
+                            session_id: session_id.clone(),
+                            bytes_received: offset,
+                            total_bytes: Some(total_bytes),
+                        },
+                    );
+                }
+                Some(GetProgressItem::Done(_)) => break Ok(()),
+                Some(GetProgressItem::Error(err)) => {
+                    let error = anyhow!(err.to_string()).context("blob fetch error");
+                    emit_receiver_event(
+                        &event_tx,
+                        ReceiverEvent::Failed {
+                            session_id: session_id.clone(),
+                            message: format!("{error:#}"),
+                        },
+                    );
+                    break Err(error);
+                }
+                None => break Ok(()),
+            }
+        };
+
+        drop(stream);
+
+        if let Err(error) = fetch_outcome {
+            let _ = recv_store.shutdown().await;
+            return Err(error);
+        }
+
+        if let Err(error) = export_downloaded_collection(
+            &recv_store.store,
+            collection_root_hash,
+            &expected_files,
+        )
+        .await
+        {
+            emit_receiver_event(
+                &event_tx,
+                ReceiverEvent::Failed {
+                    session_id: session_id.clone(),
+                    message: format!("{error:#}"),
+                },
+            );
+            let _ = recv_store.shutdown().await;
+            return Err(error);
+        }
+
+        if let Err(error) = recv_store.shutdown().await {
+            emit_receiver_event(
+                &event_tx,
+                ReceiverEvent::Failed {
+                    session_id: session_id.clone(),
+                    message: format!("{error:#}"),
+                },
+            );
+            return Err(error);
+        }
+
+        emit_receiver_event(&event_tx, ReceiverEvent::Completed { session_id });
+        Ok(())
+    }
+}
+
+fn manifest_from_collection(collection: Collection) -> TransferManifest {
+    TransferManifest {
+        items: collection
+            .into_iter()
+            .map(|(path, _hash)| ManifestItem::File { path, size: 0 })
+            .collect(),
+    }
+}
+
+fn expected_files_from_manifest(
+    manifest: &TransferManifest,
     out_dir: &Path,
 ) -> Vec<ExpectedTransferFile> {
-    collection
-        .into_iter()
-        .map(|(path, _hash)| ExpectedTransferFile {
-            path: path.clone(),
-            size: 0,
-            destination: out_dir.join(&path),
+    manifest
+        .items
+        .iter()
+        .map(|item| match item {
+            ManifestItem::File { path, size } => ExpectedTransferFile {
+                path: path.clone(),
+                size: *size,
+                destination: out_dir.join(path),
+            },
         })
         .collect()
 }
@@ -175,7 +353,7 @@ impl Receiver {
                     let collection = prepared_collection.clone().ok_or_else(|| {
                         anyhow!("sender published ticket before store was prepared")
                     })?;
-                    let total_bytes = prepared_total_bytes.ok_or_else(|| {
+                    let _total_bytes = prepared_total_bytes.ok_or_else(|| {
                         anyhow!("sender published ticket before total bytes were prepared")
                     })?;
                     let blob_ticket: BlobTicket =
@@ -192,130 +370,14 @@ impl Receiver {
                                 return Err(error);
                             }
                         };
-
-                    let collection_root_hash = blob_ticket.hash();
-                    let expected_files = expected_files_from_collection(collection, &out_dir);
-                    let progress_total = Some(total_bytes);
-
-                    emit_receiver_event(
-                        &event_tx,
-                        ReceiverEvent::Ready {
-                            session_id: session_owned.clone(),
-                        },
+                    let blob_receiver = BlobReceiver::new(
+                        self.endpoint.clone(),
+                        session_owned.clone(),
+                        blob_ticket,
+                        out_dir,
+                        manifest_from_collection(collection),
                     );
-
-                    let recv_store =
-                        match TempRecvStore::open("drift-one-shot-recv", session_id).await {
-                            Ok(v) => v,
-                            Err(error) => {
-                                emit_receiver_event(
-                                    &event_tx,
-                                    ReceiverEvent::Failed {
-                                        session_id: session_owned.clone(),
-                                        message: format!("{error:#}"),
-                                    },
-                                );
-                                return Err(error);
-                            }
-                        };
-
-                    let connection = match self
-                        .endpoint
-                        .connect(blob_ticket.addr().clone(), BLOBS_ALPN)
-                        .await
-                        .context("connecting to blob provider")
-                    {
-                        Ok(v) => v,
-                        Err(error) => {
-                            emit_receiver_event(
-                                &event_tx,
-                                ReceiverEvent::Failed {
-                                    session_id: session_owned.clone(),
-                                    message: format!("{error:#}"),
-                                },
-                            );
-                            let _ = recv_store.shutdown().await;
-                            return Err(error);
-                        }
-                    };
-
-                    let mut stream = recv_store
-                        .store
-                        .remote()
-                        .fetch(connection, blob_ticket)
-                        .stream();
-
-                    let fetch_outcome: Result<()> = loop {
-                        match stream.next().await {
-                            Some(GetProgressItem::Progress(offset)) => {
-                                emit_receiver_event(
-                                    &event_tx,
-                                    ReceiverEvent::Progress {
-                                        session_id: session_owned.clone(),
-                                        bytes_received: offset,
-                                        total_bytes: progress_total,
-                                    },
-                                );
-                            }
-                            Some(GetProgressItem::Done(_)) => break Ok(()),
-                            Some(GetProgressItem::Error(err)) => {
-                                let error = anyhow!(err.to_string()).context("blob fetch error");
-                                emit_receiver_event(
-                                    &event_tx,
-                                    ReceiverEvent::Failed {
-                                        session_id: session_owned.clone(),
-                                        message: format!("{error:#}"),
-                                    },
-                                );
-                                break Err(error);
-                            }
-                            None => break Ok(()),
-                        }
-                    };
-
-                    drop(stream);
-
-                    if let Err(error) = fetch_outcome {
-                        let _ = recv_store.shutdown().await;
-                        return Err(error);
-                    }
-
-                    if let Err(error) = export_downloaded_collection(
-                        &recv_store.store,
-                        collection_root_hash,
-                        &expected_files,
-                    )
-                    .await
-                    {
-                        emit_receiver_event(
-                            &event_tx,
-                            ReceiverEvent::Failed {
-                                session_id: session_owned.clone(),
-                                message: format!("{error:#}"),
-                            },
-                        );
-                        let _ = recv_store.shutdown().await;
-                        return Err(error);
-                    }
-
-                    if let Err(error) = recv_store.shutdown().await {
-                        emit_receiver_event(
-                            &event_tx,
-                            ReceiverEvent::Failed {
-                                session_id: session_owned.clone(),
-                                message: format!("{error:#}"),
-                            },
-                        );
-                        return Err(error);
-                    }
-
-                    emit_receiver_event(
-                        &event_tx,
-                        ReceiverEvent::Completed {
-                            session_id: session_owned,
-                        },
-                    );
-                    return Ok(());
+                    return blob_receiver.run(event_tx.clone()).await;
                 }
                 SenderEvent::Failed { message, .. } => {
                     emit_receiver_event(
