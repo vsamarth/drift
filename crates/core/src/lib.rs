@@ -1,6 +1,7 @@
-pub mod discovery;
 pub mod fs_plan;
 pub mod lan;
+pub mod discovery;
+pub mod pairing;
 pub mod receiver;
 pub mod rendezvous;
 pub mod sender;

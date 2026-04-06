@@ -10,11 +10,11 @@ use axum::extract::{ConnectInfo, Path, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
-use drift_core::discovery::{DiscoveryError, DiscoverySession, DiscoveryState};
 use drift_core::rendezvous::{
     CODE_ALPHABET, CODE_LENGTH, ClaimPeerResponse, PairStatus, PairStatusResponse,
     RegisterPeerRequest, RegisterPeerResponse, validate_code,
 };
+use drift_core::pairing::{DiscoveryError, DiscoverySession, DiscoveryState};
 use rand::Rng;
 use serde::Serialize;
 use time::OffsetDateTime;
