@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/models/transfer_models.dart';
 import '../../../core/theme/drift_theme.dart';
 import '../../../state/drift_providers.dart';
+import '../live_transfer_stats.dart';
 import '../preview_list.dart';
 
 class MobileTransferView extends ConsumerWidget {
@@ -68,11 +69,6 @@ class MobileTransferView extends ConsumerWidget {
                         color: kInk,
                       ),
                     ),
-                    if (isSending && state.sendTransferSpeedLabel != null)
-                      Text(
-                        state.sendTransferSpeedLabel!,
-                        style: driftSans(fontSize: 12, color: kMuted),
-                      ),
                   ],
                 ),
               ],
@@ -104,6 +100,16 @@ class MobileTransferView extends ConsumerWidget {
             status,
             style: driftSans(fontSize: 14, color: kMuted),
             textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 16),
+          LiveTransferStats(
+            speedLabel: isSending
+                ? state.sendTransferSpeedLabel
+                : state.receiveTransferSpeedLabel,
+            etaLabel: isSending
+                ? state.sendTransferEtaLabel
+                : state.receiveTransferEtaLabel,
+            center: true,
           ),
           const SizedBox(height: 24),
           const SizedBox(height: 12),

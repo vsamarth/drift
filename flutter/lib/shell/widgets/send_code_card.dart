@@ -5,6 +5,7 @@ import '../../core/models/transfer_models.dart';
 import '../../core/theme/drift_theme.dart';
 import '../../state/drift_app_state.dart';
 import '../../state/drift_providers.dart';
+import 'live_transfer_stats.dart';
 import 'preview_list.dart';
 import 'sending_connection_strip.dart';
 import 'transfer_flow_layout.dart';
@@ -36,6 +37,10 @@ class SendCodeCard extends ConsumerWidget {
     final dotColor = _dotColorFor(stage);
     final itemSummary =
         '${_fileCountLabel(itemCount)}${totalSize.isEmpty ? '' : ' · $totalSize'}';
+    final liveStats = LiveTransferStats(
+      speedLabel: state.sendTransferSpeedLabel,
+      etaLabel: state.sendTransferEtaLabel,
+    );
 
     if (!fillBody) {
       return Padding(
@@ -100,12 +105,7 @@ class SendCodeCard extends ConsumerWidget {
       statusColor: dotColor,
       title: destinationLabel,
       subtitle: status,
-      explainer: (stage == TransferStage.waiting && !state.hasSendPayloadProgress)
-          ? Text(
-              'The receiver must accept before files start transferring.',
-              style: driftSans(fontSize: 12, color: kSubtle, height: 1.4),
-            )
-          : null,
+      explainer: _buildSendExplainer(stage, state, liveStats),
       illustration: SendingConnectionStrip(
         localLabel: state.deviceName,
         localDeviceType: state.deviceType,
@@ -126,11 +126,15 @@ class SendCodeCard extends ConsumerWidget {
               onPressed: () => _confirmCancel(context, ref),
               style: TextButton.styleFrom(
                 foregroundColor: const Color(0xFFCC3333),
-                backgroundColor: const Color(0xFFCC3333).withValues(alpha: 0.08),
+                backgroundColor: const Color(
+                  0xFFCC3333,
+                ).withValues(alpha: 0.08),
                 minimumSize: const Size(0, 44),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
-                  side: BorderSide(color: const Color(0xFFCC3333).withValues(alpha: 0.15)),
+                  side: BorderSide(
+                    color: const Color(0xFFCC3333).withValues(alpha: 0.15),
+                  ),
                 ),
               ),
               child: const Text('Cancel'),
@@ -154,7 +158,9 @@ class SendCodeCard extends ConsumerWidget {
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
-            style: TextButton.styleFrom(foregroundColor: const Color(0xFFCC3333)),
+            style: TextButton.styleFrom(
+              foregroundColor: const Color(0xFFCC3333),
+            ),
             child: const Text('Yes, cancel'),
           ),
         ],
@@ -165,6 +171,24 @@ class SendCodeCard extends ConsumerWidget {
       ref.read(driftAppNotifierProvider.notifier).cancelSendInProgress();
     }
   }
+}
+
+Widget? _buildSendExplainer(
+  TransferStage stage,
+  DriftAppState state,
+  Widget liveStats,
+) {
+  if (state.sendTransferSpeedLabel != null ||
+      state.sendTransferEtaLabel != null) {
+    return liveStats;
+  }
+  if (stage == TransferStage.waiting && !state.hasSendPayloadProgress) {
+    return Text(
+      'The receiver must accept before files start transferring.',
+      style: driftSans(fontSize: 12, color: kSubtle, height: 1.4),
+    );
+  }
+  return null;
 }
 
 class _RecipientRow extends StatelessWidget {
