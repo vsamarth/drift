@@ -5,6 +5,9 @@ use rand::random;
 use tokio::sync::watch;
 
 use crate::fs_plan::prepare::{PreparedFiles, prepare_files};
+use crate::protocol::{
+    message as protocol_message, send as protocol_sender, wire as protocol_wire,
+};
 use crate::rendezvous::{OfferManifest, RendezvousClient, resolve_server_url, validate_code};
 
 enum PeerResolution {
@@ -15,14 +18,9 @@ enum PeerResolution {
     LanTicket(String),
 }
 use crate::session::{bind_endpoint, connect_to_ticket, send_files_over_connection};
-use crate::transfer::{
-    SenderMachine, SenderState, TransferCancellation, ensure_session_id, validate_hello,
-};
+use crate::transfer::{SenderMachine, SenderState, TransferCancellation};
 use crate::util::{ConnectionPathKind, classify_connection_path};
-use crate::wire::{
-    CancelPhase, ControlMessage, DeviceType, Hello, Offer, TRANSFER_PROTOCOL_VERSION, TransferRole,
-    decode_ticket, read_message, write_message,
-};
+use crate::wire::{DeviceType, decode_ticket};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SendTransferPhase {
@@ -188,36 +186,25 @@ where
         .open_bi()
         .await
         .context("opening transfer control stream")?;
-    send_hello(
-        &mut control_send,
-        session_id,
-        TransferRole::Sender,
-        device_name,
-        device_type,
-    )
-    .await?;
-    let receiver_hello = match read_message::<ControlMessage>(&mut control_recv)
-        .await
-        .context("waiting for receiver hello")?
-    {
-        ControlMessage::Hello(message) => {
-            validate_hello(&message, TransferRole::Receiver)?;
-            ensure_session_id(&message.session_id, session_id)?;
-            message
-        }
-        other => {
-            machine.transition(SenderState::Failed)?;
-            bail!("expected hello from receiver, got {:?}", other);
-        }
-    };
-
-    send_offer(&mut control_send, session_id, prepared.manifest.clone()).await?;
+    let mut handshake = protocol_sender::Sender::new(
+        session_id.to_owned(),
+        to_protocol_identity(
+            device_name,
+            device_type,
+            protocol_message::TransferRole::Sender,
+        ),
+    );
+    handshake.send_hello(&mut control_send).await?;
+    let receiver_hello = handshake.read_peer_hello(&mut control_recv).await?;
+    handshake
+        .send_offer(&mut control_send, to_protocol_manifest(&prepared.manifest))
+        .await?;
     machine.transition(SenderState::WaitingForDecision)?;
     on_progress(progress(
         SendTransferPhase::WaitingForDecision,
-        receiver_hello.device_name.clone(),
+        receiver_hello.identity.device_name.clone(),
         prepared,
-        Some(receiver_hello.device_type),
+        Some(to_local_device_type(receiver_hello.identity.device_type)),
         0,
         None,
         0,
@@ -243,22 +230,27 @@ where
         }, if cancel_rx.is_some() => {
             if cancel_requested {
                 let cancellation = TransferCancellation {
-                    by: TransferRole::Sender,
-                    phase: CancelPhase::WaitingForDecision,
+                    by: protocol_message::TransferRole::Sender,
+                    phase: protocol_message::CancelPhase::WaitingForDecision,
                     reason: "sender cancelled before approval".to_owned(),
                 };
-                let _ = send_cancel(
+                protocol_wire::write_sender_message(
                     &mut control_send,
-                    session_id,
-                    cancellation.phase,
-                    cancellation.reason.clone(),
-                ).await;
+                    &protocol_message::SenderMessage::Cancel(protocol_message::Cancel {
+                        session_id: session_id.to_owned(),
+                        by: cancellation.by,
+                        phase: cancellation.phase,
+                        reason: cancellation.reason.clone(),
+                    }),
+                )
+                .await?;
+                let _ = control_send.finish();
                 machine.transition(SenderState::Cancelled)?;
                 on_progress(progress(
                     SendTransferPhase::Cancelled,
-                    receiver_hello.device_name.clone(),
+                    receiver_hello.identity.device_name.clone(),
                     prepared,
-                    Some(receiver_hello.device_type),
+                    Some(to_local_device_type(receiver_hello.identity.device_type)),
                     0,
                     None,
                     0,
@@ -269,20 +261,17 @@ where
             }
             unreachable!()
         }
-        decision = read_message::<ControlMessage>(&mut control_recv) => {
-            decision.context("waiting for receiver decision")?
-        }
+        decision = handshake.await_decision(&mut control_recv) => decision?,
     };
 
     match decision {
-        ControlMessage::Accept(message) => {
-            ensure_session_id(&message.session_id, session_id)?;
+        protocol_sender::SenderControlOutcome::Accepted(peer) => {
             machine.transition(SenderState::Sending)?;
             on_progress(progress(
                 SendTransferPhase::Sending,
-                receiver_hello.device_name.clone(),
+                peer.identity.device_name.clone(),
                 prepared,
-                Some(receiver_hello.device_type),
+                Some(to_local_device_type(peer.identity.device_type)),
                 0,
                 None,
                 0,
@@ -301,9 +290,9 @@ where
                     last_bytes_sent_in_file = p.bytes_sent_in_file;
                     on_progress(progress(
                         SendTransferPhase::Sending,
-                        receiver_hello.device_name.clone(),
+                        peer.identity.device_name.clone(),
                         prepared,
-                        Some(receiver_hello.device_type),
+                        Some(to_local_device_type(peer.identity.device_type)),
                         p.total_bytes_sent,
                         Some(p.file_index as u64),
                         p.bytes_sent_in_file,
@@ -316,9 +305,9 @@ where
                 machine.transition(SenderState::Cancelled)?;
                 on_progress(progress(
                     SendTransferPhase::Cancelled,
-                    receiver_hello.device_name.clone(),
+                    peer.identity.device_name.clone(),
                     prepared,
-                    Some(receiver_hello.device_type),
+                    Some(to_local_device_type(peer.identity.device_type)),
                     last_bytes_sent,
                     last_file_index,
                     last_bytes_sent_in_file,
@@ -330,23 +319,21 @@ where
             machine.transition(SenderState::Completed)?;
             on_progress(progress(
                 SendTransferPhase::Completed,
-                receiver_hello.device_name.clone(),
+                peer.identity.device_name.clone(),
                 prepared,
-                Some(receiver_hello.device_type),
+                Some(to_local_device_type(peer.identity.device_type)),
                 prepared.manifest.total_size,
                 None,
                 0,
                 Some(connection_path_kind),
             ));
         }
-        ControlMessage::Decline(message) => {
-            ensure_session_id(&message.session_id, session_id)?;
+        protocol_sender::SenderControlOutcome::Declined(message) => {
             machine.transition(SenderState::Declined)?;
             endpoint.close().await;
             bail!("receiver declined the offer: {}", message.reason);
         }
-        ControlMessage::Cancel(message) => {
-            ensure_session_id(&message.session_id, session_id)?;
+        protocol_sender::SenderControlOutcome::Cancelled(message) => {
             let cancellation = TransferCancellation {
                 by: message.by,
                 phase: message.phase,
@@ -355,9 +342,9 @@ where
             machine.transition(SenderState::Cancelled)?;
             on_progress(progress(
                 SendTransferPhase::Cancelled,
-                receiver_hello.device_name.clone(),
+                receiver_hello.identity.device_name.clone(),
                 prepared,
-                Some(receiver_hello.device_type),
+                Some(to_local_device_type(receiver_hello.identity.device_type)),
                 0,
                 None,
                 0,
@@ -366,16 +353,11 @@ where
             endpoint.close().await;
             return Ok(SendTransferResult::Cancelled(cancellation));
         }
-        other => {
-            machine.transition(SenderState::Failed)?;
-            endpoint.close().await;
-            bail!("unexpected control message from receiver: {:?}", other);
-        }
     }
 
     endpoint.close().await;
     Ok(SendTransferResult::Completed(SendTransferOutcome {
-        receiver_device_name: receiver_hello.device_name,
+        receiver_device_name: receiver_hello.identity.device_name,
         manifest: prepared.manifest.clone(),
         connection_path_kind,
     }))
@@ -403,63 +385,49 @@ fn progress(
     }
 }
 
-async fn send_hello(
-    send_stream: &mut iroh::endpoint::SendStream,
-    session_id: &str,
-    role: TransferRole,
-    device_name: &str,
-    device_type: DeviceType,
-) -> Result<()> {
-    write_message(
-        send_stream,
-        &ControlMessage::Hello(Hello {
-            version: TRANSFER_PROTOCOL_VERSION,
-            session_id: session_id.to_owned(),
-            role,
-            device_name: device_name.to_owned(),
-            device_type,
-        }),
-    )
-    .await
-}
-
-async fn send_offer(
-    send_stream: &mut iroh::endpoint::SendStream,
-    session_id: &str,
-    manifest: OfferManifest,
-) -> Result<()> {
-    write_message(
-        send_stream,
-        &ControlMessage::Offer(Offer {
-            session_id: session_id.to_owned(),
-            manifest,
-        }),
-    )
-    .await
-}
-
-async fn send_cancel(
-    send_stream: &mut iroh::endpoint::SendStream,
-    session_id: &str,
-    phase: CancelPhase,
-    reason: String,
-) -> Result<()> {
-    write_message(
-        send_stream,
-        &ControlMessage::Cancel(crate::wire::Cancel {
-            session_id: session_id.to_owned(),
-            by: TransferRole::Sender,
-            phase,
-            reason,
-        }),
-    )
-    .await?;
-    let _ = send_stream.finish();
-    Ok(())
-}
-
 fn make_session_id() -> String {
     format!("{:016x}", random::<u64>())
+}
+
+fn to_protocol_identity(
+    device_name: &str,
+    device_type: DeviceType,
+    role: protocol_message::TransferRole,
+) -> protocol_message::Identity {
+    protocol_message::Identity {
+        role,
+        device_name: device_name.to_owned(),
+        device_type: to_protocol_device_type(device_type),
+    }
+}
+
+fn to_protocol_device_type(device_type: DeviceType) -> protocol_message::DeviceType {
+    match device_type {
+        DeviceType::Phone => protocol_message::DeviceType::Phone,
+        DeviceType::Laptop => protocol_message::DeviceType::Laptop,
+    }
+}
+
+fn to_local_device_type(device_type: protocol_message::DeviceType) -> DeviceType {
+    match device_type {
+        protocol_message::DeviceType::Phone => DeviceType::Phone,
+        protocol_message::DeviceType::Laptop => DeviceType::Laptop,
+    }
+}
+
+fn to_protocol_manifest(manifest: &OfferManifest) -> protocol_message::TransferManifest {
+    protocol_message::TransferManifest {
+        files: manifest
+            .files
+            .iter()
+            .map(|file| protocol_message::TransferFile {
+                path: file.path.clone(),
+                size: file.size,
+            })
+            .collect(),
+        file_count: manifest.file_count,
+        total_size: manifest.total_size,
+    }
 }
 
 pub fn format_code_label(code: &str) -> String {

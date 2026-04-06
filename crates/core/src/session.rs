@@ -27,11 +27,9 @@ use crate::fs_plan::prepare::PreparedFile;
 use crate::fs_plan::receive::{ExpectedFile, build_expected_files};
 use crate::rendezvous::OfferManifest;
 use crate::transfer::TransferCancellation;
+use crate::protocol::{message as protocol_message, wire as protocol_wire};
 use crate::util::describe_remote;
-use crate::wire::{
-    ALPN, BlobTicketMessage, Cancel, CancelPhase, ControlMessage, TransferAck, TransferErrorCode,
-    TransferResult, TransferRole, TransferStatus, read_message, write_message,
-};
+use crate::wire::ALPN;
 
 const CONTROL_STREAM_FINISH_TIMEOUT: Duration = Duration::from_secs(2);
 
@@ -147,9 +145,9 @@ where
         "prepared blob provider ticket"
     );
 
-    write_message(
+    protocol_wire::write_sender_message(
         control_send,
-        &ControlMessage::BlobTicket(BlobTicketMessage {
+        &protocol_message::SenderMessage::BlobTicket(protocol_message::BlobTicketMessage {
             session_id: session_id.to_owned(),
             ticket,
         }),
@@ -166,8 +164,11 @@ where
             }
             cancel_requested = wait_for_cancel(&mut cancel_rx), if cancel_rx.is_some() => {
                 if cancel_requested {
-                    let cancellation = local_cancellation(TransferRole::Sender, CancelPhase::Transferring);
-                    let _ = send_cancel(
+                    let cancellation = local_cancellation(
+                        protocol_message::TransferRole::Sender,
+                        protocol_message::CancelPhase::Transferring,
+                    );
+                    let _ = send_sender_cancel(
                         control_send,
                         session_id,
                         cancellation.by,
@@ -177,11 +178,11 @@ where
                     break Ok(Some(cancellation));
                 }
             }
-            control_message = read_message::<ControlMessage>(control_recv) => {
+            control_message = protocol_wire::read_receiver_message(control_recv) => {
                 let outcome = match control_message.context("waiting for final transfer result")? {
-                    ControlMessage::TransferResult(result) => {
+                    protocol_message::ReceiverMessage::TransferResult(result) => {
                         ensure_matching_session_id(&result.session_id, session_id)?;
-                        if !matches!(result.status, TransferStatus::Ok) {
+                        if !matches!(result.status, protocol_message::TransferStatus::Ok) {
                             Err(anyhow!(
                                 "receiver failed transfer: {}",
                                 transfer_status_summary(&result.status)
@@ -190,7 +191,7 @@ where
                             Ok(None)
                         }
                     }
-                    ControlMessage::Cancel(cancel) => {
+                    protocol_message::ReceiverMessage::Cancel(cancel) => {
                         Ok(Some(cancellation_from_message(cancel, session_id)?))
                     }
                     other => Err(anyhow!("unexpected final control message: {:?}", other)),
@@ -262,20 +263,20 @@ where
         file_path: Arc::from(""),
     });
 
-    let ticket_message = match read_message::<ControlMessage>(control_recv)
+    let ticket_message = match protocol_wire::read_sender_message(control_recv)
         .await
         .context("waiting for blob transfer ticket")?
     {
-        ControlMessage::BlobTicket(message) => {
+        protocol_message::SenderMessage::BlobTicket(message) => {
             ensure_matching_session_id(&message.session_id, session_id)?;
             message
         }
         other => {
-            let status = transfer_error_status(
-                TransferErrorCode::UnexpectedMessage,
-                format!(
-                    "unexpected control message while waiting for blob ticket: {:?}",
-                    other
+                let status = transfer_error_status(
+                    protocol_message::TransferErrorCode::UnexpectedMessage,
+                    format!(
+                        "unexpected control message while waiting for blob ticket: {:?}",
+                        other
                 ),
             );
             send_transfer_result(control_send, session_id, status.clone()).await?;
@@ -302,8 +303,11 @@ where
         tokio::select! {
             cancel_requested = wait_for_cancel(&mut cancel_rx), if cancel_rx.is_some() => {
                 if cancel_requested {
-                    let cancellation = local_cancellation(TransferRole::Receiver, CancelPhase::Transferring);
-                    let _ = send_cancel(
+                let cancellation = local_cancellation(
+                    protocol_message::TransferRole::Receiver,
+                    protocol_message::CancelPhase::Transferring,
+                );
+                    let _ = send_receiver_cancel(
                         control_send,
                         session_id,
                         cancellation.by,
@@ -313,14 +317,14 @@ where
                     break Ok(Some(cancellation));
                 }
             }
-            control_message = read_message::<ControlMessage>(control_recv) => {
+            control_message = protocol_wire::read_sender_message(control_recv) => {
                 match control_message.context("waiting for transfer control message")? {
-                    ControlMessage::Cancel(cancel) => {
+                    protocol_message::SenderMessage::Cancel(cancel) => {
                         break Ok(Some(cancellation_from_message(cancel, session_id)?));
                     }
                     other => {
                         let status = transfer_error_status(
-                            TransferErrorCode::UnexpectedMessage,
+                            protocol_message::TransferErrorCode::UnexpectedMessage,
                             format!(
                                 "unexpected control message while receiving transfer: {:?}",
                                 other
@@ -345,7 +349,10 @@ where
                     Some(GetProgressItem::Done(_)) => break Ok(None),
                     Some(GetProgressItem::Error(err)) => {
                         let error = anyhow!(err.to_string());
-                        let status = transfer_error_status(TransferErrorCode::IoError, error.to_string());
+                        let status = transfer_error_status(
+                            protocol_message::TransferErrorCode::IoError,
+                            error.to_string(),
+                        );
                         send_transfer_result(control_send, session_id, status.clone()).await?;
                         break Err(error);
                     }
@@ -366,7 +373,8 @@ where
                 file_size: 0,
                 file_path: Arc::from(""),
             });
-            send_transfer_result(control_send, session_id, TransferStatus::Ok).await?;
+            send_transfer_result(control_send, session_id, protocol_message::TransferStatus::Ok)
+                .await?;
             Ok(None)
         }
         other => other,
@@ -378,11 +386,11 @@ where
     let outcome = result?;
 
     if outcome.is_none() {
-        match read_message::<ControlMessage>(control_recv)
+        match protocol_wire::read_sender_message(control_recv)
             .await
             .context("waiting for transfer acknowledgement")?
         {
-            ControlMessage::TransferAck(ack) => {
+            protocol_message::SenderMessage::TransferAck(ack) => {
                 ensure_matching_session_id(&ack.session_id, session_id)?
             }
             other => bail!(
@@ -661,23 +669,41 @@ fn ensure_matching_session_id(actual: &str, expected: &str) -> Result<()> {
     }
 }
 
-fn local_cancellation(by: TransferRole, phase: CancelPhase) -> TransferCancellation {
+fn local_cancellation(
+    by: protocol_message::TransferRole,
+    phase: protocol_message::CancelPhase,
+) -> TransferCancellation {
     let reason = match (by, phase) {
-        (TransferRole::Sender, CancelPhase::WaitingForDecision) => {
+        (
+            protocol_message::TransferRole::Sender,
+            protocol_message::CancelPhase::WaitingForDecision,
+        ) => {
             "sender cancelled before approval".to_owned()
         }
-        (TransferRole::Sender, CancelPhase::Transferring) => "sender cancelled transfer".to_owned(),
-        (TransferRole::Receiver, CancelPhase::WaitingForDecision) => {
+        (
+            protocol_message::TransferRole::Sender,
+            protocol_message::CancelPhase::Transferring,
+        ) => "sender cancelled transfer".to_owned(),
+        (
+            protocol_message::TransferRole::Receiver,
+            protocol_message::CancelPhase::WaitingForDecision,
+        ) => {
             "receiver cancelled before approval".to_owned()
         }
-        (TransferRole::Receiver, CancelPhase::Transferring) => {
+        (
+            protocol_message::TransferRole::Receiver,
+            protocol_message::CancelPhase::Transferring,
+        ) => {
             "receiver cancelled transfer".to_owned()
         }
     };
     TransferCancellation { by, phase, reason }
 }
 
-fn cancellation_from_message(cancel: Cancel, session_id: &str) -> Result<TransferCancellation> {
+fn cancellation_from_message(
+    cancel: protocol_message::Cancel,
+    session_id: &str,
+) -> Result<TransferCancellation> {
     ensure_matching_session_id(&cancel.session_id, session_id)?;
     Ok(TransferCancellation {
         by: cancel.by,
@@ -705,27 +731,51 @@ async fn wait_for_cancel(cancel_rx: &mut Option<watch::Receiver<bool>>) -> bool 
     }
 }
 
-fn transfer_status_summary(status: &TransferStatus) -> String {
+fn transfer_status_summary(status: &protocol_message::TransferStatus) -> String {
     match status {
-        TransferStatus::Ok => "ok".to_owned(),
-        TransferStatus::Error { code, message } => format!("{code:?}: {message}"),
+        protocol_message::TransferStatus::Ok => "ok".to_owned(),
+        protocol_message::TransferStatus::Error { code, message } => {
+            format!("{code:?}: {message}")
+        }
     }
 }
 
-fn transfer_error_status(code: TransferErrorCode, message: String) -> TransferStatus {
-    TransferStatus::Error { code, message }
+fn transfer_error_status(
+    code: protocol_message::TransferErrorCode,
+    message: String,
+) -> protocol_message::TransferStatus {
+    protocol_message::TransferStatus::Error { code, message }
 }
 
-async fn send_cancel(
+async fn send_sender_cancel(
     control_send: &mut iroh::endpoint::SendStream,
     session_id: &str,
-    by: TransferRole,
-    phase: CancelPhase,
+    by: protocol_message::TransferRole,
+    phase: protocol_message::CancelPhase,
     reason: String,
 ) -> Result<()> {
-    write_message(
+    protocol_wire::write_sender_message(
         control_send,
-        &ControlMessage::Cancel(Cancel {
+        &protocol_message::SenderMessage::Cancel(protocol_message::Cancel {
+            session_id: session_id.to_owned(),
+            by,
+            phase,
+            reason,
+        }),
+    )
+    .await
+}
+
+async fn send_receiver_cancel(
+    control_send: &mut iroh::endpoint::SendStream,
+    session_id: &str,
+    by: protocol_message::TransferRole,
+    phase: protocol_message::CancelPhase,
+    reason: String,
+) -> Result<()> {
+    protocol_wire::write_receiver_message(
+        control_send,
+        &protocol_message::ReceiverMessage::Cancel(protocol_message::Cancel {
             session_id: session_id.to_owned(),
             by,
             phase,
@@ -738,11 +788,11 @@ async fn send_cancel(
 async fn send_transfer_result(
     control_send: &mut iroh::endpoint::SendStream,
     session_id: &str,
-    status: TransferStatus,
+    status: protocol_message::TransferStatus,
 ) -> Result<()> {
-    write_message(
+    protocol_wire::write_receiver_message(
         control_send,
-        &ControlMessage::TransferResult(TransferResult {
+        &protocol_message::ReceiverMessage::TransferResult(protocol_message::TransferResult {
             session_id: session_id.to_owned(),
             status,
         }),
@@ -754,9 +804,9 @@ async fn send_transfer_ack(
     control_send: &mut iroh::endpoint::SendStream,
     session_id: &str,
 ) -> Result<()> {
-    write_message(
+    protocol_wire::write_sender_message(
         control_send,
-        &ControlMessage::TransferAck(TransferAck {
+        &protocol_message::SenderMessage::TransferAck(protocol_message::TransferAck {
             session_id: session_id.to_owned(),
         }),
     )

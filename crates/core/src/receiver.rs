@@ -5,6 +5,9 @@ use std::path::{Path, PathBuf};
 use tokio::sync::watch;
 
 use crate::fs_plan::receive::{ExpectedFile, build_expected_files};
+use crate::protocol::{
+    message as protocol_message, receive as protocol_receiver, wire as protocol_wire,
+};
 use crate::rendezvous::OfferManifest;
 use iroh::Endpoint;
 
@@ -12,14 +15,9 @@ use crate::session::{
     ExpectedTransferFile, FileReceiveProgress, build_expected_transfer_files,
     receive_files_over_connection_with_progress,
 };
-use crate::transfer::{
-    ReceiverMachine, ReceiverState, TransferCancellation, ensure_session_id, validate_hello,
-};
+use crate::transfer::{ReceiverMachine, ReceiverState, TransferCancellation};
 use crate::util::{ConnectionPathKind, classify_connection_path};
-use crate::wire::{
-    Accept, ControlMessage, Decline, DeviceType, Hello, TRANSFER_PROTOCOL_VERSION, TransferRole,
-    read_message, write_message,
-};
+use crate::wire::DeviceType;
 
 /// State after the offer is known and destinations are planned; waiting for user accept/decline.
 pub struct ReceiverPendingDecision {
@@ -119,49 +117,28 @@ pub async fn receiver_run_until_decision(
         .await
         .context("waiting for transfer control stream")?;
 
-    let hello = match read_message::<ControlMessage>(&mut control_recv)
-        .await
-        .context("reading sender hello")?
-    {
-        ControlMessage::Hello(message) => {
-            validate_hello(&message, TransferRole::Sender)?;
-            message
-        }
-        other => {
-            machine.transition(ReceiverState::Failed)?;
-            bail!("expected hello from sender, got {:?}", other);
-        }
-    };
-
-    send_hello(
-        &mut control_send,
-        &hello.session_id,
-        TransferRole::Receiver,
+    let mut handshake = protocol_receiver::Receiver::new(protocol_identity(
         device_name,
         device_type,
-    )
-    .await?;
+        protocol_message::TransferRole::Receiver,
+    ));
+    let peer_hello = handshake.read_peer_hello(&mut control_recv).await?;
+    handshake
+        .send_hello(&mut control_send, &peer_hello.session_id)
+        .await?;
 
     machine.transition(ReceiverState::ReviewingOffer)?;
-    let offer = match read_message::<ControlMessage>(&mut control_recv)
-        .await
-        .context("reading sender offer")?
-    {
-        ControlMessage::Offer(message) => {
-            ensure_session_id(&message.session_id, &hello.session_id)?;
-            message
-        }
-        other => {
-            machine.transition(ReceiverState::Failed)?;
-            bail!("expected offer from sender, got {:?}", other);
-        }
-    };
+    let offer = handshake
+        .read_offer(&mut control_recv, &peer_hello.session_id)
+        .await?;
 
-    let expected_files = match build_expected_files(&offer.manifest, &out_dir).await {
+    let expected_files = match build_expected_files(&to_local_manifest(&offer), &out_dir).await {
         Ok(expected_files) => expected_files,
         Err(err) => {
             machine.transition(ReceiverState::Declined)?;
-            send_decline(&mut control_send, &hello.session_id, err.to_string()).await?;
+            handshake
+                .decline(&mut control_send, &peer_hello.session_id, err.to_string())
+                .await?;
             return Err(err);
         }
     };
@@ -174,10 +151,10 @@ pub async fn receiver_run_until_decision(
         connection,
         control_send,
         control_recv,
-        session_id: hello.session_id,
-        sender_device_name: hello.device_name,
-        sender_device_type: hello.device_type,
-        manifest: offer.manifest,
+        session_id: peer_hello.session_id,
+        sender_device_name: peer_hello.identity.device_name,
+        sender_device_type: to_local_device_type(peer_hello.identity.device_type),
+        manifest: to_local_manifest(&offer),
         expected_files,
         out_dir,
         connection_path_kind,
@@ -418,9 +395,9 @@ where
 }
 
 async fn send_accept(send_stream: &mut iroh::endpoint::SendStream, session_id: &str) -> Result<()> {
-    write_message(
+    protocol_wire::write_receiver_message(
         send_stream,
-        &ControlMessage::Accept(Accept {
+        &protocol_message::ReceiverMessage::Accept(protocol_message::Accept {
             session_id: session_id.to_owned(),
         }),
     )
@@ -432,9 +409,9 @@ async fn send_decline(
     session_id: &str,
     reason: String,
 ) -> Result<()> {
-    write_message(
+    protocol_wire::write_receiver_message(
         send_stream,
-        &ControlMessage::Decline(Decline {
+        &protocol_message::ReceiverMessage::Decline(protocol_message::Decline {
             session_id: session_id.to_owned(),
             reason,
         }),
@@ -444,29 +421,51 @@ async fn send_decline(
     Ok(())
 }
 
-async fn send_hello(
-    send_stream: &mut iroh::endpoint::SendStream,
-    session_id: &str,
-    role: TransferRole,
-    device_name: &str,
-    device_type: DeviceType,
-) -> Result<()> {
-    write_message(
-        send_stream,
-        &ControlMessage::Hello(Hello {
-            version: TRANSFER_PROTOCOL_VERSION,
-            session_id: session_id.to_owned(),
-            role,
-            device_name: device_name.to_owned(),
-            device_type,
-        }),
-    )
-    .await
-}
-
 fn expected_transfer_files(
     manifest: &OfferManifest,
     expected_files: BTreeMap<String, ExpectedFile>,
 ) -> Result<Vec<ExpectedTransferFile>> {
     build_expected_transfer_files(manifest, expected_files)
+}
+
+fn protocol_identity(
+    device_name: &str,
+    device_type: DeviceType,
+    role: protocol_message::TransferRole,
+) -> protocol_message::Identity {
+    protocol_message::Identity {
+        role,
+        device_name: device_name.to_owned(),
+        device_type: to_protocol_device_type(device_type),
+    }
+}
+
+fn to_local_device_type(device_type: protocol_message::DeviceType) -> DeviceType {
+    match device_type {
+        protocol_message::DeviceType::Phone => DeviceType::Phone,
+        protocol_message::DeviceType::Laptop => DeviceType::Laptop,
+    }
+}
+
+fn to_protocol_device_type(device_type: DeviceType) -> protocol_message::DeviceType {
+    match device_type {
+        DeviceType::Phone => protocol_message::DeviceType::Phone,
+        DeviceType::Laptop => protocol_message::DeviceType::Laptop,
+    }
+}
+
+fn to_local_manifest(manifest: &protocol_message::Offer) -> OfferManifest {
+    OfferManifest {
+        files: manifest
+            .manifest
+            .files
+            .iter()
+            .map(|file| crate::rendezvous::OfferFile {
+                path: file.path.clone(),
+                size: file.size,
+            })
+            .collect(),
+        file_count: manifest.manifest.file_count,
+        total_size: manifest.manifest.total_size,
+    }
 }

@@ -366,7 +366,7 @@ mod tests {
             .await?;
         assert!(matches!(
             outcome,
-            super::ReceiverControlOutcome::Accepted(_)
+            receive::ReceiverControlOutcome::Accepted(_)
         ));
 
         sender_task.await.unwrap();

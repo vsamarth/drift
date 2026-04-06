@@ -1,6 +1,6 @@
 use anyhow::{Result, bail};
 
-use crate::wire::{CancelPhase, Hello, TRANSFER_PROTOCOL_VERSION, TransferRole};
+use crate::protocol::message::{CancelPhase, TransferRole};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SenderState {
@@ -35,8 +35,8 @@ pub enum ReceiverState {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TransferCancellation {
-    pub by: TransferRole,
-    pub phase: CancelPhase,
+    pub(crate) by: TransferRole,
+    pub(crate) phase: CancelPhase,
     pub reason: String,
 }
 
@@ -136,30 +136,6 @@ impl Default for ReceiverMachine {
     }
 }
 
-pub fn validate_hello(message: &Hello, expected_role: TransferRole) -> Result<()> {
-    if message.version != TRANSFER_PROTOCOL_VERSION {
-        bail!("unsupported transfer protocol version {}", message.version);
-    }
-
-    if message.role != expected_role {
-        bail!(
-            "unexpected transfer role {:?}, expected {:?}",
-            message.role,
-            expected_role
-        );
-    }
-
-    if message.session_id.trim().is_empty() {
-        bail!("transfer session id must not be empty");
-    }
-
-    if message.device_name.trim().is_empty() {
-        bail!("transfer device name must not be empty");
-    }
-
-    Ok(())
-}
-
 pub fn ensure_session_id(actual: &str, expected: &str) -> Result<()> {
     if actual == expected {
         Ok(())
@@ -171,7 +147,6 @@ pub fn ensure_session_id(actual: &str, expected: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::wire::DeviceType;
 
     #[test]
     fn sender_machine_allows_happy_path() {
@@ -194,29 +169,4 @@ mod tests {
         assert!(machine.transition(ReceiverState::Receiving).is_err());
     }
 
-    #[test]
-    fn hello_validation_checks_version_and_role() {
-        let hello = Hello {
-            version: TRANSFER_PROTOCOL_VERSION,
-            session_id: "abc123".to_owned(),
-            role: TransferRole::Sender,
-            device_name: "sam-mac".to_owned(),
-            device_type: DeviceType::Laptop,
-        };
-
-        assert!(validate_hello(&hello, TransferRole::Sender).is_ok());
-        assert!(validate_hello(&hello, TransferRole::Receiver).is_err());
-
-        let wrong_version = Hello {
-            version: TRANSFER_PROTOCOL_VERSION + 1,
-            ..hello.clone()
-        };
-        assert!(validate_hello(&wrong_version, TransferRole::Sender).is_err());
-
-        let empty_device_name = Hello {
-            device_name: "   ".to_owned(),
-            ..hello
-        };
-        assert!(validate_hello(&empty_device_name, TransferRole::Sender).is_err());
-    }
 }

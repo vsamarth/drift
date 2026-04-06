@@ -1,12 +1,8 @@
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result};
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use iroh::{Endpoint, EndpointAddr, TransportAddr};
-use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
-
-use crate::rendezvous::OfferManifest;
 
 pub const ALPN: &[u8] = b"drift/transfer/v1";
 pub const TRANSFER_PROTOCOL_VERSION: u32 = 1;
@@ -34,105 +30,6 @@ enum EncodedTransportAddr {
 struct LegacyTransferTicket {
     node_id: String,
     relay_url: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Hello {
-    pub version: u32,
-    pub session_id: String,
-    pub role: TransferRole,
-    pub device_name: String,
-    pub device_type: DeviceType,
-}
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
-pub enum TransferRole {
-    Sender,
-    Receiver,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Offer {
-    pub session_id: String,
-    pub manifest: OfferManifest,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Accept {
-    pub session_id: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Decline {
-    pub session_id: String,
-    pub reason: String,
-}
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum CancelPhase {
-    WaitingForDecision,
-    Transferring,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct Cancel {
-    pub session_id: String,
-    pub by: TransferRole,
-    pub phase: CancelPhase,
-    pub reason: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct BlobTicketMessage {
-    pub session_id: String,
-    pub ticket: String,
-}
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum TransferErrorCode {
-    ProtocolViolation,
-    UnexpectedMessage,
-    FileConflict,
-    IoError,
-    ChecksumMismatch,
-    Cancelled,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(tag = "status", rename_all = "snake_case")]
-pub enum TransferStatus {
-    Ok,
-    Error {
-        code: TransferErrorCode,
-        message: String,
-    },
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct TransferResult {
-    pub session_id: String,
-    pub status: TransferStatus,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct TransferAck {
-    pub session_id: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
-pub enum ControlMessage {
-    Hello(Hello),
-    Offer(Offer),
-    Accept(Accept),
-    Decline(Decline),
-    Cancel(Cancel),
-    BlobTicket(BlobTicketMessage),
-    TransferResult(TransferResult),
-    TransferAck(TransferAck),
 }
 
 pub async fn make_ticket(endpoint: &Endpoint) -> Result<String> {
@@ -229,59 +126,6 @@ impl From<LegacyTransferTicket> for TransferTicket {
     }
 }
 
-const MAX_JSON_FRAME_BYTES: usize = 16 * 1024 * 1024;
-
-/// Length-prefixed JSON frame (same encoding as control messages), for any async reader.
-pub async fn read_json_frame<R: AsyncRead + Unpin, T: DeserializeOwned>(
-    reader: &mut R,
-) -> Result<T> {
-    let message_len = reader.read_u32().await.context("reading message length")? as usize;
-    if message_len > MAX_JSON_FRAME_BYTES {
-        bail!(
-            "message length {} exceeds maximum {}",
-            message_len,
-            MAX_JSON_FRAME_BYTES
-        );
-    }
-    let mut message_buf = vec![0_u8; message_len];
-    reader
-        .read_exact(&mut message_buf)
-        .await
-        .context("reading message bytes")?;
-    serde_json::from_slice(&message_buf).context("parsing message body")
-}
-
-/// Length-prefixed JSON frame (same encoding as control messages), for any async writer.
-pub async fn write_json_frame<W: AsyncWrite + Unpin, T: Serialize>(
-    writer: &mut W,
-    value: &T,
-) -> Result<()> {
-    let bytes = serde_json::to_vec(value).context("serializing message body")?;
-    writer
-        .write_u32(bytes.len() as u32)
-        .await
-        .context("writing message length")?;
-    writer
-        .write_all(&bytes)
-        .await
-        .context("writing message bytes")?;
-    writer.flush().await.context("flushing message")?;
-    Ok(())
-}
-
-pub async fn read_message<T: DeserializeOwned>(
-    recv_stream: &mut iroh::endpoint::RecvStream,
-) -> Result<T> {
-    read_json_frame(recv_stream).await
-}
-
-pub async fn write_message<T: Serialize>(
-    send_stream: &mut iroh::endpoint::SendStream,
-    value: &T,
-) -> Result<()> {
-    write_json_frame(send_stream, value).await
-}
-
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeSet;
@@ -289,20 +133,6 @@ mod tests {
     use iroh::{RelayUrl, SecretKey};
 
     use super::*;
-
-    #[test]
-    fn transfer_status_error_serializes_with_code_and_message() {
-        let status = TransferStatus::Error {
-            code: TransferErrorCode::ChecksumMismatch,
-            message: "digest mismatch".to_owned(),
-        };
-
-        let json = serde_json::to_string(&status).unwrap();
-
-        assert!(json.contains("\"status\":\"error\""));
-        assert!(json.contains("\"code\":\"checksum_mismatch\""));
-        assert!(json.contains("\"message\":\"digest mismatch\""));
-    }
 
     #[test]
     fn ticket_roundtrip_preserves_all_addresses() {

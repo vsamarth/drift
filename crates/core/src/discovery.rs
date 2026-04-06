@@ -101,8 +101,8 @@ mod tests {
             node_id: endpoint_id.to_string(),
             addrs: Vec::new(),
         };
-        let encoded = URL_SAFE_NO_PAD
-            .encode(bincode::serialize(&ticket).expect("serialize ticket"));
+        let encoded =
+            URL_SAFE_NO_PAD.encode(bincode::serialize(&ticket).expect("serialize ticket"));
 
         let endpoint_id = endpoint_id_from_ticket(&encoded).expect("endpoint id");
 
