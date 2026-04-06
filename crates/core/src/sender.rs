@@ -20,8 +20,8 @@ use crate::transfer::{
 };
 use crate::util::{ConnectionPathKind, classify_connection_path};
 use crate::wire::{
-    CancelPhase, ControlMessage, DeviceType, Hello, Offer, TRANSFER_PROTOCOL_VERSION,
-    TransferRole, decode_ticket, read_message, write_message,
+    CancelPhase, ControlMessage, DeviceType, Hello, Offer, TRANSFER_PROTOCOL_VERSION, TransferRole,
+    decode_ticket, read_message, write_message,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
