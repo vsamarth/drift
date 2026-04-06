@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../state/drift_app_state.dart';
 import '../../state/drift_providers.dart';
+import 'live_transfer_stats.dart';
 import 'preview_list.dart';
 import 'sending_connection_strip.dart';
 import 'transfer_flow_layout.dart';
@@ -31,6 +32,10 @@ class ReceiveReceivingCard extends ConsumerWidget {
       statusColor: accentColor,
       title: senderName,
       subtitle: state.receiveSummary?.statusMessage ?? 'Receiving files...',
+      explainer: LiveTransferStats(
+        speedLabel: state.receiveTransferSpeedLabel,
+        etaLabel: state.receiveTransferEtaLabel,
+      ),
       illustration: SendingConnectionStrip(
         localLabel: senderName,
         localDeviceType: senderDeviceType,
