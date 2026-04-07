@@ -1,16 +1,17 @@
 use anyhow::{Context, Result};
 use drift_core::lan::LanReceiveAdvertisement;
 use drift_core::rendezvous::{RendezvousClient, resolve_server_url};
-use drift_core::wire::make_ticket;
+use drift_core::util::make_ticket;
 use iroh::{Endpoint, EndpointId};
 use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
-use tokio::sync::{broadcast, oneshot, watch};
+use tokio::sync::{broadcast, watch};
 use tokio::task::JoinHandle;
 use tracing::warn;
 
 use crate::types::{PairingCodeState, ReceiverConfig, ReceiverRegistration};
 
+use super::session::ReceiverRun;
 use super::{OfferDecision, ReceiverEvent};
 
 pub(super) struct ReceiverRuntime {
@@ -41,10 +42,7 @@ pub(super) enum OfferState {
 }
 
 pub(super) struct PendingOfferState {
-    offer_id: u64,
-    decision_tx: oneshot::Sender<OfferResolution>,
-    cancel_tx: watch::Sender<bool>,
-    watch_task: JoinHandle<()>,
+    run: ReceiverRun,
 }
 
 impl ReceiverRuntime {
@@ -237,53 +235,40 @@ impl ReceiverRuntime {
         else {
             return Err(anyhow::anyhow!("no pending offer"));
         };
-        pending_offer.watch_task.abort();
-        let offer_id = pending_offer.offer_id;
+        let run = pending_offer.run;
+
+        let offer_id = run.offer_id;
         let resolution = if matches!(decision, OfferDecision::Accept) {
             self.offer_state = OfferState::Receiving {
                 offer_id,
-                cancel_tx: pending_offer.cancel_tx.clone(),
+                cancel_tx: run.cancel_tx.clone(),
             };
             OfferResolution::Accept
         } else {
             OfferResolution::Decline
         };
-        pending_offer
-            .decision_tx
+        run.decision_tx
             .send(resolution)
             .map_err(|_| anyhow::anyhow!("offer is no longer active"))?;
         Ok(())
     }
 
-    pub(super) fn handle_offer_prepared(
-        &mut self,
-        offer_id: u64,
-        decision_tx: oneshot::Sender<OfferResolution>,
-        cancel_tx: watch::Sender<bool>,
-        watch_task: JoinHandle<()>,
-    ) -> bool {
+    pub(super) fn handle_offer_prepared(&mut self, run: ReceiverRun) -> bool {
         if !matches!(self.offer_state, OfferState::Idle) {
-            watch_task.abort();
-            let _ = decision_tx.send(OfferResolution::Decline);
+            let _ = run.decision_tx.send(OfferResolution::Decline);
             return false;
         }
 
-        self.offer_state = OfferState::Pending(PendingOfferState {
-            offer_id,
-            decision_tx,
-            cancel_tx,
-            watch_task,
-        });
+        self.offer_state = OfferState::Pending(PendingOfferState { run });
         true
     }
 
     pub(super) fn handle_offer_progress(&mut self, offer_id: u64) -> bool {
         match &mut self.offer_state {
-            OfferState::Pending(pending) if pending.offer_id == offer_id => {
-                pending.watch_task.abort();
+            OfferState::Pending(pending) if pending.run.offer_id == offer_id => {
                 self.offer_state = OfferState::Receiving {
                     offer_id,
-                    cancel_tx: pending.cancel_tx.clone(),
+                    cancel_tx: pending.run.cancel_tx.clone(),
                 };
                 true
             }
@@ -302,8 +287,7 @@ impl ReceiverRuntime {
         }
 
         match &mut self.offer_state {
-            OfferState::Pending(pending) if pending.offer_id == offer_id => {
-                pending.watch_task.abort();
+            OfferState::Pending(pending) if pending.run.offer_id == offer_id => {
                 self.offer_state = OfferState::Idle;
                 true
             }
@@ -318,14 +302,6 @@ impl ReceiverRuntime {
         }
     }
 
-    pub(super) fn handle_offer_disconnected(&mut self, offer_id: u64) -> bool {
-        self.cancel_pending_offer(offer_id)
-    }
-
-    pub(super) fn handle_offer_expired(&mut self, offer_id: u64) -> bool {
-        self.cancel_pending_offer(offer_id)
-    }
-
     pub(super) fn cancel_active_transfer(&mut self) -> Result<()> {
         match &self.offer_state {
             OfferState::Receiving { cancel_tx, .. } => {
@@ -338,9 +314,8 @@ impl ReceiverRuntime {
 
     fn cancel_pending_offer(&mut self, offer_id: u64) -> bool {
         match std::mem::replace(&mut self.offer_state, OfferState::Idle) {
-            OfferState::Pending(pending) if pending.offer_id == offer_id => {
-                pending.watch_task.abort();
-                let _ = pending.decision_tx.send(OfferResolution::Cancel);
+            OfferState::Pending(pending) if pending.run.offer_id == offer_id => {
+                let _ = pending.run.decision_tx.send(OfferResolution::Cancel);
                 true
             }
             other => {

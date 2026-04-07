@@ -1,10 +1,10 @@
 pub mod discovery;
 pub mod fs_plan;
 pub mod lan;
-pub mod receiver;
+pub mod pairing;
 pub mod rendezvous;
-pub mod sender;
-pub mod session;
-pub mod transfer;
 pub mod util;
-pub mod wire;
+
+pub mod blobs;
+pub mod protocol;
+pub mod transfer_flow;

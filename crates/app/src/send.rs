@@ -1,46 +1,84 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
-use anyhow::{Result, bail};
-use tokio::sync::watch;
+use anyhow::{Context, Result, bail};
+use drift_core::fs_plan::preview::{
+    SelectedPathKind, SelectedPathPreview, SelectionPreview as CoreSelectionPreview,
+    inspect_selected_paths,
+};
+use drift_core::protocol::DeviceType;
+use drift_core::rendezvous::{RendezvousClient, resolve_server_url, validate_code};
+use drift_core::transfer_flow::{
+    SendRequest, Sender, SenderEvent as CoreSenderEvent, TransferOutcome as CoreTransferOutcome,
+};
+use drift_core::util::{decode_ticket, format_code_label};
+use iroh::EndpointId;
+use tokio::sync::{mpsc, oneshot};
+use tokio_stream::{StreamExt, wrappers::UnboundedReceiverStream};
 
 use crate::error::format_error_chain;
 use crate::types::{
     NearbyReceiver, SelectionChange, SelectionItem, SelectionPreview, SendConfig, SendEvent,
     SendPhase,
 };
-use drift_core::fs_plan::preview::{
-    SelectedPathKind, SelectedPathPreview, SelectionPreview as CoreSelectionPreview,
-    inspect_selected_paths,
-};
-use drift_core::rendezvous::resolve_server_url;
-use drift_core::sender::{
-    SendTransferPhase as CoreSendTransferPhase, SendTransferProgress, SendTransferResult,
-    format_code_label, send_files_with_progress, send_files_with_progress_via_lan_ticket,
-};
-use drift_core::util::ConnectionPathKind;
-use drift_core::wire::DeviceType;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SendSession {
+pub struct SendDraft {
     config: SendConfig,
     paths: Vec<PathBuf>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum SendSessionOutcome {
-    Completed,
-    Cancelled,
+pub enum SendDestination {
+    Code {
+        code: String,
+        server_url: Option<String>,
+    },
+    Nearby {
+        ticket: String,
+        destination_label: String,
+    },
 }
 
-impl SendSession {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SendSessionOutcome {
+    Accepted {
+        receiver_device_name: String,
+        receiver_endpoint_id: EndpointId,
+    },
+    Declined {
+        reason: String,
+    },
+}
+
+#[derive(Debug)]
+pub struct SendRun {
+    pub events: SendEventStream,
+    outcome_rx: oneshot::Receiver<Result<SendSessionOutcome>>,
+}
+
+pub type SendEventStream = UnboundedReceiverStream<Result<SendEvent>>;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SendSession {
+    draft: SendDraft,
+    destination: SendDestination,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ResolvedDestination {
+    destination_label: String,
+    peer_endpoint_id: EndpointId,
+}
+
+impl SendDraft {
     pub fn new(config: SendConfig, paths: Vec<PathBuf>) -> Self {
-        let mut session = Self {
+        let mut draft = Self {
             config,
             paths: Vec::new(),
         };
-        session.replace_paths(paths);
-        session
+        draft.replace_paths(paths);
+        draft
     }
 
     pub fn config(&self) -> &SendConfig {
@@ -112,104 +150,187 @@ impl SendSession {
         crate::nearby::scan_nearby_receivers(timeout_secs).await
     }
 
-    pub async fn send_to_code<F>(
-        &self,
-        code: String,
-        server_url: Option<String>,
-        cancel_rx: Option<watch::Receiver<bool>>,
-        mut on_event: F,
-    ) -> Result<SendSessionOutcome>
-    where
-        F: FnMut(SendEvent),
-    {
-        self.send_to_code_impl(code, server_url, cancel_rx, &mut on_event)
-            .await
+    pub fn into_session(self, destination: SendDestination) -> SendSession {
+        SendSession::new(self, destination)
+    }
+}
+
+impl SendDestination {
+    pub fn code(code: String, server_url: Option<String>) -> Self {
+        Self::Code { code, server_url }
     }
 
-    pub async fn send_to_nearby<F>(
-        &self,
-        ticket: String,
-        destination_label: String,
-        cancel_rx: Option<watch::Receiver<bool>>,
-        mut on_event: F,
-    ) -> Result<SendSessionOutcome>
-    where
-        F: FnMut(SendEvent),
-    {
-        self.send_to_nearby_impl(ticket, destination_label, cancel_rx, &mut on_event)
-            .await
-    }
-
-    async fn send_to_code_impl<F>(
-        &self,
-        code: String,
-        server_url: Option<String>,
-        cancel_rx: Option<watch::Receiver<bool>>,
-        on_event: &mut F,
-    ) -> Result<SendSessionOutcome>
-    where
-        F: FnMut(SendEvent),
-    {
-        let device_type = parse_device_type(&self.config.device_type)?;
-        let fallback_destination_label = format_code_label(&code);
-        let normalized_server = resolve_server_url(server_url.as_deref());
-        let result = send_files_with_progress(
-            code,
-            self.paths.clone(),
-            Some(normalized_server),
-            self.config.device_name.clone(),
-            device_type,
-            cancel_rx,
-            |progress| on_event(map_progress(progress)),
-        )
-        .await;
-
-        match result {
-            Ok(SendTransferResult::Completed(_)) => Ok(SendSessionOutcome::Completed),
-            Ok(SendTransferResult::Cancelled(_)) => Ok(SendSessionOutcome::Cancelled),
-            Err(error) => {
-                on_event(failed_event(&fallback_destination_label, &error));
-                Err(error)
-            }
-        }
-    }
-
-    async fn send_to_nearby_impl<F>(
-        &self,
-        ticket: String,
-        destination_label: String,
-        cancel_rx: Option<watch::Receiver<bool>>,
-        on_event: &mut F,
-    ) -> Result<SendSessionOutcome>
-    where
-        F: FnMut(SendEvent),
-    {
-        let device_type = parse_device_type(&self.config.device_type)?;
-        let fallback_destination_label = if destination_label.trim().is_empty() {
-            "Nearby receiver".to_owned()
-        } else {
-            destination_label.clone()
-        };
-        let result = send_files_with_progress_via_lan_ticket(
+    pub fn nearby(ticket: String, destination_label: String) -> Self {
+        Self::Nearby {
             ticket,
-            fallback_destination_label.clone(),
-            self.paths.clone(),
-            self.config.device_name.clone(),
-            device_type,
-            cancel_rx,
-            |progress| on_event(map_progress(progress)),
-        )
-        .await;
+            destination_label,
+        }
+    }
 
-        match result {
-            Ok(SendTransferResult::Completed(_)) => Ok(SendSessionOutcome::Completed),
-            Ok(SendTransferResult::Cancelled(_)) => Ok(SendSessionOutcome::Cancelled),
-            Err(error) => {
-                on_event(failed_event(&fallback_destination_label, &error));
-                Err(error)
+    fn display_label(&self) -> String {
+        match self {
+            Self::Code { code, .. } => format_code_label(code),
+            Self::Nearby {
+                destination_label, ..
+            } => display_destination_label(destination_label),
+        }
+    }
+
+    async fn resolve(&self) -> Result<ResolvedDestination> {
+        match self {
+            Self::Code { code, server_url } => {
+                validate_code(code)?;
+                let client = RendezvousClient::new(resolve_server_url(server_url.as_deref()));
+                let resolved = client.claim_peer(code).await?;
+                let endpoint_addr = decode_ticket(&resolved.ticket)?;
+                Ok(ResolvedDestination {
+                    destination_label: format_code_label(code),
+                    peer_endpoint_id: endpoint_addr.id,
+                })
+            }
+            Self::Nearby { ticket, .. } => {
+                let endpoint_addr = decode_ticket(ticket.trim())?;
+                Ok(ResolvedDestination {
+                    destination_label: self.display_label(),
+                    peer_endpoint_id: endpoint_addr.id,
+                })
             }
         }
     }
+}
+
+impl SendRun {
+    pub fn into_parts(
+        self,
+    ) -> (
+        SendEventStream,
+        oneshot::Receiver<Result<SendSessionOutcome>>,
+    ) {
+        (self.events, self.outcome_rx)
+    }
+
+    pub async fn outcome(self) -> Result<SendSessionOutcome> {
+        self.outcome_rx.await.context("waiting for send outcome")?
+    }
+}
+
+impl SendSession {
+    pub fn new(draft: SendDraft, destination: SendDestination) -> Self {
+        Self { draft, destination }
+    }
+
+    pub fn draft(&self) -> &SendDraft {
+        &self.draft
+    }
+
+    pub fn destination(&self) -> &SendDestination {
+        &self.destination
+    }
+
+    pub fn start(self) -> SendRun {
+        let (event_tx, event_rx) = mpsc::unbounded_channel();
+        let (outcome_tx, outcome_rx) = oneshot::channel();
+
+        tokio::spawn(async move {
+            let outcome = self.drive(event_tx).await;
+            let _ = outcome_tx.send(outcome);
+        });
+
+        SendRun {
+            events: UnboundedReceiverStream::new(event_rx),
+            outcome_rx,
+        }
+    }
+
+    async fn drive(
+        self,
+        event_tx: mpsc::UnboundedSender<Result<SendEvent>>,
+    ) -> Result<SendSessionOutcome> {
+        let preview = self.draft.inspect().context("inspecting selected paths")?;
+        let mut destination_label = self.destination.display_label();
+
+        emit_send_event(
+            &event_tx,
+            SendEvent {
+                phase: SendPhase::Connecting,
+                destination_label: destination_label.clone(),
+                status_message: "Request sent".to_owned(),
+                item_count: preview.file_count,
+                total_size: preview.total_size,
+                bytes_sent: 0,
+                remote_device_type: None,
+                connection_path: None,
+                error_message: None,
+            },
+        );
+
+        let resolved = match self.destination.resolve().await {
+            Ok(resolved) => resolved,
+            Err(error) => {
+                emit_failed_event(&event_tx, &destination_label, &error);
+                return Err(error);
+            }
+        };
+        destination_label = resolved.destination_label;
+
+        let device_type = parse_device_type(&self.draft.config.device_type)?;
+        let sender = Sender::new(
+            self.draft.config.device_name.clone(),
+            device_type,
+            SendRequest {
+                peer_endpoint_id: resolved.peer_endpoint_id,
+                files: self.draft.paths.clone(),
+            },
+        );
+
+        let sender_run = sender.run_with_events();
+        let (mut core_events, _cancel_tx, outcome_rx) = sender_run.into_parts();
+        let mut current_label = destination_label.clone();
+
+        while let Some(event) = core_events.next().await {
+            match event {
+                Ok(core_event) => {
+                    let mapped = map_sender_event(&mut current_label, &preview, core_event);
+                    emit_send_event(&event_tx, mapped);
+                }
+                Err(error) => {
+                    let message = format!("{error:#}");
+                    let _ = event_tx.send(Err(anyhow::anyhow!(message.clone())));
+                    return Err(anyhow::anyhow!(message));
+                }
+            }
+        }
+
+        let core_outcome: Result<CoreTransferOutcome> =
+            outcome_rx.await.context("waiting for sender outcome")?;
+
+        match core_outcome {
+            Ok(CoreTransferOutcome::Completed) => Ok(SendSessionOutcome::Accepted {
+                receiver_device_name: String::new(), // The actor will handle proper naming
+                receiver_endpoint_id: resolved.peer_endpoint_id,
+            }),
+            Ok(CoreTransferOutcome::Declined { reason }) => {
+                Ok(SendSessionOutcome::Declined { reason })
+            }
+            Ok(CoreTransferOutcome::Cancelled(cancellation)) => {
+                Err(anyhow::anyhow!(cancellation.reason))
+            }
+            Err(error) => Err(error),
+        }
+    }
+}
+
+fn emit_send_event(event_tx: &mpsc::UnboundedSender<Result<SendEvent>>, event: SendEvent) {
+    let _ = event_tx.send(Ok(event));
+}
+
+fn emit_failed_event(
+    event_tx: &mpsc::UnboundedSender<Result<SendEvent>>,
+    destination_label: &str,
+    error: &anyhow::Error,
+) {
+    emit_send_event(event_tx, failed_event(destination_label, error));
+    let _ = event_tx.send(Err(anyhow::anyhow!(format!("{error:#}"))));
 }
 
 fn failed_event(destination_label: &str, error: &anyhow::Error) -> SendEvent {
@@ -226,36 +347,122 @@ fn failed_event(destination_label: &str, error: &anyhow::Error) -> SendEvent {
     }
 }
 
-fn map_progress(progress: SendTransferProgress) -> SendEvent {
-    let destination_label = display_destination_label(&progress.destination_label);
-    let (phase, status_message) = match progress.phase {
-        CoreSendTransferPhase::Connecting => (SendPhase::Connecting, "Request sent".to_owned()),
-        CoreSendTransferPhase::WaitingForDecision => (
-            SendPhase::WaitingForDecision,
-            "Waiting for confirmation.".to_owned(),
-        ),
-        CoreSendTransferPhase::Sending => (
-            SendPhase::Sending,
-            format!("Sending to {destination_label}."),
-        ),
-        CoreSendTransferPhase::Completed => {
-            (SendPhase::Completed, "Files sent successfully".to_owned())
+fn map_sender_event(
+    current_label: &mut String,
+    preview: &SelectionPreview,
+    event: CoreSenderEvent,
+) -> SendEvent {
+    match event {
+        CoreSenderEvent::Connecting { .. } => SendEvent {
+            phase: SendPhase::Connecting,
+            destination_label: current_label.clone(),
+            status_message: "Request sent".to_owned(),
+            item_count: preview.file_count,
+            total_size: preview.total_size,
+            bytes_sent: 0,
+            remote_device_type: None,
+            connection_path: None,
+            error_message: None,
+        },
+        CoreSenderEvent::WaitingForDecision {
+            receiver_device_name,
+            receiver_endpoint_id: _,
+            ..
+        } => {
+            *current_label = display_destination_label(&receiver_device_name);
+            SendEvent {
+                phase: SendPhase::WaitingForDecision,
+                destination_label: current_label.clone(),
+                status_message: "Waiting for confirmation.".to_owned(),
+                item_count: preview.file_count,
+                total_size: preview.total_size,
+                bytes_sent: 0,
+                remote_device_type: None,
+                connection_path: None,
+                error_message: None,
+            }
         }
-        CoreSendTransferPhase::Cancelled => {
-            (SendPhase::Cancelled, "Transfer cancelled.".to_owned())
+        CoreSenderEvent::Accepted {
+            receiver_device_name,
+            receiver_endpoint_id: _,
+            ..
+        } => {
+            *current_label = display_destination_label(&receiver_device_name);
+            SendEvent {
+                phase: SendPhase::Accepted,
+                destination_label: current_label.clone(),
+                status_message: format!("Receiver {receiver_device_name} confirmed."),
+                item_count: preview.file_count,
+                total_size: preview.total_size,
+                bytes_sent: 0,
+                remote_device_type: None,
+                connection_path: None,
+                error_message: None,
+            }
         }
-    };
-
-    SendEvent {
-        phase,
-        destination_label,
-        status_message,
-        item_count: progress.manifest.file_count,
-        total_size: progress.manifest.total_size,
-        bytes_sent: progress.bytes_sent,
-        remote_device_type: progress.remote_device_type.map(device_type_to_str),
-        connection_path: progress.connection_path_kind.map(connection_path_to_str),
-        error_message: None,
+        CoreSenderEvent::Declined { reason, .. } => SendEvent {
+            phase: SendPhase::Declined,
+            destination_label: current_label.clone(),
+            status_message: "Transfer declined.".to_owned(),
+            item_count: preview.file_count,
+            total_size: preview.total_size,
+            bytes_sent: 0,
+            remote_device_type: None,
+            connection_path: None,
+            error_message: Some(reason),
+        },
+        CoreSenderEvent::Failed { message, .. } => SendEvent {
+            phase: SendPhase::Failed,
+            destination_label: current_label.clone(),
+            status_message: format!("Starting transfer to {current_label}."),
+            item_count: preview.file_count,
+            total_size: preview.total_size,
+            bytes_sent: 0,
+            remote_device_type: None,
+            connection_path: None,
+            error_message: Some(message),
+        },
+        CoreSenderEvent::TransferStarted {
+            file_count,
+            total_bytes,
+            ..
+        } => SendEvent {
+            phase: SendPhase::Sending,
+            destination_label: current_label.clone(),
+            status_message: format!("Sending to {current_label}."),
+            item_count: file_count,
+            total_size: total_bytes,
+            bytes_sent: 0,
+            remote_device_type: None,
+            connection_path: None,
+            error_message: None,
+        },
+        CoreSenderEvent::TransferProgress {
+            bytes_sent,
+            total_bytes,
+            ..
+        } => SendEvent {
+            phase: SendPhase::Sending,
+            destination_label: current_label.clone(),
+            status_message: format!("Sending to {current_label}."),
+            item_count: preview.file_count,
+            total_size: total_bytes.max(preview.total_size),
+            bytes_sent,
+            remote_device_type: None,
+            connection_path: None,
+            error_message: None,
+        },
+        CoreSenderEvent::TransferCompleted { .. } => SendEvent {
+            phase: SendPhase::Completed,
+            destination_label: current_label.clone(),
+            status_message: "Files sent successfully".to_owned(),
+            item_count: preview.file_count,
+            total_size: preview.total_size,
+            bytes_sent: preview.total_size,
+            remote_device_type: None,
+            connection_path: None,
+            error_message: None,
+        },
     }
 }
 
@@ -289,21 +496,6 @@ fn parse_device_type(value: &str) -> Result<DeviceType> {
     }
 }
 
-fn device_type_to_str(value: DeviceType) -> String {
-    match value {
-        DeviceType::Phone => "phone".to_owned(),
-        DeviceType::Laptop => "laptop".to_owned(),
-    }
-}
-
-fn connection_path_to_str(value: ConnectionPathKind) -> String {
-    match value {
-        ConnectionPathKind::Direct => "p2p".to_owned(),
-        ConnectionPathKind::Relay => "relay".to_owned(),
-        ConnectionPathKind::Unknown => "unknown".to_owned(),
-    }
-}
-
 fn display_destination_label(value: &str) -> String {
     let trimmed = value.trim();
     if trimmed.is_empty() {
@@ -333,10 +525,8 @@ fn selection_path_key(path: &Path) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{SendSession, display_destination_label, map_progress};
-    use crate::types::{SendConfig, SendPhase};
-    use drift_core::rendezvous::{OfferFile, OfferManifest};
-    use drift_core::sender::{SendTransferPhase, SendTransferProgress};
+    use super::{SendDraft, display_destination_label};
+    use crate::types::SendConfig;
     use std::path::{Path, PathBuf};
 
     #[test]
@@ -349,46 +539,8 @@ mod tests {
     }
 
     #[test]
-    fn send_progress_maps_to_app_event() {
-        let event = map_progress(SendTransferProgress {
-            phase: SendTransferPhase::Sending,
-            destination_label: "quiet_river".to_owned(),
-            remote_device_type: None,
-            manifest: OfferManifest {
-                files: vec![OfferFile {
-                    path: "sample.txt".to_owned(),
-                    size: 12,
-                }],
-                file_count: 1,
-                total_size: 12,
-            },
-            bytes_sent: 4,
-            current_file_index: Some(0),
-            bytes_sent_in_file: 4,
-            connection_path_kind: None,
-        });
-        assert_eq!(event.phase, SendPhase::Sending);
-        assert_eq!(event.destination_label, "quiet river");
-        assert_eq!(event.total_size, 12);
-        assert_eq!(event.bytes_sent, 4);
-    }
-
-    #[test]
-    fn session_exposes_config_and_paths() {
-        let session = SendSession::new(
-            SendConfig {
-                device_name: "Laptop".to_owned(),
-                device_type: "laptop".to_owned(),
-            },
-            vec![PathBuf::from("sample.txt")],
-        );
-        assert_eq!(session.config().device_name, "Laptop");
-        assert_eq!(session.paths(), [PathBuf::from("sample.txt")]);
-    }
-
-    #[test]
-    fn session_constructor_preserves_order_and_dedupes() {
-        let session = SendSession::new(
+    fn draft_constructor_preserves_order_and_dedupes() {
+        let draft = SendDraft::new(
             SendConfig {
                 device_name: "Laptop".to_owned(),
                 device_type: "laptop".to_owned(),
@@ -400,14 +552,32 @@ mod tests {
             ],
         );
         assert_eq!(
-            session.paths(),
+            draft.paths(),
             [PathBuf::from("a.txt"), PathBuf::from("b.txt")]
         );
     }
 
     #[test]
+    fn remove_path_removes_matching_item() {
+        let mut draft = SendDraft::new(
+            SendConfig {
+                device_name: "Laptop".to_owned(),
+                device_type: "laptop".to_owned(),
+            },
+            vec![PathBuf::from("a.txt"), PathBuf::from("b.txt")],
+        );
+
+        let change = draft.remove_path(Path::new("a.txt"));
+
+        assert!(change.changed);
+        assert_eq!(change.added_count, 0);
+        assert_eq!(change.removed_count, 1);
+        assert_eq!(draft.paths(), [PathBuf::from("b.txt")]);
+    }
+
+    #[test]
     fn add_paths_appends_unique_items_only() {
-        let mut session = SendSession::new(
+        let mut draft = SendDraft::new(
             SendConfig {
                 device_name: "Laptop".to_owned(),
                 device_type: "laptop".to_owned(),
@@ -415,7 +585,7 @@ mod tests {
             vec![PathBuf::from("a.txt")],
         );
 
-        let change = session.add_paths(vec![
+        let change = draft.add_paths(vec![
             PathBuf::from("a.txt"),
             PathBuf::from("b.txt"),
             PathBuf::from("c.txt"),
@@ -432,65 +602,12 @@ mod tests {
                 PathBuf::from("c.txt"),
             ]
         );
-        assert_eq!(session.paths(), change.paths);
-    }
-
-    #[test]
-    fn add_paths_is_noop_for_duplicates() {
-        let mut session = SendSession::new(
-            SendConfig {
-                device_name: "Laptop".to_owned(),
-                device_type: "laptop".to_owned(),
-            },
-            vec![PathBuf::from("a.txt")],
-        );
-
-        let change = session.add_paths(vec![PathBuf::from("a.txt")]);
-
-        assert!(!change.changed);
-        assert_eq!(change.added_count, 0);
-        assert_eq!(change.removed_count, 0);
-        assert_eq!(session.paths(), [PathBuf::from("a.txt")]);
-    }
-
-    #[test]
-    fn remove_path_removes_matching_item() {
-        let mut session = SendSession::new(
-            SendConfig {
-                device_name: "Laptop".to_owned(),
-                device_type: "laptop".to_owned(),
-            },
-            vec![PathBuf::from("a.txt"), PathBuf::from("b.txt")],
-        );
-
-        let change = session.remove_path(Path::new("a.txt"));
-
-        assert!(change.changed);
-        assert_eq!(change.added_count, 0);
-        assert_eq!(change.removed_count, 1);
-        assert_eq!(session.paths(), [PathBuf::from("b.txt")]);
-    }
-
-    #[test]
-    fn remove_path_is_noop_when_missing() {
-        let mut session = SendSession::new(
-            SendConfig {
-                device_name: "Laptop".to_owned(),
-                device_type: "laptop".to_owned(),
-            },
-            vec![PathBuf::from("a.txt")],
-        );
-
-        let change = session.remove_path(Path::new("missing.txt"));
-
-        assert!(!change.changed);
-        assert_eq!(change.removed_count, 0);
-        assert_eq!(session.paths(), [PathBuf::from("a.txt")]);
+        assert_eq!(draft.paths(), change.paths);
     }
 
     #[test]
     fn clear_paths_empties_selection() {
-        let mut session = SendSession::new(
+        let mut draft = SendDraft::new(
             SendConfig {
                 device_name: "Laptop".to_owned(),
                 device_type: "laptop".to_owned(),
@@ -498,9 +615,9 @@ mod tests {
             vec![PathBuf::from("a.txt")],
         );
 
-        session.clear_paths();
+        draft.clear_paths();
 
-        assert!(session.is_empty());
-        assert!(session.paths().is_empty());
+        assert!(draft.is_empty());
+        assert!(draft.paths().is_empty());
     }
 }

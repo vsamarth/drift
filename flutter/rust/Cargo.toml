@@ -15,6 +15,8 @@ iroh = "0.97"
 rand = "0.8"
 time = { version = "0.3", features = ["formatting", "parsing"] }
 tokio = { version = "1.50", features = ["fs", "rt-multi-thread", "sync", "time"] }
+tokio-stream = "0.1"
+futures-lite = "2.3"
 
 [profile.release]
 codegen-units = 1

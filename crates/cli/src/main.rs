@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
-use drift::{LoggingOpts, init_tracing, receive, send};
+use drift::{LoggingOpts, init_tracing, receive, send_with_server};
 
 #[derive(Parser, Debug)]
 #[command(name = "drift", version, about = "Short-code file transfer over iroh")]
@@ -55,7 +55,7 @@ async fn main() -> Result<()> {
             server,
         } => match (nearby, code.as_ref()) {
             (true, None) => drift::send_nearby(files, nearby_timeout_secs, server).await,
-            (false, Some(c)) => send(c.clone(), files, server).await,
+            (false, Some(c)) => send_with_server(c.clone(), files, server).await,
             (true, Some(_)) => {
                 anyhow::bail!("pass either CODE or --nearby, not both");
             }
@@ -65,8 +65,8 @@ async fn main() -> Result<()> {
         },
         Command::Receive {
             out,
-            conflict,
+            conflict: _,
             server,
-        } => receive(out, conflict, server).await,
+        } => receive(out, server).await,
     }
 }

@@ -968,10 +968,12 @@ impl SseDecode for crate::api::sender::SendTransferPhase {
         return match inner {
             0 => crate::api::sender::SendTransferPhase::Connecting,
             1 => crate::api::sender::SendTransferPhase::WaitingForDecision,
-            2 => crate::api::sender::SendTransferPhase::Sending,
-            3 => crate::api::sender::SendTransferPhase::Completed,
-            4 => crate::api::sender::SendTransferPhase::Cancelled,
-            5 => crate::api::sender::SendTransferPhase::Failed,
+            2 => crate::api::sender::SendTransferPhase::Accepted,
+            3 => crate::api::sender::SendTransferPhase::Declined,
+            4 => crate::api::sender::SendTransferPhase::Sending,
+            5 => crate::api::sender::SendTransferPhase::Completed,
+            6 => crate::api::sender::SendTransferPhase::Cancelled,
+            7 => crate::api::sender::SendTransferPhase::Failed,
             _ => unreachable!("Invalid variant for SendTransferPhase: {}", inner),
         };
     }
@@ -1324,10 +1326,12 @@ impl flutter_rust_bridge::IntoDart for crate::api::sender::SendTransferPhase {
         match self {
             Self::Connecting => 0.into_dart(),
             Self::WaitingForDecision => 1.into_dart(),
-            Self::Sending => 2.into_dart(),
-            Self::Completed => 3.into_dart(),
-            Self::Cancelled => 4.into_dart(),
-            Self::Failed => 5.into_dart(),
+            Self::Accepted => 2.into_dart(),
+            Self::Declined => 3.into_dart(),
+            Self::Sending => 4.into_dart(),
+            Self::Completed => 5.into_dart(),
+            Self::Cancelled => 6.into_dart(),
+            Self::Failed => 7.into_dart(),
             _ => unreachable!(),
         }
     }
@@ -1618,10 +1622,12 @@ impl SseEncode for crate::api::sender::SendTransferPhase {
             match self {
                 crate::api::sender::SendTransferPhase::Connecting => 0,
                 crate::api::sender::SendTransferPhase::WaitingForDecision => 1,
-                crate::api::sender::SendTransferPhase::Sending => 2,
-                crate::api::sender::SendTransferPhase::Completed => 3,
-                crate::api::sender::SendTransferPhase::Cancelled => 4,
-                crate::api::sender::SendTransferPhase::Failed => 5,
+                crate::api::sender::SendTransferPhase::Accepted => 2,
+                crate::api::sender::SendTransferPhase::Declined => 3,
+                crate::api::sender::SendTransferPhase::Sending => 4,
+                crate::api::sender::SendTransferPhase::Completed => 5,
+                crate::api::sender::SendTransferPhase::Cancelled => 6,
+                crate::api::sender::SendTransferPhase::Failed => 7,
                 _ => {
                     unimplemented!("");
                 }

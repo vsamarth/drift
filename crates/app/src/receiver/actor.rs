@@ -1,30 +1,20 @@
 use std::time::Duration;
 
 use anyhow::{Context, Result};
-use drift_core::receiver::{
-    ReceiveTransferOutcome, ReceiveTransferPhase, ReceiveTransferProgress,
-    receiver_finish_after_decision_with_progress, receiver_run_until_decision,
-};
-use drift_core::transfer::{ReceiverMachine, ReceiverState};
-use drift_core::util::human_size;
-use drift_core::wire::DeviceType;
+use drift_core::protocol::DeviceType;
 use iroh::Endpoint;
 use tokio::sync::{broadcast, mpsc, oneshot, watch};
 use tokio::task::JoinHandle;
-use tokio::time::{MissedTickBehavior, interval, sleep};
+use tokio::time::{MissedTickBehavior, interval};
 
-use crate::error::format_error_chain;
 use crate::types::{
-    ConflictPolicy, NearbyReceiver, PairingCodeState, ReceiverOfferEvent, ReceiverOfferFile,
-    ReceiverOfferPhase, ReceiverRegistration,
+    ConflictPolicy, NearbyReceiver, PairingCodeState, ReceiverOfferEvent, ReceiverOfferPhase,
+    ReceiverRegistration,
 };
 
-use super::runtime::{OfferResolution, ReceiverRuntime};
+use super::runtime::ReceiverRuntime;
+use super::session::ReceiverSession;
 use super::{OfferDecision, ReceiverEvent, ReceiverLifecycle, ReceiverSnapshot, parse_device_type};
-
-const PENDING_OFFER_TIMEOUT: Duration = Duration::from_secs(120);
-const PROGRESS_EVENT_MIN_INTERVAL: Duration = Duration::from_millis(100);
-const PROGRESS_EVENT_MIN_BYTES: u64 = 4 * 1024 * 1024;
 
 #[derive(Debug)]
 pub(super) enum ReceiverCommand {
@@ -48,18 +38,7 @@ pub(super) enum ReceiverCommand {
         reply: oneshot::Sender<Result<()>>,
     },
     OfferPrepared {
-        offer_id: u64,
-        decision_tx: oneshot::Sender<OfferResolution>,
-        cancel_tx: watch::Sender<bool>,
-        watch_task: JoinHandle<()>,
-        event: ReceiverOfferEvent,
-    },
-    OfferDisconnected {
-        offer_id: u64,
-        event: ReceiverOfferEvent,
-    },
-    OfferExpired {
-        offer_id: u64,
+        run: super::session::ReceiverRun,
         event: ReceiverOfferEvent,
     },
     OfferProgress {
@@ -87,17 +66,12 @@ pub(super) fn spawn_listener_task(
     device_type: String,
     conflict_policy: ConflictPolicy,
 ) -> Result<JoinHandle<()>> {
+    if matches!(conflict_policy, ConflictPolicy::Overwrite) {
+        anyhow::bail!("receiver overwrite policy is not implemented yet");
+    }
     let device_type = parse_device_type(&device_type)?;
     Ok(tokio::spawn(async move {
-        run_listener_loop(
-            endpoint,
-            cmd_tx,
-            out_dir,
-            device_name,
-            device_type,
-            conflict_policy,
-        )
-        .await;
+        run_listener_loop(endpoint, cmd_tx, out_dir, device_name, device_type).await;
     }))
 }
 
@@ -159,24 +133,12 @@ pub(super) async fn run_receiver_actor(
                         let _ = publish_snapshot(&state_tx, &runtime, ReceiverLifecycle::Ready);
                         let _ = reply.send(result);
                     }
-                    ReceiverCommand::OfferPrepared { offer_id, decision_tx, cancel_tx, watch_task, event } => {
-                        if runtime.handle_offer_prepared(offer_id, decision_tx, cancel_tx, watch_task) {
+                    ReceiverCommand::OfferPrepared { run, event } => {
+                        if runtime.handle_offer_prepared(run) {
                             let _ = event_tx.send(ReceiverEvent::OfferUpdated(event));
                             let _ = runtime
                                 .refresh_registration_after_offer(&pairing_tx, &event_tx)
                                 .await;
-                        }
-                        let _ = publish_snapshot(&state_tx, &runtime, ReceiverLifecycle::Ready);
-                    }
-                    ReceiverCommand::OfferDisconnected { offer_id, event } => {
-                        if runtime.handle_offer_disconnected(offer_id) {
-                            let _ = event_tx.send(ReceiverEvent::OfferUpdated(event));
-                        }
-                        let _ = publish_snapshot(&state_tx, &runtime, ReceiverLifecycle::Ready);
-                    }
-                    ReceiverCommand::OfferExpired { offer_id, event } => {
-                        if runtime.handle_offer_expired(offer_id) {
-                            let _ = event_tx.send(ReceiverEvent::OfferUpdated(event));
                         }
                         let _ = publish_snapshot(&state_tx, &runtime, ReceiverLifecycle::Ready);
                     }
@@ -253,9 +215,8 @@ async fn run_listener_loop(
     out_dir: std::path::PathBuf,
     device_name: String,
     device_type: DeviceType,
-    conflict_policy: ConflictPolicy,
 ) {
-    let save_root_label = save_root_display(&out_dir);
+    let save_root_label = super::session::save_root_display(&out_dir);
     if let Err(err) = tokio::fs::create_dir_all(&out_dir).await {
         let _ = cmd_tx
             .send(ReceiverCommand::OfferFinished {
@@ -295,372 +256,16 @@ async fn run_listener_loop(
         let cmd_tx_for_offer = cmd_tx.clone();
         let out_dir_for_offer = out_dir.clone();
         let device_name_for_offer = device_name.clone();
-        let save_root_label_for_offer = save_root_label.clone();
         let endpoint_for_offer = endpoint.clone();
-        tokio::spawn(async move {
-            handle_incoming_offer(
-                offer_id,
-                endpoint_for_offer,
-                connection,
-                out_dir_for_offer,
-                device_name_for_offer,
-                device_type,
-                conflict_policy,
-                save_root_label_for_offer,
-                cmd_tx_for_offer,
-            )
-            .await;
-        });
-    }
-}
-
-async fn handle_incoming_offer(
-    offer_id: u64,
-    endpoint: Endpoint,
-    connection: iroh::endpoint::Connection,
-    out_dir: std::path::PathBuf,
-    device_name: String,
-    device_type: DeviceType,
-    conflict_policy: ConflictPolicy,
-    save_root_label: String,
-    cmd_tx: mpsc::Sender<ReceiverCommand>,
-) {
-    let mut machine = ReceiverMachine::new();
-    let _ = machine.transition(ReceiverState::Discoverable);
-    let _ = machine.transition(ReceiverState::Connecting);
-    let _ = machine.transition(ReceiverState::Connected);
-
-    let pending = match receiver_run_until_decision(
-        endpoint,
-        connection,
-        out_dir,
-        &device_name,
-        device_type,
-        conflict_policy,
-        &mut machine,
-    )
-    .await
-    {
-        Ok(pending) => pending,
-        Err(err) => {
-            let _ = cmd_tx
-                .send(ReceiverCommand::OfferFinished {
-                    offer_id,
-                    final_event: ReceiverOfferEvent {
-                        phase: ReceiverOfferPhase::Failed,
-                        sender_name: String::new(),
-                        sender_device_type: String::new(),
-                        destination_label: String::new(),
-                        save_root_label,
-                        status_message: "Transfer failed.".to_owned(),
-                        item_count: 0,
-                        total_size_bytes: 0,
-                        bytes_received: 0,
-                        connection_path: None,
-                        total_size_label: String::new(),
-                        files: Vec::new(),
-                        error_message: Some(format_error_chain(&err)),
-                    },
-                })
-                .await;
-            return;
-        }
-    };
-
-    let sender_label = display_sender_label(pending.sender_device_name());
-    let sender_device_type = pending.sender_device_type();
-    let manifest = pending.manifest().clone();
-    let files = manifest
-        .files
-        .iter()
-        .map(|file| ReceiverOfferFile {
-            path: file.path.clone(),
-            size: file.size,
-        })
-        .collect();
-    let (decision_tx, decision_rx) = oneshot::channel();
-    let (cancel_tx, cancel_rx) = watch::channel(false);
-    let watch_task = spawn_pending_offer_watch_task(
-        offer_id,
-        pending.connection().clone(),
-        pending.sender_device_name().to_owned(),
-        sender_device_type,
-        sender_label.clone(),
-        save_root_label.clone(),
-        manifest.file_count,
-        manifest.total_size,
-        cmd_tx.clone(),
-    );
-    let prepared_event = ReceiverOfferEvent {
-        phase: ReceiverOfferPhase::OfferReady,
-        sender_name: pending.sender_device_name().to_owned(),
-        sender_device_type: device_type_to_str(sender_device_type),
-        destination_label: sender_label.clone(),
-        save_root_label: save_root_label.clone(),
-        status_message: format!("{sender_label} wants to send you files."),
-        item_count: manifest.file_count,
-        total_size_bytes: manifest.total_size,
-        bytes_received: 0,
-        connection_path: None,
-        total_size_label: human_size(manifest.total_size),
-        files,
-        error_message: None,
-    };
-    if cmd_tx
-        .send(ReceiverCommand::OfferPrepared {
+        let session = ReceiverSession::new(
             offer_id,
-            decision_tx,
-            cancel_tx,
-            watch_task,
-            event: prepared_event,
-        })
-        .await
-        .is_err()
-    {
-        return;
+            endpoint_for_offer,
+            connection,
+            out_dir_for_offer,
+            device_name_for_offer,
+            device_type,
+            cmd_tx_for_offer,
+        );
+        let _ = session.spawn();
     }
-
-    let approved = match decision_rx.await {
-        Ok(OfferResolution::Accept) => true,
-        Ok(OfferResolution::Decline) => false,
-        Ok(OfferResolution::Cancel) | Err(_) => return,
-    };
-    let progress_cmd_tx = cmd_tx.clone();
-    let mut last_progress_emit_at = std::time::Instant::now()
-        .checked_sub(PROGRESS_EVENT_MIN_INTERVAL)
-        .unwrap_or_else(std::time::Instant::now);
-    let mut last_progress_bytes = 0_u64;
-    let mut progress_cb = |progress: ReceiveTransferProgress| {
-        let now = std::time::Instant::now();
-        let bytes = progress.bytes_received;
-        let interval_elapsed =
-            now.duration_since(last_progress_emit_at) >= PROGRESS_EVENT_MIN_INTERVAL;
-        let bytes_advanced = bytes.saturating_sub(last_progress_bytes) >= PROGRESS_EVENT_MIN_BYTES;
-        let is_complete = progress.total_bytes > 0 && bytes >= progress.total_bytes;
-        if !(interval_elapsed || bytes_advanced || is_complete) {
-            return;
-        }
-        last_progress_emit_at = now;
-        last_progress_bytes = bytes;
-        let _ = progress_cmd_tx.try_send(ReceiverCommand::OfferProgress {
-            offer_id,
-            event: map_receiver_offer_progress(&progress, &sender_label, &save_root_label),
-        });
-    };
-    let final_event = match receiver_finish_after_decision_with_progress(
-        pending,
-        &mut machine,
-        approved,
-        Some(cancel_rx),
-        &mut progress_cb,
-    )
-    .await
-    {
-        Ok(ReceiveTransferOutcome::Completed) => ReceiverOfferEvent {
-            phase: ReceiverOfferPhase::Completed,
-            sender_name: String::new(),
-            sender_device_type: device_type_to_str(sender_device_type),
-            destination_label: sender_label,
-            save_root_label,
-            status_message: "Files saved.".to_owned(),
-            item_count: manifest.file_count,
-            total_size_bytes: manifest.total_size,
-            bytes_received: manifest.total_size,
-            connection_path: None,
-            total_size_label: human_size(manifest.total_size),
-            files: Vec::new(),
-            error_message: None,
-        },
-        Ok(ReceiveTransferOutcome::Declined) => ReceiverOfferEvent {
-            phase: ReceiverOfferPhase::Declined,
-            sender_name: String::new(),
-            sender_device_type: device_type_to_str(sender_device_type),
-            destination_label: sender_label,
-            save_root_label,
-            status_message: "Transfer cancelled.".to_owned(),
-            item_count: manifest.file_count,
-            total_size_bytes: manifest.total_size,
-            bytes_received: 0,
-            connection_path: None,
-            total_size_label: human_size(manifest.total_size),
-            files: Vec::new(),
-            error_message: None,
-        },
-        Ok(ReceiveTransferOutcome::Cancelled(cancellation)) => ReceiverOfferEvent {
-            phase: ReceiverOfferPhase::Cancelled,
-            sender_name: String::new(),
-            sender_device_type: device_type_to_str(sender_device_type),
-            destination_label: sender_label,
-            save_root_label,
-            status_message: "Transfer cancelled.".to_owned(),
-            item_count: manifest.file_count,
-            total_size_bytes: manifest.total_size,
-            bytes_received: last_progress_bytes,
-            connection_path: None,
-            total_size_label: human_size(manifest.total_size),
-            files: Vec::new(),
-            error_message: Some(cancellation.reason),
-        },
-        Err(err) => ReceiverOfferEvent {
-            phase: ReceiverOfferPhase::Failed,
-            sender_name: String::new(),
-            sender_device_type: device_type_to_str(sender_device_type),
-            destination_label: sender_label,
-            save_root_label,
-            status_message: "Transfer failed.".to_owned(),
-            item_count: manifest.file_count,
-            total_size_bytes: manifest.total_size,
-            bytes_received: 0,
-            connection_path: None,
-            total_size_label: human_size(manifest.total_size),
-            files: Vec::new(),
-            error_message: Some(format_error_chain(&err)),
-        },
-    };
-
-    let _ = cmd_tx
-        .send(ReceiverCommand::OfferFinished {
-            offer_id,
-            final_event,
-        })
-        .await;
-}
-
-fn spawn_pending_offer_watch_task(
-    offer_id: u64,
-    connection: iroh::endpoint::Connection,
-    sender_name: String,
-    sender_device_type: DeviceType,
-    destination_label: String,
-    save_root_label: String,
-    item_count: u64,
-    total_size_bytes: u64,
-    cmd_tx: mpsc::Sender<ReceiverCommand>,
-) -> JoinHandle<()> {
-    tokio::spawn(async move {
-        let disconnected_event = ReceiverOfferEvent {
-            phase: ReceiverOfferPhase::Failed,
-            sender_name: sender_name.clone(),
-            sender_device_type: device_type_to_str(sender_device_type),
-            destination_label: destination_label.clone(),
-            save_root_label: save_root_label.clone(),
-            status_message: "Sender disconnected before you responded.".to_owned(),
-            item_count,
-            total_size_bytes,
-            bytes_received: 0,
-            connection_path: None,
-            total_size_label: human_size(total_size_bytes),
-            files: Vec::new(),
-            error_message: Some("sender disconnected before approval".to_owned()),
-        };
-        let expired_event = ReceiverOfferEvent {
-            phase: ReceiverOfferPhase::Failed,
-            sender_name,
-            sender_device_type: device_type_to_str(sender_device_type),
-            destination_label,
-            save_root_label,
-            status_message: "Offer expired before you responded.".to_owned(),
-            item_count,
-            total_size_bytes,
-            bytes_received: 0,
-            connection_path: None,
-            total_size_label: human_size(total_size_bytes),
-            files: Vec::new(),
-            error_message: Some("offer timed out before approval".to_owned()),
-        };
-
-        tokio::select! {
-            _ = connection.closed() => {
-                let _ = cmd_tx.send(ReceiverCommand::OfferDisconnected { offer_id, event: disconnected_event }).await;
-            }
-            _ = sleep(PENDING_OFFER_TIMEOUT) => {
-                let _ = cmd_tx.send(ReceiverCommand::OfferExpired { offer_id, event: expired_event }).await;
-            }
-        }
-    })
-}
-
-fn map_receiver_offer_progress(
-    progress: &ReceiveTransferProgress,
-    sender_label: &str,
-    save_root_label: &str,
-) -> ReceiverOfferEvent {
-    let phase = match progress.phase {
-        ReceiveTransferPhase::WaitingForDecision => ReceiverOfferPhase::Receiving,
-        ReceiveTransferPhase::Receiving => ReceiverOfferPhase::Receiving,
-        ReceiveTransferPhase::Completed => ReceiverOfferPhase::Completed,
-        ReceiveTransferPhase::Declined => ReceiverOfferPhase::Declined,
-        ReceiveTransferPhase::Cancelled => ReceiverOfferPhase::Cancelled,
-        ReceiveTransferPhase::Failed => ReceiverOfferPhase::Failed,
-    };
-    ReceiverOfferEvent {
-        phase,
-        sender_name: progress.sender_device_name.clone(),
-        sender_device_type: device_type_to_str(progress.sender_device_type),
-        destination_label: sender_label.to_owned(),
-        save_root_label: save_root_label.to_owned(),
-        status_message: match progress.phase {
-            ReceiveTransferPhase::WaitingForDecision | ReceiveTransferPhase::Receiving => {
-                "Receiving files…".to_owned()
-            }
-            ReceiveTransferPhase::Completed => "Files saved.".to_owned(),
-            ReceiveTransferPhase::Declined => "Transfer cancelled.".to_owned(),
-            ReceiveTransferPhase::Cancelled => "Transfer cancelled.".to_owned(),
-            ReceiveTransferPhase::Failed => "Transfer failed.".to_owned(),
-        },
-        item_count: progress.file_count,
-        total_size_bytes: progress.total_bytes,
-        bytes_received: progress.bytes_received,
-        connection_path: Some(match progress.connection_path_kind {
-            drift_core::util::ConnectionPathKind::Direct => "p2p".to_owned(),
-            drift_core::util::ConnectionPathKind::Relay => "relay".to_owned(),
-            drift_core::util::ConnectionPathKind::Unknown => "unknown".to_owned(),
-        }),
-        total_size_label: human_size(progress.total_bytes),
-        files: Vec::new(),
-        error_message: progress.error_message.clone(),
-    }
-}
-
-fn device_type_to_str(value: DeviceType) -> String {
-    match value {
-        DeviceType::Phone => "phone".to_owned(),
-        DeviceType::Laptop => "laptop".to_owned(),
-    }
-}
-
-fn save_root_display(path: &std::path::Path) -> String {
-    let file_name = path.file_name().and_then(|s| s.to_str());
-    let parent_name = path
-        .parent()
-        .and_then(|parent| parent.file_name())
-        .and_then(|s| s.to_str());
-    if matches!(file_name, Some("Drift")) && matches!(parent_name, Some("Download" | "Downloads")) {
-        return "Downloads".to_owned();
-    }
-    path.file_name()
-        .and_then(|s| s.to_str())
-        .map(String::from)
-        .unwrap_or_else(|| path.display().to_string())
-}
-
-fn display_sender_label(value: &str) -> String {
-    let trimmed = value.trim();
-    if trimmed.is_empty() {
-        return "Sender".to_owned();
-    }
-    let normalized = trimmed
-        .replace(['_', '-'], " ")
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ");
-    let lowercase = normalized.to_ascii_lowercase();
-    if lowercase.is_empty()
-        || lowercase == "unknown device"
-        || lowercase == "unknown-device"
-        || lowercase == "unknown"
-    {
-        return "Sender".to_owned();
-    }
-    normalized
 }

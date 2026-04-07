@@ -66,6 +66,8 @@ class SendTransferEvent {
 enum SendTransferPhase {
   connecting,
   waitingForDecision,
+  accepted,
+  declined,
   sending,
   completed,
   cancelled,

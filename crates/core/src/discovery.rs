@@ -1,146 +1,141 @@
-use anyhow::{Result, bail};
-use time::OffsetDateTime;
+use std::time::Duration;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DiscoveryState {
-    Open,
-    Claimed,
-    Expired,
-}
+use anyhow::{Context, Result};
+use iroh::{EndpointAddr, EndpointId};
+use tracing::debug;
+
+use crate::lan;
+use crate::rendezvous::{RendezvousClient, resolve_server_url, validate_code};
+use crate::util::decode_ticket;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum DiscoveryError {
-    Claimed,
-    Expired,
+pub struct NearbyEndpoint {
+    pub fullname: String,
+    pub label: String,
+    pub endpoint_id: EndpointId,
 }
 
-#[derive(Debug, Clone)]
-pub struct DiscoverySession {
-    ticket: Option<String>,
-    state: DiscoveryState,
-    expires_at: OffsetDateTime,
+impl From<NearbyEndpoint> for EndpointId {
+    fn from(value: NearbyEndpoint) -> Self {
+        value.endpoint_id
+    }
 }
 
-impl DiscoverySession {
-    pub fn new(
-        ticket: String,
-        created_at: OffsetDateTime,
-        expires_at: OffsetDateTime,
-    ) -> Result<Self> {
-        if ticket.trim().is_empty() {
-            bail!("ticket must not be empty");
-        }
-
-        if expires_at <= created_at {
-            bail!("expiry must be after creation time");
-        }
-
-        Ok(Self {
-            ticket: Some(ticket),
-            state: DiscoveryState::Open,
-            expires_at,
-        })
+impl From<&NearbyEndpoint> for EndpointId {
+    fn from(value: &NearbyEndpoint) -> Self {
+        value.endpoint_id
     }
+}
 
-    pub fn state(&mut self, now: OffsetDateTime) -> DiscoveryState {
-        self.refresh(now);
-        self.state
-    }
+pub async fn resolve_pairing_code(code: &str, server_url: Option<&str>) -> Result<EndpointId> {
+    validate_code(code)?;
+    let client = RendezvousClient::new(resolve_server_url(server_url));
+    let response = client.claim_peer(code).await?;
+    endpoint_id_from_ticket(&response.ticket)
+}
 
-    pub fn claim(&mut self, now: OffsetDateTime) -> Result<String, DiscoveryError> {
-        self.refresh(now);
+pub async fn resolve_nearby(timeout: Duration) -> Result<Vec<NearbyEndpoint>> {
+    resolve_nearby_with_exclusion(timeout, None).await
+}
 
-        match self.state {
-            DiscoveryState::Open => {
-                self.state = DiscoveryState::Claimed;
-                self.ticket.take().ok_or(DiscoveryError::Claimed)
-            }
-            DiscoveryState::Claimed => Err(DiscoveryError::Claimed),
-            DiscoveryState::Expired => Err(DiscoveryError::Expired),
-        }
-    }
+pub async fn resolve_nearby_with_exclusion(
+    timeout: Duration,
+    exclude_endpoint_id: Option<EndpointId>,
+) -> Result<Vec<NearbyEndpoint>> {
+    let receivers = tokio::task::spawn_blocking(move || {
+        lan::browse_nearby_receivers(timeout, exclude_endpoint_id)
+    })
+    .await
+    .context("nearby discovery task")??;
 
-    pub fn is_removable(&mut self, now: OffsetDateTime) -> bool {
-        self.state(now) == DiscoveryState::Expired
-    }
+    receivers
+        .into_iter()
+        .map(nearby_endpoint_from_receiver)
+        .collect()
+}
 
-    fn refresh(&mut self, now: OffsetDateTime) {
-        if self.state == DiscoveryState::Open && now >= self.expires_at {
-            self.state = DiscoveryState::Expired;
-            self.ticket = None;
-        }
-    }
+pub fn endpoint_id_from_ticket(ticket: &str) -> Result<EndpointId> {
+    let addr: EndpointAddr = decode_ticket(ticket.trim())?;
+    Ok(addr.id)
+}
+
+pub fn nearby_endpoint_from_receiver(receiver: lan::NearbyReceiver) -> Result<NearbyEndpoint> {
+    let endpoint_id = endpoint_id_from_ticket(&receiver.ticket)?;
+    debug!(
+        %endpoint_id,
+        fullname = %receiver.fullname,
+        label = %receiver.label,
+        "resolved nearby endpoint"
+    );
+    Ok(NearbyEndpoint {
+        fullname: receiver.fullname,
+        label: receiver.label,
+        endpoint_id,
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use time::Duration;
+    use base64::Engine;
+    use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+    use iroh::SecretKey;
+    use serde::{Deserialize, Serialize};
 
-    fn sample_times() -> (OffsetDateTime, OffsetDateTime) {
-        let created_at = OffsetDateTime::now_utc();
-        let expires_at = created_at + Duration::minutes(5);
-        (created_at, expires_at)
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    struct TestTransferTicket {
+        node_id: String,
+        addrs: Vec<TestEncodedTransportAddr>,
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    enum TestEncodedTransportAddr {
+        Relay(String),
+        Ip(String),
     }
 
     #[test]
-    fn new_session_starts_open() {
-        let (created_at, expires_at) = sample_times();
-        let mut session =
-            DiscoverySession::new("ticket".to_owned(), created_at, expires_at).expect("session");
+    fn endpoint_id_round_trips_through_ticket() {
+        let endpoint_id = SecretKey::from_bytes(&[12; 32]).public();
+        let ticket = TestTransferTicket {
+            node_id: endpoint_id.to_string(),
+            addrs: Vec::new(),
+        };
+        let encoded =
+            URL_SAFE_NO_PAD.encode(bincode::serialize(&ticket).expect("serialize ticket"));
 
-        assert_eq!(session.state(created_at), DiscoveryState::Open);
+        let endpoint_id = endpoint_id_from_ticket(&encoded).expect("endpoint id");
+
+        assert_eq!(endpoint_id, SecretKey::from_bytes(&[12; 32]).public());
     }
 
     #[test]
-    fn claim_transitions_open_session_to_claimed_once() {
-        let (created_at, expires_at) = sample_times();
-        let mut session =
-            DiscoverySession::new("ticket".to_owned(), created_at, expires_at).expect("session");
-
-        let claimed = session.claim(created_at).expect("claim");
-        assert_eq!(claimed, "ticket");
-        assert_eq!(session.state(created_at), DiscoveryState::Claimed);
-        assert_eq!(session.claim(created_at), Err(DiscoveryError::Claimed));
+    fn malformed_ticket_is_rejected() {
+        assert!(endpoint_id_from_ticket("not-a-ticket").is_err());
     }
 
     #[test]
-    fn expiry_transitions_open_session_to_expired() {
-        let (created_at, expires_at) = sample_times();
-        let mut session =
-            DiscoverySession::new("ticket".to_owned(), created_at, expires_at).expect("session");
+    fn nearby_receiver_mapping_rejects_malformed_ticket() {
+        let receiver = lan::NearbyReceiver {
+            fullname: "recv-1".to_owned(),
+            label: "Receiver".to_owned(),
+            code: String::new(),
+            ticket: "bad-ticket".to_owned(),
+        };
 
-        let after_expiry = expires_at + Duration::seconds(1);
-        assert_eq!(session.state(after_expiry), DiscoveryState::Expired);
-        assert_eq!(session.claim(after_expiry), Err(DiscoveryError::Expired));
+        assert!(nearby_endpoint_from_receiver(receiver).is_err());
     }
 
     #[test]
-    fn removable_only_after_expiry() {
-        let (created_at, expires_at) = sample_times();
-        let mut open_session =
-            DiscoverySession::new("ticket".to_owned(), created_at, expires_at).expect("session");
-        assert!(!open_session.is_removable(created_at));
+    fn nearby_endpoint_converts_into_endpoint_id() {
+        let endpoint_id = SecretKey::from_bytes(&[13; 32]).public();
+        let endpoint = NearbyEndpoint {
+            fullname: "recv-1".to_owned(),
+            label: "Receiver".to_owned(),
+            endpoint_id,
+        };
 
-        let mut claimed_session =
-            DiscoverySession::new("ticket".to_owned(), created_at, expires_at).expect("session");
-        claimed_session.claim(created_at).expect("claim");
-        assert!(!claimed_session.is_removable(created_at));
-
-        let mut expired_session =
-            DiscoverySession::new("ticket".to_owned(), created_at, expires_at).expect("session");
-        assert!(expired_session.is_removable(expires_at + Duration::seconds(1)));
-    }
-
-    #[test]
-    fn invalid_construction_is_rejected() {
-        let created_at = OffsetDateTime::now_utc();
-        let expires_at = created_at;
-
-        assert!(
-            DiscoverySession::new("".to_owned(), created_at, created_at + Duration::seconds(1))
-                .is_err()
-        );
-        assert!(DiscoverySession::new("ticket".to_owned(), created_at, expires_at).is_err());
+        let converted: EndpointId = endpoint.into();
+        assert_eq!(converted, endpoint_id);
     }
 }
