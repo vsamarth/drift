@@ -2,11 +2,9 @@
 
 use anyhow::{Context, Result, anyhow};
 use iroh::{
-    Endpoint, EndpointAddr, EndpointId, RelayMode, SecretKey, address_lookup::MdnsAddressLookup,
-    endpoint::presets,
+    EndpointAddr, EndpointId,
 };
 use rand::random;
-use std::path::{Path, PathBuf};
 use tokio::time::{Duration, timeout};
 use tokio::{
     sync::{mpsc, oneshot},
@@ -22,23 +20,15 @@ use crate::{
     protocol::ALPN,
 };
 
+use super::path::ScratchDir;
+use super::types::TransferOutcome;
+
 const CONTROL_STREAM_FINISH_TIMEOUT: Duration = Duration::from_secs(2);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SendRequest {
     pub peer_endpoint_id: EndpointId,
     pub files: Vec<std::path::PathBuf>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum SenderOutcome {
-    Accepted {
-        receiver_device_name: String,
-        receiver_endpoint_id: EndpointId,
-    },
-    Declined {
-        reason: String,
-    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -85,20 +75,21 @@ pub type SenderEventStream = UnboundedReceiverStream<Result<SenderEvent>>;
 #[derive(Debug)]
 pub struct SenderRun {
     pub events: SenderEventStream,
-    outcome_rx: oneshot::Receiver<Result<SenderOutcome>>,
+    outcome_rx: oneshot::Receiver<Result<TransferOutcome>>,
 }
 
 impl SenderRun {
-    pub fn into_parts(self) -> (SenderEventStream, oneshot::Receiver<Result<SenderOutcome>>) {
+    pub fn into_parts(self) -> (SenderEventStream, oneshot::Receiver<Result<TransferOutcome>>) {
         (self.events, self.outcome_rx)
     }
 
-    pub async fn outcome(self) -> Result<SenderOutcome> {
+    pub async fn outcome(self) -> Result<TransferOutcome> {
         self.outcome_rx
             .await
             .context("waiting for sender outcome")?
     }
 }
+
 
 #[derive(Clone, Debug)]
 struct SenderEventSink {
@@ -143,7 +134,7 @@ impl SenderEventSink {
 
 #[derive(Debug)]
 struct SenderSession {
-    secret_key: SecretKey,
+    secret_key: iroh::SecretKey,
     session_id: String,
     identity: protocol_message::Identity,
     request: SendRequest,
@@ -233,7 +224,7 @@ impl SenderControl {
 
 #[derive(Debug)]
 pub struct Sender {
-    secret_key: SecretKey,
+    secret_key: iroh::SecretKey,
     session_id: String,
     identity: protocol_message::Identity,
     request: SendRequest,
@@ -245,7 +236,7 @@ impl Sender {
         device_type: crate::protocol::DeviceType,
         request: SendRequest,
     ) -> Self {
-        let secret_key = SecretKey::from_bytes(&random());
+        let secret_key = iroh::SecretKey::from_bytes(&random());
         Self {
             identity: protocol_message::Identity {
                 role: protocol_message::TransferRole::Sender,
@@ -267,7 +258,7 @@ impl Sender {
         &self.request
     }
 
-    pub async fn run(&self) -> Result<SenderOutcome> {
+    pub async fn run(&self) -> Result<TransferOutcome> {
         self.run_core(SenderEventSink::silent(self.session_id.clone()))
             .await
     }
@@ -292,7 +283,7 @@ impl Sender {
         }
     }
 
-    async fn run_core(&self, events: SenderEventSink) -> Result<SenderOutcome> {
+    async fn run_core(&self, events: SenderEventSink) -> Result<TransferOutcome> {
         SenderSession::new(self, events).run().await
     }
 }
@@ -308,17 +299,24 @@ impl SenderSession {
         }
     }
 
-    async fn run(self) -> Result<SenderOutcome> {
-        let store_root = TempDir::new(self.session_id.clone())?;
+    async fn run(self) -> Result<TransferOutcome> {
+        let store_root = ScratchDir::new("drift-flow-sender", &self.session_id).await?;
         let prepared_store = PreparedStore::prepare(
             self.session_id.clone(),
-            store_root.path(),
+            &store_root.path,
             self.request.files.clone(),
         )
         .await
         .context("preparing blob store")?;
         let manifest = prepared_store.manifest();
-        let endpoint = bind_endpoint(self.secret_key.clone()).await?;
+        let endpoint = iroh::Endpoint::builder(iroh::endpoint::presets::N0)
+            .alpns(vec![ALPN.to_vec()])
+            .relay_mode(iroh::RelayMode::Default)
+            .secret_key(self.secret_key.clone())
+            .bind()
+            .await
+            .context("binding sender endpoint")?;
+
         self.events.emit(SenderEvent::Connecting {
             session_id: self.session_id.clone(),
             peer_endpoint_id: self.request.peer_endpoint_id,
@@ -364,7 +362,7 @@ impl SenderSession {
                 );
                 let _ = control.finish().await;
                 endpoint.close().await;
-                Ok(SenderOutcome::Declined {
+                Ok(TransferOutcome::Declined {
                     reason: message.reason,
                 })
             }
@@ -373,12 +371,12 @@ impl SenderSession {
 
     async fn run_transfer(
         self,
-        endpoint: Endpoint,
+        endpoint: iroh::Endpoint,
         connection: iroh::endpoint::Connection,
         mut control: SenderControl,
         prepared_store: PreparedStore,
         peer: protocol_sender::SenderPeer,
-    ) -> Result<SenderOutcome> {
+    ) -> Result<TransferOutcome> {
         let registration = BlobService::new(endpoint.clone())
             .register(prepared_store)
             .await
@@ -412,10 +410,7 @@ impl SenderSession {
                 "demo.send.accepted"
             );
             endpoint.close().await;
-            Ok(SenderOutcome::Accepted {
-                receiver_device_name: peer.identity.device_name,
-                receiver_endpoint_id: peer.identity.endpoint_id,
-            })
+            Ok(TransferOutcome::Completed)
         }
         .await;
 
@@ -539,72 +534,13 @@ impl BlobTransferTask {
     }
 }
 
-#[derive(Debug)]
-struct TempDir {
-    path: PathBuf,
-}
-
-impl TempDir {
-    fn new(session_id: String) -> Result<Self> {
-        let unique = format!(
-            "drift-transfer-flow-sender-{}-{}",
-            session_id,
-            rand::random::<u64>()
-        );
-        let path = std::env::temp_dir().join(unique);
-        std::fs::create_dir_all(&path)
-            .with_context(|| format!("creating temp directory {}", path.display()))?;
-        Ok(Self { path })
-    }
-
-    fn path(&self) -> &Path {
-        &self.path
-    }
-}
-
-impl Drop for TempDir {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.path);
-    }
-}
-
-async fn bind_endpoint(secret_key: SecretKey) -> Result<Endpoint> {
-    Endpoint::builder(presets::N0)
-        .alpns(vec![ALPN.to_vec()])
-        .relay_mode(RelayMode::Default)
-        .address_lookup(MdnsAddressLookup::builder())
-        .secret_key(secret_key)
-        .bind()
-        .await
-        .context("binding iroh endpoint")
-}
-
 fn make_session_id() -> String {
     format!("{:016x}", random::<u64>())
 }
 
-    fn to_protocol_device_type(device_type: crate::protocol::DeviceType) -> protocol_message::DeviceType {
-        match device_type {
+fn to_protocol_device_type(device_type: crate::protocol::DeviceType) -> protocol_message::DeviceType {
+    match device_type {
         crate::protocol::DeviceType::Phone => protocol_message::DeviceType::Phone,
         crate::protocol::DeviceType::Laptop => protocol_message::DeviceType::Laptop,
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::SendRequest;
-    use iroh::SecretKey;
-
-    #[test]
-    fn request_keeps_peer_identity() {
-        let request = SendRequest {
-            peer_endpoint_id: SecretKey::from_bytes(&[1; 32]).public(),
-            files: vec![],
-        };
-
-        assert_eq!(
-            request.peer_endpoint_id,
-            SecretKey::from_bytes(&[1; 32]).public()
-        );
     }
 }

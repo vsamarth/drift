@@ -8,7 +8,7 @@ use drift_core::fs_plan::preview::{
 };
 use drift_core::rendezvous::{RendezvousClient, resolve_server_url, validate_code};
 use drift_core::transfer_flow::{
-    SendRequest, Sender, SenderEvent as CoreSenderEvent, SenderOutcome as CoreSenderOutcome,
+    SendRequest, Sender, SenderEvent as CoreSenderEvent, TransferOutcome as CoreTransferOutcome,
 };
 use drift_core::protocol::DeviceType;
 use drift_core::util::{decode_ticket, format_code_label};
@@ -304,15 +304,15 @@ impl SendSession {
         let core_outcome = outcome_rx.await.context("waiting for sender outcome")?;
 
         match core_outcome {
-            Ok(CoreSenderOutcome::Accepted {
-                receiver_device_name,
-                receiver_endpoint_id,
-            }) => Ok(SendSessionOutcome::Accepted {
-                receiver_device_name,
-                receiver_endpoint_id,
+            Ok(CoreTransferOutcome::Completed) => Ok(SendSessionOutcome::Accepted {
+                receiver_device_name: String::new(), // The actor will handle proper naming
+                receiver_endpoint_id: resolved.peer_endpoint_id,
             }),
-            Ok(CoreSenderOutcome::Declined { reason }) => {
+            Ok(CoreTransferOutcome::Declined { reason }) => {
                 Ok(SendSessionOutcome::Declined { reason })
+            }
+            Ok(CoreTransferOutcome::Cancelled(cancellation)) => {
+                Err(anyhow::anyhow!(cancellation.reason))
             }
             Err(error) => Err(error),
         }

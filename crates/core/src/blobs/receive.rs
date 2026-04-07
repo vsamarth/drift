@@ -12,7 +12,7 @@ use tokio::sync::mpsc;
 use tracing::{instrument, trace};
 
 use crate::protocol::message::{ManifestItem, TransferManifest};
-use crate::session::{ExpectedTransferFile, export_downloaded_collection};
+use crate::transfer_flow::receiver::{ExpectedTransferFile, export_downloaded_collection};
 
 use super::send::SenderEvent;
 use super::util::ScratchDir;
@@ -410,7 +410,7 @@ mod tests {
     use crate::blobs::receive::ReceiverEvent;
     use crate::blobs::send::SenderEvent;
     use crate::blobs::util::import_files;
-    use crate::session::bind_endpoint;
+    use crate::transfer_flow::receiver::bind_endpoint;
 
     use super::Receiver;
 

@@ -5,8 +5,7 @@ use anyhow::{Context, Result, anyhow, bail};
 use tokio::fs;
 
 use crate::rendezvous::{OfferFile, OfferManifest};
-
-use super::transfer_path::{input_root_name, normalize_transfer_path};
+use crate::transfer_flow::path::{input_root_name, normalize_transfer_path};
 
 #[derive(Debug, Clone)]
 pub struct PreparedFile {

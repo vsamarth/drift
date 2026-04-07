@@ -1,11 +1,13 @@
 #![allow(dead_code)]
 
+pub mod path;
 pub mod receiver;
 pub mod sender;
+pub mod types;
 
 pub use receiver::{
-    ReceiveTransferOutcome, Receiver, ReceiverControl, ReceiverDecision, ReceiverEvent,
-    ReceiverEventStream, ReceiverOffer, ReceiverOfferItem, ReceiverRequest, ReceiverSession,
-    ReceiverStart,
+    ReceiverControl, ReceiverDecision, ReceiverEvent, ReceiverEventStream, ReceiverOffer,
+    ReceiverOfferItem, ReceiverRequest, ReceiverSession, ReceiverStart,
 };
-pub use sender::{SendRequest, Sender, SenderEvent, SenderEventStream, SenderOutcome, SenderRun};
+pub use sender::{SendRequest, Sender, SenderEvent, SenderEventStream, SenderRun};
+pub use types::{TransferCancellation, TransferOutcome};

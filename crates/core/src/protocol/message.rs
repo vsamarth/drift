@@ -15,14 +15,14 @@ pub enum DeviceType {
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
-pub(crate) enum TransferRole {
+pub enum TransferRole {
     Sender,
     Receiver,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum MessageKind {
+pub enum MessageKind {
     Hello,
     Offer,
     Accept,
@@ -46,14 +46,14 @@ pub(crate) struct Identity {
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum CancelPhase {
+pub enum CancelPhase {
     WaitingForDecision,
     Transferring,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum TransferErrorCode {
+pub enum TransferErrorCode {
     ProtocolViolation,
     UnexpectedMessage,
     FileConflict,
@@ -64,7 +64,7 @@ pub(crate) enum TransferErrorCode {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "status", rename_all = "snake_case")]
-pub(crate) enum TransferStatus {
+pub enum TransferStatus {
     Ok,
     Error {
         code: TransferErrorCode,
@@ -94,7 +94,7 @@ impl TransferManifest {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "type", rename_all = "snake_case")]
-pub(crate) enum ManifestItem {
+pub enum ManifestItem {
     File { path: String, size: u64 },
 }
 
@@ -177,7 +177,7 @@ pub(crate) struct MessageEnvelope {
 /// Messages the sender can emit on the transfer control channel.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "type", rename_all = "snake_case")]
-pub(crate) enum SenderMessage {
+pub enum SenderMessage {
     Hello(Hello),
     Offer(Offer),
     BlobTicket(BlobTicketMessage),
@@ -204,7 +204,7 @@ impl SenderMessage {
 /// Messages the receiver can emit on the transfer control channel.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "type", rename_all = "snake_case")]
-pub(crate) enum ReceiverMessage {
+pub enum ReceiverMessage {
     Hello(Hello),
     Accept(Accept),
     Decline(Decline),

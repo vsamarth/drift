@@ -405,7 +405,7 @@ mod tests {
     use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    use crate::session::bind_endpoint;
+    use crate::transfer_flow::receiver::bind_endpoint;
     use anyhow::Result;
     use tokio::sync::mpsc;
 

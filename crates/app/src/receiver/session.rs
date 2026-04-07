@@ -1,9 +1,9 @@
 use std::time::Duration;
 
 use drift_core::transfer_flow::{
-    ReceiveTransferOutcome as CoreReceiveTransferOutcome, ReceiverDecision as CoreReceiverDecision,
-    ReceiverEvent as CoreReceiverEvent, ReceiverRequest as CoreReceiverRequest,
-    ReceiverSession as CoreReceiverSession, ReceiverStart as CoreReceiverStart,
+    ReceiverDecision as CoreReceiverDecision, ReceiverEvent as CoreReceiverEvent,
+    ReceiverRequest as CoreReceiverRequest, ReceiverSession as CoreReceiverSession,
+    ReceiverStart as CoreReceiverStart, TransferOutcome as CoreTransferOutcome,
 };
 use drift_core::protocol::DeviceType;
 use drift_core::util::{ConnectionPathKind, classify_connection_path, human_size};
@@ -271,7 +271,7 @@ impl ReceiverSession {
 
         let final_event = match outcome_rx.await {
             Ok(Ok(outcome)) => match outcome {
-                CoreReceiveTransferOutcome::Completed => ReceiverOfferEvent {
+                CoreTransferOutcome::Completed => ReceiverOfferEvent {
                     phase: ReceiverOfferPhase::Completed,
                     sender_name: String::new(),
                     sender_device_type: device_type_to_str(sender_device_type),
@@ -286,7 +286,7 @@ impl ReceiverSession {
                     files: Vec::new(),
                     error_message: None,
                 },
-                CoreReceiveTransferOutcome::Declined => ReceiverOfferEvent {
+                CoreTransferOutcome::Declined { .. } => ReceiverOfferEvent {
                     phase: ReceiverOfferPhase::Declined,
                     sender_name: String::new(),
                     sender_device_type: device_type_to_str(sender_device_type),
@@ -301,7 +301,7 @@ impl ReceiverSession {
                     files: Vec::new(),
                     error_message: None,
                 },
-                CoreReceiveTransferOutcome::Cancelled(cancellation) => ReceiverOfferEvent {
+                CoreTransferOutcome::Cancelled(cancellation) => ReceiverOfferEvent {
                     phase: ReceiverOfferPhase::Cancelled,
                     sender_name: String::new(),
                     sender_device_type: device_type_to_str(sender_device_type),
