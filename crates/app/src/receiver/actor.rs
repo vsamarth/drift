@@ -41,14 +41,6 @@ pub(super) enum ReceiverCommand {
         run: super::session::ReceiverRun,
         event: ReceiverOfferEvent,
     },
-    OfferDisconnected {
-        offer_id: u64,
-        event: ReceiverOfferEvent,
-    },
-    OfferExpired {
-        offer_id: u64,
-        event: ReceiverOfferEvent,
-    },
     OfferProgress {
         offer_id: u64,
         event: ReceiverOfferEvent,
@@ -147,18 +139,6 @@ pub(super) async fn run_receiver_actor(
                             let _ = runtime
                                 .refresh_registration_after_offer(&pairing_tx, &event_tx)
                                 .await;
-                        }
-                        let _ = publish_snapshot(&state_tx, &runtime, ReceiverLifecycle::Ready);
-                    }
-                    ReceiverCommand::OfferDisconnected { offer_id, event } => {
-                        if runtime.handle_offer_disconnected(offer_id) {
-                            let _ = event_tx.send(ReceiverEvent::OfferUpdated(event));
-                        }
-                        let _ = publish_snapshot(&state_tx, &runtime, ReceiverLifecycle::Ready);
-                    }
-                    ReceiverCommand::OfferExpired { offer_id, event } => {
-                        if runtime.handle_offer_expired(offer_id) {
-                            let _ = event_tx.send(ReceiverEvent::OfferUpdated(event));
                         }
                         let _ = publish_snapshot(&state_tx, &runtime, ReceiverLifecycle::Ready);
                     }

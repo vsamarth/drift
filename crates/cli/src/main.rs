@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
-use drift::{LoggingOpts, demo_receive, demo_send, init_tracing, receive, send};
+use drift::{LoggingOpts, init_tracing, receive, send};
 
 #[derive(Parser, Debug)]
 #[command(name = "drift", version, about = "Short-code file transfer over iroh")]
@@ -36,21 +36,6 @@ enum Command {
         #[arg(long)]
         server: Option<String>,
     },
-    Demo {
-        #[command(subcommand)]
-        command: DemoCommand,
-    },
-}
-
-#[derive(Subcommand, Debug)]
-enum DemoCommand {
-    Send {
-        #[arg(short, long)]
-        peer: String,
-        #[arg(required = true)]
-        files: Vec<PathBuf>,
-    },
-    Receive {},
 }
 
 #[tokio::main]
@@ -76,9 +61,5 @@ async fn main() -> Result<()> {
             }
         },
         Command::Receive { out, server } => receive(out, server).await,
-        Command::Demo { command } => match command {
-            DemoCommand::Send { peer, files } => demo_send(peer, files).await,
-            DemoCommand::Receive {} => demo_receive().await,
-        },
     }
 }

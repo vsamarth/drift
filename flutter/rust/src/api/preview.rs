@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use drift_app::{
     SelectionItem as AppSelectionItem, SelectionPreview as AppSelectionPreview, SendConfig,
-    SendSession,
+    SendDraft,
 };
 
 #[derive(Debug, Clone)]
@@ -22,7 +22,7 @@ pub struct SelectionItem {
 }
 
 pub fn inspect_paths(paths: Vec<String>) -> Result<SelectionPreview, String> {
-    let preview = session_for_paths(paths)
+    let preview = draft_for_paths(paths)
         .inspect()
         .map_err(|err| err.to_string())?;
     Ok(map_preview(preview))
@@ -32,9 +32,9 @@ pub fn append_paths(
     existing_paths: Vec<String>,
     new_paths: Vec<String>,
 ) -> Result<SelectionPreview, String> {
-    let mut session = session_for_paths(existing_paths);
-    session.add_paths(new_paths.into_iter().map(PathBuf::from).collect());
-    let preview = session.inspect().map_err(|err| err.to_string())?;
+    let mut draft = draft_for_paths(existing_paths);
+    draft.add_paths(new_paths.into_iter().map(PathBuf::from).collect());
+    let preview = draft.inspect().map_err(|err| err.to_string())?;
     Ok(map_preview(preview))
 }
 
@@ -42,15 +42,15 @@ pub fn remove_path(
     existing_paths: Vec<String>,
     removed_path: String,
 ) -> Result<SelectionPreview, String> {
-    let mut session = session_for_paths(existing_paths);
-    session.remove_path(PathBuf::from(removed_path).as_path());
-    let preview = session.inspect().map_err(|err| err.to_string())?;
+    let mut draft = draft_for_paths(existing_paths);
+    draft.remove_path(PathBuf::from(removed_path).as_path());
+    let preview = draft.inspect().map_err(|err| err.to_string())?;
     Ok(map_preview(preview))
 }
 
-fn session_for_paths(paths: Vec<String>) -> SendSession {
+fn draft_for_paths(paths: Vec<String>) -> SendDraft {
     let raw_paths = paths.into_iter().map(PathBuf::from).collect::<Vec<_>>();
-    SendSession::new(
+    SendDraft::new(
         SendConfig {
             device_name: String::new(),
             device_type: "laptop".to_owned(),

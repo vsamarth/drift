@@ -236,7 +236,7 @@ impl ReceiverRuntime {
             return Err(anyhow::anyhow!("no pending offer"));
         };
         let run = pending_offer.run;
-        run.watch_task.abort();
+
         let offer_id = run.offer_id;
         let resolution = if matches!(decision, OfferDecision::Accept) {
             self.offer_state = OfferState::Receiving {
@@ -255,7 +255,7 @@ impl ReceiverRuntime {
 
     pub(super) fn handle_offer_prepared(&mut self, run: ReceiverRun) -> bool {
         if !matches!(self.offer_state, OfferState::Idle) {
-            run.watch_task.abort();
+    
             let _ = run.decision_tx.send(OfferResolution::Decline);
             return false;
         }
@@ -267,7 +267,7 @@ impl ReceiverRuntime {
     pub(super) fn handle_offer_progress(&mut self, offer_id: u64) -> bool {
         match &mut self.offer_state {
             OfferState::Pending(pending) if pending.run.offer_id == offer_id => {
-                pending.run.watch_task.abort();
+
                 self.offer_state = OfferState::Receiving {
                     offer_id,
                     cancel_tx: pending.run.cancel_tx.clone(),
@@ -290,7 +290,7 @@ impl ReceiverRuntime {
 
         match &mut self.offer_state {
             OfferState::Pending(pending) if pending.run.offer_id == offer_id => {
-                pending.run.watch_task.abort();
+
                 self.offer_state = OfferState::Idle;
                 true
             }
@@ -303,14 +303,6 @@ impl ReceiverRuntime {
             }
             _ => false,
         }
-    }
-
-    pub(super) fn handle_offer_disconnected(&mut self, offer_id: u64) -> bool {
-        self.cancel_pending_offer(offer_id)
-    }
-
-    pub(super) fn handle_offer_expired(&mut self, offer_id: u64) -> bool {
-        self.cancel_pending_offer(offer_id)
     }
 
     pub(super) fn cancel_active_transfer(&mut self) -> Result<()> {
@@ -326,7 +318,7 @@ impl ReceiverRuntime {
     fn cancel_pending_offer(&mut self, offer_id: u64) -> bool {
         match std::mem::replace(&mut self.offer_state, OfferState::Idle) {
             OfferState::Pending(pending) if pending.run.offer_id == offer_id => {
-                pending.run.watch_task.abort();
+
                 let _ = pending.run.decision_tx.send(OfferResolution::Cancel);
                 true
             }

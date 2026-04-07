@@ -19,7 +19,7 @@ use std::sync::Arc;
 use tokio::fs;
 use tokio::sync::{mpsc, oneshot, watch};
 use tokio_stream::wrappers::UnboundedReceiverStream;
-use tracing::info;
+use tracing::{debug, info, instrument, warn};
 
 use crate::{
     protocol::wire as protocol_wire,
@@ -166,6 +166,7 @@ impl ReceiverSession {
     }
 }
 
+#[instrument(skip_all, fields(remote = %connection.remote_id()))]
 async fn run_session(
     endpoint: Endpoint,
     connection: Connection,
@@ -198,17 +199,20 @@ async fn run_session(
         .read_peer_hello(&mut control_recv)
         .await
         .context("reading sender hello")?;
+    
+    let session_id = peer_hello.session_id.clone();
+    tracing::Span::current().record("session_id", &session_id);
+    
     handshake
-        .send_hello(&mut control_send, &peer_hello.session_id)
+        .send_hello(&mut control_send, &session_id)
         .await
         .context("sending receiver hello")?;
 
     let offer = handshake
-        .read_offer(&mut control_recv, &peer_hello.session_id)
+        .read_offer(&mut control_recv, &session_id)
         .await
         .context("reading transfer offer")?;
 
-    let session_id = peer_hello.session_id.clone();
     let sender_device_name = peer_hello.identity.device_name.clone();
     let sender_device_type = to_local_device_type(peer_hello.identity.device_type);
     let sender_endpoint_id = peer_hello.identity.endpoint_id;
@@ -217,6 +221,7 @@ async fn run_session(
     let expected_files = match build_expected_files(&manifest, &request.out_dir).await {
         Ok(expected_files) => expected_files,
         Err(err) => {
+            warn!(%session_id, error = %err, "offer rejected due to path validation");
             let _ = handshake
                 .decline(&mut control_send, &session_id, err.to_string())
                 .await;
@@ -257,10 +262,26 @@ async fn run_session(
     );
     let _ = offer_tx.send(Ok(offer.clone()));
 
-    let decision = match decision_rx.await {
-        Ok(decision) => decision,
-        Err(error) => {
-            let message = format!("{error}");
+    info!(%session_id, %sender_device_name, file_count = offer.file_count, total_size = offer.total_size, "offer received");
+
+    let decision = tokio::select! {
+        decision = decision_rx => match decision {
+            Ok(decision) => decision,
+            Err(error) => {
+                let message = format!("{error}");
+                emit_receiver_error(&event_tx, anyhow!(message.clone()));
+                return Err(anyhow!(message));
+            }
+        },
+        _ = connection.closed() => {
+            let message = "sender disconnected before approval".to_owned();
+            warn!(%session_id, "{}", message);
+            emit_receiver_error(&event_tx, anyhow!(message.clone()));
+            return Err(anyhow!(message));
+        }
+        _ = tokio::time::sleep(std::time::Duration::from_secs(120)) => {
+            let message = "offer timed out before approval".to_owned();
+            warn!(%session_id, "{}", message);
             emit_receiver_error(&event_tx, anyhow!(message.clone()));
             return Err(anyhow!(message));
         }
@@ -268,13 +289,14 @@ async fn run_session(
 
     match decision {
         ReceiverDecision::Accept => {
+            info!(%session_id, "offer accepted");
             match handshake.accept(&mut control_send, &session_id).await {
                 Ok(protocol_receiver::ReceiverControlOutcome::Accepted(sender)) => {
-                    info!(
-                        session_id = %sender.session_id,
+                    debug!(
+                        %session_id,
                         sender_device_name = %sender.identity.device_name,
                         sender_endpoint_id = %sender.identity.endpoint_id,
-                        "demo.receive.accepted"
+                        "receiver.handshake.accepted"
                     );
                 }
                 Ok(other) => {
@@ -312,6 +334,8 @@ async fn run_session(
                 .parse()
                 .context("parsing blob ticket")?;
 
+            debug!(%session_id, hash = %blob_ticket.hash(), "received blob ticket");
+
             let recv_store = ScratchDir::new("drift-blobs-recv", &session_id).await?;
             let store = FsStore::load(&recv_store.path)
                 .await
@@ -332,10 +356,13 @@ async fn run_session(
                 },
             );
 
+            info!(%session_id, "transfer started");
+
             let fetch_outcome: Result<Option<TransferCancellation>> = loop {
                 tokio::select! {
                     cancel_requested = wait_for_cancel(&mut cancel_rx) => {
                         if cancel_requested {
+                            info!(%session_id, "transfer cancelled by local user");
                             let cancellation = local_cancellation(
                                 protocol_message::TransferRole::Receiver,
                                 protocol_message::CancelPhase::Transferring,
@@ -353,6 +380,7 @@ async fn run_session(
                     control_message = protocol_wire::read_sender_message(&mut control_recv) => {
                         match control_message.context("waiting for transfer control message")? {
                             protocol_message::SenderMessage::Cancel(cancel) => {
+                                info!(%session_id, "transfer cancelled by remote");
                                 break Ok(Some(cancellation_from_message(cancel, &session_id)?));
                             }
                             other => {
@@ -374,6 +402,7 @@ async fn run_session(
                             }
                             Some(GetProgressItem::Done(_)) => break Ok(None),
                             Some(GetProgressItem::Error(err)) => {
+                                warn!(%session_id, error = %err, "blob fetch error");
                                 break Err(anyhow!(err.to_string()));
                             }
                             None => break Ok(None),
@@ -386,6 +415,7 @@ async fn run_session(
 
             let outcome = match fetch_outcome {
                 Ok(None) => {
+                    info!(%session_id, "transfer data received, exporting files");
                     export_downloaded_collection(&store, blob_ticket.hash(), &expected_transfer_files)
                         .await?;
                     emit_receiver_event(
@@ -400,10 +430,15 @@ async fn run_session(
                         protocol_message::TransferStatus::Ok,
                     )
                     .await?;
+                    info!(%session_id, "transfer completed successfully");
                     TransferOutcome::Completed
                 }
-                Ok(Some(cancellation)) => TransferOutcome::Cancelled(cancellation),
+                Ok(Some(cancellation)) => {
+                    info!(%session_id, reason = %cancellation.reason, "transfer cancelled");
+                    TransferOutcome::Cancelled(cancellation)
+                }
                 Err(error) => {
+                    warn!(%session_id, error = %error, "transfer failed");
                     let status = protocol_message::TransferStatus::Error {
                         code: protocol_message::TransferErrorCode::IoError,
                         message: error.to_string(),
@@ -432,6 +467,7 @@ async fn run_session(
             Ok(outcome)
         }
         ReceiverDecision::Decline => {
+            info!(%session_id, "offer declined");
             let _ = handshake
                 .decline(
                     &mut control_send,

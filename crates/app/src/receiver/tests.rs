@@ -114,12 +114,11 @@ async fn stale_offer_updates_are_ignored() -> Result<()> {
 
     let (tx, _rx) = oneshot::channel::<OfferResolution>();
     let (cancel_tx, _cancel_rx) = watch::channel(false);
-    let watch_task = tokio::spawn(async {});
     let run = ReceiverRun {
         offer_id: 7,
         decision_tx: tx,
         cancel_tx,
-        watch_task,
+
     };
     assert!(runtime.handle_offer_prepared(run));
     assert!(!runtime.handle_offer_progress(8));
@@ -139,19 +138,17 @@ async fn busy_runtime_rejects_second_offer() -> Result<()> {
     let (tx2, rx2) = oneshot::channel::<OfferResolution>();
     let (cancel_tx1, _cancel_rx1) = watch::channel(false);
     let (cancel_tx2, _cancel_rx2) = watch::channel(false);
-    let watch1 = tokio::spawn(async {});
-    let watch2 = tokio::spawn(async {});
     assert!(runtime.handle_offer_prepared(ReceiverRun {
         offer_id: 1,
         decision_tx: tx1,
         cancel_tx: cancel_tx1,
-        watch_task: watch1,
+
     }));
     assert!(!runtime.handle_offer_prepared(ReceiverRun {
         offer_id: 2,
         decision_tx: tx2,
         cancel_tx: cancel_tx2,
-        watch_task: watch2,
+
     }));
     assert!(matches!(rx2.await.unwrap(), OfferResolution::Decline));
     Ok(())

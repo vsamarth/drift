@@ -40,7 +40,6 @@ pub(super) struct ReceiverRun {
     pub(super) offer_id: u64,
     pub(super) decision_tx: oneshot::Sender<OfferResolution>,
     pub(super) cancel_tx: tokio::sync::watch::Sender<bool>,
-    pub(super) watch_task: JoinHandle<()>,
 }
 
 impl ReceiverSession {
@@ -85,7 +84,6 @@ impl ReceiverSession {
         } = self;
 
         let connection_path_kind = classify_connection_path(&endpoint, connection.remote_id()).await;
-        let watch_connection = connection.clone();
         let session = CoreReceiverSession::new(CoreReceiverRequest {
             device_name: device_name.clone(),
             device_type,
@@ -141,17 +139,7 @@ impl ReceiverSession {
                 size: file.size,
             })
             .collect();
-        let watch_task = spawn_pending_offer_watch_task(
-            offer_id,
-            watch_connection,
-            offer.sender_device_name.clone(),
-            sender_device_type,
-            sender_label.clone(),
-            save_root_label.clone(),
-            offer.file_count,
-            offer.total_size,
-            cmd_tx.clone(),
-        );
+
         let (decision_tx, decision_rx) = oneshot::channel();
         let core_decision_tx = control.decision_tx;
         tokio::spawn(async move {
@@ -167,7 +155,6 @@ impl ReceiverSession {
             offer_id,
             decision_tx,
             cancel_tx: control.cancel_tx,
-            watch_task,
         };
         let prepared_event = ReceiverOfferEvent {
             phase: ReceiverOfferPhase::OfferReady,
@@ -364,60 +351,6 @@ fn build_progress_event(
         files: Vec::new(),
         error_message: None,
     }
-}
-
-fn spawn_pending_offer_watch_task(
-    offer_id: u64,
-    connection: iroh::endpoint::Connection,
-    sender_name: String,
-    sender_device_type: DeviceType,
-    destination_label: String,
-    save_root_label: String,
-    item_count: u64,
-    total_size_bytes: u64,
-    cmd_tx: mpsc::Sender<ReceiverCommand>,
-) -> JoinHandle<()> {
-    tokio::spawn(async move {
-        let disconnected_event = ReceiverOfferEvent {
-            phase: ReceiverOfferPhase::Failed,
-            sender_name: sender_name.clone(),
-            sender_device_type: device_type_to_str(sender_device_type),
-            destination_label: destination_label.clone(),
-            save_root_label: save_root_label.clone(),
-            status_message: "Sender disconnected before you responded.".to_owned(),
-            item_count,
-            total_size_bytes,
-            bytes_received: 0,
-            connection_path: Some("unknown".to_owned()),
-            total_size_label: human_size(total_size_bytes),
-            files: Vec::new(),
-            error_message: Some("sender disconnected before approval".to_owned()),
-        };
-        let expired_event = ReceiverOfferEvent {
-            phase: ReceiverOfferPhase::Failed,
-            sender_name,
-            sender_device_type: device_type_to_str(sender_device_type),
-            destination_label,
-            save_root_label,
-            status_message: "Offer expired before you responded.".to_owned(),
-            item_count,
-            total_size_bytes,
-            bytes_received: 0,
-            connection_path: Some("unknown".to_owned()),
-            total_size_label: human_size(total_size_bytes),
-            files: Vec::new(),
-            error_message: Some("offer timed out before approval".to_owned()),
-        };
-
-        tokio::select! {
-            _ = connection.closed() => {
-                let _ = cmd_tx.send(ReceiverCommand::OfferDisconnected { offer_id, event: disconnected_event }).await;
-            }
-            _ = tokio::time::sleep(Duration::from_secs(120)) => {
-                let _ = cmd_tx.send(ReceiverCommand::OfferExpired { offer_id, event: expired_event }).await;
-            }
-        }
-    })
 }
 
 fn failed_offer_event(

@@ -7,11 +7,12 @@ use iroh::{
 use rand::random;
 use tokio::time::{Duration, timeout};
 use tokio::{
+    io::AsyncWrite,
     sync::{mpsc, oneshot},
     task::JoinHandle,
 };
 use tokio_stream::wrappers::UnboundedReceiverStream;
-use tracing::info;
+use tracing::{debug, info, instrument, warn};
 
 use crate::{
     blobs::send::{BlobRegistration, BlobService, PreparedStore},
@@ -215,6 +216,10 @@ impl SenderControl {
         Ok(completion)
     }
 
+    async fn send_transfer_ack(&mut self) -> Result<()> {
+        write_transfer_ack(&mut self.send, &self.session_id).await
+    }
+
     async fn finish(&mut self) -> Result<()> {
         self.send.finish().context("finishing control send")?;
         let _ = timeout(CONTROL_STREAM_FINISH_TIMEOUT, self.send.stopped()).await;
@@ -299,6 +304,7 @@ impl SenderSession {
         }
     }
 
+    #[instrument(skip_all, fields(session_id = %self.session_id, peer = %self.request.peer_endpoint_id))]
     async fn run(self) -> Result<TransferOutcome> {
         let store_root = ScratchDir::new("drift-flow-sender", &self.session_id).await?;
         let prepared_store = PreparedStore::prepare(
@@ -321,13 +327,11 @@ impl SenderSession {
             session_id: self.session_id.clone(),
             peer_endpoint_id: self.request.peer_endpoint_id,
         });
+        
         info!(
-            session_id = %self.session_id,
-            peer_endpoint_id = %self.request.peer_endpoint_id,
-            local_endpoint_id = %endpoint.addr().id,
             file_count = manifest.count(),
             total_size = manifest.total_size(),
-            "demo.send.connecting"
+            "connecting to receiver"
         );
 
         let connection = endpoint
@@ -342,24 +346,24 @@ impl SenderSession {
 
         match outcome {
             protocol_sender::SenderControlOutcome::Accepted(peer) => {
+                info!(
+                    receiver_device_name = %peer.identity.device_name,
+                    receiver_endpoint_id = %peer.identity.endpoint_id,
+                    "transfer accepted by receiver"
+                );
                 self.events.emit(SenderEvent::Accepted {
                     session_id: self.session_id.clone(),
                     receiver_device_name: peer.identity.device_name.clone(),
                     receiver_endpoint_id: peer.identity.endpoint_id,
                 });
-                self.run_transfer(endpoint, connection, control, prepared_store, peer)
-                    .await
+                self.run_transfer(endpoint, control, prepared_store, peer).await
             }
             protocol_sender::SenderControlOutcome::Declined(message) => {
+                info!(reason = %message.reason, "transfer declined by receiver");
                 self.events.emit(SenderEvent::Declined {
                     session_id: self.session_id.clone(),
                     reason: message.reason.clone(),
                 });
-                info!(
-                    session_id = %self.session_id,
-                    reason = %message.reason,
-                    "demo.send.declined"
-                );
                 let _ = control.finish().await;
                 endpoint.close().await;
                 Ok(TransferOutcome::Declined {
@@ -369,46 +373,48 @@ impl SenderSession {
         }
     }
 
+    #[instrument(skip_all, fields(session_id = %self.session_id))]
     async fn run_transfer(
         self,
         endpoint: iroh::Endpoint,
-        connection: iroh::endpoint::Connection,
         mut control: SenderControl,
         prepared_store: PreparedStore,
-        peer: protocol_sender::SenderPeer,
+        _peer: protocol_sender::SenderPeer,
     ) -> Result<TransferOutcome> {
+        let manifest = prepared_store.manifest();
+        let file_count = manifest.count() as u64;
+        let total_bytes = prepared_store.total_bytes();
         let registration = BlobService::new(endpoint.clone())
             .register(prepared_store)
             .await
             .context("registering blob service")?;
-        let progress_task =
-            SenderProgressTask::spawn(connection, self.session_id.clone(), self.events.clone());
         let blob_task = BlobTransferTask::spawn(registration);
         let result = async {
             let ticket = blob_task.ticket().to_string();
-            info!(session_id = %self.session_id, ticket = %ticket, "demo.send.ticket_ready");
+            debug!(%ticket, "blob ticket ready");
             control.send_blob_ticket(ticket).await?;
+
+            self.events.emit(SenderEvent::TransferStarted {
+                session_id: self.session_id.clone(),
+                file_count,
+                total_bytes,
+            });
 
             let completion = control.read_transfer_result().await?;
             if !matches!(completion.status, protocol_message::TransferStatus::Ok) {
+                warn!(status = ?completion.status, "receiver reported transfer failure");
                 anyhow::bail!(
                     "receiver reported transfer failure: {:?}",
                     completion.status
                 );
             }
 
-            progress_task
-                .wait()
-                .await
-                .context("reading sender progress")?;
-            info!(session_id = %self.session_id, "demo.send.completed");
+            control.send_transfer_ack().await?;
+            self.events.emit(SenderEvent::TransferCompleted {
+                session_id: self.session_id.clone(),
+            });
+            info!("transfer completed successfully");
             control.finish().await?;
-            info!(
-                session_id = %self.session_id,
-                receiver_device_name = %peer.identity.device_name,
-                receiver_endpoint_id = %peer.identity.endpoint_id,
-                "demo.send.accepted"
-            );
             endpoint.close().await;
             Ok(TransferOutcome::Completed)
         }
@@ -542,5 +548,46 @@ fn to_protocol_device_type(device_type: crate::protocol::DeviceType) -> protocol
     match device_type {
         crate::protocol::DeviceType::Phone => protocol_message::DeviceType::Phone,
         crate::protocol::DeviceType::Laptop => protocol_message::DeviceType::Laptop,
+    }
+}
+
+async fn write_transfer_ack<W>(writer: &mut W, session_id: &str) -> Result<()>
+where
+    W: AsyncWrite + Unpin,
+{
+    protocol_wire::write_sender_message(
+        writer,
+        &protocol_message::SenderMessage::TransferAck(protocol_message::TransferAck {
+            session_id: session_id.to_owned(),
+        }),
+    )
+    .await
+    .context("sending transfer ack")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::write_transfer_ack;
+    use crate::protocol::message::{SenderMessage, TransferAck};
+    use crate::protocol::wire::read_sender_message;
+    use anyhow::Result;
+    use tokio::io::duplex;
+
+    #[tokio::test]
+    async fn sender_control_sends_transfer_ack() -> Result<()> {
+        let (local, remote) = duplex(1024);
+        let (_local_read, mut local_write) = tokio::io::split(local);
+        let (mut remote_read, _remote_write) = tokio::io::split(remote);
+
+        write_transfer_ack(&mut local_write, "session-1").await?;
+
+        match read_sender_message(&mut remote_read).await? {
+            SenderMessage::TransferAck(TransferAck { session_id }) => {
+                assert_eq!(session_id, "session-1");
+            }
+            other => panic!("unexpected sender message: {:?}", other),
+        }
+
+        Ok(())
     }
 }

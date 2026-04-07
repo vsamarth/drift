@@ -899,10 +899,12 @@ dependencies = [
  "drift-app",
  "drift-core",
  "flutter_rust_bridge",
+ "futures-lite",
  "iroh",
  "rand 0.8.5",
  "time",
  "tokio",
+ "tokio-stream",
 ]
 
 [[package]]

@@ -3,15 +3,15 @@ use std::sync::{LazyLock, Mutex};
 
 use drift_app::{
     SendConfig, SendEvent as AppSendEvent, SendPhase as AppSendPhase, SendSession,
-    SendSessionOutcome,
+    SendSessionOutcome, SendDraft, SendDestination,
 };
 use tokio::sync::watch;
+use futures_lite::StreamExt;
 
 use super::RUNTIME;
 use crate::frb_generated::StreamSink;
 
 const LOCAL_RENDEZVOUS_URL: &str = "http://127.0.0.1:8787";
-const ENABLE_DEMO_HELLO_PROTOCOL: bool = false;
 static ACTIVE_SEND_CANCEL: LazyLock<Mutex<Option<watch::Sender<bool>>>> =
     LazyLock::new(|| Mutex::new(None));
 
@@ -19,6 +19,8 @@ static ACTIVE_SEND_CANCEL: LazyLock<Mutex<Option<watch::Sender<bool>>>> =
 pub enum SendTransferPhase {
     Connecting,
     WaitingForDecision,
+    Accepted,
+    Declined,
     Sending,
     Completed,
     Cancelled,
@@ -52,98 +54,81 @@ pub fn start_send_transfer(
     request: SendTransferRequest,
     updates: StreamSink<SendTransferEvent>,
 ) -> Result<(), String> {
-    if ENABLE_DEMO_HELLO_PROTOCOL {
-        std::env::set_var("DRIFT_DEMO_HELLO", "1");
-        println!("[bridge/send] demo hello protocol enabled");
-    }
-
     let fallback_destination = fallback_destination_label(&request);
-    let session = SendSession::new(
+    
+    let draft = SendDraft::new(
         SendConfig {
             device_name: request.device_name,
             device_type: request.device_type,
         },
         request.paths.into_iter().map(PathBuf::from).collect(),
     );
-    let (cancel_tx, cancel_rx) = watch::channel(false);
+
+    let destination = match request
+        .ticket
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        Some(ticket) => SendDestination::nearby(
+            ticket.to_owned(),
+            request
+                .lan_destination_label
+                .unwrap_or_else(|| "Nearby receiver".to_owned()),
+        ),
+        None => SendDestination::code(
+            request.code,
+            request.server_url.or(Some(LOCAL_RENDEZVOUS_URL.to_owned())),
+        ),
+    };
+
+    let session = SendSession::new(draft, destination);
+    let (cancel_tx, _cancel_rx) = watch::channel(false);
     if let Ok(mut guard) = ACTIVE_SEND_CANCEL.lock() {
         if let Some(existing) = guard.replace(cancel_tx.clone()) {
             let _ = existing.send(true);
         }
     }
 
-    RUNTIME.block_on(async move {
-        let mut emitted_failed_event = false;
-        let mut emitted_cancelled_event = false;
-        let result = match request
-            .ticket
-            .as_deref()
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-        {
-            Some(ticket) => {
-                session
-                    .send_to_nearby(
-                        ticket.to_owned(),
-                        request
-                            .lan_destination_label
-                            .unwrap_or_else(|| "Nearby receiver".to_owned()),
-                        Some(cancel_rx.clone()),
-                        |event| {
-                            if matches!(event.phase, AppSendPhase::Failed) {
-                                emitted_failed_event = true;
-                            }
-                            if matches!(event.phase, AppSendPhase::Cancelled) {
-                                emitted_cancelled_event = true;
-                            }
-                            let _ = updates.add(map_event(event));
-                        },
-                    )
-                    .await
+    RUNTIME.spawn(async move {
+        let run = session.start();
+        let (mut events, outcome_rx) = run.into_parts();
+
+        let event_updates = updates.clone();
+        tokio::spawn(async move {
+            while let Some(event) = events.next().await {
+                if let Ok(event) = event {
+                    let _ = event_updates.add(map_event(event));
+                }
             }
-            None => {
-                session
-                    .send_to_code(
-                        request.code,
-                        request.server_url.or(Some(LOCAL_RENDEZVOUS_URL.to_owned())),
-                        Some(cancel_rx),
-                        |event| {
-                            if matches!(event.phase, AppSendPhase::Failed) {
-                                emitted_failed_event = true;
-                            }
-                            if matches!(event.phase, AppSendPhase::Cancelled) {
-                                emitted_cancelled_event = true;
-                            }
-                            let _ = updates.add(map_event(event));
-                        },
-                    )
-                    .await
-            }
-        };
+        });
+
+        let outcome = outcome_rx.await;
 
         if let Ok(mut guard) = ACTIVE_SEND_CANCEL.lock() {
             guard.take();
         }
 
-        match result {
-            Ok(SendSessionOutcome::Completed | SendSessionOutcome::Cancelled) => Ok(()),
-            Err(error) => {
-                if !emitted_failed_event && !emitted_cancelled_event {
-                    let _ = updates.add(SendTransferEvent {
-                        phase: SendTransferPhase::Failed,
-                        destination_label: fallback_destination,
-                        status_message: "Transfer failed.".to_owned(),
-                        item_count: 0,
-                        total_size: 0,
-                        bytes_sent: 0,
-                        remote_device_type: None,
-                        error_message: Some(error.to_string()),
-                    });
-                }
-                Ok(())
+        match outcome {
+            Ok(Ok(SendSessionOutcome::Accepted { .. })) => {}
+            Ok(Ok(SendSessionOutcome::Declined { .. })) => {}
+            Ok(Err(error)) => {
+                let _ = updates.add(SendTransferEvent {
+                    phase: SendTransferPhase::Failed,
+                    destination_label: fallback_destination,
+                    status_message: "Transfer failed.".to_owned(),
+                    item_count: 0,
+                    total_size: 0,
+                    bytes_sent: 0,
+                    remote_device_type: None,
+                    error_message: Some(error.to_string()),
+                });
             }
+            Err(_) => {}
         }
-    })
+    });
+
+    Ok(())
 }
 
 pub fn cancel_active_send_transfer() -> Result<(), String> {
@@ -185,6 +170,8 @@ fn map_event(event: AppSendEvent) -> SendTransferEvent {
         phase: match event.phase {
             AppSendPhase::Connecting => SendTransferPhase::Connecting,
             AppSendPhase::WaitingForDecision => SendTransferPhase::WaitingForDecision,
+            AppSendPhase::Accepted => SendTransferPhase::Accepted,
+            AppSendPhase::Declined => SendTransferPhase::Declined,
             AppSendPhase::Sending => SendTransferPhase::Sending,
             AppSendPhase::Completed => SendTransferPhase::Completed,
             AppSendPhase::Cancelled => SendTransferPhase::Cancelled,
