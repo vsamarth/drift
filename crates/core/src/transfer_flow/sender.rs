@@ -135,13 +135,12 @@ impl SenderSession {
 
         self.events.emit(SenderEvent::Connecting { session_id: self.session_id.clone(), peer_endpoint_id: self.request.peer_endpoint_id });
         let connection = endpoint.connect(EndpointAddr::new(self.request.peer_endpoint_id), ALPN).await?;
-        let (mut control_send, mut control_recv) = connection.open_bi().await?;
-
+        
         // --- Handshake ---
-        let handshake_res = do_handshake(&self.session_id, &self.identity, &prepared, &mut control_send, &mut control_recv, &mut cancel_rx, &connection, &self.events).await?;
-        let outcome = match handshake_res {
-            Ok(o) => o,
-            Err(outcome) => return Ok(outcome),
+        let handshake_res = do_handshake(&self.session_id, &self.identity, &prepared, &connection, &mut cancel_rx, &self.events).await?;
+        let (mut control_send, mut control_recv, outcome) = match handshake_res {
+            HandshakeResult::Ok(s, r, o) => (s, r, o),
+            HandshakeResult::Cancelled(outcome) => return Ok(outcome),
         };
 
         match outcome {
@@ -151,37 +150,42 @@ impl SenderSession {
             }
             protocol_sender::SenderControlOutcome::Declined(msg) => {
                 self.events.emit(SenderEvent::Declined { session_id: self.session_id.clone(), reason: msg.reason.clone() });
+                let _ = control_send.finish();
                 Ok(TransferOutcome::Declined { reason: msg.reason })
             }
         }
     }
 }
 
+enum HandshakeResult {
+    Ok(iroh::endpoint::SendStream, iroh::endpoint::RecvStream, protocol_sender::SenderControlOutcome),
+    Cancelled(TransferOutcome),
+}
+
 async fn do_handshake(
     session_id: &str,
     identity: &protocol_message::Identity,
     prepared: &PreparedStore,
-    send: &mut iroh::endpoint::SendStream,
-    recv: &mut iroh::endpoint::RecvStream,
-    cancel_rx: &mut watch::Receiver<bool>,
     conn: &Connection,
+    cancel_rx: &mut watch::Receiver<bool>,
     events: &SenderEventSink,
-) -> Result<Result<protocol_sender::SenderControlOutcome, TransferOutcome>> {
+) -> Result<HandshakeResult> {
     tokio::select! {
         res = async {
-            protocol_wire::write_sender_message(send, &protocol_message::SenderMessage::Hello(protocol_message::Hello {
+            let (mut send, mut recv) = conn.open_bi().await.context("opening bi-stream")?;
+            protocol_wire::write_sender_message(&mut send, &protocol_message::SenderMessage::Hello(protocol_message::Hello {
                 version: protocol_message::PROTOCOL_VERSION,
                 session_id: session_id.to_owned(),
                 identity: identity.clone(),
             })).await?;
             
-            let peer_hello = match protocol_wire::read_receiver_message(recv).await? {
+            let peer_hello = match protocol_wire::read_receiver_message(&mut recv).await? {
                 protocol_message::ReceiverMessage::Hello(h) => h,
-                protocol_message::ReceiverMessage::Cancel(c) => return Ok(Err(TransferOutcome::from_remote_cancel(c, session_id)?)),
+                protocol_message::ReceiverMessage::Cancel(c) => return Ok(HandshakeResult::Cancelled(TransferOutcome::from_remote_cancel(c, session_id)?)),
                 _ => bail!("expected hello from receiver"),
             };
             
-            protocol_wire::write_sender_message(send, &protocol_message::SenderMessage::Offer(protocol_message::Offer {
+            protocol_wire::write_sender_message(&mut send, &protocol_message::SenderMessage::Offer(protocol_message::Offer {
                 session_id: session_id.to_owned(),
                 manifest: prepared.manifest(),
             })).await?;
@@ -192,15 +196,19 @@ async fn do_handshake(
                 receiver_endpoint_id: peer_hello.identity.endpoint_id,
             });
             
-            let decision = match protocol_wire::read_receiver_message(recv).await? {
+            let decision = match protocol_wire::read_receiver_message(&mut recv).await? {
                 protocol_message::ReceiverMessage::Accept(a) => protocol_sender::SenderControlOutcome::Accepted(protocol_sender::SenderPeer { session_id: a.session_id, identity: peer_hello.identity }),
                 protocol_message::ReceiverMessage::Decline(d) => protocol_sender::SenderControlOutcome::Declined(d),
-                protocol_message::ReceiverMessage::Cancel(c) => return Ok(Err(TransferOutcome::from_remote_cancel(c, session_id)?)),
+                protocol_message::ReceiverMessage::Cancel(c) => return Ok(HandshakeResult::Cancelled(TransferOutcome::from_remote_cancel(c, session_id)?)),
                 _ => bail!("expected decision from receiver"),
             };
-            Ok(Ok(decision))
+            Ok(HandshakeResult::Ok(send, recv, decision))
         } => res,
-        _ = wait_for_cancel(cancel_rx) => abort_session(send, session_id, protocol_message::CancelPhase::WaitingForDecision).await.map(Err),
+        _ = wait_for_cancel(cancel_rx) => {
+            // Abort handshake locally
+            let (mut send, _) = conn.open_bi().await.context("opening bi-stream for abort")?;
+            abort_session(&mut send, session_id, protocol_message::CancelPhase::WaitingForDecision).await.map(HandshakeResult::Cancelled)
+        },
         _ = conn.closed() => bail!("connection closed during handshake"),
     }
 }
@@ -245,6 +253,7 @@ async fn do_transfer(
         let _ = progress_task.wait().await;
         protocol_wire::write_sender_message(control_send, &protocol_message::SenderMessage::TransferAck(protocol_message::TransferAck { session_id: session_id.to_owned() })).await?;
         events.emit(SenderEvent::TransferCompleted { session_id: session_id.to_owned() });
+        let _ = control_send.finish();
         Ok(TransferOutcome::Completed)
     }.await;
 
@@ -256,6 +265,8 @@ async fn abort_session(send: &mut iroh::endpoint::SendStream, session_id: &str, 
     let outcome = TransferOutcome::local_cancel(protocol_message::TransferRole::Sender, phase);
     if let TransferOutcome::Cancelled(c) = &outcome {
         let _ = protocol_wire::write_sender_message(send, &protocol_message::SenderMessage::Cancel(protocol_message::Cancel { session_id: session_id.to_owned(), by: c.by, phase: c.phase, reason: c.reason.clone() })).await;
+        let _ = send.finish();
+        let _ = tokio::time::timeout(Duration::from_secs(2), send.stopped()).await;
     }
     Ok(outcome)
 }

@@ -9,7 +9,7 @@ use drift_core::transfer_flow::{
     ReceiverDecision, ReceiverEvent, ReceiverOffer, ReceiverRequest,
     ReceiverSession, ReceiverStart, SendRequest, Sender, SenderEvent, TransferOutcome,
 };
-use drift_core::util::{human_size, process_display_device_name, make_ticket};
+use drift_core::util::{human_size, process_display_device_name, make_ticket, confirm_accept};
 use drift_core::lan::LanReceiveAdvertisement;
 use drift_core::rendezvous::{RendezvousClient, resolve_server_url};
 use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
@@ -203,21 +203,35 @@ async fn consume_sender_run(
     run: drift_core::transfer_flow::sender::SenderRun,
     progress_bar: &mut Option<ProgressBar>,
 ) -> Result<TransferOutcome> {
-    let (mut events, _cancel_tx, outcome_rx) = run.into_parts();
-    while let Some(event) = events.next().await {
-        match event {
-            Ok(event) => render_sender_event(progress_bar, &event),
-            Err(error) => {
-                warn!(error = %error, error_chain = %format!("{error:#}"), "send.failed");
+    let (mut events, cancel_tx, outcome_rx) = run.into_parts();
+    
+    let mut outcome_rx = outcome_rx;
+    loop {
+        tokio::select! {
+            event = events.next() => {
+                match event {
+                    Some(Ok(event)) => render_sender_event(progress_bar, &event),
+                    Some(Err(error)) => {
+                        warn!(error = %error, error_chain = %format!("{error:#}"), "send.failed");
+                        finish_progress_bar(progress_bar);
+                        return Err(error);
+                    }
+                    None => break,
+                }
+            }
+            _ = tokio::signal::ctrl_c() => {
+                info!("send.cancel_requested");
+                let _ = cancel_tx.send(true);
+            }
+            res = &mut outcome_rx => {
                 finish_progress_bar(progress_bar);
-                return Err(error);
+                return res.context("waiting for send outcome")?;
             }
         }
     }
 
     finish_progress_bar(progress_bar);
-    let outcome: Result<TransferOutcome> = outcome_rx.await.context("waiting for send outcome")?;
-    outcome
+    outcome_rx.await.context("waiting for send outcome")?
 }
 
 fn render_sender_event(
@@ -288,7 +302,12 @@ pub async fn receive(out_dir: PathBuf, server_url: Option<String>) -> Result<()>
     eprintln!("Waiting for a sender to connect...");
 
     // 3. Wait for one connection
-    let incoming = endpoint.accept().await.ok_or_else(|| anyhow!("listener closed"))?;
+    let incoming = tokio::select! {
+        incoming = endpoint.accept() => incoming.ok_or_else(|| anyhow!("listener closed"))?,
+        _ = tokio::signal::ctrl_c() => {
+            bail!("cancelled while waiting for connection");
+        }
+    };
     let connection = incoming.await?;
     
     // 4. Run the session
@@ -340,19 +359,39 @@ async fn consume_receiver_run(
         }
     };
 
-    // 2. Render offer and auto-accept for CLI (for now)
+    // 2. Render offer and ask for permission
     render_offer(&offer);
-    info!("receive.auto_accepting");
+    
+    let accepted = confirm_accept()?;
+    if !accepted {
+        let _ = control.decision_tx.send(ReceiverDecision::Decline);
+        return Ok(TransferOutcome::Declined { reason: "local user declined".to_owned() });
+    }
+    
     control.decision_tx.send(ReceiverDecision::Accept).map_err(|_| anyhow!("failed to send decision"))?;
 
     // 3. Process events
-    while let Some(event) = events.next().await {
-        match event {
-            Ok(event) => render_receiver_event(&mut progress_bar, &event),
-            Err(error) => {
-                warn!(error = %error, error_chain = %format!("{error:#}"), "receive.failed");
+    let mut outcome_rx = outcome_rx;
+    loop {
+        tokio::select! {
+            event = events.next() => {
+                match event {
+                    Some(Ok(event)) => render_receiver_event(&mut progress_bar, &event),
+                    Some(Err(error)) => {
+                        warn!(error = %error, error_chain = %format!("{error:#}"), "receive.failed");
+                        finish_progress_bar(&mut progress_bar);
+                        return Err(error);
+                    }
+                    None => break,
+                }
+            }
+            _ = tokio::signal::ctrl_c() => {
+                info!("receive.cancel_requested");
+                let _ = control.cancel_tx.send(true);
+            }
+            res = &mut outcome_rx => {
                 finish_progress_bar(&mut progress_bar);
-                return Err(error);
+                return res.context("waiting for outcome")?;
             }
         }
     }

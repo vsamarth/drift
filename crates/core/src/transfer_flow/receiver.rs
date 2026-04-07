@@ -159,16 +159,10 @@ async fn run_session(
 ) -> Result<TransferOutcome> {
     emit_receiver_event(&event_tx, ReceiverEvent::Listening { endpoint_id: endpoint.addr().id });
 
-    let (mut control_send, mut control_recv) = connection
-        .accept_bi()
-        .await
-        .context("waiting for transfer control stream")?;
-
     // --- Phase 1: Handshake ---
-    let handshake_res = do_handshake(&endpoint, &request, &mut control_send, &mut control_recv, &mut cancel_rx, &connection).await?;
-    let (peer_hello, offer) = match handshake_res {
-        Ok(res) => res,
-        Err(outcome) => {
+    let (mut control_send, mut control_recv, peer_hello, offer) = match do_handshake(&endpoint, &request, &connection, &mut cancel_rx).await? {
+        HandshakeResult::Ok(s, r, h, o) => (s, r, h, o),
+        HandshakeResult::Cancelled(outcome) => {
             let _ = offer_tx.send(Err(anyhow!("cancelled during handshake")));
             return Ok(outcome);
         }
@@ -177,7 +171,7 @@ async fn run_session(
     let session_id = peer_hello.session_id.clone();
     tracing::Span::current().record("session_id", &session_id);
 
-    // --- Phase 2: Offer Resolution ---
+    // --- Phase 2: Offer Processing ---
     let manifest = to_offer_manifest(&offer);
     let expected_files = match build_expected_files(&manifest, &request.out_dir).await {
         Ok(f) => f,
@@ -208,6 +202,7 @@ async fn run_session(
     });
     let _ = offer_tx.send(Ok(receiver_offer));
 
+    // --- Phase 3: User Decision ---
     let decision = tokio::select! {
         res = decision_rx => res.map_err(|_| anyhow!("decision channel closed"))?,
         _ = wait_for_cancel(&mut cancel_rx) => return abort_session(&mut control_send, &session_id, protocol_message::CancelPhase::WaitingForDecision).await,
@@ -216,11 +211,11 @@ async fn run_session(
     };
 
     if decision == ReceiverDecision::Decline {
-        let _ = send_receiver_decline(&mut control_send, &session_id, "declined".to_owned()).await;
+        let _ = send_receiver_decline(&mut control_send, &session_id, "declined by user".to_owned()).await;
         return Ok(TransferOutcome::Declined { reason: "receiver declined".to_owned() });
     }
 
-    // --- Phase 3: Acceptance & Data Transfer ---
+    // --- Phase 4: Data Transfer ---
     let _ = protocol_wire::write_receiver_message(&mut control_send, &protocol_message::ReceiverMessage::Accept(protocol_message::Accept { session_id: session_id.clone() })).await?;
     
     let ticket_message = tokio::select! {
@@ -231,63 +226,75 @@ async fn run_session(
         },
         _ = wait_for_cancel(&mut cancel_rx) => return abort_session(&mut control_send, &session_id, protocol_message::CancelPhase::Transferring).await,
         _ = connection.closed() => bail!("connection closed waiting for ticket"),
+        _ = tokio::time::sleep(Duration::from_secs(30)) => bail!("timeout waiting for blob ticket"),
     };
 
     let blob_ticket: BlobTicket = ticket_message.ticket.parse().context("parsing blob ticket")?;
     let scratch = ScratchDir::new("drift-recv", &session_id).await?;
     let store = FsStore::load(&scratch.path).await?;
-    let blob_conn = endpoint.connect(blob_ticket.addr().clone(), BLOBS_ALPN).await?;
-    let mut progress_send = connection.open_uni().await?;
     
-    let transfer_res = do_transfer(
-        &session_id, &manifest, store.remote().fetch(blob_conn, blob_ticket.clone()).stream(), 
-        &mut progress_send, &mut control_recv, &mut cancel_rx, &event_tx
-    ).await?;
+    let outcome = async {
+        let blob_conn = endpoint.connect(blob_ticket.addr().clone(), BLOBS_ALPN).await?;
+        let mut progress_send = connection.open_uni().await?;
+        
+        let transfer_outcome = do_transfer(
+            &session_id, &manifest, store.remote().fetch(blob_conn, blob_ticket.clone()).stream(), 
+            &mut progress_send, &mut control_recv, &mut cancel_rx, &event_tx
+        ).await?;
 
-    if let Err(outcome) = transfer_res {
-        if let TransferOutcome::Cancelled(c) = &outcome {
+        if let TransferOutcome::Cancelled(c) = &transfer_outcome {
             let _ = send_receiver_cancel(&mut control_send, &session_id, c.by, c.phase, c.reason.clone()).await;
+            return Ok::<_, anyhow::Error>(transfer_outcome);
         }
-        return Ok(outcome);
-    }
 
-    // --- Phase 4: Export & Finalize ---
-    info!(%session_id, "exporting files");
-    tokio::select! {
-        res = export_downloaded_collection(&store, blob_ticket.hash(), &expected_transfer_files) => res?,
-        _ = wait_for_cancel(&mut cancel_rx) => return abort_session(&mut control_send, &session_id, protocol_message::CancelPhase::Transferring).await,
-    };
+        // --- Phase 5: Export & Acknowledgement ---
+        info!(%session_id, "exporting files to {}", request.out_dir.display());
+        tokio::select! {
+            res = export_downloaded_collection(&store, blob_ticket.hash(), &expected_transfer_files) => res?,
+            _ = wait_for_cancel(&mut cancel_rx) => return abort_session(&mut control_send, &session_id, protocol_message::CancelPhase::Transferring).await,
+        };
 
-    let _ = protocol_wire::write_receiver_message(&mut progress_send, &protocol_message::ReceiverMessage::TransferCompleted(protocol_message::TransferCompleted { session_id: session_id.clone() })).await;
-    let _ = send_transfer_result(&mut control_send, &session_id, protocol_message::TransferStatus::Ok).await;
-    
-    // Final Acknowledgement from Sender
-    match protocol_wire::read_sender_message(&mut control_recv).await? {
-        protocol_message::SenderMessage::TransferAck(_) => {
-            let _ = control_send.finish();
-            emit_receiver_event(&event_tx, ReceiverEvent::Completed { session_id: session_id.clone() });
-            Ok(TransferOutcome::Completed)
-        },
-        _ => bail!("missing final transfer ack from sender"),
-    }
+        let _ = protocol_wire::write_receiver_message(&mut progress_send, &protocol_message::ReceiverMessage::TransferCompleted(protocol_message::TransferCompleted { session_id: session_id.clone() })).await;
+        let _ = send_transfer_result(&mut control_send, &session_id, protocol_message::TransferStatus::Ok).await;
+        
+        // Final wait for Sender to acknowledge our result
+        match protocol_wire::read_sender_message(&mut control_recv).await? {
+            protocol_message::SenderMessage::TransferAck(_) => {
+                let _ = control_send.finish();
+                emit_receiver_event(&event_tx, ReceiverEvent::Completed { session_id: session_id.clone() });
+                Ok(TransferOutcome::Completed)
+            },
+            _ => bail!("missing final transfer ack from sender"),
+        }
+    }.await;
+
+    let _ = store.shutdown().await;
+    outcome
+}
+
+enum HandshakeResult {
+    Ok(iroh::endpoint::SendStream, iroh::endpoint::RecvStream, protocol_message::Hello, protocol_message::Offer),
+    Cancelled(TransferOutcome),
 }
 
 async fn do_handshake(
     endpoint: &Endpoint,
     request: &ReceiverRequest,
-    send: &mut iroh::endpoint::SendStream,
-    recv: &mut iroh::endpoint::RecvStream,
-    cancel_rx: &mut watch::Receiver<bool>,
     conn: &Connection,
-) -> Result<Result<(protocol_message::Hello, protocol_message::Offer), TransferOutcome>> {
+    cancel_rx: &mut watch::Receiver<bool>,
+) -> Result<HandshakeResult> {
     tokio::select! {
         res = async {
-            let hello = match protocol_wire::read_sender_message(recv).await? {
+            let (mut send, mut recv) = tokio::time::timeout(Duration::from_secs(30), conn.accept_bi())
+                .await
+                .context("handshake stream timeout")?
+                .context("accepting bi-stream")?;
+            let hello = match protocol_wire::read_sender_message(&mut recv).await? {
                 protocol_message::SenderMessage::Hello(h) => h,
-                protocol_message::SenderMessage::Cancel(c) => return Ok(Err(TransferOutcome::from_remote_cancel(c, "")?)),
+                protocol_message::SenderMessage::Cancel(c) => return Ok(HandshakeResult::Cancelled(TransferOutcome::from_remote_cancel(c, "")?)),
                 _ => bail!("expected hello from sender"),
             };
-            protocol_wire::write_receiver_message(send, &protocol_message::ReceiverMessage::Hello(protocol_message::Hello {
+            protocol_wire::write_receiver_message(&mut send, &protocol_message::ReceiverMessage::Hello(protocol_message::Hello {
                 version: protocol_message::PROTOCOL_VERSION,
                 session_id: hello.session_id.clone(),
                 identity: protocol_message::Identity {
@@ -297,15 +304,15 @@ async fn do_handshake(
                     device_type: to_protocol_device_type(request.device_type),
                 }
             })).await?;
-            let offer = match protocol_wire::read_sender_message(recv).await? {
+            let offer = match protocol_wire::read_sender_message(&mut recv).await? {
                 protocol_message::SenderMessage::Offer(o) => o,
-                protocol_message::SenderMessage::Cancel(c) => return Ok(Err(TransferOutcome::from_remote_cancel(c, &hello.session_id)?)),
+                protocol_message::SenderMessage::Cancel(c) => return Ok(HandshakeResult::Cancelled(TransferOutcome::from_remote_cancel(c, &hello.session_id)?)),
                 _ => bail!("expected offer from sender"),
             };
-            Ok(Ok((hello, offer)))
+            Ok(HandshakeResult::Ok(send, recv, hello, offer))
         } => res,
-        _ = wait_for_cancel(cancel_rx) => Ok(Err(TransferOutcome::local_cancel(protocol_message::TransferRole::Receiver, protocol_message::CancelPhase::WaitingForDecision))),
-        _ = tokio::time::sleep(Duration::from_secs(30)) => bail!("handshake timeout"),
+        _ = wait_for_cancel(cancel_rx) => Ok(HandshakeResult::Cancelled(TransferOutcome::local_cancel(protocol_message::TransferRole::Receiver, protocol_message::CancelPhase::WaitingForDecision))),
+        _ = tokio::time::sleep(Duration::from_secs(30)) => bail!("handshake timed out"),
         _ = conn.closed() => bail!("connection closed during handshake"),
     }
 }
@@ -318,7 +325,7 @@ async fn do_transfer(
     control_recv: &mut iroh::endpoint::RecvStream,
     cancel_rx: &mut watch::Receiver<bool>,
     event_tx: &Option<mpsc::UnboundedSender<Result<ReceiverEvent>>>,
-) -> Result<Result<(), TransferOutcome>> {
+) -> Result<TransferOutcome> {
     let mut last_report = 0u64;
     emit_receiver_event(event_tx, ReceiverEvent::TransferStarted {
         session_id: session_id.to_owned(),
@@ -336,14 +343,20 @@ async fn do_transfer(
                         last_report = offset;
                     }
                 }
-                Some(GetProgressItem::Done(_)) | None => return Ok(Ok(())),
-                Some(GetProgressItem::Error(e)) => bail!("transfer pull error: {e}"),
+                Some(GetProgressItem::Done(_)) | None => {
+                    // Final ensure: report 100% progress if not already sent
+                    if last_report < manifest.total_size {
+                        let _ = protocol_wire::write_receiver_message(progress_send, &protocol_message::ReceiverMessage::TransferProgress(protocol_message::TransferProgress { session_id: session_id.to_owned(), bytes_sent: manifest.total_size, total_bytes: manifest.total_size })).await;
+                    }
+                    return Ok(TransferOutcome::Completed);
+                },
+                Some(GetProgressItem::Error(e)) => bail!("blob fetch error: {e}"),
             },
             msg = protocol_wire::read_sender_message(control_recv) => match msg? {
-                protocol_message::SenderMessage::Cancel(c) => return Ok(Err(TransferOutcome::from_remote_cancel(c, session_id)?)),
-                _ => bail!("unexpected message during transfer"),
+                protocol_message::SenderMessage::Cancel(c) => return TransferOutcome::from_remote_cancel(c, session_id),
+                _ => bail!("unexpected control message during transfer"),
             },
-            _ = wait_for_cancel(cancel_rx) => return Ok(Err(TransferOutcome::local_cancel(protocol_message::TransferRole::Receiver, protocol_message::CancelPhase::Transferring))),
+            _ = wait_for_cancel(cancel_rx) => return Ok(TransferOutcome::local_cancel(protocol_message::TransferRole::Receiver, protocol_message::CancelPhase::Transferring)),
         }
     }
 }
@@ -352,6 +365,8 @@ async fn abort_session(send: &mut iroh::endpoint::SendStream, session_id: &str, 
     let outcome = TransferOutcome::local_cancel(protocol_message::TransferRole::Receiver, phase);
     if let TransferOutcome::Cancelled(c) = &outcome {
         let _ = send_receiver_cancel(send, session_id, c.by, c.phase, c.reason.clone()).await;
+        let _ = send.finish();
+        let _ = tokio::time::timeout(Duration::from_secs(2), send.stopped()).await;
     }
     Ok(outcome)
 }
@@ -378,7 +393,7 @@ async fn build_expected_files(manifest: &OfferManifest, out_dir: &Path) -> Resul
 }
 
 fn build_expected_transfer_files(manifest: &OfferManifest, mut expected_files: BTreeMap<String, ExpectedTransferFile>) -> Result<Vec<ExpectedTransferFile>> {
-    manifest.files.iter().map(|f| expected_files.remove(&f.path).ok_or_else(|| anyhow!("missing expected file: {}", f.path))).collect()
+    manifest.files.iter().map(|f| expected_files.remove(&f.path).ok_or_else(|| anyhow!("missing expected file for {}", f.path))).collect()
 }
 
 fn to_protocol_device_type(dt: crate::protocol::DeviceType) -> protocol_message::DeviceType {
@@ -398,7 +413,6 @@ fn to_offer_manifest(offer: &protocol_message::Offer) -> OfferManifest {
 }
 
 fn emit_receiver_event(tx: &Option<mpsc::UnboundedSender<Result<ReceiverEvent>>>, event: ReceiverEvent) { if let Some(tx) = tx { let _ = tx.send(Ok(event)); } }
-fn ensure_matching_session_id(actual: &str, expected: &str) -> Result<()> { if actual == expected { Ok(()) } else { bail!("session ID mismatch") } }
 
 async fn send_receiver_cancel(send: &mut iroh::endpoint::SendStream, session_id: &str, by: protocol_message::TransferRole, phase: protocol_message::CancelPhase, reason: String) -> Result<()> {
     protocol_wire::write_receiver_message(send, &protocol_message::ReceiverMessage::Cancel(protocol_message::Cancel { session_id: session_id.to_owned(), by, phase, reason })).await
