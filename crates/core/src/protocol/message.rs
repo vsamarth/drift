@@ -4,7 +4,7 @@ use iroh::EndpointId;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-pub(crate) const PROTOCOL_VERSION: u32 = 2;
+pub const PROTOCOL_VERSION: u32 = 2;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
@@ -37,11 +37,11 @@ pub enum MessageKind {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub(crate) struct Identity {
-    pub(crate) role: TransferRole,
-    pub(crate) endpoint_id: EndpointId,
-    pub(crate) device_name: String,
-    pub(crate) device_type: DeviceType,
+pub struct Identity {
+    pub role: TransferRole,
+    pub endpoint_id: EndpointId,
+    pub device_name: String,
+    pub device_type: DeviceType,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -73,16 +73,16 @@ pub enum TransferStatus {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub(crate) struct TransferManifest {
-    pub(crate) items: Vec<ManifestItem>,
+pub struct TransferManifest {
+    pub items: Vec<ManifestItem>,
 }
 
 impl TransferManifest {
-    pub(crate) fn count(&self) -> usize {
+    pub fn count(&self) -> usize {
         self.items.len()
     }
 
-    pub(crate) fn total_size(&self) -> u64 {
+    pub fn total_size(&self) -> u64 {
         self.items
             .iter()
             .map(|item| match item {
@@ -99,79 +99,79 @@ pub enum ManifestItem {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub(crate) struct Hello {
-    pub(crate) version: u32,
-    pub(crate) session_id: String,
-    pub(crate) identity: Identity,
+pub struct Hello {
+    pub version: u32,
+    pub session_id: String,
+    pub identity: Identity,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub(crate) struct Offer {
-    pub(crate) session_id: String,
-    pub(crate) manifest: TransferManifest,
+pub struct Offer {
+    pub session_id: String,
+    pub manifest: TransferManifest,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub(crate) struct Accept {
-    pub(crate) session_id: String,
+pub struct Accept {
+    pub session_id: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub(crate) struct Decline {
-    pub(crate) session_id: String,
-    pub(crate) reason: String,
+pub struct Decline {
+    pub session_id: String,
+    pub reason: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub(crate) struct TransferStarted {
-    pub(crate) session_id: String,
-    pub(crate) file_count: u64,
-    pub(crate) total_bytes: u64,
+pub struct TransferStarted {
+    pub session_id: String,
+    pub file_count: u64,
+    pub total_bytes: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub(crate) struct TransferProgress {
-    pub(crate) session_id: String,
-    pub(crate) bytes_sent: u64,
-    pub(crate) total_bytes: u64,
+pub struct TransferProgress {
+    pub session_id: String,
+    pub bytes_sent: u64,
+    pub total_bytes: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub(crate) struct TransferCompleted {
-    pub(crate) session_id: String,
+pub struct TransferCompleted {
+    pub session_id: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub(crate) struct Cancel {
-    pub(crate) session_id: String,
-    pub(crate) by: TransferRole,
-    pub(crate) phase: CancelPhase,
-    pub(crate) reason: String,
+pub struct Cancel {
+    pub session_id: String,
+    pub by: TransferRole,
+    pub phase: CancelPhase,
+    pub reason: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub(crate) struct BlobTicketMessage {
-    pub(crate) session_id: String,
-    pub(crate) ticket: String,
+pub struct BlobTicketMessage {
+    pub session_id: String,
+    pub ticket: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub(crate) struct TransferResult {
-    pub(crate) session_id: String,
-    pub(crate) status: TransferStatus,
+pub struct TransferResult {
+    pub session_id: String,
+    pub status: TransferStatus,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub(crate) struct TransferAck {
-    pub(crate) session_id: String,
+pub struct TransferAck {
+    pub session_id: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub(crate) struct MessageEnvelope {
-    pub(crate) version: u32,
-    pub(crate) role: TransferRole,
-    pub(crate) kind: MessageKind,
-    pub(crate) message: Value,
+pub struct MessageEnvelope {
+    pub version: u32,
+    pub role: TransferRole,
+    pub kind: MessageKind,
+    pub message: Value,
 }
 
 /// Messages the sender can emit on the transfer control channel.
@@ -186,7 +186,7 @@ pub enum SenderMessage {
 }
 
 impl SenderMessage {
-    pub(crate) fn kind(&self) -> MessageKind {
+    pub fn kind(&self) -> MessageKind {
         match self {
             Self::Hello(_) => MessageKind::Hello,
             Self::Offer(_) => MessageKind::Offer,
@@ -196,7 +196,7 @@ impl SenderMessage {
         }
     }
 
-    pub(crate) fn role(&self) -> TransferRole {
+    pub fn role(&self) -> TransferRole {
         TransferRole::Sender
     }
 }
@@ -216,7 +216,7 @@ pub enum ReceiverMessage {
 }
 
 impl ReceiverMessage {
-    pub(crate) fn kind(&self) -> MessageKind {
+    pub fn kind(&self) -> MessageKind {
         match self {
             Self::Hello(_) => MessageKind::Hello,
             Self::Accept(_) => MessageKind::Accept,
@@ -229,7 +229,7 @@ impl ReceiverMessage {
         }
     }
 
-    pub(crate) fn role(&self) -> TransferRole {
+    pub fn role(&self) -> TransferRole {
         TransferRole::Receiver
     }
 }

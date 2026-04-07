@@ -1,22 +1,21 @@
 use std::io::{self, Write};
 use std::path::PathBuf;
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, anyhow, bail};
 use clap::{Args, ValueEnum};
-use drift_app::{
-    ConflictPolicy, OfferDecision, ReceiverConfig, ReceiverEvent, ReceiverOfferPhase, ReceiverService,
-};
 use drift_core::discovery::{resolve_nearby, resolve_pairing_code};
 use drift_core::protocol::DeviceType;
 use drift_core::transfer_flow::{
-    SendRequest, Sender, SenderEvent, TransferOutcome,
+    ReceiverDecision, ReceiverEvent, ReceiverOffer, ReceiverRequest,
+    ReceiverSession, ReceiverStart, SendRequest, Sender, SenderEvent, TransferOutcome,
 };
-use drift_core::util::{human_size, process_display_device_name};
+use drift_core::util::{human_size, process_display_device_name, make_ticket};
+use drift_core::lan::LanReceiveAdvertisement;
+use drift_core::rendezvous::{RendezvousClient, resolve_server_url};
 use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
-use iroh::SecretKey;
 use tokio::time::Duration;
 use tokio_stream::StreamExt;
-use tracing::{debug, info, warn};
+use tracing::{info, warn};
 use tracing_subscriber::EnvFilter;
 
 /// Log line format for stderr (`json` is one JSON object per line).
@@ -77,7 +76,11 @@ fn log_env_filter(verbose: u8) -> EnvFilter {
     EnvFilter::new(format!("warn,drift={level}"))
 }
 
-pub async fn send(code: String, files: Vec<PathBuf>, server_url: Option<String>) -> Result<()> {
+pub async fn send(code: String, files: Vec<PathBuf>) -> Result<()> {
+    send_with_server(code, files, None).await
+}
+
+pub async fn send_with_server(code: String, files: Vec<PathBuf>, server_url: Option<String>) -> Result<()> {
     let device_name = process_display_device_name();
     
     info!(
@@ -200,7 +203,7 @@ async fn consume_sender_run(
     run: drift_core::transfer_flow::sender::SenderRun,
     progress_bar: &mut Option<ProgressBar>,
 ) -> Result<TransferOutcome> {
-    let (mut events, outcome_rx) = run.into_parts();
+    let (mut events, _cancel_tx, outcome_rx) = run.into_parts();
     while let Some(event) = events.next().await {
         match event {
             Ok(event) => render_sender_event(progress_bar, &event),
@@ -213,7 +216,8 @@ async fn consume_sender_run(
     }
 
     finish_progress_bar(progress_bar);
-    outcome_rx.await.context("waiting for send outcome")?
+    let outcome: Result<TransferOutcome> = outcome_rx.await.context("waiting for send outcome")?;
+    outcome
 }
 
 fn render_sender_event(
@@ -266,162 +270,130 @@ pub async fn receive(out_dir: PathBuf, server_url: Option<String>) -> Result<()>
         "receive.started"
     );
 
-    let mut progress_bar = None;
-    let mut last_phase = None;
-    let service = ReceiverService::start(ReceiverConfig {
-        device_name,
-        device_type: "laptop".to_owned(),
-        download_root: out_dir,
-        conflict_policy: ConflictPolicy::Reject,
-        secret_key: SecretKey::from_bytes(&rand::random()),
-    })
-    .await?;
-
-    let registration = service.setup(server_url).await?;
+    let endpoint = drift_core::transfer_flow::receiver::bind_endpoint().await?;
+    let ticket = make_ticket(&endpoint).await?;
+    
+    // 1. Start mDNS Advertising
+    let _advertiser = LanReceiveAdvertisement::start(&ticket, &device_name)?;
+    
+    // 2. Register with Rendezvous
+    let rendezvous = RendezvousClient::new(resolve_server_url(server_url.as_deref()));
+    let registration = rendezvous.register_peer(ticket).await?;
+    
     info!(code = %registration.code, expires_at = %registration.expires_at, "receive.ready");
     eprintln!(
         "Pairing code: {} (expires {})",
         registration.code, registration.expires_at
     );
-    if let Err(error) = service.set_discoverable(true).await {
-        warn!(error = %error, "receive.discoverability_unavailable");
-    }
+    eprintln!("Waiting for a sender to connect...");
 
-    let mut event_rx = service.subscribe_events();
-    let mut current_offer_phase = None;
-    let mut cancellation_requested = false;
-    let outcome = loop {
-        tokio::select! {
-            _ = tokio::signal::ctrl_c() => {
-                match current_offer_phase {
-                    Some(ReceiverOfferPhase::OfferReady) if !cancellation_requested => {
-                        cancellation_requested = true;
-                        info!("receive.decline_requested");
-                        service.respond_to_offer(OfferDecision::Decline).await?;
-                    }
-                    Some(ReceiverOfferPhase::Receiving) if !cancellation_requested => {
-                        cancellation_requested = true;
-                        info!("receive.cancel_requested");
-                        service.cancel_transfer().await?;
-                    }
-                    _ => break Ok(()),
-                }
-            }
-            event = event_rx.recv() => {
-                match event {
-                    Ok(ReceiverEvent::OfferUpdated(event)) => {
-                        current_offer_phase = Some(event.phase);
-                        render_receive_event(&mut last_phase, &mut progress_bar, &event);
-                        match event.phase {
-                            ReceiverOfferPhase::OfferReady => {
-                                info!("receive.auto_accepting");
-                                service.respond_to_offer(OfferDecision::Accept).await?;
-                            }
-                            ReceiverOfferPhase::Completed
-                            | ReceiverOfferPhase::Declined
-                            | ReceiverOfferPhase::Cancelled => {
-                                break Ok(());
-                            }
-                            ReceiverOfferPhase::Failed => {
-                                let message = event
-                                    .error_message
-                                    .clone()
-                                    .unwrap_or_else(|| event.status_message.clone());
-                                break Err(anyhow::anyhow!(message));
-                            }
-                            ReceiverOfferPhase::Connecting | ReceiverOfferPhase::Receiving => {}
-                        }
-                    }
-                    Ok(ReceiverEvent::RegistrationUpdated(registration)) => {
-                        info!(code = %registration.code, expires_at = %registration.expires_at, "receive.code_rotated");
-                    }
-                    Ok(ReceiverEvent::SetupCompleted(_)) => {}
-                    Ok(ReceiverEvent::DiscoverabilityChanged { requested, active }) => {
-                        debug!(requested, active, "receive.discoverability");
-                    }
-                    Ok(ReceiverEvent::Shutdown) => break Ok(()),
-                    Err(tokio::sync::broadcast::error::RecvError::Closed) => break Ok(()),
-                    Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
-                        debug!(skipped, "receive.event_lagged");
-                    }
-                }
-            }
+    // 3. Wait for one connection
+    let incoming = endpoint.accept().await.ok_or_else(|| anyhow!("listener closed"))?;
+    let connection = incoming.await?;
+    
+    // 4. Run the session
+    let session = ReceiverSession::new(ReceiverRequest {
+        device_name,
+        device_type: DeviceType::Laptop,
+        out_dir,
+    });
+    
+    let start = session.start(endpoint, connection);
+    let outcome = consume_receiver_run(start).await?;
+    
+    match outcome {
+        TransferOutcome::Completed => {
+            info!("receive.completed");
+            println!("\nTransfer completed successfully!");
         }
-    };
-    finish_progress_bar(&mut progress_bar);
-    let _ = service.shutdown().await;
-
-    match &outcome {
-        Ok(()) => info!("receive.session_finished_ok"),
-        Err(e) => {
-            warn!(error = %e, error_chain = %format!("{e:#}"), "receive.session_finished_err")
+        TransferOutcome::Declined { reason } => {
+            info!(%reason, "receive.declined");
+            println!("\nTransfer declined: {}", reason);
+        }
+        TransferOutcome::Cancelled(c) => {
+            info!(by = ?c.by, reason = %c.reason, "receive.cancelled");
+            println!("\nTransfer cancelled by {:?}: {}", c.by, c.reason);
         }
     }
 
-    outcome
+    Ok(())
 }
 
-fn render_receive_event(
-    last_phase: &mut Option<ReceiverOfferPhase>,
-    progress_bar: &mut Option<ProgressBar>,
-    event: &drift_app::ReceiverOfferEvent,
-) {
-    if last_phase.as_ref() != Some(&event.phase) {
-        match event.phase {
-            ReceiverOfferPhase::OfferReady => {
-                info!(
-                    phase = "waiting_for_decision",
-                    sender = %event.sender_name,
-                    file_count = event.item_count,
-                    total_bytes = event.total_size_bytes,
-                    total_human = %event.total_size_label,
-                    "receive.phase"
-                );
-            }
-            ReceiverOfferPhase::Receiving => {
-                let path = event.connection_path.as_deref().unwrap_or("unknown");
-                info!(
-                    phase = "receiving",
-                    sender = %event.sender_name,
-                    connection_path = path,
-                    file_count = event.item_count,
-                    total_bytes = event.total_size_bytes,
-                    "receive.phase"
-                );
-            }
-            ReceiverOfferPhase::Completed => {
-                let path = event.connection_path.as_deref().unwrap_or("unknown");
-                info!(phase = "completed", sender = %event.sender_name, connection_path = path, "receive.phase");
-            }
-            ReceiverOfferPhase::Declined => {
-                info!(phase = "declined", sender = %event.sender_name, "receive.phase");
-            }
-            ReceiverOfferPhase::Cancelled => {
-                info!(phase = "cancelled", sender = %event.sender_name, "receive.phase");
-            }
-            ReceiverOfferPhase::Failed => {
-                warn!(phase = "failed", sender = %event.sender_name, error = ?event.error_message, "receive.phase");
-            }
-            ReceiverOfferPhase::Connecting => {}
+async fn consume_receiver_run(
+    start: ReceiverStart,
+) -> Result<TransferOutcome> {
+    let ReceiverStart {
+        mut events,
+        offer_rx,
+        outcome_rx,
+        control,
+    } = start;
+
+    let mut progress_bar = None;
+
+    // 1. Wait for offer
+    let offer = tokio::select! {
+        offer = offer_rx => offer.context("waiting for offer")??,
+        _ = tokio::signal::ctrl_c() => {
+            let _ = control.decision_tx.send(ReceiverDecision::Decline);
+            bail!("interrupted");
         }
-        *last_phase = Some(event.phase);
+    };
+
+    // 2. Render offer and auto-accept for CLI (for now)
+    render_offer(&offer);
+    info!("receive.auto_accepting");
+    control.decision_tx.send(ReceiverDecision::Accept).map_err(|_| anyhow!("failed to send decision"))?;
+
+    // 3. Process events
+    while let Some(event) = events.next().await {
+        match event {
+            Ok(event) => render_receiver_event(&mut progress_bar, &event),
+            Err(error) => {
+                warn!(error = %error, error_chain = %format!("{error:#}"), "receive.failed");
+                finish_progress_bar(&mut progress_bar);
+                return Err(error);
+            }
+        }
     }
 
-    match event.phase {
-        ReceiverOfferPhase::Connecting | ReceiverOfferPhase::OfferReady => {
+    finish_progress_bar(&mut progress_bar);
+    outcome_rx.await.context("waiting for outcome")?
+}
+
+fn render_offer(offer: &ReceiverOffer) {
+    println!("\nIncoming Transfer from {}:", offer.sender_device_name);
+    println!("  Files: {}", offer.file_count);
+    println!("  Total Size: {}", human_size(offer.total_size));
+    println!();
+}
+
+fn render_receiver_event(
+    progress_bar: &mut Option<ProgressBar>,
+    event: &ReceiverEvent,
+) {
+    match event {
+        ReceiverEvent::Listening { .. } => {
             let pb = ensure_spinner(progress_bar);
-            pb.set_message(event.status_message.clone());
+            pb.set_message("Waiting for sender...");
         }
-        ReceiverOfferPhase::Receiving => {
+        ReceiverEvent::OfferReceived { sender_device_name, .. } => {
             let pb = ensure_spinner(progress_bar);
-            configure_transfer_bar(pb, event.total_size_bytes.max(1));
-            pb.set_position(event.bytes_received.min(event.total_size_bytes));
-            pb.set_message(event.status_message.clone());
+            pb.set_message(format!("Offer received from {sender_device_name}"));
         }
-        ReceiverOfferPhase::Completed
-        | ReceiverOfferPhase::Cancelled
-        | ReceiverOfferPhase::Declined
-        | ReceiverOfferPhase::Failed => finish_progress_bar(progress_bar),
+        ReceiverEvent::TransferStarted { file_count, total_bytes, .. } => {
+            let pb = ensure_spinner(progress_bar);
+            configure_transfer_bar(pb, *total_bytes);
+            pb.set_message(format!("Receiving {file_count} files..."));
+        }
+        ReceiverEvent::TransferProgress { bytes_received, total_bytes, .. } => {
+            let pb = ensure_spinner(progress_bar);
+            configure_transfer_bar(pb, *total_bytes);
+            pb.set_position(*bytes_received);
+        }
+        ReceiverEvent::Completed { .. } => {
+            finish_progress_bar(progress_bar);
+        }
     }
 }
 

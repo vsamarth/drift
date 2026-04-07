@@ -284,7 +284,7 @@ impl SendSession {
         );
 
         let sender_run = sender.run_with_events();
-        let (mut core_events, outcome_rx) = sender_run.into_parts();
+        let (mut core_events, _cancel_tx, outcome_rx) = sender_run.into_parts();
         let mut current_label = destination_label.clone();
 
         while let Some(event) = core_events.next().await {
@@ -301,7 +301,7 @@ impl SendSession {
             }
         }
 
-        let core_outcome = outcome_rx.await.context("waiting for sender outcome")?;
+        let core_outcome: Result<CoreTransferOutcome> = outcome_rx.await.context("waiting for sender outcome")?;
 
         match core_outcome {
             Ok(CoreTransferOutcome::Completed) => Ok(SendSessionOutcome::Accepted {
