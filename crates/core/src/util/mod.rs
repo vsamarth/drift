@@ -106,6 +106,19 @@ pub fn human_size(bytes: u64) -> String {
     }
 }
 
+pub fn format_code_label(code: &str) -> String {
+    let normalized = code.trim().to_ascii_uppercase();
+    let chars: Vec<char> = normalized.chars().filter(|ch| ch.is_ascii_alphanumeric()).collect();
+    if chars.len() != 6 {
+        return "Code".to_owned();
+    }
+
+    format!(
+        "Code {}{} {}{} {}{}",
+        chars[0], chars[1], chars[2], chars[3], chars[4], chars[5]
+    )
+}
+
 pub async fn make_ticket(endpoint: &Endpoint) -> Result<String> {
     endpoint.online().await;
     make_ticket_from_addr(endpoint.addr())

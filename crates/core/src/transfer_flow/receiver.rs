@@ -18,13 +18,15 @@ use tracing::info;
 
 use crate::{
     blobs::receive::BlobReceiver,
-    receiver::{
-        ReceiveTransferOutcome, ReceiveTransferProgress,
-        receiver_finish_after_decision_with_progress, receiver_run_until_decision,
-    },
+    fs_plan::receive::build_expected_files,
     protocol::wire as protocol_wire,
     protocol::{message as protocol_message, receive as protocol_receiver},
-    transfer::{ReceiverMachine, ReceiverState},
+    rendezvous::{OfferFile, OfferManifest},
+    session::{
+        FileReceiveProgress, build_expected_transfer_files,
+        receive_files_over_connection_with_progress,
+    },
+    transfer::TransferCancellation,
     protocol::ALPN,
 };
 
@@ -39,6 +41,13 @@ pub struct ReceiverRequest {
 pub enum ReceiverDecision {
     Accept,
     Decline,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ReceiveTransferOutcome {
+    Completed,
+    Declined,
+    Cancelled(TransferCancellation),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -286,39 +295,64 @@ async fn run_session(
     decision_rx: oneshot::Receiver<ReceiverDecision>,
     cancel_rx: watch::Receiver<bool>,
 ) -> Result<ReceiveTransferOutcome> {
-    let mut machine = ReceiverMachine::new();
-    let _ = machine.transition(ReceiverState::Discoverable);
-    let _ = machine.transition(ReceiverState::Connecting);
-    let _ = machine.transition(ReceiverState::Connected);
+    emit_receiver_event(
+        &event_tx,
+        ReceiverEvent::Listening {
+            endpoint_id: endpoint.addr().id,
+        },
+    );
 
-    let pending = match receiver_run_until_decision(
-        endpoint,
-        connection,
-        request.out_dir.clone(),
-        &request.device_name,
-        request.device_type,
-        &mut machine,
-    )
-    .await
-    {
-        Ok(pending) => pending,
+    let (mut control_send, mut control_recv) = connection
+        .accept_bi()
+        .await
+        .context("waiting for transfer control stream")?;
+
+    let mut handshake = protocol_receiver::Receiver::new(protocol_message::Identity {
+        role: protocol_message::TransferRole::Receiver,
+        endpoint_id: endpoint.addr().id,
+        device_name: request.device_name.clone(),
+        device_type: to_protocol_device_type(request.device_type),
+    });
+
+    let peer_hello = handshake
+        .read_peer_hello(&mut control_recv)
+        .await
+        .context("reading sender hello")?;
+    handshake
+        .send_hello(&mut control_send, &peer_hello.session_id)
+        .await
+        .context("sending receiver hello")?;
+
+    let offer = handshake
+        .read_offer(&mut control_recv, &peer_hello.session_id)
+        .await
+        .context("reading transfer offer")?;
+
+    let session_id = peer_hello.session_id.clone();
+    let sender_device_name = peer_hello.identity.device_name.clone();
+    let sender_device_type = to_local_device_type(peer_hello.identity.device_type);
+    let sender_endpoint_id = peer_hello.identity.endpoint_id;
+    let manifest = to_offer_manifest(&offer);
+
+    let expected_files = match build_expected_files(&manifest, &request.out_dir).await {
+        Ok(expected_files) => expected_files,
         Err(err) => {
+            let _ = handshake
+                .decline(&mut control_send, &session_id, err.to_string())
+                .await;
             let message = format!("{err:#}");
             let _ = offer_tx.send(Err(anyhow::anyhow!(message.clone())));
             emit_receiver_error(&event_tx, anyhow::anyhow!(message.clone()));
             return Err(anyhow::anyhow!(message));
         }
     };
-    let session_id = pending.session_id().to_owned();
-    let sender_device_name = pending.sender_device_name().to_owned();
-    let sender_device_type = pending.sender_device_type();
-    let sender_endpoint_id = pending.connection().remote_id();
-    let manifest = pending.manifest().clone();
+    let expected_transfer_files = build_expected_transfer_files(&manifest, expected_files)
+        .context("building transfer file list")?;
 
     let offer = ReceiverOffer {
         session_id: session_id.clone(),
         sender_device_name: sender_device_name.clone(),
-        sender_device_type: sender_device_type,
+        sender_device_type,
         sender_endpoint_id,
         items: manifest
             .files
@@ -354,6 +388,24 @@ async fn run_session(
 
     match decision {
         ReceiverDecision::Accept => {
+            match handshake.accept(&mut control_send, &session_id).await {
+                Ok(protocol_receiver::ReceiverControlOutcome::Accepted(sender)) => {
+                    info!(
+                        session_id = %sender.session_id,
+                        sender_device_name = %sender.identity.device_name,
+                        sender_endpoint_id = %sender.identity.endpoint_id,
+                        "demo.receive.accepted"
+                    );
+                }
+                Ok(other) => {
+                    return Err(anyhow::anyhow!(
+                        "unexpected receiver control outcome after accept: {:?}",
+                        other
+                    ));
+                }
+                Err(error) => return Err(error),
+            }
+
             emit_receiver_event(
                 &event_tx,
                 ReceiverEvent::TransferStarted {
@@ -362,45 +414,61 @@ async fn run_session(
                     total_bytes: manifest.total_size,
                 },
             );
+
             let progress_event_tx = event_tx.clone();
             let progress_session_id = session_id.clone();
-            let mut progress_cb = |progress: ReceiveTransferProgress| {
+            let mut progress_cb = |progress: FileReceiveProgress| {
                 let _ = progress_event_tx.as_ref().map(|tx| {
                     tx.send(Ok(ReceiverEvent::TransferProgress {
                         session_id: progress_session_id.clone(),
-                        bytes_received: progress.bytes_received,
-                        total_bytes: progress.total_bytes,
+                        bytes_received: progress.total_bytes_received,
+                        total_bytes: progress.total_bytes_to_receive,
                     }))
                 });
             };
-            let outcome = receiver_finish_after_decision_with_progress(
-                pending,
-                &mut machine,
-                true,
+
+            let outcome = receive_files_over_connection_with_progress(
+                &endpoint,
+                &mut control_send,
+                &mut control_recv,
+                &session_id,
+                expected_transfer_files,
                 Some(cancel_rx),
                 &mut progress_cb,
             )
             .await?;
-            if matches!(outcome, ReceiveTransferOutcome::Completed) {
+
+            if outcome.is_none() {
                 emit_receiver_event(
                     &event_tx,
                     ReceiverEvent::Completed {
                         session_id: session_id.clone(),
                     },
                 );
+                Ok(ReceiveTransferOutcome::Completed)
+            } else {
+                Ok(ReceiveTransferOutcome::Cancelled(
+                    outcome.expect("cancelled transfer has outcome"),
+                ))
             }
-            Ok(outcome)
         }
         ReceiverDecision::Decline => {
-            let outcome = receiver_finish_after_decision_with_progress(
-                pending,
-                &mut machine,
-                false,
-                Some(cancel_rx),
-                &mut |_| {},
-            )
-            .await?;
-            Ok(outcome)
+            let outcome = handshake
+                .decline(
+                    &mut control_send,
+                    &session_id,
+                    "receiver declined the transfer".to_owned(),
+                )
+                .await
+                .context("sending receiver decline")?;
+            if let protocol_receiver::ReceiverControlOutcome::Declined(message) = outcome {
+                info!(
+                    session_id = %message.session_id,
+                    reason = %message.reason,
+                    "demo.receive.declined"
+                );
+            }
+            Ok(ReceiveTransferOutcome::Declined)
         }
     }
 }
@@ -797,6 +865,25 @@ fn to_local_device_type(device_type: protocol_message::DeviceType) -> crate::pro
     match device_type {
         protocol_message::DeviceType::Phone => crate::protocol::DeviceType::Phone,
         protocol_message::DeviceType::Laptop => crate::protocol::DeviceType::Laptop,
+    }
+}
+
+fn to_offer_manifest(offer: &protocol_message::Offer) -> OfferManifest {
+    let files = offer
+        .manifest
+        .items
+        .iter()
+        .map(|item| match item {
+            protocol_message::ManifestItem::File { path, size } => OfferFile {
+                path: path.clone(),
+                size: *size,
+            },
+        })
+        .collect();
+    OfferManifest {
+        files,
+        file_count: offer.manifest.count() as u64,
+        total_size: offer.manifest.total_size(),
     }
 }
 

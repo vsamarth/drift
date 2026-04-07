@@ -7,12 +7,11 @@ use drift_core::fs_plan::preview::{
     inspect_selected_paths,
 };
 use drift_core::rendezvous::{RendezvousClient, resolve_server_url, validate_code};
-use drift_core::sender::format_code_label;
 use drift_core::transfer_flow::{
     SendRequest, Sender, SenderEvent as CoreSenderEvent, SenderOutcome as CoreSenderOutcome,
 };
 use drift_core::protocol::DeviceType;
-use drift_core::util::decode_ticket;
+use drift_core::util::{decode_ticket, format_code_label};
 use iroh::EndpointId;
 use tokio::sync::{mpsc, oneshot};
 use tokio_stream::{StreamExt, wrappers::UnboundedReceiverStream};
