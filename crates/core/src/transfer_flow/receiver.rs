@@ -21,13 +21,13 @@ use crate::{
     fs_plan::receive::build_expected_files,
     protocol::wire as protocol_wire,
     protocol::{message as protocol_message, receive as protocol_receiver},
+    protocol::ALPN,
     rendezvous::{OfferFile, OfferManifest},
     session::{
         FileReceiveProgress, build_expected_transfer_files,
         receive_files_over_connection_with_progress,
     },
     transfer::TransferCancellation,
-    protocol::ALPN,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -834,9 +834,17 @@ impl ProtocolHandler for ReceiverHandler {
         }
 
         control_send.finish()?;
-        let _ =
-            tokio::time::timeout(std::time::Duration::from_secs(2), control_send.stopped()).await;
-        if let Some(done_tx) = self.done_tx.lock().expect("receiver done lock").take() {
+        let _ = tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            control_send.stopped(),
+        )
+        .await;
+        if let Some(done_tx) = self
+            .done_tx
+            .lock()
+            .expect("receiver done lock")
+            .take()
+        {
             let _ = done_tx.send(());
         }
         Ok(())
@@ -854,7 +862,9 @@ async fn bind_endpoint(secret_key: SecretKey) -> Result<Endpoint> {
         .context("binding iroh endpoint")
 }
 
-fn to_protocol_device_type(device_type: crate::protocol::DeviceType) -> protocol_message::DeviceType {
+fn to_protocol_device_type(
+    device_type: crate::protocol::DeviceType,
+) -> protocol_message::DeviceType {
     match device_type {
         crate::protocol::DeviceType::Phone => protocol_message::DeviceType::Phone,
         crate::protocol::DeviceType::Laptop => protocol_message::DeviceType::Laptop,
