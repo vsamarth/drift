@@ -23,7 +23,6 @@ pub enum SenderEvent {
     StorePrepared {
         session_id: String,
         root_hash: iroh_blobs::Hash,
-        /// Sum of file payload sizes (raw blobs); receiver uses this for progress totals.
         total_bytes: u64,
         collection: Collection,
     },

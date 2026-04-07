@@ -5,30 +5,37 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result, anyhow, bail};
 use futures_lite::StreamExt;
-use iroh::{Endpoint, RelayMode, endpoint::presets, protocol::Router};
+use iroh::{Endpoint, RelayMode, endpoint::presets};
+#[cfg(test)]
+use iroh::protocol::Router;
 use iroh_blobs::{
-    ALPN as BLOBS_ALPN, BlobFormat, BlobsProtocol, Hash,
-    api::{
-        TempTag,
-        blobs::{AddPathOptions, ExportMode, ExportOptions, ImportMode},
-        remote::GetProgressItem,
-    },
+    ALPN as BLOBS_ALPN,
+    api::{remote::GetProgressItem, blobs::ExportMode, blobs::ExportOptions},
     format::collection::Collection,
-    provider::events::{EventMask, EventSender, ProviderMessage, RequestMode, RequestUpdate},
     store::fs::FsStore,
     ticket::BlobTicket,
 };
+#[cfg(test)]
+use iroh_blobs::{
+    BlobFormat, BlobsProtocol, Hash,
+    api::{
+        TempTag,
+        blobs::{AddPathOptions, ImportMode},
+    },
+    provider::events::{EventMask, EventSender, ProviderMessage, RequestMode, RequestUpdate},
+};
 use tokio::fs;
-use tokio::sync::{mpsc, watch};
+#[cfg(test)]
+use tokio::sync::mpsc;
+use tokio::sync::watch;
 use tokio::time::{Duration, timeout};
-use tracing::trace;
 
+#[cfg(test)]
 use crate::fs_plan::prepare::PreparedFile;
-use crate::fs_plan::receive::{ExpectedFile, build_expected_files};
+use crate::fs_plan::receive::ExpectedFile;
 use crate::protocol::{message as protocol_message, wire as protocol_wire};
 use crate::rendezvous::OfferManifest;
 use crate::transfer::TransferCancellation;
-use crate::util::describe_remote;
 use crate::protocol::ALPN;
 
 const CONTROL_STREAM_FINISH_TIMEOUT: Duration = Duration::from_secs(2);
@@ -56,6 +63,7 @@ pub struct ExpectedTransferFile {
     pub destination: PathBuf,
 }
 
+#[cfg(test)]
 struct BlobProvider {
     router: Router,
     root: TempDir,
@@ -103,143 +111,6 @@ pub async fn bind_endpoint() -> Result<Endpoint> {
         .bind()
         .await
         .context("binding iroh endpoint")
-}
-
-pub async fn connect_to_ticket(
-    endpoint: &Endpoint,
-    ticket: iroh::EndpointAddr,
-) -> Result<iroh::endpoint::Connection> {
-    let connection = endpoint
-        .connect(ticket, ALPN)
-        .await
-        .context("connecting to peer")?;
-
-    println!(
-        "Connected to {}",
-        describe_remote(
-            connection.remote_id(),
-            endpoint.remote_info(connection.remote_id()).await.as_ref()
-        )
-    );
-
-    Ok(connection)
-}
-
-pub async fn send_files_over_connection<F>(
-    endpoint: &Endpoint,
-    control_send: &mut iroh::endpoint::SendStream,
-    control_recv: &mut iroh::endpoint::RecvStream,
-    session_id: &str,
-    files: &[PreparedFile],
-    mut cancel_rx: Option<watch::Receiver<bool>>,
-    mut on_progress: F,
-) -> Result<Option<TransferCancellation>>
-where
-    F: FnMut(FileSendProgress),
-{
-    let mut provider = prepare_blob_provider(endpoint, session_id, files).await?;
-    let ticket = provider.ticket().await?;
-    trace!(
-        session_id = %session_id,
-        blob_provider_ticket = %ticket,
-        "prepared blob provider ticket"
-    );
-
-    protocol_wire::write_sender_message(
-        control_send,
-        &protocol_message::SenderMessage::BlobTicket(protocol_message::BlobTicketMessage {
-            session_id: session_id.to_owned(),
-            ticket,
-        }),
-    )
-    .await
-    .context("sending blob transfer ticket")?;
-
-    let result = loop {
-        tokio::select! {
-            maybe_progress = provider.progress_rx.recv() => {
-                if let Some(progress) = maybe_progress {
-                    on_progress(progress);
-                }
-            }
-            cancel_requested = wait_for_cancel(&mut cancel_rx), if cancel_rx.is_some() => {
-                if cancel_requested {
-                    let cancellation = local_cancellation(
-                        protocol_message::TransferRole::Sender,
-                        protocol_message::CancelPhase::Transferring,
-                    );
-                    let _ = send_sender_cancel(
-                        control_send,
-                        session_id,
-                        cancellation.by,
-                        cancellation.phase,
-                        cancellation.reason.clone(),
-                    ).await;
-                    break Ok(Some(cancellation));
-                }
-            }
-            control_message = protocol_wire::read_receiver_message(control_recv) => {
-                let outcome = match control_message.context("waiting for final transfer result")? {
-                    protocol_message::ReceiverMessage::TransferResult(result) => {
-                        ensure_matching_session_id(&result.session_id, session_id)?;
-                        if !matches!(result.status, protocol_message::TransferStatus::Ok) {
-                            Err(anyhow!(
-                                "receiver failed transfer: {}",
-                                transfer_status_summary(&result.status)
-                            ))
-                        } else {
-                            Ok(None)
-                        }
-                    }
-                    protocol_message::ReceiverMessage::Cancel(cancel) => {
-                        Ok(Some(cancellation_from_message(cancel, session_id)?))
-                    }
-                    other => Err(anyhow!("unexpected final control message: {:?}", other)),
-                };
-                break outcome;
-            }
-        }
-    };
-
-    let ack_result: Result<()> = if matches!(result, Ok(None)) {
-        send_transfer_ack(control_send, session_id).await?;
-        control_send.finish()?;
-        let _ = timeout(CONTROL_STREAM_FINISH_TIMEOUT, control_send.stopped()).await;
-        Ok(())
-    } else {
-        let _ = control_send.finish();
-        Ok(())
-    };
-
-    // Always tear down the blob provider even if ACK/finish fails, to avoid leaking
-    // router/store resources on sender-side protocol errors.
-    let shutdown_result = provider.shutdown().await;
-    shutdown_result?;
-    let outcome = result?;
-    ack_result?;
-    Ok(outcome)
-}
-
-pub async fn receive_files_over_connection(
-    endpoint: &Endpoint,
-    control_send: &mut iroh::endpoint::SendStream,
-    control_recv: &mut iroh::endpoint::RecvStream,
-    session_id: &str,
-    out_dir: PathBuf,
-    manifest: &OfferManifest,
-) -> Result<Option<TransferCancellation>> {
-    let expected_files =
-        build_expected_transfer_files(manifest, build_expected_files(manifest, &out_dir).await?)?;
-    receive_files_over_connection_with_progress(
-        endpoint,
-        control_send,
-        control_recv,
-        session_id,
-        expected_files,
-        None,
-        |_| {},
-    )
-    .await
 }
 
 pub async fn receive_files_over_connection_with_progress<F>(
@@ -446,6 +317,8 @@ pub fn build_expected_transfer_files(
     Ok(ordered)
 }
 
+#[cfg(test)]
+#[cfg(test)]
 impl BlobProvider {
     async fn ticket(&self) -> Result<String> {
         self.router.endpoint().online().await;
@@ -468,12 +341,14 @@ impl BlobProvider {
 }
 
 #[derive(Clone, Copy)]
+#[cfg(test)]
 struct BlobProgressState {
     hash: Hash,
     file_index: usize,
     file_size: u64,
 }
 
+#[cfg(test)]
 async fn prepare_blob_provider(
     endpoint: &Endpoint,
     session_id: &str,
@@ -533,6 +408,7 @@ async fn prepare_blob_provider(
     })
 }
 
+#[cfg(test)]
 fn spawn_blob_progress_forwarder(
     mut event_rx: mpsc::Receiver<ProviderMessage>,
     file_hashes: BTreeMap<Hash, BlobProgressState>,
@@ -562,6 +438,7 @@ fn spawn_blob_progress_forwarder(
     progress_rx
 }
 
+#[cfg(test)]
 async fn forward_request_updates(
     mut updates_rx: irpc::channel::mpsc::Receiver<RequestUpdate>,
     file_hashes: BTreeMap<Hash, BlobProgressState>,
@@ -743,25 +620,6 @@ fn transfer_error_status(
     protocol_message::TransferStatus::Error { code, message }
 }
 
-async fn send_sender_cancel(
-    control_send: &mut iroh::endpoint::SendStream,
-    session_id: &str,
-    by: protocol_message::TransferRole,
-    phase: protocol_message::CancelPhase,
-    reason: String,
-) -> Result<()> {
-    protocol_wire::write_sender_message(
-        control_send,
-        &protocol_message::SenderMessage::Cancel(protocol_message::Cancel {
-            session_id: session_id.to_owned(),
-            by,
-            phase,
-            reason,
-        }),
-    )
-    .await
-}
-
 async fn send_receiver_cancel(
     control_send: &mut iroh::endpoint::SendStream,
     session_id: &str,
@@ -791,19 +649,6 @@ async fn send_transfer_result(
         &protocol_message::ReceiverMessage::TransferResult(protocol_message::TransferResult {
             session_id: session_id.to_owned(),
             status,
-        }),
-    )
-    .await
-}
-
-async fn send_transfer_ack(
-    control_send: &mut iroh::endpoint::SendStream,
-    session_id: &str,
-) -> Result<()> {
-    protocol_wire::write_sender_message(
-        control_send,
-        &protocol_message::SenderMessage::TransferAck(protocol_message::TransferAck {
-            session_id: session_id.to_owned(),
         }),
     )
     .await
