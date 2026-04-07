@@ -4,8 +4,7 @@ use anyhow::{Context, Result, bail};
 use tokio::io::{AsyncRead, AsyncWrite};
 
 use super::message::{
-    Decline, Hello, Identity, Offer, PROTOCOL_VERSION, ReceiverMessage, SenderMessage,
-    TransferRole,
+    Decline, Hello, Identity, Offer, PROTOCOL_VERSION, ReceiverMessage, SenderMessage, TransferRole,
 };
 use super::wire::{read_receiver_message, write_sender_message};
 
@@ -320,9 +319,7 @@ mod tests {
             .run_control(
                 &mut local_write,
                 &mut local_read,
-                TransferManifest {
-                    items: vec![],
-                },
+                TransferManifest { items: vec![] },
             )
             .await;
 

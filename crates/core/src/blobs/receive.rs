@@ -126,10 +126,7 @@ impl BlobReceiver {
     }
 
     #[instrument(skip(self, event_tx), fields(session_id = %self.session_id, out_dir = %self.out_dir.display()))]
-    pub async fn run(
-        self,
-        event_tx: Option<mpsc::UnboundedSender<ReceiverEvent>>,
-    ) -> Result<()> {
+    pub async fn run(self, event_tx: Option<mpsc::UnboundedSender<ReceiverEvent>>) -> Result<()> {
         let BlobReceiver {
             endpoint,
             session_id,
@@ -223,12 +220,9 @@ impl BlobReceiver {
             return Err(error);
         }
 
-        if let Err(error) = export_downloaded_collection(
-            &recv_store.store,
-            collection_root_hash,
-            &expected_files,
-        )
-        .await
+        if let Err(error) =
+            export_downloaded_collection(&recv_store.store, collection_root_hash, &expected_files)
+                .await
         {
             emit_receiver_event(
                 &event_tx,

@@ -100,10 +100,7 @@ impl PreparedStore {
             for file in imported {
                 let transfer_path = file.transfer_path.clone();
                 if !seen_transfer_paths.insert(transfer_path.clone()) {
-                    bail!(
-                        "duplicate transfer path in manifest: {}",
-                        transfer_path
-                    );
+                    bail!("duplicate transfer path in manifest: {}", transfer_path);
                 }
                 total_bytes = total_bytes
                     .checked_add(file.size_bytes)
@@ -252,8 +249,6 @@ impl Manifest {
     }
 }
 
-
-
 impl Sender {
     pub fn new(endpoint: Endpoint) -> Self {
         Self { endpoint }
@@ -275,22 +270,19 @@ impl Sender {
             },
         );
 
-        let prepared = PreparedStore::prepare(
-            session_id.clone(),
-            &manifest.root_dir,
-            manifest.files,
-        )
-        .await
-        .map_err(|error| {
-            emit_event(
-                &event_tx,
-                SenderEvent::Failed {
-                    session_id: session_id.clone(),
-                    message: format!("{error:#}"),
-                },
-            );
-            error
-        })?;
+        let prepared =
+            PreparedStore::prepare(session_id.clone(), &manifest.root_dir, manifest.files)
+                .await
+                .map_err(|error| {
+                    emit_event(
+                        &event_tx,
+                        SenderEvent::Failed {
+                            session_id: session_id.clone(),
+                            message: format!("{error:#}"),
+                        },
+                    );
+                    error
+                })?;
         self.send_prepared(prepared, event_tx, receiver_event_rx)
             .await
     }
@@ -508,7 +500,7 @@ mod tests {
             vec![source.clone(), source],
         )
         .await
-            .expect_err("expected duplicate transfer path failure");
+        .expect_err("expected duplicate transfer path failure");
         let err_text = format!("{err:#}");
         assert!(err_text.contains("duplicate transfer path in manifest: source/same.txt"));
 

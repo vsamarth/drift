@@ -50,8 +50,7 @@ enum DemoCommand {
         #[arg(required = true)]
         files: Vec<PathBuf>,
     },
-    Receive {
-    },
+    Receive {},
 }
 
 #[tokio::main]

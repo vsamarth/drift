@@ -242,10 +242,10 @@ mod tests {
     #[test]
     fn sender_message_serializes_with_directional_tag() {
         let message = SenderMessage::Hello(Hello {
-                version: PROTOCOL_VERSION,
-                session_id: "session-1".to_owned(),
-                identity: Identity {
-                    role: TransferRole::Sender,
+            version: PROTOCOL_VERSION,
+            session_id: "session-1".to_owned(),
+            identity: Identity {
+                role: TransferRole::Sender,
                 endpoint_id: SecretKey::from_bytes(&[1; 32]).public(),
                 device_name: "sam-mac".to_owned(),
                 device_type: DeviceType::Laptop,

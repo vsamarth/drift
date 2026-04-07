@@ -2,20 +2,24 @@
 
 use anyhow::{Context, Error, Result};
 use iroh::{
-    endpoint::Connection, endpoint::presets, protocol::Router, protocol::{AcceptError, ProtocolHandler},
-    Endpoint, RelayMode, SecretKey, address_lookup::MdnsAddressLookup,
+    Endpoint, RelayMode, SecretKey,
+    address_lookup::MdnsAddressLookup,
+    endpoint::Connection,
+    endpoint::presets,
+    protocol::Router,
+    protocol::{AcceptError, ProtocolHandler},
 };
 use std::io::Write;
 use std::sync::Mutex;
 use tokio::sync::{mpsc, oneshot};
-use tokio::time::{interval, Duration, MissedTickBehavior};
+use tokio::time::{Duration, MissedTickBehavior, interval};
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tracing::info;
 
 use crate::{
     blobs::receive::BlobReceiver,
-    protocol::{message as protocol_message, receive as protocol_receiver},
     protocol::wire as protocol_wire,
+    protocol::{message as protocol_message, receive as protocol_receiver},
     wire::ALPN,
 };
 
@@ -276,10 +280,10 @@ impl ProtocolHandler for ReceiverHandler {
             .take()
             .expect("receiver decision receiver");
         let decision = decision_rx.await.map_err(|error| {
-                AcceptError::from_err(std::io::Error::other(format!(
-                    "waiting for receiver decision: {error}"
-                )))
-            })?;
+            AcceptError::from_err(std::io::Error::other(format!(
+                "waiting for receiver decision: {error}"
+            )))
+        })?;
 
         match decision {
             ReceiverDecision::Accept => {
@@ -323,10 +327,8 @@ impl ProtocolHandler for ReceiverHandler {
                     ))));
                 }
 
-                let blob_ticket: iroh_blobs::ticket::BlobTicket = ticket_message
-                    .ticket
-                    .parse()
-                    .map_err(|error| {
+                let blob_ticket: iroh_blobs::ticket::BlobTicket =
+                    ticket_message.ticket.parse().map_err(|error| {
                         AcceptError::from_err(std::io::Error::other(format!(
                             "parsing blob ticket: {error:#}"
                         )))
@@ -358,14 +360,11 @@ impl ProtocolHandler for ReceiverHandler {
                     },
                 );
 
-                let mut progress_send = connection
-                    .open_uni()
-                    .await
-                    .map_err(|error| {
-                        AcceptError::from_err(std::io::Error::other(format!(
-                            "opening sender progress stream: {error:#}"
-                        )))
-                    })?;
+                let mut progress_send = connection.open_uni().await.map_err(|error| {
+                    AcceptError::from_err(std::io::Error::other(format!(
+                        "opening sender progress stream: {error:#}"
+                    )))
+                })?;
 
                 protocol_wire::write_receiver_message(
                     &mut progress_send,
@@ -574,17 +573,9 @@ impl ProtocolHandler for ReceiverHandler {
         }
 
         control_send.finish()?;
-        let _ = tokio::time::timeout(
-            std::time::Duration::from_secs(2),
-            control_send.stopped(),
-        )
-        .await;
-        if let Some(done_tx) = self
-            .done_tx
-            .lock()
-            .expect("receiver done lock")
-            .take()
-        {
+        let _ =
+            tokio::time::timeout(std::time::Duration::from_secs(2), control_send.stopped()).await;
+        if let Some(done_tx) = self.done_tx.lock().expect("receiver done lock").take() {
             let _ = done_tx.send(());
         }
         Ok(())
@@ -602,9 +593,7 @@ async fn bind_endpoint(secret_key: SecretKey) -> Result<Endpoint> {
         .context("binding iroh endpoint")
 }
 
-fn to_protocol_device_type(
-    device_type: crate::wire::DeviceType,
-) -> protocol_message::DeviceType {
+fn to_protocol_device_type(device_type: crate::wire::DeviceType) -> protocol_message::DeviceType {
     match device_type {
         crate::wire::DeviceType::Phone => protocol_message::DeviceType::Phone,
         crate::wire::DeviceType::Laptop => protocol_message::DeviceType::Laptop,
