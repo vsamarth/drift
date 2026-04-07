@@ -6,7 +6,7 @@ use tracing::debug;
 
 use crate::lan;
 use crate::rendezvous::{RendezvousClient, resolve_server_url, validate_code};
-use crate::wire::decode_ticket;
+use crate::util::decode_ticket;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NearbyEndpoint {

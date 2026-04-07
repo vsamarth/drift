@@ -16,7 +16,7 @@ use drift_core::transfer_flow::{
     SenderOutcome as DemoSenderOutcome,
 };
 use drift_core::util::{human_size, process_display_device_name};
-use drift_core::wire::DeviceType;
+use drift_core::protocol::DeviceType;
 use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
 use iroh::SecretKey;
 use std::collections::BTreeMap;

@@ -19,7 +19,7 @@ use crate::{
     blobs::send::{BlobRegistration, BlobService, PreparedStore},
     protocol::wire as protocol_wire,
     protocol::{message as protocol_message, send as protocol_sender},
-    wire::ALPN,
+    protocol::ALPN,
 };
 
 const CONTROL_STREAM_FINISH_TIMEOUT: Duration = Duration::from_secs(2);
@@ -242,7 +242,7 @@ pub struct Sender {
 impl Sender {
     pub fn new(
         device_name: String,
-        device_type: crate::wire::DeviceType,
+        device_type: crate::protocol::DeviceType,
         request: SendRequest,
     ) -> Self {
         let secret_key = SecretKey::from_bytes(&random());
@@ -583,10 +583,10 @@ fn make_session_id() -> String {
     format!("{:016x}", random::<u64>())
 }
 
-fn to_protocol_device_type(device_type: crate::wire::DeviceType) -> protocol_message::DeviceType {
-    match device_type {
-        crate::wire::DeviceType::Phone => protocol_message::DeviceType::Phone,
-        crate::wire::DeviceType::Laptop => protocol_message::DeviceType::Laptop,
+    fn to_protocol_device_type(device_type: crate::protocol::DeviceType) -> protocol_message::DeviceType {
+        match device_type {
+        crate::protocol::DeviceType::Phone => protocol_message::DeviceType::Phone,
+        crate::protocol::DeviceType::Laptop => protocol_message::DeviceType::Laptop,
     }
 }
 

@@ -391,7 +391,7 @@ pub fn browse_nearby_receivers(
     let mut list: Vec<NearbyReceiver> = peers.into_values().collect();
     if let Some(exclude) = exclude_endpoint_id {
         list.retain(|r| {
-            crate::wire::decode_ticket(r.ticket.trim())
+            crate::util::decode_ticket(r.ticket.trim())
                 .map(|addr| addr.id != exclude)
                 .unwrap_or(true)
         });

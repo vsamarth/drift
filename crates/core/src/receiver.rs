@@ -17,7 +17,7 @@ use crate::session::{
 };
 use crate::transfer::{ReceiverMachine, ReceiverState, TransferCancellation};
 use crate::util::{ConnectionPathKind, classify_connection_path};
-use crate::wire::DeviceType;
+use crate::protocol::DeviceType;
 
 /// State after the offer is known and destinations are planned; waiting for user accept/decline.
 pub struct ReceiverPendingDecision {
@@ -35,8 +35,8 @@ pub struct ReceiverPendingDecision {
 }
 
 impl ReceiverPendingDecision {
-    pub fn connection(&self) -> &iroh::endpoint::Connection {
-        &self.connection
+    pub fn session_id(&self) -> &str {
+        &self.session_id
     }
 
     pub fn sender_device_name(&self) -> &str {
@@ -45,6 +45,10 @@ impl ReceiverPendingDecision {
 
     pub fn sender_device_type(&self) -> DeviceType {
         self.sender_device_type
+    }
+
+    pub fn connection(&self) -> &iroh::endpoint::Connection {
+        &self.connection
     }
 
     pub fn manifest(&self) -> &OfferManifest {

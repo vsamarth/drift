@@ -10,7 +10,7 @@ use tokio::sync::watch;
 
 use crate::rendezvous::OfferManifest;
 use crate::util::ConnectionPathKind;
-use crate::wire::DeviceType;
+use crate::protocol::DeviceType;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SendManifestFile {

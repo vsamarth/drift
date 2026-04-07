@@ -2,6 +2,7 @@
 
 mod actor;
 mod runtime;
+mod session;
 
 #[cfg(test)]
 mod tests;
@@ -15,7 +16,7 @@ use tokio::sync::{broadcast, mpsc, oneshot, watch};
 use crate::types::{
     NearbyReceiver, PairingCodeState, ReceiverConfig, ReceiverOfferEvent, ReceiverRegistration,
 };
-use drift_core::wire::ALPN;
+use drift_core::protocol::{ALPN, DeviceType};
 
 use self::actor::{ReceiverCommand, run_receiver_actor, spawn_listener_task};
 use self::runtime::ReceiverRuntime;
@@ -223,10 +224,10 @@ impl ReceiverService {
     }
 }
 
-pub(super) fn parse_device_type(value: &str) -> Result<drift_core::wire::DeviceType> {
+pub(super) fn parse_device_type(value: &str) -> Result<DeviceType> {
     match value.trim().to_ascii_lowercase().as_str() {
-        "phone" => Ok(drift_core::wire::DeviceType::Phone),
-        "laptop" => Ok(drift_core::wire::DeviceType::Laptop),
+        "phone" => Ok(DeviceType::Phone),
+        "laptop" => Ok(DeviceType::Laptop),
         other => anyhow::bail!("invalid device_type {other:?} (expected \"phone\" or \"laptop\")"),
     }
 }

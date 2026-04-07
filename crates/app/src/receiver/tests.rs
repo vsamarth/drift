@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 use iroh::SecretKey;
+use tokio::sync::{oneshot, watch};
 
 use super::runtime::{
     OfferResolution, ReceiverRuntime, registration_needs_refresh, should_advertise,
@@ -9,6 +10,7 @@ use super::runtime::{
 use super::{
     OfferDecision, PairingCodeState, ReceiverLifecycle, ReceiverRegistration, ReceiverService,
 };
+use super::session::ReceiverRun;
 use crate::types::{ConflictPolicy, ReceiverConfig};
 
 fn test_config() -> ReceiverConfig {
@@ -110,10 +112,16 @@ async fn stale_offer_updates_are_ignored() -> Result<()> {
     let listener = tokio::spawn(async {});
     let mut runtime = ReceiverRuntime::new(test_config(), endpoint, listener);
 
-    let (tx, _rx) = tokio::sync::oneshot::channel::<OfferResolution>();
-    let (cancel_tx, _cancel_rx) = tokio::sync::watch::channel(false);
+    let (tx, _rx) = oneshot::channel::<OfferResolution>();
+    let (cancel_tx, _cancel_rx) = watch::channel(false);
     let watch_task = tokio::spawn(async {});
-    assert!(runtime.handle_offer_prepared(7, tx, cancel_tx, watch_task));
+    let run = ReceiverRun {
+        offer_id: 7,
+        decision_tx: tx,
+        cancel_tx,
+        watch_task,
+    };
+    assert!(runtime.handle_offer_prepared(run));
     assert!(!runtime.handle_offer_progress(8));
     assert!(!runtime.handle_offer_finished(8));
     Ok(())
@@ -127,14 +135,24 @@ async fn busy_runtime_rejects_second_offer() -> Result<()> {
     let listener = tokio::spawn(async {});
     let mut runtime = ReceiverRuntime::new(test_config(), endpoint, listener);
 
-    let (tx1, _rx1) = tokio::sync::oneshot::channel::<OfferResolution>();
-    let (tx2, rx2) = tokio::sync::oneshot::channel::<OfferResolution>();
-    let (cancel_tx1, _cancel_rx1) = tokio::sync::watch::channel(false);
-    let (cancel_tx2, _cancel_rx2) = tokio::sync::watch::channel(false);
+    let (tx1, _rx1) = oneshot::channel::<OfferResolution>();
+    let (tx2, rx2) = oneshot::channel::<OfferResolution>();
+    let (cancel_tx1, _cancel_rx1) = watch::channel(false);
+    let (cancel_tx2, _cancel_rx2) = watch::channel(false);
     let watch1 = tokio::spawn(async {});
     let watch2 = tokio::spawn(async {});
-    assert!(runtime.handle_offer_prepared(1, tx1, cancel_tx1, watch1));
-    assert!(!runtime.handle_offer_prepared(2, tx2, cancel_tx2, watch2));
+    assert!(runtime.handle_offer_prepared(ReceiverRun {
+        offer_id: 1,
+        decision_tx: tx1,
+        cancel_tx: cancel_tx1,
+        watch_task: watch1,
+    }));
+    assert!(!runtime.handle_offer_prepared(ReceiverRun {
+        offer_id: 2,
+        decision_tx: tx2,
+        cancel_tx: cancel_tx2,
+        watch_task: watch2,
+    }));
     assert!(matches!(rx2.await.unwrap(), OfferResolution::Decline));
     Ok(())
 }

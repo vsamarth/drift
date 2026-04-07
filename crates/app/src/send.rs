@@ -11,7 +11,8 @@ use drift_core::sender::format_code_label;
 use drift_core::transfer_flow::{
     SendRequest, Sender, SenderEvent as CoreSenderEvent, SenderOutcome as CoreSenderOutcome,
 };
-use drift_core::wire::{DeviceType, decode_ticket};
+use drift_core::protocol::DeviceType;
+use drift_core::util::decode_ticket;
 use iroh::EndpointId;
 use tokio::sync::{mpsc, oneshot};
 use tokio_stream::{StreamExt, wrappers::UnboundedReceiverStream};

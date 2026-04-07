@@ -20,7 +20,8 @@ enum PeerResolution {
 use crate::session::{bind_endpoint, connect_to_ticket, send_files_over_connection};
 use crate::transfer::{SenderMachine, SenderState, TransferCancellation};
 use crate::util::{ConnectionPathKind, classify_connection_path};
-use crate::wire::{DeviceType, decode_ticket};
+use crate::protocol::DeviceType;
+use crate::util::decode_ticket;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SendTransferPhase {

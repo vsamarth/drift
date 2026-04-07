@@ -8,7 +8,7 @@ pub(crate) const PROTOCOL_VERSION: u32 = 2;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
-pub(crate) enum DeviceType {
+pub enum DeviceType {
     Phone,
     Laptop,
 }

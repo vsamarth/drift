@@ -29,7 +29,7 @@ use crate::protocol::{message as protocol_message, wire as protocol_wire};
 use crate::rendezvous::OfferManifest;
 use crate::transfer::TransferCancellation;
 use crate::util::describe_remote;
-use crate::wire::ALPN;
+use crate::protocol::ALPN;
 
 const CONTROL_STREAM_FINISH_TIMEOUT: Duration = Duration::from_secs(2);
 
