@@ -6,11 +6,11 @@ use drift_core::fs_plan::preview::{
     SelectedPathKind, SelectedPathPreview, SelectionPreview as CoreSelectionPreview,
     inspect_selected_paths,
 };
+use drift_core::protocol::DeviceType;
 use drift_core::rendezvous::{RendezvousClient, resolve_server_url, validate_code};
 use drift_core::transfer_flow::{
     SendRequest, Sender, SenderEvent as CoreSenderEvent, TransferOutcome as CoreTransferOutcome,
 };
-use drift_core::protocol::DeviceType;
 use drift_core::util::{decode_ticket, format_code_label};
 use iroh::EndpointId;
 use tokio::sync::{mpsc, oneshot};
@@ -301,7 +301,8 @@ impl SendSession {
             }
         }
 
-        let core_outcome: Result<CoreTransferOutcome> = outcome_rx.await.context("waiting for sender outcome")?;
+        let core_outcome: Result<CoreTransferOutcome> =
+            outcome_rx.await.context("waiting for sender outcome")?;
 
         match core_outcome {
             Ok(CoreTransferOutcome::Completed) => Ok(SendSessionOutcome::Accepted {

@@ -682,35 +682,6 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
     _clearReceiveMetricState();
   }
 
-  void _applyIncomingCancelled(rust_receiver.ReceiverTransferEvent event) {
-    final bytesReceived = _bigIntToInt(event.bytesReceived);
-    final totalBytes = _bigIntToInt(event.totalSizeBytes);
-    final summary =
-        state.receiveSummary ??
-        TransferSummaryViewData(
-          itemCount: _bigIntToInt(event.itemCount),
-          totalSize: event.totalSizeLabel,
-          code: state.idleReceiveCode,
-          expiresAt: '',
-          destinationLabel: event.saveRootLabel,
-          statusMessage: event.errorMessage ?? event.statusMessage,
-          senderName: event.senderName,
-        );
-    _setSession(
-      ReceiveResultSession(
-        success: false,
-        items: state.receiveItems,
-        summary: summary.copyWith(
-          destinationLabel: event.saveRootLabel,
-          statusMessage: event.errorMessage ?? event.statusMessage,
-        ),
-        payloadBytesReceived: bytesReceived,
-        payloadTotalBytes: totalBytes,
-        senderDeviceType: event.senderDeviceType,
-      ),
-    );
-  }
-
   TransferItemViewData _incomingFileToViewData(
     rust_receiver.ReceiverTransferFile file,
   ) {
@@ -952,6 +923,26 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
             remoteDeviceType: update.remoteDeviceType,
           ),
         );
+      case SendTransferUpdatePhase.accepted:
+        _setSession(
+          SendTransferSession(
+            phase: SendTransferSessionPhase.accepted,
+            items: items,
+            summary: summary,
+            remoteDeviceType: update.remoteDeviceType,
+          ),
+        );
+      case SendTransferUpdatePhase.declined:
+        _setSession(
+          SendResultSession(
+            success: false,
+            items: items,
+            summary: summary.copyWith(
+              statusMessage: update.errorMessage ?? 'Transfer declined.',
+            ),
+            remoteDeviceType: update.remoteDeviceType,
+          ),
+        );
       case SendTransferUpdatePhase.sending:
         _setSession(
           SendTransferSession(
@@ -1007,6 +998,7 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
     switch (update.phase) {
       case SendTransferUpdatePhase.connecting:
       case SendTransferUpdatePhase.waitingForDecision:
+      case SendTransferUpdatePhase.accepted:
         _clearSendMetricState();
         return const _TransferProgressMetrics();
       case SendTransferUpdatePhase.sending:
@@ -1047,6 +1039,7 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
       case SendTransferUpdatePhase.completed:
       case SendTransferUpdatePhase.failed:
       case SendTransferUpdatePhase.cancelled:
+      case SendTransferUpdatePhase.declined:
         _clearSendMetricState();
         return const _TransferProgressMetrics();
     }

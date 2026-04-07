@@ -31,6 +31,8 @@ class SendTransferRequestData {
 enum SendTransferUpdatePhase {
   connecting,
   waitingForDecision,
+  accepted,
+  declined,
   sending,
   completed,
   cancelled,
@@ -116,6 +118,10 @@ class LocalSendTransferSource implements SendTransferSource {
           SendTransferUpdatePhase.connecting,
         rust_sender.SendTransferPhase.waitingForDecision =>
           SendTransferUpdatePhase.waitingForDecision,
+        rust_sender.SendTransferPhase.accepted =>
+          SendTransferUpdatePhase.accepted,
+        rust_sender.SendTransferPhase.declined =>
+          SendTransferUpdatePhase.declined,
         rust_sender.SendTransferPhase.sending =>
           SendTransferUpdatePhase.sending,
         rust_sender.SendTransferPhase.completed =>

@@ -19,10 +19,18 @@ pub enum TransferOutcome {
 impl TransferOutcome {
     pub fn local_cancel(by: TransferRole, phase: CancelPhase) -> Self {
         let reason = match (by, phase) {
-            (TransferRole::Sender, CancelPhase::WaitingForDecision) => "sender cancelled before approval".to_owned(),
-            (TransferRole::Sender, CancelPhase::Transferring) => "sender cancelled transfer".to_owned(),
-            (TransferRole::Receiver, CancelPhase::WaitingForDecision) => "receiver cancelled before approval".to_owned(),
-            (TransferRole::Receiver, CancelPhase::Transferring) => "receiver cancelled transfer".to_owned(),
+            (TransferRole::Sender, CancelPhase::WaitingForDecision) => {
+                "sender cancelled before approval".to_owned()
+            }
+            (TransferRole::Sender, CancelPhase::Transferring) => {
+                "sender cancelled transfer".to_owned()
+            }
+            (TransferRole::Receiver, CancelPhase::WaitingForDecision) => {
+                "receiver cancelled before approval".to_owned()
+            }
+            (TransferRole::Receiver, CancelPhase::Transferring) => {
+                "receiver cancelled transfer".to_owned()
+            }
         };
         Self::Cancelled(TransferCancellation { by, phase, reason })
     }

@@ -7,10 +7,10 @@ use tokio::sync::{oneshot, watch};
 use super::runtime::{
     OfferResolution, ReceiverRuntime, registration_needs_refresh, should_advertise,
 };
+use super::session::ReceiverRun;
 use super::{
     OfferDecision, PairingCodeState, ReceiverLifecycle, ReceiverRegistration, ReceiverService,
 };
-use super::session::ReceiverRun;
 use crate::types::{ConflictPolicy, ReceiverConfig};
 
 fn test_config() -> ReceiverConfig {
@@ -118,7 +118,6 @@ async fn stale_offer_updates_are_ignored() -> Result<()> {
         offer_id: 7,
         decision_tx: tx,
         cancel_tx,
-
     };
     assert!(runtime.handle_offer_prepared(run));
     assert!(!runtime.handle_offer_progress(8));
@@ -142,13 +141,11 @@ async fn busy_runtime_rejects_second_offer() -> Result<()> {
         offer_id: 1,
         decision_tx: tx1,
         cancel_tx: cancel_tx1,
-
     }));
     assert!(!runtime.handle_offer_prepared(ReceiverRun {
         offer_id: 2,
         decision_tx: tx2,
         cancel_tx: cancel_tx2,
-
     }));
     assert!(matches!(rx2.await.unwrap(), OfferResolution::Decline));
     Ok(())

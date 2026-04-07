@@ -1,11 +1,11 @@
 use std::time::Duration;
 
+use drift_core::protocol::DeviceType;
 use drift_core::transfer_flow::{
     ReceiverDecision as CoreReceiverDecision, ReceiverEvent as CoreReceiverEvent,
     ReceiverRequest as CoreReceiverRequest, ReceiverSession as CoreReceiverSession,
     ReceiverStart as CoreReceiverStart, TransferOutcome as CoreTransferOutcome,
 };
-use drift_core::protocol::DeviceType;
 use drift_core::util::{ConnectionPathKind, classify_connection_path, human_size};
 use iroh::Endpoint;
 use tokio::sync::{mpsc, oneshot};
@@ -13,9 +13,7 @@ use tokio::task::JoinHandle;
 use tokio_stream::StreamExt;
 
 use crate::error::format_error_chain;
-use crate::types::{
-    ReceiverOfferEvent, ReceiverOfferFile, ReceiverOfferPhase,
-};
+use crate::types::{ReceiverOfferEvent, ReceiverOfferFile, ReceiverOfferPhase};
 
 use super::actor::ReceiverCommand;
 use super::runtime::OfferResolution;
@@ -83,7 +81,8 @@ impl ReceiverSession {
             cmd_tx,
         } = self;
 
-        let connection_path_kind = classify_connection_path(&endpoint, connection.remote_id()).await;
+        let connection_path_kind =
+            classify_connection_path(&endpoint, connection.remote_id()).await;
         let session = CoreReceiverSession::new(CoreReceiverRequest {
             device_name: device_name.clone(),
             device_type,
@@ -145,9 +144,7 @@ impl ReceiverSession {
         tokio::spawn(async move {
             let decision = match decision_rx.await.unwrap_or(OfferResolution::Cancel) {
                 OfferResolution::Accept => CoreReceiverDecision::Accept,
-                OfferResolution::Decline | OfferResolution::Cancel => {
-                    CoreReceiverDecision::Decline
-                }
+                OfferResolution::Decline | OfferResolution::Cancel => CoreReceiverDecision::Decline,
             };
             let _ = core_decision_tx.send(decision);
         });
@@ -215,8 +212,8 @@ impl ReceiverSession {
                     let now = std::time::Instant::now();
                     let interval_elapsed =
                         now.duration_since(last_progress_emit_at) >= PROGRESS_EVENT_MIN_INTERVAL;
-                    let bytes_advanced =
-                        bytes_received.saturating_sub(last_progress_bytes) >= PROGRESS_EVENT_MIN_BYTES;
+                    let bytes_advanced = bytes_received.saturating_sub(last_progress_bytes)
+                        >= PROGRESS_EVENT_MIN_BYTES;
                     let is_complete = total_bytes > 0 && bytes_received >= total_bytes;
                     if interval_elapsed || bytes_advanced || is_complete {
                         last_progress_emit_at = now;
@@ -241,16 +238,15 @@ impl ReceiverSession {
                 }
                 Ok(CoreReceiverEvent::OfferReceived { .. }) => {}
                 Err(error) => {
-                    let _ = progress_cmd_tx
-                        .try_send(ReceiverCommand::OfferFinished {
-                            offer_id,
-                            final_event: failed_offer_event(
-                                &save_root_label,
-                                sender_device_type,
-                                "Transfer failed.".to_owned(),
-                                format!("{error}"),
-                            ),
-                        });
+                    let _ = progress_cmd_tx.try_send(ReceiverCommand::OfferFinished {
+                        offer_id,
+                        final_event: failed_offer_event(
+                            &save_root_label,
+                            sender_device_type,
+                            "Transfer failed.".to_owned(),
+                            format!("{error}"),
+                        ),
+                    });
                     return;
                 }
             }

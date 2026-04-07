@@ -13,9 +13,9 @@ use tracing::{instrument, warn};
 
 use crate::{
     blobs::send::{BlobRegistration, BlobService, PreparedStore},
+    protocol::ALPN,
     protocol::wire as protocol_wire,
     protocol::{message as protocol_message, send as protocol_sender},
-    protocol::ALPN,
 };
 
 use super::path::ScratchDir;
@@ -29,14 +29,41 @@ pub struct SendRequest {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SenderEvent {
-    Connecting { session_id: String, peer_endpoint_id: EndpointId },
-    WaitingForDecision { session_id: String, receiver_device_name: String, receiver_endpoint_id: EndpointId },
-    Accepted { session_id: String, receiver_device_name: String, receiver_endpoint_id: EndpointId },
-    Declined { session_id: String, reason: String },
-    Failed { session_id: String, message: String },
-    TransferStarted { session_id: String, file_count: u64, total_bytes: u64 },
-    TransferProgress { session_id: String, bytes_sent: u64, total_bytes: u64 },
-    TransferCompleted { session_id: String },
+    Connecting {
+        session_id: String,
+        peer_endpoint_id: EndpointId,
+    },
+    WaitingForDecision {
+        session_id: String,
+        receiver_device_name: String,
+        receiver_endpoint_id: EndpointId,
+    },
+    Accepted {
+        session_id: String,
+        receiver_device_name: String,
+        receiver_endpoint_id: EndpointId,
+    },
+    Declined {
+        session_id: String,
+        reason: String,
+    },
+    Failed {
+        session_id: String,
+        message: String,
+    },
+    TransferStarted {
+        session_id: String,
+        file_count: u64,
+        total_bytes: u64,
+    },
+    TransferProgress {
+        session_id: String,
+        bytes_sent: u64,
+        total_bytes: u64,
+    },
+    TransferCompleted {
+        session_id: String,
+    },
 }
 
 pub type SenderEventStream = UnboundedReceiverStream<Result<SenderEvent>>;
@@ -49,21 +76,48 @@ pub struct SenderRun {
 }
 
 impl SenderRun {
-    pub fn into_parts(self) -> (SenderEventStream, watch::Sender<bool>, oneshot::Receiver<Result<TransferOutcome>>) {
+    pub fn into_parts(
+        self,
+    ) -> (
+        SenderEventStream,
+        watch::Sender<bool>,
+        oneshot::Receiver<Result<TransferOutcome>>,
+    ) {
         (self.events, self.cancel_tx, self.outcome_rx)
     }
-    pub async fn outcome(self) -> Result<TransferOutcome> { self.outcome_rx.await.context("waiting for outcome")? }
+    pub async fn outcome(self) -> Result<TransferOutcome> {
+        self.outcome_rx.await.context("waiting for outcome")?
+    }
 }
 
 #[derive(Clone, Debug)]
-struct SenderEventSink { session_id: String, tx: Option<mpsc::UnboundedSender<Result<SenderEvent>>> }
+struct SenderEventSink {
+    session_id: String,
+    tx: Option<mpsc::UnboundedSender<Result<SenderEvent>>>,
+}
 impl SenderEventSink {
-    fn new(session_id: String, tx: Option<mpsc::UnboundedSender<Result<SenderEvent>>>) -> Self { Self { session_id, tx } }
-    fn silent(session_id: String) -> Self { Self { session_id, tx: None } }
-    fn emit(&self, e: SenderEvent) { if let Some(tx) = &self.tx { let _ = tx.send(Ok(e)); } }
+    fn new(session_id: String, tx: Option<mpsc::UnboundedSender<Result<SenderEvent>>>) -> Self {
+        Self { session_id, tx }
+    }
+    fn silent(session_id: String) -> Self {
+        Self {
+            session_id,
+            tx: None,
+        }
+    }
+    fn emit(&self, e: SenderEvent) {
+        if let Some(tx) = &self.tx {
+            let _ = tx.send(Ok(e));
+        }
+    }
     fn fail(&self, err: &anyhow::Error) {
-        self.emit(SenderEvent::Failed { session_id: self.session_id.clone(), message: format!("{err:#}") });
-        if let Some(tx) = &self.tx { let _ = tx.send(Err(anyhow!("{err:#}"))); }
+        self.emit(SenderEvent::Failed {
+            session_id: self.session_id.clone(),
+            message: format!("{err:#}"),
+        });
+        if let Some(tx) = &self.tx {
+            let _ = tx.send(Err(anyhow!("{err:#}")));
+        }
     }
 }
 
@@ -75,7 +129,11 @@ pub struct Sender {
 }
 
 impl Sender {
-    pub fn new(device_name: String, device_type: crate::protocol::DeviceType, request: SendRequest) -> Self {
+    pub fn new(
+        device_name: String,
+        device_type: crate::protocol::DeviceType,
+        request: SendRequest,
+    ) -> Self {
         let secret_key = iroh::SecretKey::from_bytes(&random());
         Self {
             identity: protocol_message::Identity {
@@ -94,13 +152,14 @@ impl Sender {
     }
 
     pub fn run_with_events(self) -> SenderRun
-    where Self: Send + 'static,
+    where
+        Self: Send + 'static,
     {
         let (event_tx, event_rx) = mpsc::unbounded_channel();
         let (outcome_tx, outcome_rx) = oneshot::channel();
         let (cancel_tx, cancel_rx) = watch::channel(false);
         let events = SenderEventSink::new(self.session_id.clone(), Some(event_tx));
-        
+
         tokio::spawn(async move {
             let session = SenderSession {
                 secret_key: self.secret_key,
@@ -110,11 +169,17 @@ impl Sender {
                 events: events.clone(),
             };
             let outcome = session.run(cancel_rx).await;
-            if let Err(e) = &outcome { events.fail(e); }
+            if let Err(e) = &outcome {
+                events.fail(e);
+            }
             let _ = outcome_tx.send(outcome);
         });
 
-        SenderRun { events: UnboundedReceiverStream::new(event_rx), cancel_tx, outcome_rx }
+        SenderRun {
+            events: UnboundedReceiverStream::new(event_rx),
+            cancel_tx,
+            outcome_rx,
+        }
     }
 }
 
@@ -130,14 +195,36 @@ impl SenderSession {
     #[instrument(skip_all, fields(session_id = %self.session_id, peer = %self.request.peer_endpoint_id))]
     async fn run(self, mut cancel_rx: watch::Receiver<bool>) -> Result<TransferOutcome> {
         let scratch = ScratchDir::new("drift-send", &self.session_id).await?;
-        let prepared = PreparedStore::prepare(self.session_id.clone(), &scratch.path, self.request.files.clone()).await?;
-        let endpoint = iroh::Endpoint::builder(iroh::endpoint::presets::N0).alpns(vec![ALPN.to_vec()]).secret_key(self.secret_key.clone()).bind().await?;
+        let prepared = PreparedStore::prepare(
+            self.session_id.clone(),
+            &scratch.path,
+            self.request.files.clone(),
+        )
+        .await?;
+        let endpoint = iroh::Endpoint::builder(iroh::endpoint::presets::N0)
+            .alpns(vec![ALPN.to_vec()])
+            .secret_key(self.secret_key.clone())
+            .bind()
+            .await?;
 
-        self.events.emit(SenderEvent::Connecting { session_id: self.session_id.clone(), peer_endpoint_id: self.request.peer_endpoint_id });
-        let connection = endpoint.connect(EndpointAddr::new(self.request.peer_endpoint_id), ALPN).await?;
-        
+        self.events.emit(SenderEvent::Connecting {
+            session_id: self.session_id.clone(),
+            peer_endpoint_id: self.request.peer_endpoint_id,
+        });
+        let connection = endpoint
+            .connect(EndpointAddr::new(self.request.peer_endpoint_id), ALPN)
+            .await?;
+
         // --- Handshake ---
-        let handshake_res = do_handshake(&self.session_id, &self.identity, &prepared, &connection, &mut cancel_rx, &self.events).await?;
+        let handshake_res = do_handshake(
+            &self.session_id,
+            &self.identity,
+            &prepared,
+            &connection,
+            &mut cancel_rx,
+            &self.events,
+        )
+        .await?;
         let (mut control_send, mut control_recv, outcome) = match handshake_res {
             HandshakeResult::Ok(s, r, o) => (s, r, o),
             HandshakeResult::Cancelled(outcome) => return Ok(outcome),
@@ -145,11 +232,28 @@ impl SenderSession {
 
         match outcome {
             protocol_sender::SenderControlOutcome::Accepted(peer) => {
-                self.events.emit(SenderEvent::Accepted { session_id: self.session_id.clone(), receiver_device_name: peer.identity.device_name.clone(), receiver_endpoint_id: peer.identity.endpoint_id });
-                do_transfer(&self.session_id, endpoint, connection, &mut control_send, &mut control_recv, prepared, &mut cancel_rx, &self.events).await
+                self.events.emit(SenderEvent::Accepted {
+                    session_id: self.session_id.clone(),
+                    receiver_device_name: peer.identity.device_name.clone(),
+                    receiver_endpoint_id: peer.identity.endpoint_id,
+                });
+                do_transfer(
+                    &self.session_id,
+                    endpoint,
+                    connection,
+                    &mut control_send,
+                    &mut control_recv,
+                    prepared,
+                    &mut cancel_rx,
+                    &self.events,
+                )
+                .await
             }
             protocol_sender::SenderControlOutcome::Declined(msg) => {
-                self.events.emit(SenderEvent::Declined { session_id: self.session_id.clone(), reason: msg.reason.clone() });
+                self.events.emit(SenderEvent::Declined {
+                    session_id: self.session_id.clone(),
+                    reason: msg.reason.clone(),
+                });
                 let _ = control_send.finish();
                 Ok(TransferOutcome::Declined { reason: msg.reason })
             }
@@ -158,7 +262,11 @@ impl SenderSession {
 }
 
 enum HandshakeResult {
-    Ok(iroh::endpoint::SendStream, iroh::endpoint::RecvStream, protocol_sender::SenderControlOutcome),
+    Ok(
+        iroh::endpoint::SendStream,
+        iroh::endpoint::RecvStream,
+        protocol_sender::SenderControlOutcome,
+    ),
     Cancelled(TransferOutcome),
 }
 
@@ -178,24 +286,24 @@ async fn do_handshake(
                 session_id: session_id.to_owned(),
                 identity: identity.clone(),
             })).await?;
-            
+
             let peer_hello = match protocol_wire::read_receiver_message(&mut recv).await? {
                 protocol_message::ReceiverMessage::Hello(h) => h,
                 protocol_message::ReceiverMessage::Cancel(c) => return Ok(HandshakeResult::Cancelled(TransferOutcome::from_remote_cancel(c, session_id)?)),
                 _ => bail!("expected hello from receiver"),
             };
-            
+
             protocol_wire::write_sender_message(&mut send, &protocol_message::SenderMessage::Offer(protocol_message::Offer {
                 session_id: session_id.to_owned(),
                 manifest: prepared.manifest(),
             })).await?;
-            
+
             events.emit(SenderEvent::WaitingForDecision {
                 session_id: session_id.to_owned(),
                 receiver_device_name: peer_hello.identity.device_name.clone(),
                 receiver_endpoint_id: peer_hello.identity.endpoint_id,
             });
-            
+
             let decision = match protocol_wire::read_receiver_message(&mut recv).await? {
                 protocol_message::ReceiverMessage::Accept(a) => protocol_sender::SenderControlOutcome::Accepted(protocol_sender::SenderPeer { session_id: a.session_id, identity: peer_hello.identity }),
                 protocol_message::ReceiverMessage::Decline(d) => protocol_sender::SenderControlOutcome::Declined(d),
@@ -225,8 +333,11 @@ async fn do_transfer(
 ) -> Result<TransferOutcome> {
     let manifest = prepared.manifest();
     let (file_count, total_bytes) = (manifest.count() as u64, prepared.total_bytes());
-    let registration = BlobService::new(endpoint.clone()).register(prepared).await?;
-    let progress_task = SenderProgressTask::spawn(connection, session_id.to_owned(), events.clone());
+    let registration = BlobService::new(endpoint.clone())
+        .register(prepared)
+        .await?;
+    let progress_task =
+        SenderProgressTask::spawn(connection, session_id.to_owned(), events.clone());
     let blob_task = BlobTransferTask::spawn(registration);
 
     let result = async {
@@ -261,45 +372,94 @@ async fn do_transfer(
     result
 }
 
-async fn abort_session(send: &mut iroh::endpoint::SendStream, session_id: &str, phase: protocol_message::CancelPhase) -> Result<TransferOutcome> {
+async fn abort_session(
+    send: &mut iroh::endpoint::SendStream,
+    session_id: &str,
+    phase: protocol_message::CancelPhase,
+) -> Result<TransferOutcome> {
     let outcome = TransferOutcome::local_cancel(protocol_message::TransferRole::Sender, phase);
     if let TransferOutcome::Cancelled(c) = &outcome {
-        let _ = protocol_wire::write_sender_message(send, &protocol_message::SenderMessage::Cancel(protocol_message::Cancel { session_id: session_id.to_owned(), by: c.by, phase: c.phase, reason: c.reason.clone() })).await;
+        let _ = protocol_wire::write_sender_message(
+            send,
+            &protocol_message::SenderMessage::Cancel(protocol_message::Cancel {
+                session_id: session_id.to_owned(),
+                by: c.by,
+                phase: c.phase,
+                reason: c.reason.clone(),
+            }),
+        )
+        .await;
         let _ = send.finish();
         let _ = tokio::time::timeout(Duration::from_secs(2), send.stopped()).await;
     }
     Ok(outcome)
 }
 
-struct SenderProgressTask { shutdown: JoinHandle<Result<()>> }
+struct SenderProgressTask {
+    shutdown: JoinHandle<Result<()>>,
+}
 impl SenderProgressTask {
     fn spawn(conn: Connection, session_id: String, events: SenderEventSink) -> Self {
-        Self { shutdown: tokio::spawn(async move {
-            let mut recv = tokio::select! {
-                res = conn.accept_uni() => res?,
-                _ = tokio::time::sleep(Duration::from_secs(30)) => { warn!(%session_id, "receiver never opened progress stream"); return Ok(()); }
-            };
-            loop {
-                match protocol_wire::read_receiver_message(&mut recv).await? {
-                    protocol_message::ReceiverMessage::TransferStarted(m) => events.emit(SenderEvent::TransferStarted { session_id: m.session_id, file_count: m.file_count, total_bytes: m.total_bytes }),
-                    protocol_message::ReceiverMessage::TransferProgress(m) => events.emit(SenderEvent::TransferProgress { session_id: m.session_id, bytes_sent: m.bytes_sent, total_bytes: m.total_bytes }),
-                    protocol_message::ReceiverMessage::TransferCompleted(_) => break Ok(()),
-                    _ => bail!("unexpected progress message from receiver"),
+        Self {
+            shutdown: tokio::spawn(async move {
+                let mut recv = tokio::select! {
+                    res = conn.accept_uni() => res?,
+                    _ = tokio::time::sleep(Duration::from_secs(30)) => { warn!(%session_id, "receiver never opened progress stream"); return Ok(()); }
+                };
+                loop {
+                    match protocol_wire::read_receiver_message(&mut recv).await? {
+                        protocol_message::ReceiverMessage::TransferStarted(m) => {
+                            events.emit(SenderEvent::TransferStarted {
+                                session_id: m.session_id,
+                                file_count: m.file_count,
+                                total_bytes: m.total_bytes,
+                            })
+                        }
+                        protocol_message::ReceiverMessage::TransferProgress(m) => {
+                            events.emit(SenderEvent::TransferProgress {
+                                session_id: m.session_id,
+                                bytes_sent: m.bytes_sent,
+                                total_bytes: m.total_bytes,
+                            })
+                        }
+                        protocol_message::ReceiverMessage::TransferCompleted(_) => break Ok(()),
+                        _ => bail!("unexpected progress message from receiver"),
+                    }
                 }
-            }
-        }) }
+            }),
+        }
     }
-    async fn wait(self) -> Result<()> { self.shutdown.await? }
+    async fn wait(self) -> Result<()> {
+        self.shutdown.await?
+    }
 }
 
-struct BlobTransferTask { ticket: String, stop_tx: Option<oneshot::Sender<()>>, shutdown: JoinHandle<Result<()>> }
+struct BlobTransferTask {
+    ticket: String,
+    stop_tx: Option<oneshot::Sender<()>>,
+    shutdown: JoinHandle<Result<()>>,
+}
 impl BlobTransferTask {
     fn spawn(reg: BlobRegistration) -> Self {
         let ticket = reg.ticket().to_string();
         let (tx, rx) = oneshot::channel();
-        let shutdown = tokio::spawn(async move { let _ = rx.await; reg.shutdown().await });
-        Self { ticket, stop_tx: Some(tx), shutdown }
+        let shutdown = tokio::spawn(async move {
+            let _ = rx.await;
+            reg.shutdown().await
+        });
+        Self {
+            ticket,
+            stop_tx: Some(tx),
+            shutdown,
+        }
     }
-    fn ticket(&self) -> &str { &self.ticket }
-    async fn stop(mut self) -> Result<()> { if let Some(tx) = self.stop_tx.take() { let _ = tx.send(()); } self.shutdown.await? }
+    fn ticket(&self) -> &str {
+        &self.ticket
+    }
+    async fn stop(mut self) -> Result<()> {
+        if let Some(tx) = self.stop_tx.take() {
+            let _ = tx.send(());
+        }
+        self.shutdown.await?
+    }
 }

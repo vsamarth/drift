@@ -8,9 +8,9 @@ use crate::fs_plan::prepare::{PreparedFile, PreparedFiles};
 use anyhow::{Result, anyhow};
 use tokio::sync::watch;
 
+use crate::protocol::DeviceType;
 use crate::rendezvous::OfferManifest;
 use crate::util::ConnectionPathKind;
-use crate::protocol::DeviceType;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SendManifestFile {

@@ -4,14 +4,14 @@ use std::path::PathBuf;
 use anyhow::{Context, Result, anyhow, bail};
 use clap::{Args, ValueEnum};
 use drift_core::discovery::{resolve_nearby, resolve_pairing_code};
-use drift_core::protocol::DeviceType;
-use drift_core::transfer_flow::{
-    ReceiverDecision, ReceiverEvent, ReceiverOffer, ReceiverRequest,
-    ReceiverSession, ReceiverStart, SendRequest, Sender, SenderEvent, TransferOutcome,
-};
-use drift_core::util::{human_size, process_display_device_name, make_ticket, confirm_accept};
 use drift_core::lan::LanReceiveAdvertisement;
+use drift_core::protocol::DeviceType;
 use drift_core::rendezvous::{RendezvousClient, resolve_server_url};
+use drift_core::transfer_flow::{
+    ReceiverDecision, ReceiverEvent, ReceiverOffer, ReceiverRequest, ReceiverSession,
+    ReceiverStart, SendRequest, Sender, SenderEvent, TransferOutcome,
+};
+use drift_core::util::{confirm_accept, human_size, make_ticket, process_display_device_name};
 use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
 use tokio::time::Duration;
 use tokio_stream::StreamExt;
@@ -80,9 +80,13 @@ pub async fn send(code: String, files: Vec<PathBuf>) -> Result<()> {
     send_with_server(code, files, None).await
 }
 
-pub async fn send_with_server(code: String, files: Vec<PathBuf>, server_url: Option<String>) -> Result<()> {
+pub async fn send_with_server(
+    code: String,
+    files: Vec<PathBuf>,
+    server_url: Option<String>,
+) -> Result<()> {
     let device_name = process_display_device_name();
-    
+
     info!(
         code = %code.trim().to_uppercase(),
         file_count = files.len(),
@@ -92,7 +96,7 @@ pub async fn send_with_server(code: String, files: Vec<PathBuf>, server_url: Opt
     );
 
     let peer_endpoint_id = resolve_pairing_code(&code, server_url.as_deref()).await?;
-    
+
     let sender = Sender::new(
         device_name,
         DeviceType::Laptop,
@@ -128,7 +132,7 @@ pub async fn send_nearby(
     _server_url: Option<String>,
 ) -> Result<()> {
     let device_name = process_display_device_name();
-    
+
     info!(
         file_count = files.len(),
         device = %device_name,
@@ -204,7 +208,7 @@ async fn consume_sender_run(
     progress_bar: &mut Option<ProgressBar>,
 ) -> Result<TransferOutcome> {
     let (mut events, cancel_tx, outcome_rx) = run.into_parts();
-    
+
     let mut outcome_rx = outcome_rx;
     loop {
         tokio::select! {
@@ -234,29 +238,47 @@ async fn consume_sender_run(
     outcome_rx.await.context("waiting for send outcome")?
 }
 
-fn render_sender_event(
-    progress_bar: &mut Option<ProgressBar>,
-    event: &SenderEvent,
-) {
+fn render_sender_event(progress_bar: &mut Option<ProgressBar>, event: &SenderEvent) {
     match event {
-        SenderEvent::Connecting { peer_endpoint_id, .. } => {
+        SenderEvent::Connecting {
+            peer_endpoint_id, ..
+        } => {
             let pb = ensure_spinner(progress_bar);
             pb.set_message(format!("Connecting to {peer_endpoint_id}..."));
         }
-        SenderEvent::WaitingForDecision { receiver_device_name, .. } => {
+        SenderEvent::WaitingForDecision {
+            receiver_device_name,
+            ..
+        } => {
             let pb = ensure_spinner(progress_bar);
             pb.set_message(format!("Waiting for {receiver_device_name} to accept..."));
         }
-        SenderEvent::Accepted { receiver_device_name, .. } => {
+        SenderEvent::Accepted {
+            receiver_device_name,
+            ..
+        } => {
             let pb = ensure_spinner(progress_bar);
-            pb.set_message(format!("Accepted by {receiver_device_name}. Starting transfer..."));
+            pb.set_message(format!(
+                "Accepted by {receiver_device_name}. Starting transfer..."
+            ));
         }
-        SenderEvent::TransferStarted { file_count, total_bytes, .. } => {
+        SenderEvent::TransferStarted {
+            file_count,
+            total_bytes,
+            ..
+        } => {
             let pb = ensure_spinner(progress_bar);
             configure_transfer_bar(pb, *total_bytes);
-            pb.set_message(format!("Sending {file_count} files ({})", human_size(*total_bytes)));
+            pb.set_message(format!(
+                "Sending {file_count} files ({})",
+                human_size(*total_bytes)
+            ));
         }
-        SenderEvent::TransferProgress { bytes_sent, total_bytes, .. } => {
+        SenderEvent::TransferProgress {
+            bytes_sent,
+            total_bytes,
+            ..
+        } => {
             let pb = ensure_spinner(progress_bar);
             configure_transfer_bar(pb, *total_bytes);
             pb.set_position(*bytes_sent);
@@ -286,14 +308,14 @@ pub async fn receive(out_dir: PathBuf, server_url: Option<String>) -> Result<()>
 
     let endpoint = drift_core::transfer_flow::receiver::bind_endpoint().await?;
     let ticket = make_ticket(&endpoint).await?;
-    
+
     // 1. Start mDNS Advertising
     let _advertiser = LanReceiveAdvertisement::start(&ticket, &device_name)?;
-    
+
     // 2. Register with Rendezvous
     let rendezvous = RendezvousClient::new(resolve_server_url(server_url.as_deref()));
     let registration = rendezvous.register_peer(ticket).await?;
-    
+
     info!(code = %registration.code, expires_at = %registration.expires_at, "receive.ready");
     eprintln!(
         "Pairing code: {} (expires {})",
@@ -309,17 +331,17 @@ pub async fn receive(out_dir: PathBuf, server_url: Option<String>) -> Result<()>
         }
     };
     let connection = incoming.await?;
-    
+
     // 4. Run the session
     let session = ReceiverSession::new(ReceiverRequest {
         device_name,
         device_type: DeviceType::Laptop,
         out_dir,
     });
-    
+
     let start = session.start(endpoint, connection);
     let outcome = consume_receiver_run(start).await?;
-    
+
     match outcome {
         TransferOutcome::Completed => {
             info!("receive.completed");
@@ -338,9 +360,7 @@ pub async fn receive(out_dir: PathBuf, server_url: Option<String>) -> Result<()>
     Ok(())
 }
 
-async fn consume_receiver_run(
-    start: ReceiverStart,
-) -> Result<TransferOutcome> {
+async fn consume_receiver_run(start: ReceiverStart) -> Result<TransferOutcome> {
     let ReceiverStart {
         mut events,
         offer_rx,
@@ -361,14 +381,19 @@ async fn consume_receiver_run(
 
     // 2. Render offer and ask for permission
     render_offer(&offer);
-    
+
     let accepted = confirm_accept()?;
     if !accepted {
         let _ = control.decision_tx.send(ReceiverDecision::Decline);
-        return Ok(TransferOutcome::Declined { reason: "local user declined".to_owned() });
+        return Ok(TransferOutcome::Declined {
+            reason: "local user declined".to_owned(),
+        });
     }
-    
-    control.decision_tx.send(ReceiverDecision::Accept).map_err(|_| anyhow!("failed to send decision"))?;
+
+    control
+        .decision_tx
+        .send(ReceiverDecision::Accept)
+        .map_err(|_| anyhow!("failed to send decision"))?;
 
     // 3. Process events
     let mut outcome_rx = outcome_rx;
@@ -407,25 +432,32 @@ fn render_offer(offer: &ReceiverOffer) {
     println!();
 }
 
-fn render_receiver_event(
-    progress_bar: &mut Option<ProgressBar>,
-    event: &ReceiverEvent,
-) {
+fn render_receiver_event(progress_bar: &mut Option<ProgressBar>, event: &ReceiverEvent) {
     match event {
         ReceiverEvent::Listening { .. } => {
             let pb = ensure_spinner(progress_bar);
             pb.set_message("Waiting for sender...");
         }
-        ReceiverEvent::OfferReceived { sender_device_name, .. } => {
+        ReceiverEvent::OfferReceived {
+            sender_device_name, ..
+        } => {
             let pb = ensure_spinner(progress_bar);
             pb.set_message(format!("Offer received from {sender_device_name}"));
         }
-        ReceiverEvent::TransferStarted { file_count, total_bytes, .. } => {
+        ReceiverEvent::TransferStarted {
+            file_count,
+            total_bytes,
+            ..
+        } => {
             let pb = ensure_spinner(progress_bar);
             configure_transfer_bar(pb, *total_bytes);
             pb.set_message(format!("Receiving {file_count} files..."));
         }
-        ReceiverEvent::TransferProgress { bytes_received, total_bytes, .. } => {
+        ReceiverEvent::TransferProgress {
+            bytes_received,
+            total_bytes,
+            ..
+        } => {
             let pb = ensure_spinner(progress_bar);
             configure_transfer_bar(pb, *total_bytes);
             pb.set_position(*bytes_received);

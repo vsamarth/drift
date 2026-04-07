@@ -2,12 +2,12 @@ mod device_name;
 
 pub use device_name::{normalize_hostname_label, process_display_device_name, random_device_name};
 
-use std::io::{self, Write};
 use anyhow::{Context, Result};
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use iroh::{Endpoint, EndpointAddr, TransportAddr};
 use serde::{Deserialize, Serialize};
+use std::io::{self, Write};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct TransferTicket {
@@ -108,7 +108,10 @@ pub fn human_size(bytes: u64) -> String {
 
 pub fn format_code_label(code: &str) -> String {
     let normalized = code.trim().to_ascii_uppercase();
-    let chars: Vec<char> = normalized.chars().filter(|ch| ch.is_ascii_alphanumeric()).collect();
+    let chars: Vec<char> = normalized
+        .chars()
+        .filter(|ch| ch.is_ascii_alphanumeric())
+        .collect();
     if chars.len() != 6 {
         return "Code".to_owned();
     }

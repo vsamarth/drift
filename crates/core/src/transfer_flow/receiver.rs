@@ -5,7 +5,7 @@ use futures_lite::StreamExt;
 use iroh::{Endpoint, endpoint::Connection};
 use iroh_blobs::{
     ALPN as BLOBS_ALPN,
-    api::{remote::GetProgressItem, blobs::ExportMode, blobs::ExportOptions},
+    api::{blobs::ExportMode, blobs::ExportOptions, remote::GetProgressItem},
     format::collection::Collection,
     store::fs::FsStore,
     ticket::BlobTicket,
@@ -19,9 +19,7 @@ use tokio_stream::wrappers::UnboundedReceiverStream;
 use tracing::{info, instrument};
 
 use crate::{
-    protocol::wire as protocol_wire,
-    protocol::message as protocol_message,
-    protocol::ALPN,
+    protocol::ALPN, protocol::message as protocol_message, protocol::wire as protocol_wire,
     rendezvous::OfferManifest,
 };
 
@@ -60,7 +58,9 @@ pub struct ReceiverOffer {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ReceiverEvent {
-    Listening { endpoint_id: iroh::EndpointId },
+    Listening {
+        endpoint_id: iroh::EndpointId,
+    },
     OfferReceived {
         session_id: String,
         sender_device_name: String,
@@ -78,7 +78,9 @@ pub enum ReceiverEvent {
         bytes_received: u64,
         total_bytes: u64,
     },
-    Completed { session_id: String },
+    Completed {
+        session_id: String,
+    },
 }
 
 pub type ReceiverEventStream = UnboundedReceiverStream<Result<ReceiverEvent>>;
@@ -124,7 +126,7 @@ impl ReceiverSession {
         let (cancel_tx, cancel_rx) = watch::channel(false);
         let (outcome_tx, outcome_rx) = oneshot::channel();
         let request = self.request.clone();
-        
+
         tokio::spawn(async move {
             let outcome = run_session(
                 endpoint,
@@ -134,7 +136,8 @@ impl ReceiverSession {
                 offer_tx,
                 decision_rx,
                 cancel_rx,
-            ).await;
+            )
+            .await;
             let _ = outcome_tx.send(outcome);
         });
 
@@ -142,7 +145,10 @@ impl ReceiverSession {
             events: UnboundedReceiverStream::new(event_rx),
             offer_rx,
             outcome_rx,
-            control: ReceiverControl { decision_tx, cancel_tx },
+            control: ReceiverControl {
+                decision_tx,
+                cancel_tx,
+            },
         }
     }
 }
@@ -157,16 +163,22 @@ async fn run_session(
     decision_rx: oneshot::Receiver<ReceiverDecision>,
     mut cancel_rx: watch::Receiver<bool>,
 ) -> Result<TransferOutcome> {
-    emit_receiver_event(&event_tx, ReceiverEvent::Listening { endpoint_id: endpoint.addr().id });
+    emit_receiver_event(
+        &event_tx,
+        ReceiverEvent::Listening {
+            endpoint_id: endpoint.addr().id,
+        },
+    );
 
     // --- Phase 1: Handshake ---
-    let (mut control_send, mut control_recv, peer_hello, offer) = match do_handshake(&endpoint, &request, &connection, &mut cancel_rx).await? {
-        HandshakeResult::Ok(s, r, h, o) => (s, r, h, o),
-        HandshakeResult::Cancelled(outcome) => {
-            let _ = offer_tx.send(Err(anyhow!("cancelled during handshake")));
-            return Ok(outcome);
-        }
-    };
+    let (mut control_send, mut control_recv, peer_hello, offer) =
+        match do_handshake(&endpoint, &request, &connection, &mut cancel_rx).await? {
+            HandshakeResult::Ok(s, r, h, o) => (s, r, h, o),
+            HandshakeResult::Cancelled(outcome) => {
+                let _ = offer_tx.send(Err(anyhow!("cancelled during handshake")));
+                return Ok(outcome);
+            }
+        };
 
     let session_id = peer_hello.session_id.clone();
     tracing::Span::current().record("session_id", &session_id);
@@ -181,25 +193,35 @@ async fn run_session(
             return Err(err);
         }
     };
-    
+
     let expected_transfer_files = build_expected_transfer_files(&manifest, expected_files)?;
     let receiver_offer = ReceiverOffer {
         session_id: session_id.clone(),
         sender_device_name: peer_hello.identity.device_name.clone(),
         sender_device_type: to_local_device_type(peer_hello.identity.device_type),
         sender_endpoint_id: peer_hello.identity.endpoint_id,
-        items: manifest.files.iter().map(|item| ReceiverOfferItem { path: item.path.clone(), size: item.size }).collect(),
+        items: manifest
+            .files
+            .iter()
+            .map(|item| ReceiverOfferItem {
+                path: item.path.clone(),
+                size: item.size,
+            })
+            .collect(),
         file_count: manifest.file_count,
         total_size: manifest.total_size,
     };
-    
-    emit_receiver_event(&event_tx, ReceiverEvent::OfferReceived {
-        session_id: session_id.clone(),
-        sender_device_name: receiver_offer.sender_device_name.clone(),
-        sender_endpoint_id: receiver_offer.sender_endpoint_id,
-        file_count: receiver_offer.file_count,
-        total_size: receiver_offer.total_size,
-    });
+
+    emit_receiver_event(
+        &event_tx,
+        ReceiverEvent::OfferReceived {
+            session_id: session_id.clone(),
+            sender_device_name: receiver_offer.sender_device_name.clone(),
+            sender_endpoint_id: receiver_offer.sender_endpoint_id,
+            file_count: receiver_offer.file_count,
+            total_size: receiver_offer.total_size,
+        },
+    );
     let _ = offer_tx.send(Ok(receiver_offer));
 
     // --- Phase 3: User Decision ---
@@ -211,13 +233,26 @@ async fn run_session(
     };
 
     if decision == ReceiverDecision::Decline {
-        let _ = send_receiver_decline(&mut control_send, &session_id, "declined by user".to_owned()).await;
-        return Ok(TransferOutcome::Declined { reason: "receiver declined".to_owned() });
+        let _ = send_receiver_decline(
+            &mut control_send,
+            &session_id,
+            "declined by user".to_owned(),
+        )
+        .await;
+        return Ok(TransferOutcome::Declined {
+            reason: "receiver declined".to_owned(),
+        });
     }
 
     // --- Phase 4: Data Transfer ---
-    let _ = protocol_wire::write_receiver_message(&mut control_send, &protocol_message::ReceiverMessage::Accept(protocol_message::Accept { session_id: session_id.clone() })).await?;
-    
+    let _ = protocol_wire::write_receiver_message(
+        &mut control_send,
+        &protocol_message::ReceiverMessage::Accept(protocol_message::Accept {
+            session_id: session_id.clone(),
+        }),
+    )
+    .await?;
+
     let ticket_message = tokio::select! {
         res = protocol_wire::read_sender_message(&mut control_recv) => match res.context("waiting for ticket")? {
             protocol_message::SenderMessage::BlobTicket(msg) => msg,
@@ -229,16 +264,19 @@ async fn run_session(
         _ = tokio::time::sleep(Duration::from_secs(30)) => bail!("timeout waiting for blob ticket"),
     };
 
-    let blob_ticket: BlobTicket = ticket_message.ticket.parse().context("parsing blob ticket")?;
+    let blob_ticket: BlobTicket = ticket_message
+        .ticket
+        .parse()
+        .context("parsing blob ticket")?;
     let scratch = ScratchDir::new("drift-recv", &session_id).await?;
     let store = FsStore::load(&scratch.path).await?;
-    
+
     let outcome = async {
         let blob_conn = endpoint.connect(blob_ticket.addr().clone(), BLOBS_ALPN).await?;
         let mut progress_send = connection.open_uni().await?;
-        
+
         let transfer_outcome = do_transfer(
-            &session_id, &manifest, store.remote().fetch(blob_conn, blob_ticket.clone()).stream(), 
+            &session_id, &manifest, store.remote().fetch(blob_conn, blob_ticket.clone()).stream(),
             &mut progress_send, &mut control_recv, &mut cancel_rx, &event_tx
         ).await?;
 
@@ -256,7 +294,7 @@ async fn run_session(
 
         let _ = protocol_wire::write_receiver_message(&mut progress_send, &protocol_message::ReceiverMessage::TransferCompleted(protocol_message::TransferCompleted { session_id: session_id.clone() })).await;
         let _ = send_transfer_result(&mut control_send, &session_id, protocol_message::TransferStatus::Ok).await;
-        
+
         // Final wait for Sender to acknowledge our result
         match protocol_wire::read_sender_message(&mut control_recv).await? {
             protocol_message::SenderMessage::TransferAck(_) => {
@@ -273,7 +311,12 @@ async fn run_session(
 }
 
 enum HandshakeResult {
-    Ok(iroh::endpoint::SendStream, iroh::endpoint::RecvStream, protocol_message::Hello, protocol_message::Offer),
+    Ok(
+        iroh::endpoint::SendStream,
+        iroh::endpoint::RecvStream,
+        protocol_message::Hello,
+        protocol_message::Offer,
+    ),
     Cancelled(TransferOutcome),
 }
 
@@ -327,11 +370,14 @@ async fn do_transfer(
     event_tx: &Option<mpsc::UnboundedSender<Result<ReceiverEvent>>>,
 ) -> Result<TransferOutcome> {
     let mut last_report = 0u64;
-    emit_receiver_event(event_tx, ReceiverEvent::TransferStarted {
-        session_id: session_id.to_owned(),
-        file_count: manifest.file_count,
-        total_bytes: manifest.total_size,
-    });
+    emit_receiver_event(
+        event_tx,
+        ReceiverEvent::TransferStarted {
+            session_id: session_id.to_owned(),
+            file_count: manifest.file_count,
+            total_bytes: manifest.total_size,
+        },
+    );
 
     loop {
         tokio::select! {
@@ -361,7 +407,11 @@ async fn do_transfer(
     }
 }
 
-async fn abort_session(send: &mut iroh::endpoint::SendStream, session_id: &str, phase: protocol_message::CancelPhase) -> Result<TransferOutcome> {
+async fn abort_session(
+    send: &mut iroh::endpoint::SendStream,
+    session_id: &str,
+    phase: protocol_message::CancelPhase,
+) -> Result<TransferOutcome> {
     let outcome = TransferOutcome::local_cancel(protocol_message::TransferRole::Receiver, phase);
     if let TransferOutcome::Cancelled(c) = &outcome {
         let _ = send_receiver_cancel(send, session_id, c.by, c.phase, c.reason.clone()).await;
@@ -371,61 +421,164 @@ async fn abort_session(send: &mut iroh::endpoint::SendStream, session_id: &str, 
     Ok(outcome)
 }
 
-pub async fn export_downloaded_collection(store: &FsStore, root_hash: iroh_blobs::Hash, expected_files: &[ExpectedTransferFile]) -> Result<()> {
+pub async fn export_downloaded_collection(
+    store: &FsStore,
+    root_hash: iroh_blobs::Hash,
+    expected_files: &[ExpectedTransferFile],
+) -> Result<()> {
     let collection = Collection::load(root_hash, store.as_ref()).await?;
     let hashes: BTreeMap<_, _> = collection.into_iter().collect();
     for exp in expected_files {
-        let hash = *hashes.get(&exp.path).ok_or_else(|| anyhow!("missing file in collection: {}", exp.path))?;
-        if let Some(p) = exp.destination.parent() { fs::create_dir_all(p).await?; }
-        store.export_with_opts(ExportOptions { hash, target: exp.destination.clone(), mode: ExportMode::Copy }).finish().await?;
+        let hash = *hashes
+            .get(&exp.path)
+            .ok_or_else(|| anyhow!("missing file in collection: {}", exp.path))?;
+        if let Some(p) = exp.destination.parent() {
+            fs::create_dir_all(p).await?;
+        }
+        store
+            .export_with_opts(ExportOptions {
+                hash,
+                target: exp.destination.clone(),
+                mode: ExportMode::Copy,
+            })
+            .finish()
+            .await?;
     }
     Ok(())
 }
 
-async fn build_expected_files(manifest: &OfferManifest, out_dir: &Path) -> Result<BTreeMap<String, ExpectedTransferFile>> {
+async fn build_expected_files(
+    manifest: &OfferManifest,
+    out_dir: &Path,
+) -> Result<BTreeMap<String, ExpectedTransferFile>> {
     let mut expected = BTreeMap::new();
     for file in &manifest.files {
         let destination = resolve_transfer_destination(out_dir, &file.path)?;
         ensure_destination_available(out_dir, &destination).await?;
-        expected.insert(file.path.clone(), ExpectedTransferFile { path: file.path.clone(), size: file.size, destination });
+        expected.insert(
+            file.path.clone(),
+            ExpectedTransferFile {
+                path: file.path.clone(),
+                size: file.size,
+                destination,
+            },
+        );
     }
     Ok(expected)
 }
 
-fn build_expected_transfer_files(manifest: &OfferManifest, mut expected_files: BTreeMap<String, ExpectedTransferFile>) -> Result<Vec<ExpectedTransferFile>> {
-    manifest.files.iter().map(|f| expected_files.remove(&f.path).ok_or_else(|| anyhow!("missing expected file for {}", f.path))).collect()
+fn build_expected_transfer_files(
+    manifest: &OfferManifest,
+    mut expected_files: BTreeMap<String, ExpectedTransferFile>,
+) -> Result<Vec<ExpectedTransferFile>> {
+    manifest
+        .files
+        .iter()
+        .map(|f| {
+            expected_files
+                .remove(&f.path)
+                .ok_or_else(|| anyhow!("missing expected file for {}", f.path))
+        })
+        .collect()
 }
 
 fn to_protocol_device_type(dt: crate::protocol::DeviceType) -> protocol_message::DeviceType {
-    match dt { crate::protocol::DeviceType::Phone => protocol_message::DeviceType::Phone, crate::protocol::DeviceType::Laptop => protocol_message::DeviceType::Laptop }
+    match dt {
+        crate::protocol::DeviceType::Phone => protocol_message::DeviceType::Phone,
+        crate::protocol::DeviceType::Laptop => protocol_message::DeviceType::Laptop,
+    }
 }
 
 fn to_local_device_type(dt: protocol_message::DeviceType) -> crate::protocol::DeviceType {
-    match dt { protocol_message::DeviceType::Phone => crate::protocol::DeviceType::Phone, protocol_message::DeviceType::Laptop => crate::protocol::DeviceType::Laptop }
+    match dt {
+        protocol_message::DeviceType::Phone => crate::protocol::DeviceType::Phone,
+        protocol_message::DeviceType::Laptop => crate::protocol::DeviceType::Laptop,
+    }
 }
 
 fn to_offer_manifest(offer: &protocol_message::Offer) -> OfferManifest {
     OfferManifest {
-        files: offer.manifest.items.iter().map(|item| match item { protocol_message::ManifestItem::File { path, size } => crate::rendezvous::OfferFile { path: path.clone(), size: *size } }).collect(),
+        files: offer
+            .manifest
+            .items
+            .iter()
+            .map(|item| match item {
+                protocol_message::ManifestItem::File { path, size } => {
+                    crate::rendezvous::OfferFile {
+                        path: path.clone(),
+                        size: *size,
+                    }
+                }
+            })
+            .collect(),
         file_count: offer.manifest.count() as u64,
         total_size: offer.manifest.total_size(),
     }
 }
 
-fn emit_receiver_event(tx: &Option<mpsc::UnboundedSender<Result<ReceiverEvent>>>, event: ReceiverEvent) { if let Some(tx) = tx { let _ = tx.send(Ok(event)); } }
-
-async fn send_receiver_cancel(send: &mut iroh::endpoint::SendStream, session_id: &str, by: protocol_message::TransferRole, phase: protocol_message::CancelPhase, reason: String) -> Result<()> {
-    protocol_wire::write_receiver_message(send, &protocol_message::ReceiverMessage::Cancel(protocol_message::Cancel { session_id: session_id.to_owned(), by, phase, reason })).await
+fn emit_receiver_event(
+    tx: &Option<mpsc::UnboundedSender<Result<ReceiverEvent>>>,
+    event: ReceiverEvent,
+) {
+    if let Some(tx) = tx {
+        let _ = tx.send(Ok(event));
+    }
 }
 
-async fn send_transfer_result(send: &mut iroh::endpoint::SendStream, session_id: &str, status: protocol_message::TransferStatus) -> Result<()> {
-    protocol_wire::write_receiver_message(send, &protocol_message::ReceiverMessage::TransferResult(protocol_message::TransferResult { session_id: session_id.to_owned(), status })).await
+async fn send_receiver_cancel(
+    send: &mut iroh::endpoint::SendStream,
+    session_id: &str,
+    by: protocol_message::TransferRole,
+    phase: protocol_message::CancelPhase,
+    reason: String,
+) -> Result<()> {
+    protocol_wire::write_receiver_message(
+        send,
+        &protocol_message::ReceiverMessage::Cancel(protocol_message::Cancel {
+            session_id: session_id.to_owned(),
+            by,
+            phase,
+            reason,
+        }),
+    )
+    .await
 }
 
-async fn send_receiver_decline(send: &mut iroh::endpoint::SendStream, session_id: &str, reason: String) -> Result<()> {
-    protocol_wire::write_receiver_message(send, &protocol_message::ReceiverMessage::Decline(protocol_message::Decline { session_id: session_id.to_owned(), reason })).await
+async fn send_transfer_result(
+    send: &mut iroh::endpoint::SendStream,
+    session_id: &str,
+    status: protocol_message::TransferStatus,
+) -> Result<()> {
+    protocol_wire::write_receiver_message(
+        send,
+        &protocol_message::ReceiverMessage::TransferResult(protocol_message::TransferResult {
+            session_id: session_id.to_owned(),
+            status,
+        }),
+    )
+    .await
+}
+
+async fn send_receiver_decline(
+    send: &mut iroh::endpoint::SendStream,
+    session_id: &str,
+    reason: String,
+) -> Result<()> {
+    protocol_wire::write_receiver_message(
+        send,
+        &protocol_message::ReceiverMessage::Decline(protocol_message::Decline {
+            session_id: session_id.to_owned(),
+            reason,
+        }),
+    )
+    .await
 }
 
 pub async fn bind_endpoint() -> Result<Endpoint> {
-    iroh::Endpoint::builder(iroh::endpoint::presets::N0).alpns(vec![ALPN.to_vec(), BLOBS_ALPN.to_vec()]).relay_mode(iroh::RelayMode::Default).bind().await.context("binding iroh endpoint")
+    iroh::Endpoint::builder(iroh::endpoint::presets::N0)
+        .alpns(vec![ALPN.to_vec(), BLOBS_ALPN.to_vec()])
+        .relay_mode(iroh::RelayMode::Default)
+        .bind()
+        .await
+        .context("binding iroh endpoint")
 }

@@ -11,8 +11,8 @@ use tracing::warn;
 
 use crate::types::{PairingCodeState, ReceiverConfig, ReceiverRegistration};
 
-use super::{OfferDecision, ReceiverEvent};
 use super::session::ReceiverRun;
+use super::{OfferDecision, ReceiverEvent};
 
 pub(super) struct ReceiverRuntime {
     config: ReceiverConfig,
@@ -255,7 +255,6 @@ impl ReceiverRuntime {
 
     pub(super) fn handle_offer_prepared(&mut self, run: ReceiverRun) -> bool {
         if !matches!(self.offer_state, OfferState::Idle) {
-    
             let _ = run.decision_tx.send(OfferResolution::Decline);
             return false;
         }
@@ -267,7 +266,6 @@ impl ReceiverRuntime {
     pub(super) fn handle_offer_progress(&mut self, offer_id: u64) -> bool {
         match &mut self.offer_state {
             OfferState::Pending(pending) if pending.run.offer_id == offer_id => {
-
                 self.offer_state = OfferState::Receiving {
                     offer_id,
                     cancel_tx: pending.run.cancel_tx.clone(),
@@ -290,7 +288,6 @@ impl ReceiverRuntime {
 
         match &mut self.offer_state {
             OfferState::Pending(pending) if pending.run.offer_id == offer_id => {
-
                 self.offer_state = OfferState::Idle;
                 true
             }
@@ -318,7 +315,6 @@ impl ReceiverRuntime {
     fn cancel_pending_offer(&mut self, offer_id: u64) -> bool {
         match std::mem::replace(&mut self.offer_state, OfferState::Idle) {
             OfferState::Pending(pending) if pending.run.offer_id == offer_id => {
-
                 let _ = pending.run.decision_tx.send(OfferResolution::Cancel);
                 true
             }

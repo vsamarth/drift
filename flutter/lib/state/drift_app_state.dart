@@ -73,6 +73,8 @@ class DriftAppState {
     SendTransferSession(:final phase) => switch (phase) {
       SendTransferSessionPhase.connecting => TransferStage.ready,
       SendTransferSessionPhase.waitingForDecision ||
+      SendTransferSessionPhase.accepted ||
+      SendTransferSessionPhase.declined ||
       SendTransferSessionPhase.sending => TransferStage.waiting,
       SendTransferSessionPhase.cancelling => TransferStage.waiting,
     },
@@ -365,6 +367,8 @@ class SendDraftSession extends ShellSessionState {
 enum SendTransferSessionPhase {
   connecting,
   waitingForDecision,
+  accepted,
+  declined,
   sending,
   cancelling,
 }
