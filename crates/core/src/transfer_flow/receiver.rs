@@ -347,6 +347,23 @@ async fn run_session(
                 .context("connecting to blob provider")?;
             let mut stream = store.remote().fetch(blob_connection, blob_ticket.clone()).stream();
 
+            let mut progress_send = connection
+                .open_uni()
+                .await
+                .context("opening progress stream")?;
+
+            let _ = protocol_wire::write_receiver_message(
+                &mut progress_send,
+                &protocol_message::ReceiverMessage::TransferStarted(
+                    protocol_message::TransferStarted {
+                        session_id: session_id.clone(),
+                        file_count: manifest.file_count,
+                        total_bytes: manifest.total_size,
+                    },
+                ),
+            )
+            .await;
+
             emit_receiver_event(
                 &event_tx,
                 ReceiverEvent::TransferStarted {
@@ -358,6 +375,7 @@ async fn run_session(
 
             info!(%session_id, "transfer started");
 
+            let mut last_progress_report = 0u64;
             let fetch_outcome: Result<Option<TransferCancellation>> = loop {
                 tokio::select! {
                     cancel_requested = wait_for_cancel(&mut cancel_rx) => {
@@ -399,6 +417,21 @@ async fn run_session(
                                         total_bytes: manifest.total_size,
                                     },
                                 );
+
+                                // Report to sender occasionally
+                                if offset - last_progress_report >= 1024 * 1024 || offset == manifest.total_size {
+                                    let _ = protocol_wire::write_receiver_message(
+                                        &mut progress_send,
+                                        &protocol_message::ReceiverMessage::TransferProgress(
+                                            protocol_message::TransferProgress {
+                                                session_id: session_id.clone(),
+                                                bytes_sent: offset,
+                                                total_bytes: manifest.total_size,
+                                            }
+                                        )
+                                    ).await;
+                                    last_progress_report = offset;
+                                }
                             }
                             Some(GetProgressItem::Done(_)) => break Ok(None),
                             Some(GetProgressItem::Error(err)) => {
@@ -418,6 +451,16 @@ async fn run_session(
                     info!(%session_id, "transfer data received, exporting files");
                     export_downloaded_collection(&store, blob_ticket.hash(), &expected_transfer_files)
                         .await?;
+                    
+                    let _ = protocol_wire::write_receiver_message(
+                        &mut progress_send,
+                        &protocol_message::ReceiverMessage::TransferCompleted(
+                            protocol_message::TransferCompleted {
+                                session_id: session_id.clone(),
+                            }
+                        )
+                    ).await;
+
                     emit_receiver_event(
                         &event_tx,
                         ReceiverEvent::Completed {

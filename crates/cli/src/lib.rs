@@ -4,9 +4,12 @@ use std::path::PathBuf;
 use anyhow::{Context, Result, bail};
 use clap::{Args, ValueEnum};
 use drift_app::{
-    ConflictPolicy, OfferDecision, ReceiverConfig, ReceiverEvent, ReceiverOfferEvent,
-    ReceiverOfferPhase, ReceiverService, SendConfig, SendDestination, SendDraft, SendEvent,
-    SendPhase, SendSessionOutcome,
+    ConflictPolicy, OfferDecision, ReceiverConfig, ReceiverEvent, ReceiverOfferPhase, ReceiverService,
+};
+use drift_core::discovery::{resolve_nearby, resolve_pairing_code};
+use drift_core::protocol::DeviceType;
+use drift_core::transfer_flow::{
+    SendRequest, Sender, SenderEvent, TransferOutcome,
 };
 use drift_core::util::{human_size, process_display_device_name};
 use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
@@ -76,43 +79,40 @@ fn log_env_filter(verbose: u8) -> EnvFilter {
 
 pub async fn send(code: String, files: Vec<PathBuf>, server_url: Option<String>) -> Result<()> {
     let device_name = process_display_device_name();
-    let draft = SendDraft::new(
-        SendConfig {
-            device_name: device_name.clone(),
-            device_type: "laptop".to_owned(),
-        },
-        files,
-    );
+    
     info!(
         code = %code.trim().to_uppercase(),
-        file_count = draft.paths().len(),
+        file_count = files.len(),
         device = %device_name,
         rendezvous_override = ?server_url,
-        "send.started"
+        "send.resolving_code"
     );
-    for (i, path) in draft.paths().iter().enumerate() {
-        debug!(index = i, path = %path.display(), "send.input_path");
-    }
+
+    let peer_endpoint_id = resolve_pairing_code(&code, server_url.as_deref()).await?;
+    
+    let sender = Sender::new(
+        device_name,
+        DeviceType::Laptop,
+        SendRequest {
+            peer_endpoint_id,
+            files,
+        },
+    );
 
     let mut progress_bar = None;
-    let mut last_phase = None;
-    let session = draft.into_session(SendDestination::code(code, server_url));
-    let outcome = consume_send_run(session.start(), &mut progress_bar, &mut last_phase).await;
+    let run = sender.run_with_events();
+    let outcome = consume_sender_run(run, &mut progress_bar).await;
     finish_progress_bar(&mut progress_bar);
 
     match &outcome {
-        Ok(SendSessionOutcome::Accepted {
-            receiver_device_name,
-            receiver_endpoint_id,
-        }) => {
-            info!(
-                receiver_device_name = %receiver_device_name,
-                receiver_endpoint_id = %receiver_endpoint_id,
-                "send.accepted"
-            );
+        Ok(TransferOutcome::Completed) => {
+            info!("send.completed");
         }
-        Ok(SendSessionOutcome::Declined { reason }) => {
+        Ok(TransferOutcome::Declined { reason }) => {
             info!(reason = %reason, "send.declined");
+        }
+        Ok(TransferOutcome::Cancelled(c)) => {
+            info!(by = ?c.by, reason = %c.reason, "send.cancelled");
         }
         Err(e) => warn!(error = %e, error_chain = %format!("{e:#}"), "send.failed"),
     }
@@ -125,21 +125,15 @@ pub async fn send_nearby(
     _server_url: Option<String>,
 ) -> Result<()> {
     let device_name = process_display_device_name();
-    let draft = SendDraft::new(
-        SendConfig {
-            device_name: device_name.clone(),
-            device_type: "laptop".to_owned(),
-        },
-        files,
-    );
+    
     info!(
-        file_count = draft.paths().len(),
+        file_count = files.len(),
         device = %device_name,
         scan_secs = nearby_timeout_secs.max(1),
-        "send.nearby_started"
+        "send.nearby_scanning"
     );
 
-    let receivers = draft.scan_nearby(nearby_timeout_secs).await?;
+    let receivers = resolve_nearby(Duration::from_secs(nearby_timeout_secs)).await?;
 
     if receivers.is_empty() {
         bail!(
@@ -170,35 +164,97 @@ pub async fn send_nearby(
     }
 
     let picked = &receivers[idx - 1];
-    info!(label = %picked.label, "send.nearby_picked");
+    info!(label = %picked.label, endpoint = %picked.endpoint_id, "send.nearby_picked");
+
+    let sender = Sender::new(
+        device_name,
+        DeviceType::Laptop,
+        SendRequest {
+            peer_endpoint_id: picked.endpoint_id,
+            files,
+        },
+    );
 
     let mut progress_bar = None;
-    let mut last_phase = None;
-    let session = draft.into_session(SendDestination::nearby(
-        picked.ticket.clone(),
-        format!("Nearby: {}", picked.label),
-    ));
-    let outcome = consume_send_run(session.start(), &mut progress_bar, &mut last_phase).await;
+    let run = sender.run_with_events();
+    let outcome = consume_sender_run(run, &mut progress_bar).await;
     finish_progress_bar(&mut progress_bar);
 
     match &outcome {
-        Ok(SendSessionOutcome::Accepted {
-            receiver_device_name,
-            receiver_endpoint_id,
-        }) => {
-            info!(
-                receiver_device_name = %receiver_device_name,
-                receiver_endpoint_id = %receiver_endpoint_id,
-                "send.accepted"
-            );
+        Ok(TransferOutcome::Completed) => {
+            info!("send.completed");
         }
-        Ok(SendSessionOutcome::Declined { reason }) => {
+        Ok(TransferOutcome::Declined { reason }) => {
             info!(reason = %reason, "send.declined");
+        }
+        Ok(TransferOutcome::Cancelled(c)) => {
+            info!(by = ?c.by, reason = %c.reason, "send.cancelled");
         }
         Err(e) => warn!(error = %e, error_chain = %format!("{e:#}"), "send.failed"),
     }
 
     outcome.map(|_| ())
+}
+
+async fn consume_sender_run(
+    run: drift_core::transfer_flow::sender::SenderRun,
+    progress_bar: &mut Option<ProgressBar>,
+) -> Result<TransferOutcome> {
+    let (mut events, outcome_rx) = run.into_parts();
+    while let Some(event) = events.next().await {
+        match event {
+            Ok(event) => render_sender_event(progress_bar, &event),
+            Err(error) => {
+                warn!(error = %error, error_chain = %format!("{error:#}"), "send.failed");
+                finish_progress_bar(progress_bar);
+                return Err(error);
+            }
+        }
+    }
+
+    finish_progress_bar(progress_bar);
+    outcome_rx.await.context("waiting for send outcome")?
+}
+
+fn render_sender_event(
+    progress_bar: &mut Option<ProgressBar>,
+    event: &SenderEvent,
+) {
+    match event {
+        SenderEvent::Connecting { peer_endpoint_id, .. } => {
+            let pb = ensure_spinner(progress_bar);
+            pb.set_message(format!("Connecting to {peer_endpoint_id}..."));
+        }
+        SenderEvent::WaitingForDecision { receiver_device_name, .. } => {
+            let pb = ensure_spinner(progress_bar);
+            pb.set_message(format!("Waiting for {receiver_device_name} to accept..."));
+        }
+        SenderEvent::Accepted { receiver_device_name, .. } => {
+            let pb = ensure_spinner(progress_bar);
+            pb.set_message(format!("Accepted by {receiver_device_name}. Starting transfer..."));
+        }
+        SenderEvent::TransferStarted { file_count, total_bytes, .. } => {
+            let pb = ensure_spinner(progress_bar);
+            configure_transfer_bar(pb, *total_bytes);
+            pb.set_message(format!("Sending {file_count} files ({})", human_size(*total_bytes)));
+        }
+        SenderEvent::TransferProgress { bytes_sent, total_bytes, .. } => {
+            let pb = ensure_spinner(progress_bar);
+            configure_transfer_bar(pb, *total_bytes);
+            pb.set_position(*bytes_sent);
+        }
+        SenderEvent::TransferCompleted { .. } => {
+            finish_progress_bar(progress_bar);
+        }
+        SenderEvent::Declined { reason, .. } => {
+            finish_progress_bar(progress_bar);
+            info!(%reason, "Transfer declined");
+        }
+        SenderEvent::Failed { message, .. } => {
+            finish_progress_bar(progress_bar);
+            warn!(%message, "Transfer failed");
+        }
+    }
 }
 
 pub async fn receive(out_dir: PathBuf, server_url: Option<String>) -> Result<()> {
@@ -305,93 +361,10 @@ pub async fn receive(out_dir: PathBuf, server_url: Option<String>) -> Result<()>
     outcome
 }
 
-fn render_send_event(
-    last_phase: &mut Option<SendPhase>,
-    progress_bar: &mut Option<ProgressBar>,
-    event: &SendEvent,
-) {
-    if last_phase.as_ref() != Some(&event.phase) {
-        match event.phase {
-            SendPhase::Connecting => debug!(phase = "connecting", "send.phase"),
-            SendPhase::WaitingForDecision => {
-                info!(phase = "waiting_for_decision", receiver = %event.destination_label, "send.phase");
-            }
-            SendPhase::Accepted => {
-                info!(phase = "accepted", receiver = %event.destination_label, "send.phase");
-            }
-            SendPhase::Sending => {
-                let path = event.connection_path.as_deref().unwrap_or("unknown");
-                info!(
-                    phase = "sending",
-                    receiver = %event.destination_label,
-                    connection_path = path,
-                    file_count = event.item_count,
-                    total_bytes = event.total_size,
-                    total_human = %human_size(event.total_size),
-                    "send.phase"
-                );
-            }
-            SendPhase::Completed => {
-                let path = event.connection_path.as_deref().unwrap_or("unknown");
-                info!(
-                    phase = "completed",
-                    receiver = %event.destination_label,
-                    connection_path = path,
-                    bytes_sent = event.bytes_sent,
-                    "send.phase"
-                );
-            }
-            SendPhase::Declined => {
-                info!(phase = "declined", receiver = %event.destination_label, "send.phase");
-            }
-            SendPhase::Cancelled => {
-                info!(phase = "cancelled", receiver = %event.destination_label, "send.phase");
-            }
-            SendPhase::Failed => {
-                warn!(phase = "failed", receiver = %event.destination_label, error = ?event.error_message, "send.phase");
-            }
-        }
-        *last_phase = Some(event.phase);
-    }
-
-    match event.phase {
-        SendPhase::Sending => {
-            let pb = ensure_progress_bar(progress_bar, event.total_size);
-            pb.set_position(event.bytes_sent);
-            pb.set_message(event.status_message.clone());
-        }
-        SendPhase::Completed | SendPhase::Declined | SendPhase::Cancelled | SendPhase::Failed => {
-            finish_progress_bar(progress_bar)
-        }
-        SendPhase::Connecting | SendPhase::WaitingForDecision | SendPhase::Accepted => {}
-    }
-}
-
-async fn consume_send_run(
-    run: drift_app::send::SendRun,
-    progress_bar: &mut Option<ProgressBar>,
-    last_phase: &mut Option<SendPhase>,
-) -> Result<SendSessionOutcome> {
-    let (mut events, outcome_rx) = run.into_parts();
-    while let Some(event) = events.next().await {
-        match event {
-            Ok(event) => render_send_event(last_phase, progress_bar, &event),
-            Err(error) => {
-                warn!(error = %error, error_chain = %format!("{error:#}"), "send.failed");
-                finish_progress_bar(progress_bar);
-                return Err(error);
-            }
-        }
-    }
-
-    finish_progress_bar(progress_bar);
-    Ok(outcome_rx.await.context("waiting for send outcome")??)
-}
-
 fn render_receive_event(
     last_phase: &mut Option<ReceiverOfferPhase>,
     progress_bar: &mut Option<ProgressBar>,
-    event: &ReceiverOfferEvent,
+    event: &drift_app::ReceiverOfferEvent,
 ) {
     if last_phase.as_ref() != Some(&event.phase) {
         match event.phase {
@@ -435,8 +408,13 @@ fn render_receive_event(
     }
 
     match event.phase {
+        ReceiverOfferPhase::Connecting | ReceiverOfferPhase::OfferReady => {
+            let pb = ensure_spinner(progress_bar);
+            pb.set_message(event.status_message.clone());
+        }
         ReceiverOfferPhase::Receiving => {
-            let pb = ensure_progress_bar(progress_bar, event.total_size_bytes.max(1));
+            let pb = ensure_spinner(progress_bar);
+            configure_transfer_bar(pb, event.total_size_bytes.max(1));
             pb.set_position(event.bytes_received.min(event.total_size_bytes));
             pb.set_message(event.status_message.clone());
         }
@@ -444,28 +422,31 @@ fn render_receive_event(
         | ReceiverOfferPhase::Cancelled
         | ReceiverOfferPhase::Declined
         | ReceiverOfferPhase::Failed => finish_progress_bar(progress_bar),
-        ReceiverOfferPhase::OfferReady | ReceiverOfferPhase::Connecting => {}
     }
 }
 
-fn ensure_progress_bar(progress_bar: &mut Option<ProgressBar>, total: u64) -> &ProgressBar {
+fn ensure_spinner(progress_bar: &mut Option<ProgressBar>) -> &ProgressBar {
     if progress_bar.is_none() {
-        let pb = ProgressBar::new(total);
+        let pb = ProgressBar::new_spinner();
         pb.set_draw_target(ProgressDrawTarget::stderr());
         pb.set_style(
-            ProgressStyle::with_template(
-                "{spinner:.green} [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({percent}%) {msg}",
-            )
-            .expect("valid indicatif template"),
+            ProgressStyle::with_template("{spinner:.green} {msg}")
+                .expect("valid indicatif spinner template"),
         );
         pb.enable_steady_tick(Duration::from_millis(100));
         *progress_bar = Some(pb);
     }
-    let pb = progress_bar.as_ref().expect("progress bar set");
-    if total > 0 && pb.length().unwrap_or(0) == 0 {
-        pb.set_length(total);
-    }
-    pb
+    progress_bar.as_ref().expect("progress bar set")
+}
+
+fn configure_transfer_bar(progress_bar: &ProgressBar, total: u64) {
+    progress_bar.set_style(
+        ProgressStyle::with_template(
+            "{spinner:.green} [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({percent}%) {msg}",
+        )
+        .expect("valid indicatif transfer template"),
+    );
+    progress_bar.set_length(total.max(1));
 }
 
 fn finish_progress_bar(progress_bar: &mut Option<ProgressBar>) {

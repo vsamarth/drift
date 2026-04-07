@@ -356,7 +356,8 @@ impl SenderSession {
                     receiver_device_name: peer.identity.device_name.clone(),
                     receiver_endpoint_id: peer.identity.endpoint_id,
                 });
-                self.run_transfer(endpoint, control, prepared_store, peer).await
+                self.run_transfer(endpoint, connection, control, prepared_store, peer)
+                    .await
             }
             protocol_sender::SenderControlOutcome::Declined(message) => {
                 info!(reason = %message.reason, "transfer declined by receiver");
@@ -377,6 +378,7 @@ impl SenderSession {
     async fn run_transfer(
         self,
         endpoint: iroh::Endpoint,
+        connection: iroh::endpoint::Connection,
         mut control: SenderControl,
         prepared_store: PreparedStore,
         _peer: protocol_sender::SenderPeer,
@@ -388,6 +390,8 @@ impl SenderSession {
             .register(prepared_store)
             .await
             .context("registering blob service")?;
+        let progress_task =
+            SenderProgressTask::spawn(connection, self.session_id.clone(), self.events.clone());
         let blob_task = BlobTransferTask::spawn(registration);
         let result = async {
             let ticket = blob_task.ticket().to_string();
@@ -408,6 +412,11 @@ impl SenderSession {
                     completion.status
                 );
             }
+
+            progress_task
+                .wait()
+                .await
+                .context("reading sender progress")?;
 
             control.send_transfer_ack().await?;
             self.events.emit(SenderEvent::TransferCompleted {
