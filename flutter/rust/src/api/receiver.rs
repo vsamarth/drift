@@ -27,6 +27,7 @@ struct BridgeReceiverConfig {
     device_type: String,
     download_root: PathBuf,
     server_url: Option<String>,
+    conflict_policy: ConflictPolicy,
 }
 
 struct BridgeReceiverState {
@@ -98,6 +99,7 @@ pub fn ensure_receiver_registration(
             device_type: "laptop".to_owned(),
             download_root: PathBuf::from("."),
             server_url: server_url.clone(),
+            conflict_policy: ConflictPolicy::Rename,
         })
         .await?;
 
@@ -128,6 +130,7 @@ pub fn watch_receiver_pairing(
             device_type,
             download_root: PathBuf::from(download_root),
             server_url: server_url.clone(),
+            conflict_policy: ConflictPolicy::Rename,
         };
         let service = ensure_receiver_service(config.clone()).await?;
         if let Some(server_url) = config.server_url.clone() {
@@ -170,6 +173,7 @@ pub fn start_receiver_transfer_listener(
             device_type,
             download_root: PathBuf::from(download_root),
             server_url: server_url.clone(),
+            conflict_policy: ConflictPolicy::Rename,
         };
         let service = ensure_receiver_service(config.clone()).await?;
         if let Some(server_url) = config.server_url.clone() {
@@ -230,7 +234,7 @@ pub(crate) async fn scan_nearby_with_receiver(
                 device_name: String::new(),
                 device_type: "laptop".to_owned(),
                 download_root: PathBuf::from("."),
-                conflict_policy: ConflictPolicy::Reject,
+                conflict_policy: ConflictPolicy::Rename,
                 secret_key: RECEIVER_SECRET_KEY.clone(),
             })
             .await
@@ -309,7 +313,7 @@ async fn ensure_receiver_service(
             device_name: config.device_name.clone(),
             device_type: config.device_type.clone(),
             download_root: config.download_root.clone(),
-            conflict_policy: ConflictPolicy::Reject,
+            conflict_policy: config.conflict_policy,
             secret_key: RECEIVER_SECRET_KEY.clone(),
         })
         .await

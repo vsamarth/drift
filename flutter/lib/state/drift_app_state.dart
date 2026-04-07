@@ -223,6 +223,16 @@ class DriftAppState {
     _ => null,
   };
 
+  String? get receiveTransferSpeedLabel => switch (session) {
+    ReceiveTransferSession(:final payloadSpeedLabel) => payloadSpeedLabel,
+    _ => null,
+  };
+
+  String? get receiveTransferEtaLabel => switch (session) {
+    ReceiveTransferSession(:final payloadEtaLabel) => payloadEtaLabel,
+    _ => null,
+  };
+
   bool get hasReceivePayloadProgress =>
       receivePayloadBytesReceived != null &&
       receivePayloadTotalBytes != null &&
@@ -438,6 +448,8 @@ class ReceiveTransferSession extends ShellSessionState {
     required this.summary,
     this.payloadBytesReceived,
     this.payloadTotalBytes,
+    this.payloadSpeedLabel,
+    this.payloadEtaLabel,
     this.senderDeviceType,
   });
 
@@ -445,6 +457,8 @@ class ReceiveTransferSession extends ShellSessionState {
   final TransferSummaryViewData summary;
   final int? payloadBytesReceived;
   final int? payloadTotalBytes;
+  final String? payloadSpeedLabel;
+  final String? payloadEtaLabel;
   final String? senderDeviceType;
 
   ReceiveTransferSession copyWith({
@@ -452,6 +466,8 @@ class ReceiveTransferSession extends ShellSessionState {
     TransferSummaryViewData? summary,
     int? payloadBytesReceived,
     int? payloadTotalBytes,
+    String? payloadSpeedLabel,
+    String? payloadEtaLabel,
     String? senderDeviceType,
   }) {
     return ReceiveTransferSession(
@@ -459,6 +475,8 @@ class ReceiveTransferSession extends ShellSessionState {
       summary: summary ?? this.summary,
       payloadBytesReceived: payloadBytesReceived ?? this.payloadBytesReceived,
       payloadTotalBytes: payloadTotalBytes ?? this.payloadTotalBytes,
+      payloadSpeedLabel: payloadSpeedLabel ?? this.payloadSpeedLabel,
+      payloadEtaLabel: payloadEtaLabel ?? this.payloadEtaLabel,
       senderDeviceType: senderDeviceType ?? this.senderDeviceType,
     );
   }

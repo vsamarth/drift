@@ -54,6 +54,9 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
   int? _lastSendProgressBytes;
   double? _sendSmoothedBps;
   DateTime? _receivePayloadStartedAt;
+  DateTime? _lastReceiveProgressSampleAt;
+  int? _lastReceiveProgressBytes;
+  double? _receiveSmoothedBps;
 
   @override
   DriftAppState build() {
@@ -205,7 +208,7 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
       return;
     }
 
-    _receivePayloadStartedAt = null;
+    _clearReceiveMetricState();
     _setSession(
       ReceiveTransferSession(
         items: session.items,
@@ -259,6 +262,8 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
   void resetShell() {
     _cancelNearbyScanTimer();
     _cancelActiveSendTransfer();
+    _clearSendMetricState();
+    _clearReceiveMetricState();
     _setSession(const IdleSession());
   }
 
@@ -551,7 +556,7 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
       event.files.map(_incomingFileToViewData),
     );
     _cancelActiveSendTransfer();
-    _receivePayloadStartedAt = null;
+    _clearReceiveMetricState();
     _setSession(
       ReceiveOfferSession(
         items: items,
@@ -580,6 +585,10 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
       _receivePayloadStartedAt = DateTime.now();
     }
     final payloadTotalBytes = _bigIntToInt(event.totalSizeBytes);
+    final progress = _updateReceiveTransferMetrics(
+      payloadBytesReceived: payloadBytesReceived,
+      payloadTotalBytes: payloadTotalBytes,
+    );
 
     final currentSummary =
         state.receiveSummary ??
@@ -599,6 +608,8 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
         summary: currentSummary.copyWith(statusMessage: event.statusMessage),
         payloadBytesReceived: payloadBytesReceived,
         payloadTotalBytes: payloadTotalBytes,
+        payloadSpeedLabel: progress.speedLabel,
+        payloadEtaLabel: progress.etaLabel,
         senderDeviceType: event.senderDeviceType,
       ),
     );
@@ -638,6 +649,37 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
         senderDeviceType: event.senderDeviceType,
       ),
     );
+    _clearReceiveMetricState();
+  }
+
+  void _applyIncomingCancelled(rust_receiver.ReceiverTransferEvent event) {
+    final bytesReceived = _bigIntToInt(event.bytesReceived);
+    final totalBytes = _bigIntToInt(event.totalSizeBytes);
+    final summary =
+        state.receiveSummary ??
+        TransferSummaryViewData(
+          itemCount: _bigIntToInt(event.itemCount),
+          totalSize: event.totalSizeLabel,
+          code: state.idleReceiveCode,
+          expiresAt: '',
+          destinationLabel: event.saveRootLabel,
+          statusMessage: event.errorMessage ?? event.statusMessage,
+          senderName: event.senderName,
+        );
+    _setSession(
+      ReceiveResultSession(
+        success: false,
+        items: state.receiveItems,
+        summary: summary.copyWith(
+          destinationLabel: event.saveRootLabel,
+          statusMessage: event.errorMessage ?? event.statusMessage,
+        ),
+        payloadBytesReceived: bytesReceived,
+        payloadTotalBytes: totalBytes,
+        senderDeviceType: event.senderDeviceType,
+      ),
+    );
+    _clearReceiveMetricState();
   }
 
   void _applyIncomingCancelled(rust_receiver.ReceiverTransferEvent event) {
@@ -917,7 +959,7 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
             items: items,
             summary: summary,
             remoteDeviceType: update.remoteDeviceType,
-            payloadBytesSent: progress.bytesSent,
+            payloadBytesSent: progress.bytesTransferred,
             payloadTotalBytes: progress.totalBytes,
             payloadSpeedLabel: progress.speedLabel,
             payloadEtaLabel: progress.etaLabel,
@@ -959,12 +1001,14 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
     }
   }
 
-  _SendTransferProgress _updateSendTransferMetrics(SendTransferUpdate update) {
+  _TransferProgressMetrics _updateSendTransferMetrics(
+    SendTransferUpdate update,
+  ) {
     switch (update.phase) {
       case SendTransferUpdatePhase.connecting:
       case SendTransferUpdatePhase.waitingForDecision:
         _clearSendMetricState();
-        return const _SendTransferProgress();
+        return const _TransferProgressMetrics();
       case SendTransferUpdatePhase.sending:
         _sendPayloadStartedAt ??= DateTime.now();
         final now = DateTime.now();
@@ -994,8 +1038,8 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
           etaLabel = left <= 0 ? null : _formatEtaSeconds(left / bps);
         }
 
-        return _SendTransferProgress(
-          bytesSent: update.bytesSent,
+        return _TransferProgressMetrics(
+          bytesTransferred: update.bytesSent,
           totalBytes: update.totalBytes,
           speedLabel: speedLabel,
           etaLabel: etaLabel,
@@ -1004,7 +1048,7 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
       case SendTransferUpdatePhase.failed:
       case SendTransferUpdatePhase.cancelled:
         _clearSendMetricState();
-        return const _SendTransferProgress();
+        return const _TransferProgressMetrics();
     }
   }
 
@@ -1083,6 +1127,54 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
     return rows;
   }
 
+  _TransferProgressMetrics _updateReceiveTransferMetrics({
+    required int payloadBytesReceived,
+    required int payloadTotalBytes,
+  }) {
+    if (payloadTotalBytes <= 0) {
+      _clearReceiveMetricState();
+      return const _TransferProgressMetrics();
+    }
+
+    _receivePayloadStartedAt ??= DateTime.now();
+    final now = DateTime.now();
+    final prevAt = _lastReceiveProgressSampleAt;
+    final prevBytes = _lastReceiveProgressBytes;
+    if (prevAt != null && prevBytes != null) {
+      final dtSec = now.difference(prevAt).inMicroseconds / 1e6;
+      final dBytes = payloadBytesReceived - prevBytes;
+      if (dtSec >= 0.08 && dBytes >= 32 * 1024) {
+        final inst = dBytes / dtSec;
+        final prev = _receiveSmoothedBps;
+        _receiveSmoothedBps = prev == null ? inst : 0.22 * inst + 0.78 * prev;
+        _lastReceiveProgressSampleAt = now;
+        _lastReceiveProgressBytes = payloadBytesReceived;
+      }
+    } else {
+      _lastReceiveProgressSampleAt = now;
+      _lastReceiveProgressBytes = payloadBytesReceived;
+    }
+
+    String? speedLabel;
+    String? etaLabel;
+    final bps = _receiveSmoothedBps;
+    if (bps != null && bps >= 16) {
+      speedLabel = _formatBytesPerSecond(bps);
+      final left = (payloadTotalBytes - payloadBytesReceived).clamp(
+        0,
+        payloadTotalBytes,
+      );
+      etaLabel = left <= 0 ? null : _formatEtaSeconds(left / bps);
+    }
+
+    return _TransferProgressMetrics(
+      bytesTransferred: payloadBytesReceived,
+      totalBytes: payloadTotalBytes,
+      speedLabel: speedLabel,
+      etaLabel: etaLabel,
+    );
+  }
+
   void _setSession(ShellSessionState session) {
     state = state.copyWith(session: session);
     _syncSessionPolicies();
@@ -1140,6 +1232,13 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
     _sendSmoothedBps = null;
   }
 
+  void _clearReceiveMetricState() {
+    _receivePayloadStartedAt = null;
+    _lastReceiveProgressSampleAt = null;
+    _lastReceiveProgressBytes = null;
+    _receiveSmoothedBps = null;
+  }
+
   void _dispose() {
     _cancelNearbyScanTimer();
     _sendTransferSubscription?.cancel();
@@ -1148,15 +1247,15 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
   }
 }
 
-class _SendTransferProgress {
-  const _SendTransferProgress({
-    this.bytesSent,
+class _TransferProgressMetrics {
+  const _TransferProgressMetrics({
+    this.bytesTransferred,
     this.totalBytes,
     this.speedLabel,
     this.etaLabel,
   });
 
-  final int? bytesSent;
+  final int? bytesTransferred;
   final int? totalBytes;
   final String? speedLabel;
   final String? etaLabel;
@@ -1210,15 +1309,18 @@ String _formatEtaSeconds(double seconds) {
   if (seconds.isNaN || seconds.isInfinite || seconds <= 0) {
     return '';
   }
+  if (seconds < 1) {
+    return 'Finishing…';
+  }
   if (seconds < 45) {
-    return 'About ${seconds.round()} s left';
+    return '${seconds.round()}s';
   }
   if (seconds < 3600) {
     final minutes = (seconds / 60).ceil();
-    return minutes <= 1 ? 'About 1 min left' : 'About $minutes min left';
+    return minutes <= 1 ? '1 min' : '$minutes min';
   }
   final hours = (seconds / 3600).ceil();
-  return hours <= 1 ? 'About 1 h left' : 'About $hours h left';
+  return hours <= 1 ? '1 h' : '$hours h';
 }
 
 String _formatByteSize(int bytes) {

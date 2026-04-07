@@ -36,11 +36,10 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Install cargo-expand
-        run: cargo install cargo-expand
-
-      - name: Install flutter_rust_bridge_codegen
-        run: cargo install flutter_rust_bridge_codegen --version 2.12.0
+      - name: Install Rust tools
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-expand,flutter_rust_bridge_codegen@2.12.0
 
       - name: Fetch dependencies
         run: flutter pub get
