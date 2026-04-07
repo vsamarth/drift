@@ -10,4 +10,5 @@ iroh.workspace = true
 rand.workspace = true
 time.workspace = true
 tokio.workspace = true
+tokio-stream = { workspace = true, features = ["sync"] }
 tracing.workspace = true

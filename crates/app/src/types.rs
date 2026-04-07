@@ -6,6 +6,8 @@ use iroh::SecretKey;
 pub enum SendPhase {
     Connecting,
     WaitingForDecision,
+    Accepted,
+    Declined,
     Sending,
     Completed,
     Cancelled,

@@ -7,5 +7,5 @@ pub mod types;
 pub use receiver::{
     OfferDecision, ReceiverEvent, ReceiverLifecycle, ReceiverService, ReceiverSnapshot,
 };
-pub use send::{SendSession, SendSessionOutcome};
+pub use send::{SendDestination, SendDraft, SendRun, SendSession, SendSessionOutcome};
 pub use types::*;
