@@ -163,11 +163,28 @@ jobs:
       - name: Create MSIX package
         run: dart run msix:create
 
+      - name: Package portable Windows zip
+        shell: pwsh
+        run: |
+          $releaseDir = Join-Path $PWD "build/windows/x64/runner/Release"
+          $zipPath = Join-Path $releaseDir "drift-windows.zip"
+          if (Test-Path $zipPath) {
+            Remove-Item $zipPath -Force
+          }
+          Compress-Archive -Path (Join-Path $releaseDir '*') -DestinationPath $zipPath -Force
+
       - name: Upload Windows MSIX
         uses: actions/upload-artifact@v4
         with:
           name: drift-windows-msix
           path: flutter/build/windows/x64/runner/Release/*.msix
+          if-no-files-found: error
+
+      - name: Upload Windows portable zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: drift-windows-portable
+          path: flutter/build/windows/x64/runner/Release/drift-windows.zip
           if-no-files-found: error
 
   android:
