@@ -4,8 +4,9 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use anyhow::Result;
 use tokio::fs;
+
+type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 static NEXT_TEMP_ID: AtomicU64 = AtomicU64::new(0);
 

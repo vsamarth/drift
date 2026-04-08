@@ -1,5 +1,7 @@
 use std::path::PathBuf;
 
+use crate::error::UserFacingError;
+
 pub use drift_core::fs_plan::ConflictPolicy;
 pub use drift_core::transfer::{TransferPlan, TransferSnapshot};
 use iroh::SecretKey;
@@ -34,7 +36,7 @@ pub struct SendEvent {
     pub snapshot: Option<TransferSnapshot>,
     pub remote_device_type: Option<String>,
     pub connection_path: Option<String>,
-    pub error_message: Option<String>,
+    pub error: Option<UserFacingError>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -90,7 +92,7 @@ pub struct ReceiverOfferEvent {
     pub connection_path: Option<String>,
     pub total_size_label: String,
     pub files: Vec<ReceiverOfferFile>,
-    pub error_message: Option<String>,
+    pub error: Option<UserFacingError>,
 }
 
 #[derive(Debug, Clone)]

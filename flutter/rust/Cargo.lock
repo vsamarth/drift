@@ -859,6 +859,8 @@ dependencies = [
  "drift-core",
  "iroh",
  "rand 0.8.5",
+ "reqwest",
+ "thiserror 2.0.18",
  "time",
  "tokio",
  "tokio-stream",
@@ -869,7 +871,6 @@ dependencies = [
 name = "drift-core"
 version = "0.1.0"
 dependencies = [
- "anyhow",
  "base64",
  "bincode",
  "blake3",
@@ -884,6 +885,7 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
+ "thiserror 2.0.18",
  "time",
  "tokio",
  "tokio-stream",
@@ -902,6 +904,8 @@ dependencies = [
  "futures-lite",
  "iroh",
  "rand 0.8.5",
+ "serde",
+ "serde_json",
  "time",
  "tokio",
  "tokio-stream",

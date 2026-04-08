@@ -65,8 +65,8 @@ async fn main() -> Result<()> {
         },
         Command::Receive {
             out,
-            conflict: _,
+            conflict,
             server,
-        } => receive(out, server).await,
+        } => receive(out, conflict, server).await,
     }
 }

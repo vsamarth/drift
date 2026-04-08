@@ -1,8 +1,9 @@
 use std::path::PathBuf;
 
-use anyhow::Result;
 use iroh::SecretKey;
 use tokio::sync::{oneshot, watch};
+
+use crate::error::{AppError, AppResult};
 
 use super::runtime::{
     OfferResolution, ReceiverRuntime, registration_needs_refresh, should_advertise,
@@ -23,7 +24,7 @@ fn test_config() -> ReceiverConfig {
     }
 }
 
-async fn try_start_service() -> Result<Option<ReceiverService>> {
+async fn try_start_service() -> AppResult<Option<ReceiverService>> {
     match ReceiverService::start(test_config()).await {
         Ok(service) => Ok(Some(service)),
         Err(error) if bind_unavailable(&error) => Ok(None),
@@ -31,7 +32,7 @@ async fn try_start_service() -> Result<Option<ReceiverService>> {
     }
 }
 
-async fn try_bind_endpoint() -> Result<Option<iroh::Endpoint>> {
+async fn try_bind_endpoint() -> AppResult<Option<iroh::Endpoint>> {
     match iroh::Endpoint::builder(iroh::endpoint::presets::N0)
         .secret_key(SecretKey::from_bytes(&rand::random()))
         .bind()
@@ -39,7 +40,9 @@ async fn try_bind_endpoint() -> Result<Option<iroh::Endpoint>> {
     {
         Ok(endpoint) => Ok(Some(endpoint)),
         Err(error) => {
-            let error = anyhow::Error::from(error);
+            let error = AppError::BindingFailed {
+                context: error.to_string(),
+            };
             if bind_unavailable(&error) {
                 Ok(None)
             } else {
@@ -49,13 +52,13 @@ async fn try_bind_endpoint() -> Result<Option<iroh::Endpoint>> {
     }
 }
 
-fn bind_unavailable(error: &anyhow::Error) -> bool {
+fn bind_unavailable(error: &AppError) -> bool {
     let chain = format!("{error:#}");
     chain.contains("Failed to bind sockets") || chain.contains("Operation not permitted")
 }
 
 #[tokio::test]
-async fn service_starts_with_unavailable_pairing_code() -> Result<()> {
+async fn service_starts_with_unavailable_pairing_code() -> AppResult<()> {
     let Some(service) = try_start_service().await? else {
         return Ok(());
     };
@@ -66,7 +69,7 @@ async fn service_starts_with_unavailable_pairing_code() -> Result<()> {
 }
 
 #[tokio::test]
-async fn respond_to_offer_fails_without_pending_offer() -> Result<()> {
+async fn respond_to_offer_fails_without_pending_offer() -> AppResult<()> {
     let Some(service) = try_start_service().await? else {
         return Ok(());
     };
@@ -74,7 +77,7 @@ async fn respond_to_offer_fails_without_pending_offer() -> Result<()> {
         .respond_to_offer(OfferDecision::Accept)
         .await
         .unwrap_err();
-    assert!(error.to_string().contains("no pending offer"));
+    assert!(matches!(error, AppError::NoPendingOffer));
     service.shutdown().await?;
     Ok(())
 }
@@ -105,7 +108,7 @@ fn discoverability_only_requires_opt_in() {
 }
 
 #[tokio::test]
-async fn stale_offer_updates_are_ignored() -> Result<()> {
+async fn stale_offer_updates_are_ignored() -> AppResult<()> {
     let Some(endpoint) = try_bind_endpoint().await? else {
         return Ok(());
     };
@@ -126,7 +129,7 @@ async fn stale_offer_updates_are_ignored() -> Result<()> {
 }
 
 #[tokio::test]
-async fn busy_runtime_rejects_second_offer() -> Result<()> {
+async fn busy_runtime_rejects_second_offer() -> AppResult<()> {
     let Some(endpoint) = try_bind_endpoint().await? else {
         return Ok(());
     };

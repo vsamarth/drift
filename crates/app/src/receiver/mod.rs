@@ -9,10 +9,10 @@ mod tests;
 
 use std::time::Duration;
 
-use anyhow::{Context, Result};
 use iroh::{Endpoint, RelayMode, endpoint::presets};
 use tokio::sync::{broadcast, mpsc, oneshot, watch};
 
+use crate::error::{AppError, AppResult};
 use crate::types::{
     NearbyReceiver, PairingCodeState, ReceiverConfig, ReceiverOfferEvent, ReceiverRegistration,
 };
@@ -62,14 +62,16 @@ pub struct ReceiverService {
 }
 
 impl ReceiverService {
-    pub async fn start(config: ReceiverConfig) -> Result<Self> {
+    pub async fn start(config: ReceiverConfig) -> AppResult<Self> {
         let endpoint = Endpoint::builder(presets::N0)
             .alpns(vec![ALPN.to_vec()])
             .relay_mode(RelayMode::Default)
             .secret_key(config.secret_key.clone())
             .bind()
             .await
-            .context("binding receiver v2 endpoint")?;
+            .map_err(|e| AppError::BindingFailed {
+                context: format!("receiver v2 endpoint: {e}"),
+            })?;
         let (cmd_tx, cmd_rx) = mpsc::channel(16);
         let (state_tx, state_rx) = watch::channel(ReceiverSnapshot {
             lifecycle: ReceiverLifecycle::Ready,
@@ -129,7 +131,7 @@ impl ReceiverService {
         self.event_tx.subscribe()
     }
 
-    pub async fn setup(&self, server_url: Option<String>) -> Result<ReceiverRegistration> {
+    pub async fn setup(&self, server_url: Option<String>) -> AppResult<ReceiverRegistration> {
         self.call_registration_command(|reply| ReceiverCommand::Setup { server_url, reply })
             .await
     }
@@ -137,7 +139,7 @@ impl ReceiverService {
     pub async fn ensure_registered(
         &self,
         server_url: Option<String>,
-    ) -> Result<ReceiverRegistration> {
+    ) -> AppResult<ReceiverRegistration> {
         self.call_registration_command(|reply| ReceiverCommand::EnsureRegistered {
             server_url,
             reply,
@@ -145,7 +147,7 @@ impl ReceiverService {
         .await
     }
 
-    pub async fn set_discoverable(&self, enabled: bool) -> Result<()> {
+    pub async fn set_discoverable(&self, enabled: bool) -> AppResult<()> {
         let (reply_tx, reply_rx) = oneshot::channel();
         self.cmd_tx
             .send(ReceiverCommand::SetDiscoverable {
@@ -153,13 +155,15 @@ impl ReceiverService {
                 reply: reply_tx,
             })
             .await
-            .context("receiver actor stopped before set_discoverable")?;
-        reply_rx
-            .await
-            .context("receiver actor dropped set_discoverable reply")?
+            .map_err(|_| AppError::ActorStopped {
+                action: "setting discoverable",
+            })?;
+        reply_rx.await.map_err(|_| AppError::ActorDroppedReply {
+            action: "setting discoverable",
+        })?
     }
 
-    pub async fn respond_to_offer(&self, decision: OfferDecision) -> Result<()> {
+    pub async fn respond_to_offer(&self, decision: OfferDecision) -> AppResult<()> {
         let (reply_tx, reply_rx) = oneshot::channel();
         self.cmd_tx
             .send(ReceiverCommand::RespondToOffer {
@@ -167,24 +171,28 @@ impl ReceiverService {
                 reply: reply_tx,
             })
             .await
-            .context("receiver actor stopped before respond_to_offer")?;
-        reply_rx
-            .await
-            .context("receiver actor dropped respond_to_offer reply")?
+            .map_err(|_| AppError::ActorStopped {
+                action: "responding to offer",
+            })?;
+        reply_rx.await.map_err(|_| AppError::ActorDroppedReply {
+            action: "responding to offer",
+        })?
     }
 
-    pub async fn cancel_transfer(&self) -> Result<()> {
+    pub async fn cancel_transfer(&self) -> AppResult<()> {
         let (reply_tx, reply_rx) = oneshot::channel();
         self.cmd_tx
             .send(ReceiverCommand::CancelTransfer { reply: reply_tx })
             .await
-            .context("receiver actor stopped before cancel_transfer")?;
-        reply_rx
-            .await
-            .context("receiver actor dropped cancel_transfer reply")?
+            .map_err(|_| AppError::ActorStopped {
+                action: "cancelling transfer",
+            })?;
+        reply_rx.await.map_err(|_| AppError::ActorDroppedReply {
+            action: "cancelling transfer",
+        })?
     }
 
-    pub async fn scan_nearby(&self, timeout_secs: u64) -> Result<Vec<NearbyReceiver>> {
+    pub async fn scan_nearby(&self, timeout_secs: u64) -> AppResult<Vec<NearbyReceiver>> {
         let (reply_tx, reply_rx) = oneshot::channel();
         self.cmd_tx
             .send(ReceiverCommand::ScanNearby {
@@ -192,42 +200,50 @@ impl ReceiverService {
                 reply: reply_tx,
             })
             .await
-            .context("receiver actor stopped before scan_nearby")?;
-        reply_rx
-            .await
-            .context("receiver actor dropped scan_nearby reply")?
+            .map_err(|_| AppError::ActorStopped {
+                action: "scanning nearby",
+            })?;
+        reply_rx.await.map_err(|_| AppError::ActorDroppedReply {
+            action: "scanning nearby",
+        })?
     }
 
-    pub async fn shutdown(&self) -> Result<()> {
+    pub async fn shutdown(&self) -> AppResult<()> {
         let (reply_tx, reply_rx) = oneshot::channel();
         self.cmd_tx
             .send(ReceiverCommand::Shutdown { reply: reply_tx })
             .await
-            .context("receiver actor stopped before shutdown")?;
-        reply_rx
-            .await
-            .context("receiver actor dropped shutdown reply")?
+            .map_err(|_| AppError::ActorStopped {
+                action: "shutting down",
+            })?;
+        reply_rx.await.map_err(|_| AppError::ActorDroppedReply {
+            action: "shutting down",
+        })?
     }
 
     async fn call_registration_command(
         &self,
-        command: impl FnOnce(oneshot::Sender<Result<ReceiverRegistration>>) -> ReceiverCommand,
-    ) -> Result<ReceiverRegistration> {
+        command: impl FnOnce(oneshot::Sender<AppResult<ReceiverRegistration>>) -> ReceiverCommand,
+    ) -> AppResult<ReceiverRegistration> {
         let (reply_tx, reply_rx) = oneshot::channel();
         self.cmd_tx
             .send(command(reply_tx))
             .await
-            .context("receiver actor stopped before registration command")?;
-        reply_rx
-            .await
-            .context("receiver actor dropped registration reply")?
+            .map_err(|_| AppError::ActorStopped {
+                action: "registration command",
+            })?;
+        reply_rx.await.map_err(|_| AppError::ActorDroppedReply {
+            action: "registration command",
+        })?
     }
 }
 
-pub(super) fn parse_device_type(value: &str) -> Result<DeviceType> {
+pub(super) fn parse_device_type(value: &str) -> AppResult<DeviceType> {
     match value.trim().to_ascii_lowercase().as_str() {
         "phone" => Ok(DeviceType::Phone),
         "laptop" => Ok(DeviceType::Laptop),
-        other => anyhow::bail!("invalid device_type {other:?} (expected \"phone\" or \"laptop\")"),
+        other => Err(AppError::InvalidDeviceType {
+            value: other.to_owned(),
+        }),
     }
 }

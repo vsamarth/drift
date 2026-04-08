@@ -1,6 +1,5 @@
 #![allow(dead_code)]
 
-use anyhow::{Context, Result, anyhow, bail};
 use iroh::{EndpointAddr, EndpointId, endpoint::Connection};
 use rand::random;
 use tokio::time::Duration;
@@ -13,14 +12,18 @@ use tracing::{instrument, warn};
 
 use crate::{
     blobs::send::{BlobRegistration, BlobService, PreparedStore},
-    protocol::ALPN,
+    protocol::message::MessageKind,
     protocol::wire as protocol_wire,
+    protocol::{ALPN, ProtocolError},
     protocol::{message as protocol_message, send as protocol_sender},
 };
 
+use super::error::{Result as TransferResult, TransferError};
 use super::path::ScratchDir;
 use super::progress::ProgressTracker;
 use super::types::{TransferOutcome, TransferPlan, TransferSnapshot, wait_for_cancel};
+
+type Result<T> = TransferResult<T>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SendRequest {
@@ -29,7 +32,7 @@ pub struct SendRequest {
     pub files: Vec<std::path::PathBuf>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug)]
 pub enum SenderEvent {
     Connecting {
         session_id: String,
@@ -51,7 +54,7 @@ pub enum SenderEvent {
     },
     Failed {
         session_id: String,
-        message: String,
+        error: TransferError,
     },
     TransferStarted {
         session_id: String,
@@ -67,13 +70,13 @@ pub enum SenderEvent {
     },
 }
 
-pub type SenderEventStream = UnboundedReceiverStream<Result<SenderEvent>>;
+pub type SenderEventStream = UnboundedReceiverStream<SenderEvent>;
 
 #[derive(Debug)]
 pub struct SenderRun {
     pub events: SenderEventStream,
     pub cancel_tx: watch::Sender<bool>,
-    outcome_rx: oneshot::Receiver<Result<TransferOutcome>>,
+    outcome_rx: oneshot::Receiver<TransferResult<TransferOutcome>>,
 }
 
 impl SenderRun {
@@ -82,22 +85,24 @@ impl SenderRun {
     ) -> (
         SenderEventStream,
         watch::Sender<bool>,
-        oneshot::Receiver<Result<TransferOutcome>>,
+        oneshot::Receiver<TransferResult<TransferOutcome>>,
     ) {
         (self.events, self.cancel_tx, self.outcome_rx)
     }
-    pub async fn outcome(self) -> Result<TransferOutcome> {
-        self.outcome_rx.await.context("waiting for outcome")?
+    pub async fn outcome(self) -> TransferResult<TransferOutcome> {
+        self.outcome_rx
+            .await
+            .map_err(|_| TransferError::channel_closed("waiting for sender outcome"))?
     }
 }
 
 #[derive(Clone, Debug)]
 struct SenderEventSink {
     session_id: String,
-    tx: Option<mpsc::UnboundedSender<Result<SenderEvent>>>,
+    tx: Option<mpsc::UnboundedSender<SenderEvent>>,
 }
 impl SenderEventSink {
-    fn new(session_id: String, tx: Option<mpsc::UnboundedSender<Result<SenderEvent>>>) -> Self {
+    fn new(session_id: String, tx: Option<mpsc::UnboundedSender<SenderEvent>>) -> Self {
         Self { session_id, tx }
     }
     fn silent(session_id: String) -> Self {
@@ -108,17 +113,14 @@ impl SenderEventSink {
     }
     fn emit(&self, e: SenderEvent) {
         if let Some(tx) = &self.tx {
-            let _ = tx.send(Ok(e));
+            let _ = tx.send(e);
         }
     }
-    fn fail(&self, err: &anyhow::Error) {
+    fn fail(&self, error: TransferError) {
         self.emit(SenderEvent::Failed {
             session_id: self.session_id.clone(),
-            message: format!("{err:#}"),
+            error,
         });
-        if let Some(tx) = &self.tx {
-            let _ = tx.send(Err(anyhow!("{err:#}")));
-        }
     }
 }
 
@@ -170,9 +172,6 @@ impl Sender {
                 events: events.clone(),
             };
             let outcome = session.run(cancel_rx).await;
-            if let Err(e) = &outcome {
-                events.fail(e);
-            }
             let _ = outcome_tx.send(outcome);
         });
 
@@ -201,7 +200,8 @@ impl SenderSession {
             .alpns(vec![ALPN.to_vec()])
             .secret_key(self.secret_key.clone())
             .bind()
-            .await?;
+            .await
+            .map_err(|source| TransferError::other("binding sender endpoint", source))?;
 
         self.events.emit(SenderEvent::Connecting {
             session_id: self.session_id.clone(),
@@ -209,7 +209,8 @@ impl SenderSession {
         });
         let connection = endpoint
             .connect(self.request.peer_endpoint_addr.clone(), ALPN)
-            .await?;
+            .await
+            .map_err(|source| TransferError::other("connecting to peer", source))?;
 
         // --- Handshake ---
         let handshake_res = do_handshake(
@@ -276,7 +277,10 @@ async fn do_handshake(
 ) -> Result<HandshakeResult> {
     tokio::select! {
         res = async {
-            let (mut send, mut recv) = conn.open_bi().await.context("opening bi-stream")?;
+            let (mut send, mut recv) = conn
+                .open_bi()
+                .await
+                .map_err(|source| TransferError::other("opening bi-stream", source))?;
             protocol_wire::write_sender_message(&mut send, &protocol_message::SenderMessage::Hello(protocol_message::Hello {
                 version: protocol_message::PROTOCOL_VERSION,
                 session_id: session_id.to_owned(),
@@ -285,8 +289,18 @@ async fn do_handshake(
 
             let peer_hello = match protocol_wire::read_receiver_message(&mut recv).await? {
                 protocol_message::ReceiverMessage::Hello(h) => h,
-                protocol_message::ReceiverMessage::Cancel(c) => return Ok(HandshakeResult::Cancelled(TransferOutcome::from_remote_cancel(c, session_id)?)),
-                _ => bail!("expected hello from receiver"),
+                protocol_message::ReceiverMessage::Cancel(c) => {
+                    return Ok(HandshakeResult::Cancelled(
+                        TransferOutcome::from_remote_cancel(c, session_id)?,
+                    ))
+                }
+                other => {
+                    return Err(ProtocolError::unexpected_message_kind(
+                        "receiver handshake",
+                        MessageKind::Hello,
+                        other.kind(),
+                    ).into())
+                }
             };
 
             protocol_wire::write_sender_message(&mut send, &protocol_message::SenderMessage::Offer(protocol_message::Offer {
@@ -304,16 +318,25 @@ async fn do_handshake(
                 protocol_message::ReceiverMessage::Accept(a) => protocol_sender::SenderControlOutcome::Accepted(protocol_sender::SenderPeer { session_id: a.session_id, identity: peer_hello.identity }),
                 protocol_message::ReceiverMessage::Decline(d) => protocol_sender::SenderControlOutcome::Declined(d),
                 protocol_message::ReceiverMessage::Cancel(c) => return Ok(HandshakeResult::Cancelled(TransferOutcome::from_remote_cancel(c, session_id)?)),
-                _ => bail!("expected decision from receiver"),
+                other => {
+                    return Err(ProtocolError::unexpected_message_kind(
+                        "receiver decision",
+                        MessageKind::Accept,
+                        other.kind(),
+                    ).into())
+                }
             };
             Ok(HandshakeResult::Ok(send, recv, decision))
         } => res,
         _ = wait_for_cancel(cancel_rx) => {
             // Abort handshake locally
-            let (mut send, _) = conn.open_bi().await.context("opening bi-stream for abort")?;
+            let (mut send, _) = conn
+                .open_bi()
+                .await
+                .map_err(|source| TransferError::other("opening bi-stream for abort", source))?;
             abort_session(&mut send, session_id, protocol_message::CancelPhase::WaitingForDecision).await.map(HandshakeResult::Cancelled)
         },
-        _ = conn.closed() => bail!("connection closed during handshake"),
+        _ = conn.closed() => Err(TransferError::connection_closed("during handshake")),
     }
 }
 
@@ -353,12 +376,25 @@ async fn do_transfer(
             tokio::select! {
                 _ = wait_for_cancel(cancel_rx) => return abort_session(control_send, session_id, protocol_message::CancelPhase::Transferring).await,
                 msg = protocol_wire::read_receiver_message(control_recv) => match msg? {
-                    protocol_message::ReceiverMessage::Cancel(c) => return TransferOutcome::from_remote_cancel(c, session_id),
+                    protocol_message::ReceiverMessage::Cancel(c) => {
+                        return Ok(TransferOutcome::from_remote_cancel(c, session_id)?)
+                    }
                     protocol_message::ReceiverMessage::TransferResult(r) => {
-                        if !matches!(r.status, protocol_message::TransferStatus::Ok) { bail!("receiver reported error: {:?}", r.status); }
+                        if !matches!(r.status, protocol_message::TransferStatus::Ok) {
+                            return Err(TransferError::other(
+                                "receiver reported error",
+                                std::io::Error::other(format!("{:?}", r.status)),
+                            ));
+                        }
                         break;
                     }
-                    _ => bail!("unexpected message during transfer"),
+                    other => {
+                        return Err(ProtocolError::unexpected_message_kind(
+                            "receiver transfer",
+                            MessageKind::TransferResult,
+                            other.kind(),
+                        ).into())
+                    }
                 }
             }
         }
@@ -410,7 +446,7 @@ impl SenderProgressTask {
         Self {
             shutdown: tokio::spawn(async move {
                 let mut recv = tokio::select! {
-                    res = conn.accept_uni() => res?,
+                    res = conn.accept_uni() => res.map_err(|source| TransferError::other("accepting progress stream", source))?,
                     _ = tokio::time::sleep(Duration::from_secs(30)) => { warn!(session_id = %plan.session_id, "receiver never opened progress stream"); return Ok(()); }
                 };
                 let mut tracker = ProgressTracker::new(plan.clone());
@@ -439,14 +475,23 @@ impl SenderProgressTask {
                             });
                             break Ok(());
                         }
-                        _ => bail!("unexpected progress message from receiver"),
+                        other => {
+                            return Err(ProtocolError::unexpected_message_kind(
+                                "receiver progress",
+                                MessageKind::TransferStarted,
+                                other.kind(),
+                            )
+                            .into());
+                        }
                     }
                 }
             }),
         }
     }
     async fn wait(self) -> Result<()> {
-        self.shutdown.await?
+        self.shutdown
+            .await
+            .map_err(|source| TransferError::other("joining sender progress task", source))?
     }
 }
 
@@ -461,7 +506,7 @@ impl BlobTransferTask {
         let (tx, rx) = oneshot::channel();
         let shutdown = tokio::spawn(async move {
             let _ = rx.await;
-            reg.shutdown().await
+            reg.shutdown().await.map_err(Into::into)
         });
         Self {
             ticket,
@@ -476,6 +521,8 @@ impl BlobTransferTask {
         if let Some(tx) = self.stop_tx.take() {
             let _ = tx.send(());
         }
-        self.shutdown.await?
+        self.shutdown
+            .await
+            .map_err(|source| TransferError::other("joining blob transfer task", source))?
     }
 }

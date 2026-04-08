@@ -3,17 +3,17 @@ use std::path::PathBuf;
 
 use anyhow::{Context, Result, anyhow, bail};
 use clap::{Args, ValueEnum};
-use drift_core::discovery::{resolve_nearby, resolve_pairing_code};
-use drift_core::lan::LanReceiveAdvertisement;
-use drift_core::protocol::DeviceType;
-use drift_core::rendezvous::{RendezvousClient, resolve_server_url};
-use drift_core::transfer::{
-    ReceiverDecision, ReceiverEvent, ReceiverOffer, ReceiverRequest, ReceiverSession,
-    ReceiverStart, SendRequest, Sender, SenderEvent, TransferOutcome, TransferPlan,
-    TransferSnapshot,
+use drift_app::{
+    ConflictPolicy, OfferDecision, ReceiverConfig, ReceiverEvent, ReceiverOfferEvent,
+    ReceiverOfferPhase, ReceiverService, SendConfig, SendDestination, SendDraft, SendEvent,
+    SendPhase, SendRun, SendSessionOutcome, TransferPlan, TransferSnapshot, UserFacingError,
+    from_anyhow_error,
 };
-use drift_core::util::{confirm_accept, human_size, make_ticket, process_display_device_name};
+use drift_core::util::{confirm_accept, human_size, process_display_device_name};
 use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
+use iroh::SecretKey;
+use rand::random;
+use tokio::sync::broadcast::error::RecvError;
 use tokio::time::Duration;
 use tokio_stream::StreamExt;
 use tracing::{info, warn};
@@ -87,43 +87,37 @@ pub async fn send_with_server(
     server_url: Option<String>,
 ) -> Result<()> {
     let device_name = process_display_device_name();
+    let draft = SendDraft::new(
+        SendConfig {
+            device_name: device_name.clone(),
+            device_type: "laptop".to_owned(),
+        },
+        files,
+    );
 
     info!(
         code = %code.trim().to_uppercase(),
-        file_count = files.len(),
+        file_count = draft.paths().len(),
         device = %device_name,
         rendezvous_override = ?server_url,
         "send.resolving_code"
     );
 
-    let peer_endpoint_addr = resolve_pairing_code(&code, server_url.as_deref()).await?;
-
-    let sender = Sender::new(
-        device_name,
-        DeviceType::Laptop,
-        SendRequest {
-            peer_endpoint_addr: peer_endpoint_addr.clone(),
-            peer_endpoint_id: peer_endpoint_addr.id,
-            files,
-        },
-    );
+    let session = draft.into_session(SendDestination::code(code, server_url));
 
     let mut progress_bar = None;
-    let run = sender.run_with_events();
+    let run = session.start();
     let outcome = consume_sender_run(run, &mut progress_bar).await;
     finish_progress_bar(&mut progress_bar);
 
     match &outcome {
-        Ok(TransferOutcome::Completed) => {
+        Ok(SendSessionOutcome::Accepted { .. }) => {
             info!("send.completed");
         }
-        Ok(TransferOutcome::Declined { reason }) => {
+        Ok(SendSessionOutcome::Declined { reason }) => {
             info!(reason = %reason, "send.declined");
         }
-        Ok(TransferOutcome::Cancelled(c)) => {
-            info!(by = ?c.by, reason = %c.reason, "send.cancelled");
-        }
-        Err(e) => warn!(error = %e, error_chain = %format!("{e:#}"), "send.failed"),
+        Err(_) => {}
     }
     outcome.map(|_| ())
 }
@@ -134,15 +128,22 @@ pub async fn send_nearby(
     _server_url: Option<String>,
 ) -> Result<()> {
     let device_name = process_display_device_name();
+    let draft = SendDraft::new(
+        SendConfig {
+            device_name: device_name.clone(),
+            device_type: "laptop".to_owned(),
+        },
+        files,
+    );
 
     info!(
-        file_count = files.len(),
+        file_count = draft.paths().len(),
         device = %device_name,
         scan_secs = nearby_timeout_secs.max(1),
         "send.nearby_scanning"
     );
 
-    let receivers = resolve_nearby(Duration::from_secs(nearby_timeout_secs)).await?;
+    let receivers = draft.scan_nearby(nearby_timeout_secs).await?;
 
     if receivers.is_empty() {
         bail!(
@@ -173,159 +174,222 @@ pub async fn send_nearby(
     }
 
     let picked = &receivers[idx - 1];
-    info!(label = %picked.label, endpoint = %picked.endpoint_id, "send.nearby_picked");
+    info!(label = %picked.label, endpoint = %picked.fullname, "send.nearby_picked");
 
-    let sender = Sender::new(
-        device_name,
-        DeviceType::Laptop,
-        SendRequest {
-            peer_endpoint_addr: picked.endpoint_addr.clone(),
-            peer_endpoint_id: picked.endpoint_id,
-            files,
-        },
-    );
+    let session = draft.into_session(SendDestination::nearby(
+        picked.ticket.clone(),
+        picked.label.clone(),
+    ));
 
     let mut progress_bar = None;
-    let run = sender.run_with_events();
+    let run = session.start();
     let outcome = consume_sender_run(run, &mut progress_bar).await;
     finish_progress_bar(&mut progress_bar);
 
     match &outcome {
-        Ok(TransferOutcome::Completed) => {
+        Ok(SendSessionOutcome::Accepted { .. }) => {
             info!("send.completed");
         }
-        Ok(TransferOutcome::Declined { reason }) => {
+        Ok(SendSessionOutcome::Declined { reason }) => {
             info!(reason = %reason, "send.declined");
         }
-        Ok(TransferOutcome::Cancelled(c)) => {
-            info!(by = ?c.by, reason = %c.reason, "send.cancelled");
-        }
-        Err(e) => warn!(error = %e, error_chain = %format!("{e:#}"), "send.failed"),
+        Err(_) => {}
     }
 
     outcome.map(|_| ())
 }
 
 async fn consume_sender_run(
-    run: drift_core::transfer::sender::SenderRun,
+    run: SendRun,
     progress_bar: &mut Option<ProgressBar>,
-) -> Result<TransferOutcome> {
-    let (mut events, cancel_tx, outcome_rx) = run.into_parts();
+) -> Result<SendSessionOutcome> {
+    let (mut events, outcome_rx) = run.into_parts();
 
     let mut outcome_rx = outcome_rx;
     let mut current_plan: Option<TransferPlan> = None;
+    let mut reported_failure = false;
     loop {
         tokio::select! {
             event = events.next() => {
                 match event {
-                    Some(Ok(event)) => render_sender_event(progress_bar, &event, &mut current_plan),
-                    Some(Err(error)) => {
-                        warn!(error = %error, error_chain = %format!("{error:#}"), "send.failed");
-                        finish_progress_bar(progress_bar);
-                        return Err(error);
+                    Some(event) => {
+                        reported_failure |= render_sender_event(progress_bar, &event, &mut current_plan);
                     }
                     None => break,
                 }
             }
             _ = tokio::signal::ctrl_c() => {
                 info!("send.cancel_requested");
-                let _ = cancel_tx.send(true);
+                return Err(anyhow!("cancelled"));
             }
             res = &mut outcome_rx => {
                 finish_progress_bar(progress_bar);
-                return res.context("waiting for send outcome")?;
+                let outcome = res.context("waiting for send outcome")?;
+                match outcome {
+                    Ok(outcome) => return Ok(outcome),
+                    Err(error) => {
+                        if !reported_failure {
+                            report_anyhow_failure("send.failed", &error.clone().into(), false);
+                        }
+                        return Err(error.into());
+                    }
+                }
             }
         }
     }
 
     finish_progress_bar(progress_bar);
-    outcome_rx.await.context("waiting for send outcome")?
-}
-
-fn render_sender_event(
-    progress_bar: &mut Option<ProgressBar>,
-    event: &SenderEvent,
-    current_plan: &mut Option<TransferPlan>,
-) {
-    match event {
-        SenderEvent::Connecting {
-            peer_endpoint_id, ..
-        } => {
-            let pb = ensure_spinner(progress_bar);
-            pb.set_message(format!("Connecting to {peer_endpoint_id}..."));
-        }
-        SenderEvent::WaitingForDecision {
-            receiver_device_name,
-            ..
-        } => {
-            let pb = ensure_spinner(progress_bar);
-            pb.set_message(format!("Waiting for {receiver_device_name} to accept..."));
-        }
-        SenderEvent::Accepted {
-            receiver_device_name,
-            ..
-        } => {
-            let pb = ensure_spinner(progress_bar);
-            pb.set_message(format!(
-                "Accepted by {receiver_device_name}. Starting transfer..."
-            ));
-        }
-        SenderEvent::TransferStarted { plan, .. } => {
-            *current_plan = Some(plan.clone());
-            let pb = ensure_spinner(progress_bar);
-            configure_transfer_bar(pb, plan.total_bytes);
-            pb.set_message(render_transfer_message("Sending", Some(plan), None));
-        }
-        SenderEvent::TransferProgress { snapshot, .. } => {
-            let pb = ensure_spinner(progress_bar);
-            configure_transfer_bar(pb, snapshot.total_bytes);
-            pb.set_position(snapshot.bytes_transferred);
-            pb.set_message(render_transfer_message(
-                "Sending",
-                current_plan.as_ref(),
-                Some(snapshot),
-            ));
-        }
-        SenderEvent::TransferCompleted { snapshot, .. } => {
-            let pb = ensure_spinner(progress_bar);
-            configure_transfer_bar(pb, snapshot.total_bytes);
-            pb.set_position(snapshot.bytes_transferred);
-            pb.set_message(render_transfer_message(
-                "Sending",
-                current_plan.as_ref(),
-                Some(snapshot),
-            ));
-            finish_progress_bar(progress_bar);
-        }
-        SenderEvent::Declined { reason, .. } => {
-            finish_progress_bar(progress_bar);
-            info!(%reason, "Transfer declined");
-        }
-        SenderEvent::Failed { message, .. } => {
-            finish_progress_bar(progress_bar);
-            warn!(%message, "Transfer failed");
+    let outcome = outcome_rx.await.context("waiting for send outcome")?;
+    match outcome {
+        Ok(outcome) => Ok(outcome),
+        Err(error) => {
+            if !reported_failure {
+                report_anyhow_failure("send.failed", &error.clone().into(), false);
+            }
+            Err(error.into())
         }
     }
 }
 
-pub async fn receive(out_dir: PathBuf, server_url: Option<String>) -> Result<()> {
+fn render_sender_event(
+    progress_bar: &mut Option<ProgressBar>,
+    event: &SendEvent,
+    current_plan: &mut Option<TransferPlan>,
+) -> bool {
+    match event {
+        SendEvent {
+            phase: SendPhase::Connecting,
+            destination_label,
+            ..
+        } => {
+            let pb = ensure_spinner(progress_bar);
+            pb.set_message(format!("Connecting to {destination_label}..."));
+            false
+        }
+        SendEvent {
+            phase: SendPhase::WaitingForDecision,
+            destination_label,
+            ..
+        } => {
+            let pb = ensure_spinner(progress_bar);
+            pb.set_message(format!("Waiting for {destination_label} to accept..."));
+            false
+        }
+        SendEvent {
+            phase: SendPhase::Accepted,
+            destination_label,
+            ..
+        } => {
+            let pb = ensure_spinner(progress_bar);
+            pb.set_message(format!(
+                "Accepted by {destination_label}. Starting transfer..."
+            ));
+            false
+        }
+        SendEvent {
+            phase: SendPhase::Sending,
+            plan: Some(plan),
+            snapshot: None,
+            ..
+        } => {
+            *current_plan = Some(plan.clone());
+            let pb = ensure_spinner(progress_bar);
+            configure_transfer_bar(pb, plan.total_bytes);
+            pb.set_message(render_transfer_message("Sending", Some(plan), None));
+            false
+        }
+        SendEvent {
+            phase: SendPhase::Sending,
+            snapshot: Some(snapshot),
+            ..
+        } => {
+            let pb = ensure_spinner(progress_bar);
+            configure_transfer_bar(pb, snapshot.total_bytes);
+            pb.set_position(snapshot.bytes_transferred);
+            pb.set_message(render_transfer_message(
+                "Sending",
+                current_plan.as_ref(),
+                Some(snapshot),
+            ));
+            false
+        }
+        SendEvent {
+            phase: SendPhase::Completed,
+            snapshot: Some(snapshot),
+            ..
+        } => {
+            let pb = ensure_spinner(progress_bar);
+            configure_transfer_bar(pb, snapshot.total_bytes);
+            pb.set_position(snapshot.bytes_transferred);
+            pb.set_message(render_transfer_message(
+                "Sending",
+                current_plan.as_ref(),
+                Some(snapshot),
+            ));
+            finish_progress_bar(progress_bar);
+            false
+        }
+        SendEvent {
+            phase: SendPhase::Declined,
+            error: Some(error),
+            ..
+        }
+        | SendEvent {
+            phase: SendPhase::Failed,
+            error: Some(error),
+            ..
+        } => {
+            finish_progress_bar(progress_bar);
+            report_user_facing_error("send.failed", error);
+            true
+        }
+        SendEvent {
+            phase: SendPhase::Declined,
+            ..
+        }
+        | SendEvent {
+            phase: SendPhase::Failed,
+            ..
+        } => {
+            finish_progress_bar(progress_bar);
+            false
+        }
+        _ => false,
+    }
+}
+
+pub async fn receive(out_dir: PathBuf, conflict: String, server_url: Option<String>) -> Result<()> {
     let device_name = process_display_device_name();
     info!(
         out_dir = %out_dir.display(),
+        conflict = %conflict,
         server = ?server_url,
         device = %device_name,
         "receive.started"
     );
 
-    let endpoint = drift_core::transfer::receiver::bind_endpoint().await?;
-    let ticket = make_ticket(&endpoint).await?;
+    let config = ReceiverConfig {
+        device_name,
+        device_type: "laptop".to_owned(),
+        download_root: out_dir,
+        conflict_policy: parse_conflict_policy(&conflict)?,
+        secret_key: SecretKey::from_bytes(&random::<[u8; 32]>()),
+    };
+    let service = match ReceiverService::start(config).await {
+        Ok(service) => service,
+        Err(error) => {
+            report_anyhow_failure("receive.failed", &error.clone().into(), false);
+            return Err(error.into());
+        }
+    };
 
-    // 1. Start mDNS Advertising
-    let _advertiser = LanReceiveAdvertisement::start(&ticket, &device_name)?;
-
-    // 2. Register with Rendezvous
-    let rendezvous = RendezvousClient::new(resolve_server_url(server_url.as_deref()));
-    let registration = rendezvous.register_peer(ticket).await?;
+    let registration = match service.ensure_registered(server_url).await {
+        Ok(registration) => registration,
+        Err(error) => {
+            report_anyhow_failure("receive.failed", &error.clone().into(), false);
+            return Err(error.into());
+        }
+    };
 
     info!(code = %registration.code, expires_at = %registration.expires_at, "receive.ready");
     eprintln!(
@@ -334,143 +398,132 @@ pub async fn receive(out_dir: PathBuf, server_url: Option<String>) -> Result<()>
     );
     eprintln!("Waiting for a sender to connect...");
 
-    // 3. Wait for one connection
-    let incoming = tokio::select! {
-        incoming = endpoint.accept() => incoming.ok_or_else(|| anyhow!("listener closed"))?,
-        _ = tokio::signal::ctrl_c() => {
-            bail!("cancelled while waiting for connection");
-        }
-    };
-    let connection = incoming.await?;
+    let mut events = service.subscribe_events();
+    let mut progress_bar = None;
+    let mut current_plan: Option<TransferPlan> = None;
+    let mut terminal_event: Option<ReceiverOfferEvent> = None;
+    let mut reported_failure = false;
 
-    // 4. Run the session
-    let session = ReceiverSession::new(ReceiverRequest {
-        device_name,
-        device_type: DeviceType::Laptop,
-        out_dir,
-    });
-
-    let start = session.start(endpoint, connection);
-    let outcome = consume_receiver_run(start).await?;
-
-    match outcome {
-        TransferOutcome::Completed => {
-            info!("receive.completed");
-            println!("\nTransfer completed successfully!");
+    loop {
+        tokio::select! {
+            event = events.recv() => {
+                match event {
+                    Ok(ReceiverEvent::OfferUpdated(event)) => {
+                        match event.phase {
+                            ReceiverOfferPhase::Connecting => {
+                                let pb = ensure_spinner(&mut progress_bar);
+                                pb.set_message("Connecting...");
+                            }
+                            ReceiverOfferPhase::OfferReady => {
+                                render_offer(&event);
+                                let accepted = confirm_accept()?;
+                                let decision = if accepted {
+                                    OfferDecision::Accept
+                                } else {
+                                    OfferDecision::Decline
+                                };
+                                service.respond_to_offer(decision).await?;
+                                if !accepted {
+                                    info!("receive.declined_local");
+                                }
+                            }
+                            ReceiverOfferPhase::Receiving
+                            | ReceiverOfferPhase::Completed
+                            | ReceiverOfferPhase::Cancelled
+                            | ReceiverOfferPhase::Failed
+                            | ReceiverOfferPhase::Declined => {
+                                reported_failure |=
+                                    render_receiver_event(&mut progress_bar, &event, &mut current_plan);
+                                if matches!(
+                                    event.phase,
+                                    ReceiverOfferPhase::Completed
+                                        | ReceiverOfferPhase::Cancelled
+                                        | ReceiverOfferPhase::Failed
+                                        | ReceiverOfferPhase::Declined
+                                ) {
+                                    terminal_event = Some(event.clone());
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    Ok(ReceiverEvent::Shutdown) => break,
+                    Ok(ReceiverEvent::RegistrationUpdated(_))
+                    | Ok(ReceiverEvent::SetupCompleted(_))
+                    | Ok(ReceiverEvent::DiscoverabilityChanged { .. }) => {}
+                    Err(RecvError::Closed) => break,
+                    Err(RecvError::Lagged(count)) => {
+                        warn!(dropped = count, "receiver.events_lagged");
+                    }
+                }
+            }
+            _ = tokio::signal::ctrl_c() => {
+                info!("receive.cancel_requested");
+                let _ = service.shutdown().await;
+                bail!("cancelled");
+            }
         }
-        TransferOutcome::Declined { reason } => {
-            info!(%reason, "receive.declined");
-            println!("\nTransfer declined: {}", reason);
-        }
-        TransferOutcome::Cancelled(c) => {
-            info!(by = ?c.by, reason = %c.reason, "receive.cancelled");
-            println!("\nTransfer cancelled by {:?}: {}", c.by, c.reason);
+    }
+
+    finish_progress_bar(&mut progress_bar);
+    let _ = service.shutdown().await;
+
+    if let Some(event) = terminal_event {
+        match event.phase {
+            ReceiverOfferPhase::Completed => {
+                info!("receive.completed");
+                println!("\nTransfer completed successfully!");
+            }
+            ReceiverOfferPhase::Declined if !reported_failure => {
+                info!("receive.declined");
+                println!("\nTransfer declined.");
+            }
+            ReceiverOfferPhase::Cancelled if !reported_failure => {
+                info!("receive.cancelled");
+                println!("\nTransfer cancelled.");
+            }
+            ReceiverOfferPhase::Failed if !reported_failure => {
+                if let Some(error) = event.error.as_ref() {
+                    report_user_facing_error("receive.failed", error);
+                }
+            }
+            _ => {}
         }
     }
 
     Ok(())
 }
 
-async fn consume_receiver_run(start: ReceiverStart) -> Result<TransferOutcome> {
-    let ReceiverStart {
-        mut events,
-        offer_rx,
-        outcome_rx,
-        control,
-    } = start;
-
-    let mut progress_bar = None;
-    let mut current_plan: Option<TransferPlan> = None;
-
-    // 1. Wait for offer
-    let offer = tokio::select! {
-        offer = offer_rx => offer.context("waiting for offer")??,
-        _ = tokio::signal::ctrl_c() => {
-            let _ = control.decision_tx.send(ReceiverDecision::Decline);
-            bail!("interrupted");
-        }
-    };
-
-    // 2. Render offer and ask for permission
-    render_offer(&offer);
-
-    let accepted = confirm_accept()?;
-    if !accepted {
-        let _ = control.decision_tx.send(ReceiverDecision::Decline);
-        return Ok(TransferOutcome::Declined {
-            reason: "local user declined".to_owned(),
-        });
-    }
-
-    control
-        .decision_tx
-        .send(ReceiverDecision::Accept)
-        .map_err(|_| anyhow!("failed to send decision"))?;
-
-    // 3. Process events
-    let mut outcome_rx = outcome_rx;
-    loop {
-        tokio::select! {
-            event = events.next() => {
-                match event {
-                    Some(Ok(event)) => render_receiver_event(
-                        &mut progress_bar,
-                        &event,
-                        &mut current_plan,
-                    ),
-                    Some(Err(error)) => {
-                        warn!(error = %error, error_chain = %format!("{error:#}"), "receive.failed");
-                        finish_progress_bar(&mut progress_bar);
-                        return Err(error);
-                    }
-                    None => break,
-                }
-            }
-            _ = tokio::signal::ctrl_c() => {
-                info!("receive.cancel_requested");
-                let _ = control.cancel_tx.send(true);
-            }
-            res = &mut outcome_rx => {
-                finish_progress_bar(&mut progress_bar);
-                return res.context("waiting for outcome")?;
-            }
-        }
-    }
-
-    finish_progress_bar(&mut progress_bar);
-    outcome_rx.await.context("waiting for outcome")?
-}
-
-fn render_offer(offer: &ReceiverOffer) {
-    println!("\nIncoming Transfer from {}:", offer.sender_device_name);
-    println!("  Files: {}", offer.file_count);
-    println!("  Total Size: {}", human_size(offer.total_size));
+fn render_offer(offer: &ReceiverOfferEvent) {
+    println!("\nIncoming Transfer from {}:", offer.sender_name);
+    println!("  Files: {}", offer.item_count);
+    println!("  Total Size: {}", human_size(offer.total_size_bytes));
     println!();
 }
 
 fn render_receiver_event(
     progress_bar: &mut Option<ProgressBar>,
-    event: &ReceiverEvent,
+    event: &ReceiverOfferEvent,
     current_plan: &mut Option<TransferPlan>,
-) {
+) -> bool {
     match event {
-        ReceiverEvent::Listening { .. } => {
-            let pb = ensure_spinner(progress_bar);
-            pb.set_message("Waiting for sender...");
-        }
-        ReceiverEvent::OfferReceived {
-            sender_device_name, ..
+        ReceiverOfferEvent {
+            phase: ReceiverOfferPhase::Receiving,
+            plan: Some(plan),
+            snapshot: None,
+            ..
         } => {
             let pb = ensure_spinner(progress_bar);
-            pb.set_message(format!("Offer received from {sender_device_name}"));
-        }
-        ReceiverEvent::TransferStarted { plan, .. } => {
             *current_plan = Some(plan.clone());
-            let pb = ensure_spinner(progress_bar);
             configure_transfer_bar(pb, plan.total_bytes);
             pb.set_message(render_transfer_message("Receiving", Some(plan), None));
+            false
         }
-        ReceiverEvent::TransferProgress { snapshot, .. } => {
+        ReceiverOfferEvent {
+            phase: ReceiverOfferPhase::Receiving,
+            snapshot: Some(snapshot),
+            ..
+        } => {
             let pb = ensure_spinner(progress_bar);
             configure_transfer_bar(pb, snapshot.total_bytes);
             pb.set_position(snapshot.bytes_transferred);
@@ -479,8 +532,13 @@ fn render_receiver_event(
                 current_plan.as_ref(),
                 Some(snapshot),
             ));
+            false
         }
-        ReceiverEvent::TransferCompleted { snapshot, .. } => {
+        ReceiverOfferEvent {
+            phase: ReceiverOfferPhase::Completed,
+            snapshot: Some(snapshot),
+            ..
+        } => {
             let pb = ensure_spinner(progress_bar);
             configure_transfer_bar(pb, snapshot.total_bytes);
             pb.set_position(snapshot.bytes_transferred);
@@ -490,14 +548,38 @@ fn render_receiver_event(
                 Some(snapshot),
             ));
             finish_progress_bar(progress_bar);
+            false
         }
-        ReceiverEvent::Completed { .. } => {
+        ReceiverOfferEvent {
+            phase: ReceiverOfferPhase::Cancelled,
+            error: Some(error),
+            ..
+        }
+        | ReceiverOfferEvent {
+            phase: ReceiverOfferPhase::Failed,
+            error: Some(error),
+            ..
+        } => {
             finish_progress_bar(progress_bar);
+            report_user_facing_error("receive.failed", error);
+            true
         }
-        ReceiverEvent::Failed { message, .. } => {
+        ReceiverOfferEvent {
+            phase: ReceiverOfferPhase::Cancelled,
+            ..
+        }
+        | ReceiverOfferEvent {
+            phase: ReceiverOfferPhase::Failed,
+            ..
+        }
+        | ReceiverOfferEvent {
+            phase: ReceiverOfferPhase::Declined,
+            ..
+        } => {
             finish_progress_bar(progress_bar);
-            warn!(%message, "Transfer failed");
+            false
         }
+        _ => false,
     }
 }
 
@@ -561,5 +643,55 @@ fn render_transfer_message(
 fn finish_progress_bar(progress_bar: &mut Option<ProgressBar>) {
     if let Some(pb) = progress_bar.take() {
         pb.finish_and_clear();
+    }
+}
+
+fn parse_conflict_policy(value: &str) -> Result<ConflictPolicy> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "reject" => Ok(ConflictPolicy::Reject),
+        "overwrite" => Ok(ConflictPolicy::Overwrite),
+        "rename" => Ok(ConflictPolicy::Rename),
+        other => bail!("invalid conflict policy {other:?} (expected rename, overwrite, or reject)"),
+    }
+}
+
+fn report_user_facing_error(context: &str, error: &UserFacingError) {
+    warn!(
+        context = %context,
+        kind = ?error.kind(),
+        title = %error.title(),
+        message = %error.message(),
+        recovery = ?error.recovery(),
+        retryable = error.is_retryable(),
+        "transfer.failed"
+    );
+    render_user_facing_error(error);
+}
+
+fn render_user_facing_error(error: &UserFacingError) {
+    eprintln!();
+    eprintln!("{}", error.title());
+    eprintln!("{}", error.message());
+    if let Some(recovery) = error.recovery() {
+        eprintln!("{}", recovery);
+    }
+}
+
+fn report_anyhow_failure(context: &str, error: &anyhow::Error, already_reported: bool) {
+    let error_chain = error
+        .chain()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join(": ");
+    let user_facing_error = from_anyhow_error(error);
+    warn!(
+        context = %context,
+        error = %error,
+        error_chain = %error_chain,
+        "transfer.failed"
+    );
+
+    if !already_reported {
+        render_user_facing_error(&user_facing_error);
     }
 }

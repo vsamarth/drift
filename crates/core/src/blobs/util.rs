@@ -1,7 +1,6 @@
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use anyhow::{Context, Result, ensure};
 use iroh_blobs::{
     BlobFormat,
     api::{
@@ -13,6 +12,7 @@ use tokio::fs;
 use tracing::{instrument, trace};
 use walkdir::WalkDir;
 
+use super::error::{BlobError, BlobTextError, Result as BlobResult};
 use crate::transfer::path::normalize_transfer_path;
 
 /// Temporary directory under the process temp dir; deleted on drop.
@@ -22,19 +22,21 @@ pub(super) struct ScratchDir {
 }
 
 impl ScratchDir {
-    pub(super) async fn new(prefix: &str, session_id: &str) -> Result<Self> {
+    pub(super) async fn new(prefix: &str, session_id: &str) -> BlobResult<Self> {
         let id_digest = blake3::hash(session_id.as_bytes()).to_hex();
-        let unique = format!(
-            "{prefix}-{id_digest}-{}",
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .context("system clock before unix epoch")?
-                .as_nanos()
-        );
+        let clock = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(|source| {
+                BlobError::scratch_dir_create(
+                    std::env::temp_dir(),
+                    BlobTextError::new(source.to_string()),
+                )
+            })?;
+        let unique = format!("{prefix}-{id_digest}-{}", clock.as_nanos());
         let path = std::env::temp_dir().join(unique);
-        fs::create_dir_all(&path)
-            .await
-            .with_context(|| format!("creating temp directory {}", path.display()))?;
+        fs::create_dir_all(&path).await.map_err(|source| {
+            BlobError::scratch_dir_create(path.clone(), BlobTextError::new(source.to_string()))
+        })?;
         Ok(Self { path })
     }
 }
@@ -53,14 +55,25 @@ pub(super) struct ImportedFile {
 }
 
 #[instrument(skip_all, fields(input_path = %path.display()))]
-fn walk_files(path: PathBuf) -> Result<Vec<(String, PathBuf)>> {
-    let path = path
-        .canonicalize()
-        .with_context(|| format!("resolving input path {}", path.display()))?;
-    ensure!(path.exists(), "{} does not exist", path.display());
-    let discovery_root = path
-        .parent()
-        .context("failed to determine input root directory")?;
+fn walk_files(path: PathBuf) -> BlobResult<Vec<(String, PathBuf)>> {
+    let path = path.canonicalize().map_err(|source| {
+        BlobError::import_files(
+            path.display().to_string(),
+            BlobTextError::new(format!("resolving input path {}: {source}", path.display())),
+        )
+    })?;
+    if !path.exists() {
+        return Err(BlobError::import_files(
+            path.display().to_string(),
+            BlobTextError::new(format!("{} does not exist", path.display())),
+        ));
+    }
+    let discovery_root = path.parent().ok_or_else(|| {
+        BlobError::import_files(
+            path.display().to_string(),
+            BlobTextError::new("failed to determine input root directory"),
+        )
+    })?;
 
     let mut discovered = WalkDir::new(path.clone())
         .into_iter()
@@ -68,31 +81,47 @@ fn walk_files(path: PathBuf) -> Result<Vec<(String, PathBuf)>> {
             Ok(e) if e.file_type().is_file() => Some(Ok(e.into_path())),
             _ => None,
         })
-        .map(|file_path: std::result::Result<PathBuf, walkdir::Error>| {
-            let file_path = file_path?;
-            let relative = file_path
-                .strip_prefix(discovery_root)
-                .with_context(|| {
-                    format!(
-                        "failed to compute relative path for {} using root {}",
-                        file_path.display(),
-                        discovery_root.display()
+        .map(
+            |file_path: std::result::Result<PathBuf, walkdir::Error>| -> BlobResult<(String, PathBuf)> {
+                let file_path = file_path.map_err(|source| {
+                    BlobError::import_files(
+                        path.display().to_string(),
+                        BlobTextError::new(source.to_string()),
                     )
-                })?
-                .to_path_buf();
-            let transfer_path = normalize_transfer_path(&relative)?;
-            Ok((transfer_path, file_path))
-        })
-        .collect::<Result<Vec<(String, PathBuf)>>>()?;
+                })?;
+                let relative = file_path
+                    .strip_prefix(discovery_root)
+                    .map_err(|source| {
+                        BlobError::import_files(
+                            path.display().to_string(),
+                            BlobTextError::new(format!(
+                                "failed to compute relative path for {} using root {}: {source}",
+                                file_path.display(),
+                                discovery_root.display()
+                            )),
+                        )
+                    })?
+                    .to_path_buf();
+                let transfer_path = normalize_transfer_path(&relative).map_err(|source| {
+                    BlobError::import_files(
+                        path.display().to_string(),
+                        BlobTextError::new(source.to_string()),
+                    )
+                })?;
+                Ok((transfer_path, file_path))
+            },
+        )
+        .collect::<BlobResult<Vec<(String, PathBuf)>>>()?;
     discovered.sort_by(|(a, _), (b, _)| a.cmp(b));
     trace!(file_count = discovered.len(), "discovered files for import");
     Ok(discovered)
 }
 
 #[instrument(skip(store), fields(input_path = %path.display()))]
-pub(super) async fn import_files(store: &Store, path: PathBuf) -> Result<Vec<ImportedFile>> {
+pub(super) async fn import_files(store: &Store, path: PathBuf) -> BlobResult<Vec<ImportedFile>> {
     let path_display = path.display().to_string();
-    let files = walk_files(path).with_context(|| format!("walking files in {}", path_display))?;
+    let files =
+        walk_files(path).map_err(|source| BlobError::import_files(path_display.clone(), source))?;
 
     let mut imported = Vec::with_capacity(files.len());
     for (transfer_path, local_path) in files {
@@ -109,12 +138,25 @@ pub(super) async fn import_files(store: &Store, path: PathBuf) -> Result<Vec<Imp
             })
             .temp_tag()
             .await
-            .with_context(|| format!("importing {}", local_path.display()))?;
+            .map_err(|source| {
+                BlobError::import_files(
+                    path_display.clone(),
+                    BlobTextError::new(format!("importing {}: {source}", local_path.display())),
+                )
+            })?;
         imported.push(ImportedFile {
             transfer_path,
             temp_tag: tag,
             size_bytes: std::fs::metadata(&local_path)
-                .with_context(|| format!("reading metadata for {}", local_path.display()))?
+                .map_err(|source| {
+                    BlobError::import_files(
+                        path_display.clone(),
+                        BlobTextError::new(format!(
+                            "reading metadata for {}: {source}",
+                            local_path.display()
+                        )),
+                    )
+                })?
                 .len(),
         });
     }
@@ -128,10 +170,11 @@ mod tests {
     use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    use anyhow::Result;
     use iroh_blobs::{api::Store, store::mem::MemStore};
 
     use super::import_files;
+
+    type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
     fn unique_temp_dir(prefix: &str) -> PathBuf {
         static NEXT_TEMP_ID: AtomicU64 = AtomicU64::new(0);

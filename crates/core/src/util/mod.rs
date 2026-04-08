@@ -2,12 +2,12 @@ mod device_name;
 
 pub use device_name::{normalize_hostname_label, process_display_device_name, random_device_name};
 
-use anyhow::{Context, Result};
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use iroh::{Endpoint, EndpointAddr, TransportAddr};
 use serde::{Deserialize, Serialize};
 use std::io::{self, Write};
+use thiserror::Error;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct TransferTicket {
@@ -21,17 +21,59 @@ enum EncodedTransportAddr {
     Ip(String),
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct LegacyTransferTicket {
-    node_id: String,
-    relay_url: Option<String>,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConnectionPathKind {
     Direct,
     Relay,
     Unknown,
+}
+
+#[derive(Debug, Error)]
+pub enum TicketError {
+    #[error("serializing transfer ticket")]
+    Serialize {
+        #[source]
+        source: Box<bincode::ErrorKind>,
+    },
+    #[error("decoding ticket from base64")]
+    DecodeBase64 {
+        #[source]
+        source: base64::DecodeError,
+    },
+    #[error("ticket payload is not a supported drift ticket")]
+    InvalidPayload,
+    #[error("parsing node id {value}")]
+    ParseNodeId {
+        value: String,
+        #[source]
+        source: Box<dyn std::error::Error + Send + Sync>,
+    },
+    #[error("parsing relay url {value}")]
+    ParseRelayUrl {
+        value: String,
+        #[source]
+        source: Box<dyn std::error::Error + Send + Sync>,
+    },
+    #[error("parsing socket addr {value}")]
+    ParseSocketAddr {
+        value: String,
+        #[source]
+        source: std::net::AddrParseError,
+    },
+}
+
+#[derive(Debug, Error)]
+pub enum ConfirmAcceptError {
+    #[error("flushing prompt")]
+    FlushPrompt {
+        #[source]
+        source: io::Error,
+    },
+    #[error("reading confirmation")]
+    ReadConfirmation {
+        #[source]
+        source: io::Error,
+    },
 }
 
 pub async fn classify_connection_path(
@@ -61,14 +103,16 @@ pub async fn classify_connection_path(
     }
 }
 
-pub fn confirm_accept() -> Result<bool> {
+pub fn confirm_accept() -> std::result::Result<bool, ConfirmAcceptError> {
     print!("Accept? [y/N]: ");
-    io::stdout().flush().context("flushing prompt")?;
+    io::stdout()
+        .flush()
+        .map_err(|source| ConfirmAcceptError::FlushPrompt { source })?;
 
     let mut input = String::new();
     io::stdin()
         .read_line(&mut input)
-        .context("reading confirmation")?;
+        .map_err(|source| ConfirmAcceptError::ReadConfirmation { source })?;
 
     let response = input.trim().to_ascii_lowercase();
     Ok(matches!(response.as_str(), "y" | "yes"))
@@ -122,12 +166,12 @@ pub fn format_code_label(code: &str) -> String {
     )
 }
 
-pub async fn make_ticket(endpoint: &Endpoint) -> Result<String> {
+pub async fn make_ticket(endpoint: &Endpoint) -> std::result::Result<String, TicketError> {
     endpoint.online().await;
     make_ticket_from_addr(endpoint.addr())
 }
 
-fn make_ticket_from_addr(addr: EndpointAddr) -> Result<String> {
+fn make_ticket_from_addr(addr: EndpointAddr) -> std::result::Result<String, TicketError> {
     let ticket = TransferTicket {
         node_id: addr.id.to_string(),
         addrs: addr
@@ -137,43 +181,35 @@ fn make_ticket_from_addr(addr: EndpointAddr) -> Result<String> {
             .collect(),
     };
 
-    let bytes = bincode::serialize(&ticket).context("serializing transfer ticket")?;
+    let bytes = bincode::serialize(&ticket).map_err(|source| TicketError::Serialize { source })?;
     Ok(URL_SAFE_NO_PAD.encode(bytes))
 }
 
-pub fn decode_ticket(ticket: &str) -> Result<EndpointAddr> {
+pub fn decode_ticket(ticket: &str) -> std::result::Result<EndpointAddr, TicketError> {
     let bytes = URL_SAFE_NO_PAD
         .decode(ticket)
-        .context("decoding ticket from base64")?;
+        .map_err(|source| TicketError::DecodeBase64 { source })?;
     let ticket = parse_transfer_ticket(&bytes)?;
 
     let node_id = ticket
         .node_id
         .parse()
-        .with_context(|| format!("parsing node id {}", ticket.node_id))?;
+        .map_err(|source| TicketError::ParseNodeId {
+            value: ticket.node_id.clone(),
+            source: Box::new(source),
+        })?;
 
     let addrs = ticket
         .addrs
         .into_iter()
         .map(TryInto::try_into)
-        .collect::<Result<Vec<TransportAddr>>>()?;
+        .collect::<std::result::Result<Vec<TransportAddr>, TicketError>>()?;
 
     Ok(EndpointAddr::new(node_id).with_addrs(addrs))
 }
 
-fn parse_transfer_ticket(bytes: &[u8]) -> Result<TransferTicket> {
-    if let Ok(ticket) = bincode::deserialize::<TransferTicket>(bytes) {
-        return Ok(ticket);
-    }
-    if let Ok(ticket) = bincode::deserialize::<LegacyTransferTicket>(bytes) {
-        return Ok(TransferTicket::from(ticket));
-    }
-    if let Ok(ticket) = serde_json::from_slice::<TransferTicket>(bytes) {
-        return Ok(ticket);
-    }
-    let legacy =
-        serde_json::from_slice::<LegacyTransferTicket>(bytes).context("parsing ticket payload")?;
-    Ok(TransferTicket::from(legacy))
+fn parse_transfer_ticket(bytes: &[u8]) -> std::result::Result<TransferTicket, TicketError> {
+    bincode::deserialize::<TransferTicket>(bytes).map_err(|_| TicketError::InvalidPayload)
 }
 
 impl From<TransportAddr> for EncodedTransportAddr {
@@ -187,31 +223,26 @@ impl From<TransportAddr> for EncodedTransportAddr {
 }
 
 impl TryFrom<EncodedTransportAddr> for TransportAddr {
-    type Error = anyhow::Error;
+    type Error = TicketError;
 
-    fn try_from(value: EncodedTransportAddr) -> Result<Self> {
+    fn try_from(value: EncodedTransportAddr) -> std::result::Result<Self, Self::Error> {
         match value {
-            EncodedTransportAddr::Relay(url) => Ok(TransportAddr::Relay(
-                url.parse()
-                    .with_context(|| format!("parsing relay url {url}"))?,
-            )),
-            EncodedTransportAddr::Ip(addr) => Ok(TransportAddr::Ip(
-                addr.parse()
-                    .with_context(|| format!("parsing socket addr {addr}"))?,
-            )),
-        }
-    }
-}
-
-impl From<LegacyTransferTicket> for TransferTicket {
-    fn from(value: LegacyTransferTicket) -> Self {
-        let mut addrs = Vec::new();
-        if let Some(url) = value.relay_url {
-            addrs.push(EncodedTransportAddr::Relay(url));
-        }
-        Self {
-            node_id: value.node_id,
-            addrs,
+            EncodedTransportAddr::Relay(url) => {
+                Ok(TransportAddr::Relay(url.parse().map_err(|source| {
+                    TicketError::ParseRelayUrl {
+                        value: url.clone(),
+                        source: Box::new(source),
+                    }
+                })?))
+            }
+            EncodedTransportAddr::Ip(addr) => {
+                Ok(TransportAddr::Ip(addr.parse().map_err(|source| {
+                    TicketError::ParseSocketAddr {
+                        value: addr.clone(),
+                        source,
+                    }
+                })?))
+            }
         }
     }
 }

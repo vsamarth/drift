@@ -1,10 +1,11 @@
 #![allow(dead_code)]
 
-use anyhow::{Context, Result, bail};
 use tokio::io::{AsyncRead, AsyncWrite};
 
+use super::error::{ProtocolError, Result};
 use super::message::{
-    Accept, Decline, Hello, Identity, Offer, PROTOCOL_VERSION, SenderMessage, TransferRole,
+    Accept, Decline, Hello, Identity, MessageKind, Offer, PROTOCOL_VERSION, SenderMessage,
+    TransferRole,
 };
 use super::wire::{read_sender_message, write_receiver_message};
 
@@ -47,11 +48,11 @@ impl ReceiverMachine {
         );
 
         if !allowed {
-            bail!(
-                "invalid receiver transition: {:?} -> {:?}",
-                self.state,
-                next
-            );
+            return Err(ProtocolError::invalid_transition(
+                "receiver",
+                format!("{:?}", self.state),
+                format!("{:?}", next),
+            ));
         }
 
         self.state = next;
@@ -151,7 +152,11 @@ impl Receiver {
             SenderMessage::Hello(message) => message,
             other => {
                 self.machine.transition(ReceiverState::Failed)?;
-                bail!("expected hello from sender, got {:?}", other);
+                return Err(ProtocolError::unexpected_message_kind(
+                    "sender handshake",
+                    MessageKind::Hello,
+                    other.kind(),
+                ));
             }
         };
 
@@ -189,7 +194,11 @@ impl Receiver {
             SenderMessage::Offer(message) => message,
             other => {
                 self.machine.transition(ReceiverState::Failed)?;
-                bail!("expected offer from sender, got {:?}", other);
+                return Err(ProtocolError::unexpected_message_kind(
+                    "sender offer",
+                    MessageKind::Offer,
+                    other.kind(),
+                ));
             }
         };
 
@@ -221,7 +230,7 @@ impl Receiver {
             identity: self
                 .peer_identity
                 .clone()
-                .context("sender identity missing after hello")?,
+                .ok_or_else(|| ProtocolError::missing_peer_identity("sender"))?,
         };
         Ok(ReceiverControlOutcome::Accepted(sender))
     }
@@ -251,19 +260,21 @@ impl Receiver {
 
 fn validate_hello(message: &Hello, expected_role: TransferRole) -> Result<()> {
     if message.version != PROTOCOL_VERSION {
-        bail!("unsupported protocol version {}", message.version);
+        return Err(ProtocolError::unsupported_version(
+            PROTOCOL_VERSION,
+            message.version,
+        ));
     }
 
     if message.identity.role != expected_role {
-        bail!(
-            "unexpected identity role {:?}, expected {:?}",
+        return Err(ProtocolError::unexpected_role(
+            expected_role,
             message.identity.role,
-            expected_role
-        );
+        ));
     }
 
     if message.identity.device_name.trim().is_empty() {
-        bail!("device name must not be empty");
+        return Err(ProtocolError::empty_device_name(message.identity.role));
     }
 
     Ok(())
@@ -273,7 +284,7 @@ fn ensure_session_id(actual: &str, expected: &str) -> Result<()> {
     if actual == expected {
         Ok(())
     } else {
-        bail!("session id mismatch: expected {expected}, got {actual}")
+        Err(ProtocolError::session_id_mismatch(expected, actual))
     }
 }
 
@@ -301,7 +312,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn receiver_handler_runs_handshake() -> anyhow::Result<()> {
+    async fn receiver_handler_runs_handshake() -> std::result::Result<(), Box<dyn std::error::Error>>
+    {
         let (local, remote) = duplex(1024);
         let (mut local_read, mut local_write) = tokio::io::split(local);
         let (mut remote_read, mut remote_write) = tokio::io::split(remote);

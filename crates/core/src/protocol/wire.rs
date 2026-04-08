@@ -1,10 +1,10 @@
 #![allow(dead_code)]
 
-use anyhow::{Context, Result, bail};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
+use super::error::{ProtocolError, Result};
 use super::message::{
     MessageEnvelope, MessageKind, PROTOCOL_VERSION, ReceiverMessage, SenderMessage, TransferRole,
 };
@@ -16,21 +16,25 @@ where
     R: AsyncRead + Unpin,
     T: DeserializeOwned,
 {
-    let message_len = reader.read_u32().await.context("reading message length")? as usize;
+    let message_len = reader
+        .read_u32()
+        .await
+        .map_err(|source| ProtocolError::frame_read("reading message length", source))?
+        as usize;
     if message_len > MAX_MESSAGE_BYTES {
-        bail!(
-            "message length {} exceeds maximum {}",
+        return Err(ProtocolError::message_too_large(
             message_len,
-            MAX_MESSAGE_BYTES
-        );
+            MAX_MESSAGE_BYTES,
+        ));
     }
 
     let mut message_buf = vec![0_u8; message_len];
     reader
         .read_exact(&mut message_buf)
         .await
-        .context("reading message bytes")?;
-    serde_json::from_slice(&message_buf).context("parsing message body")
+        .map_err(|source| ProtocolError::frame_read("reading message bytes", source))?;
+    serde_json::from_slice(&message_buf)
+        .map_err(|source| ProtocolError::message_deserialize("parsing message body", source))
 }
 
 async fn write_frame<W, T>(writer: &mut W, value: &T) -> Result<()>
@@ -38,38 +42,40 @@ where
     W: AsyncWrite + Unpin,
     T: Serialize,
 {
-    let bytes = serde_json::to_vec(value).context("serializing message body")?;
+    let bytes = serde_json::to_vec(value)
+        .map_err(|source| ProtocolError::message_serialize("serializing message body", source))?;
     if bytes.len() > MAX_MESSAGE_BYTES {
-        bail!(
-            "message length {} exceeds maximum {}",
+        return Err(ProtocolError::message_too_large(
             bytes.len(),
-            MAX_MESSAGE_BYTES
-        );
+            MAX_MESSAGE_BYTES,
+        ));
     }
 
     writer
         .write_u32(bytes.len() as u32)
         .await
-        .context("writing message length")?;
+        .map_err(|source| ProtocolError::frame_write("writing message length", source))?;
     writer
         .write_all(&bytes)
         .await
-        .context("writing message bytes")?;
-    writer.flush().await.context("flushing message")?;
+        .map_err(|source| ProtocolError::frame_write("writing message bytes", source))?;
+    writer
+        .flush()
+        .await
+        .map_err(|source| ProtocolError::frame_write("flushing message", source))?;
     Ok(())
 }
 
 fn validate_envelope(envelope: &MessageEnvelope, expected_role: TransferRole) -> Result<()> {
     if envelope.version != PROTOCOL_VERSION {
-        bail!("unsupported protocol version {}", envelope.version);
+        return Err(ProtocolError::unsupported_version(
+            PROTOCOL_VERSION,
+            envelope.version,
+        ));
     }
 
     if envelope.role != expected_role {
-        bail!(
-            "unexpected message role {:?}, expected {:?}",
-            envelope.role,
-            expected_role
-        );
+        return Err(ProtocolError::unexpected_role(expected_role, envelope.role));
     }
 
     Ok(())
@@ -77,22 +83,22 @@ fn validate_envelope(envelope: &MessageEnvelope, expected_role: TransferRole) ->
 
 fn validate_sender_kind(message: &SenderMessage, kind: MessageKind) -> Result<()> {
     if message.kind() != kind {
-        bail!(
-            "sender message kind mismatch: expected {:?}, got {:?}",
+        return Err(ProtocolError::unexpected_message_kind(
+            "sender",
             kind,
-            message.kind()
-        );
+            message.kind(),
+        ));
     }
     Ok(())
 }
 
 fn validate_receiver_kind(message: &ReceiverMessage, kind: MessageKind) -> Result<()> {
     if message.kind() != kind {
-        bail!(
-            "receiver message kind mismatch: expected {:?}, got {:?}",
+        return Err(ProtocolError::unexpected_message_kind(
+            "receiver",
             kind,
-            message.kind()
-        );
+            message.kind(),
+        ));
     }
     Ok(())
 }
@@ -102,7 +108,9 @@ fn sender_envelope(message: &SenderMessage) -> Result<MessageEnvelope> {
         version: PROTOCOL_VERSION,
         role: message.role(),
         kind: message.kind(),
-        message: serde_json::to_value(message).context("serializing sender message")?,
+        message: serde_json::to_value(message).map_err(|source| {
+            ProtocolError::message_serialize("serializing sender message", source)
+        })?,
     })
 }
 
@@ -111,22 +119,24 @@ fn receiver_envelope(message: &ReceiverMessage) -> Result<MessageEnvelope> {
         version: PROTOCOL_VERSION,
         role: message.role(),
         kind: message.kind(),
-        message: serde_json::to_value(message).context("serializing receiver message")?,
+        message: serde_json::to_value(message).map_err(|source| {
+            ProtocolError::message_serialize("serializing receiver message", source)
+        })?,
     })
 }
 
 fn sender_message_from_envelope(envelope: MessageEnvelope) -> Result<SenderMessage> {
     validate_envelope(&envelope, TransferRole::Sender)?;
-    let message: SenderMessage =
-        serde_json::from_value(envelope.message).context("parsing sender message")?;
+    let message: SenderMessage = serde_json::from_value(envelope.message)
+        .map_err(|source| ProtocolError::message_deserialize("parsing sender message", source))?;
     validate_sender_kind(&message, envelope.kind)?;
     Ok(message)
 }
 
 fn receiver_message_from_envelope(envelope: MessageEnvelope) -> Result<ReceiverMessage> {
     validate_envelope(&envelope, TransferRole::Receiver)?;
-    let message: ReceiverMessage =
-        serde_json::from_value(envelope.message).context("parsing receiver message")?;
+    let message: ReceiverMessage = serde_json::from_value(envelope.message)
+        .map_err(|source| ProtocolError::message_deserialize("parsing receiver message", source))?;
     validate_receiver_kind(&message, envelope.kind)?;
     Ok(message)
 }
@@ -176,7 +186,8 @@ mod tests {
     use tokio::io::duplex;
 
     #[tokio::test]
-    async fn sender_message_roundtrips_through_envelope() -> anyhow::Result<()> {
+    async fn sender_message_roundtrips_through_envelope()
+    -> std::result::Result<(), Box<dyn std::error::Error>> {
         let (mut a, mut b) = duplex(1024);
         let message = SenderMessage::Offer(Offer {
             session_id: "session-1".to_owned(),
@@ -196,7 +207,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn receiver_message_roundtrips_through_envelope() -> anyhow::Result<()> {
+    async fn receiver_message_roundtrips_through_envelope()
+    -> std::result::Result<(), Box<dyn std::error::Error>> {
         let (mut a, mut b) = duplex(1024);
         let message = ReceiverMessage::TransferResult(TransferResult {
             session_id: "session-1".to_owned(),

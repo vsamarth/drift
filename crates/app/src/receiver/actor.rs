@@ -1,12 +1,12 @@
 use std::time::Duration;
 
-use anyhow::{Context, Result};
 use drift_core::protocol::DeviceType;
 use iroh::Endpoint;
 use tokio::sync::{broadcast, mpsc, oneshot, watch};
 use tokio::task::JoinHandle;
 use tokio::time::{MissedTickBehavior, interval};
 
+use crate::error::{AppError, AppResult, UserFacingError};
 use crate::types::{
     ConflictPolicy, NearbyReceiver, PairingCodeState, ReceiverOfferEvent, ReceiverOfferPhase,
     ReceiverRegistration,
@@ -20,22 +20,22 @@ use super::{OfferDecision, ReceiverEvent, ReceiverLifecycle, ReceiverSnapshot, p
 pub(super) enum ReceiverCommand {
     Setup {
         server_url: Option<String>,
-        reply: oneshot::Sender<Result<ReceiverRegistration>>,
+        reply: oneshot::Sender<AppResult<ReceiverRegistration>>,
     },
     EnsureRegistered {
         server_url: Option<String>,
-        reply: oneshot::Sender<Result<ReceiverRegistration>>,
+        reply: oneshot::Sender<AppResult<ReceiverRegistration>>,
     },
     SetDiscoverable {
         enabled: bool,
-        reply: oneshot::Sender<Result<()>>,
+        reply: oneshot::Sender<AppResult<()>>,
     },
     RespondToOffer {
         decision: OfferDecision,
-        reply: oneshot::Sender<Result<()>>,
+        reply: oneshot::Sender<AppResult<()>>,
     },
     CancelTransfer {
-        reply: oneshot::Sender<Result<()>>,
+        reply: oneshot::Sender<AppResult<()>>,
     },
     OfferPrepared {
         run: super::session::ReceiverRun,
@@ -51,10 +51,10 @@ pub(super) enum ReceiverCommand {
     },
     ScanNearby {
         timeout: Duration,
-        reply: oneshot::Sender<Result<Vec<NearbyReceiver>>>,
+        reply: oneshot::Sender<AppResult<Vec<NearbyReceiver>>>,
     },
     Shutdown {
-        reply: oneshot::Sender<Result<()>>,
+        reply: oneshot::Sender<AppResult<()>>,
     },
 }
 
@@ -65,9 +65,11 @@ pub(super) fn spawn_listener_task(
     device_name: String,
     device_type: String,
     conflict_policy: ConflictPolicy,
-) -> Result<JoinHandle<()>> {
+) -> AppResult<JoinHandle<()>> {
     if matches!(conflict_policy, ConflictPolicy::Overwrite) {
-        anyhow::bail!("receiver overwrite policy is not implemented yet");
+        return Err(AppError::UnsupportedLocalOperation {
+            operation: "receiver overwrite policy",
+        });
     }
     let device_type = parse_device_type(&device_type)?;
     Ok(tokio::spawn(async move {
@@ -161,8 +163,14 @@ pub(super) async fn run_receiver_actor(
                             drift_core::lan::browse_nearby_receivers(timeout, exclude)
                         })
                         .await
-                        .context("receiver v2 nearby scan task")
-                        .and_then(|result| result.map_err(Into::into))
+                        .map_err(|e| AppError::Internal {
+                            message: format!("receiver v2 nearby scan task: {e}"),
+                        })
+                        .and_then(|result| {
+                            result.map_err(|e| AppError::Internal {
+                                message: format!("receiver v2 nearby scan error: {e}"),
+                            })
+                        })
                         .map(|receivers| {
                             receivers
                                 .into_iter()
@@ -196,7 +204,7 @@ fn publish_snapshot(
     state_tx: &watch::Sender<ReceiverSnapshot>,
     runtime: &ReceiverRuntime,
     lifecycle: ReceiverLifecycle,
-) -> Result<()> {
+) -> AppResult<()> {
     state_tx
         .send(ReceiverSnapshot {
             lifecycle,
@@ -205,7 +213,7 @@ fn publish_snapshot(
             has_registration: runtime.has_registration(),
             has_pending_offer: runtime.has_pending_offer(),
         })
-        .map_err(|_| anyhow::anyhow!("receiver v2 snapshot channel closed"))?;
+        .map_err(|_| AppError::SnapshotChannelClosed)?;
     Ok(())
 }
 
@@ -236,7 +244,10 @@ async fn run_listener_loop(
                     connection_path: None,
                     total_size_label: String::new(),
                     files: Vec::new(),
-                    error_message: Some(err.to_string()),
+                    error: Some(UserFacingError::internal(
+                        "Receiver unavailable",
+                        err.to_string(),
+                    )),
                 },
             })
             .await;

@@ -13,7 +13,9 @@ use super::transfer::{
     TransferPhaseData, TransferPlanData, TransferPlanFileData, TransferSnapshotData,
 };
 use super::RUNTIME;
+use crate::api::error::internal_user_facing_error;
 use crate::frb_generated::StreamSink;
+use crate::api::error::map_optional_user_facing_error;
 
 const LOCAL_RENDEZVOUS_URL: &str = "http://127.0.0.1:8787";
 static ACTIVE_SEND_CANCEL: LazyLock<Mutex<Option<watch::Sender<bool>>>> =
@@ -53,13 +55,13 @@ pub struct SendTransferEvent {
     pub plan: Option<TransferPlanData>,
     pub snapshot: Option<TransferSnapshotData>,
     pub remote_device_type: Option<String>,
-    pub error_message: Option<String>,
+    pub error: Option<crate::api::error::UserFacingErrorData>,
 }
 
 pub fn start_send_transfer(
     request: SendTransferRequest,
     updates: StreamSink<SendTransferEvent>,
-) -> Result<(), String> {
+) -> Result<(), crate::api::error::UserFacingErrorData> {
     let fallback_destination = fallback_destination_label(&request);
 
     let draft = SendDraft::new(
@@ -103,9 +105,7 @@ pub fn start_send_transfer(
         let event_updates = updates.clone();
         tokio::spawn(async move {
             while let Some(event) = events.next().await {
-                if let Ok(event) = event {
-                    let _ = event_updates.add(map_event(event));
-                }
+                let _ = event_updates.add(map_event(event));
             }
         });
 
@@ -129,7 +129,10 @@ pub fn start_send_transfer(
                     plan: None,
                     snapshot: None,
                     remote_device_type: None,
-                    error_message: Some(error.to_string()),
+                    error: Some(internal_user_facing_error(
+                        "Transfer failed",
+                        error.to_string(),
+                    )),
                 });
             }
             Err(_) => {}
@@ -139,16 +142,24 @@ pub fn start_send_transfer(
     Ok(())
 }
 
-pub fn cancel_active_send_transfer() -> Result<(), String> {
+pub fn cancel_active_send_transfer() -> Result<(), crate::api::error::UserFacingErrorData> {
     let guard = ACTIVE_SEND_CANCEL
         .lock()
-        .map_err(|_| "send transfer mutex poisoned".to_owned())?;
+        .map_err(|_| internal_user_facing_error("Send transfer unavailable", "mutex poisoned"))?;
     let Some(cancel_tx) = guard.as_ref() else {
-        return Err("no active send transfer".to_owned());
+        return Err(internal_user_facing_error(
+            "No active send transfer",
+            "There is no active send transfer to cancel.",
+        ));
     };
     cancel_tx
         .send(true)
-        .map_err(|_| "send transfer is no longer active".to_owned())
+        .map_err(|_| {
+            internal_user_facing_error(
+                "Send transfer unavailable",
+                "The active send transfer is no longer available.",
+            )
+        })
 }
 
 fn fallback_destination_label(request: &SendTransferRequest) -> String {
@@ -193,7 +204,7 @@ fn map_event(event: AppSendEvent) -> SendTransferEvent {
         plan: event.plan.map(map_plan),
         snapshot: event.snapshot.map(map_snapshot),
         remote_device_type: event.remote_device_type,
-        error_message: event.error_message,
+        error: map_optional_user_facing_error(event.error),
     }
 }
 

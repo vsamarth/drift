@@ -1,9 +1,38 @@
 use crate::protocol::message::{Cancel, CancelPhase, ManifestItem, TransferManifest, TransferRole};
-use anyhow::{Result, bail};
+use std::error::Error as StdError;
+use std::fmt;
+
 use serde::{Deserialize, Serialize};
 use tokio::sync::watch;
 
 pub type TransferFileId = u32;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TransferPlanError {
+    TooManyFiles,
+    SparseFileIds { expected: u32, got: u32 },
+    TotalSizeOverflow,
+    SessionIdMismatchInCancelMessage,
+}
+
+impl fmt::Display for TransferPlanError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::TooManyFiles => f.write_str("too many files"),
+            Self::SparseFileIds { expected, got } => write!(
+                f,
+                "transfer file ids must be contiguous and ordered from 0..n-1 (expected {}, got {})",
+                expected, got
+            ),
+            Self::TotalSizeOverflow => f.write_str("total transfer size exceeds u64"),
+            Self::SessionIdMismatchInCancelMessage => {
+                f.write_str("session id mismatch in cancel message")
+            }
+        }
+    }
+}
+
+impl StdError for TransferPlanError {}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TransferPlanFile {
@@ -21,24 +50,26 @@ pub struct TransferPlan {
 }
 
 impl TransferPlan {
-    pub fn try_new(session_id: impl Into<String>, files: Vec<TransferPlanFile>) -> Result<Self> {
+    pub fn try_new(
+        session_id: impl Into<String>,
+        files: Vec<TransferPlanFile>,
+    ) -> std::result::Result<Self, TransferPlanError> {
         let session_id = session_id.into();
         for (expected_id, file) in files.iter().enumerate() {
             let expected_id =
-                u32::try_from(expected_id).map_err(|_| anyhow::anyhow!("too many files"))?;
+                u32::try_from(expected_id).map_err(|_| TransferPlanError::TooManyFiles)?;
             if file.id != expected_id {
-                bail!(
-                    "transfer file ids must be contiguous and ordered from 0..n-1 (expected {}, got {})",
-                    expected_id,
-                    file.id
-                );
+                return Err(TransferPlanError::SparseFileIds {
+                    expected: expected_id,
+                    got: file.id,
+                });
             }
         }
         let total_files =
-            u32::try_from(files.len()).map_err(|_| anyhow::anyhow!("too many files"))?;
+            u32::try_from(files.len()).map_err(|_| TransferPlanError::TooManyFiles)?;
         let total_bytes = files.iter().try_fold(0_u64, |acc, file| {
             acc.checked_add(file.size)
-                .ok_or_else(|| anyhow::anyhow!("total transfer size exceeds u64"))
+                .ok_or(TransferPlanError::TotalSizeOverflow)
         })?;
         Ok(Self {
             session_id,
@@ -51,19 +82,19 @@ impl TransferPlan {
     pub fn from_manifest(
         session_id: impl Into<String>,
         manifest: &TransferManifest,
-    ) -> Result<Self> {
+    ) -> std::result::Result<Self, TransferPlanError> {
         let files = manifest
             .items
             .iter()
             .enumerate()
             .map(|(index, item)| match item {
                 ManifestItem::File { path, size } => Ok(TransferPlanFile {
-                    id: u32::try_from(index).map_err(|_| anyhow::anyhow!("too many files"))?,
+                    id: u32::try_from(index).map_err(|_| TransferPlanError::TooManyFiles)?,
                     path: path.clone(),
                     size: *size,
                 }),
             })
-            .collect::<Result<Vec<_>>>()?;
+            .collect::<std::result::Result<Vec<_>, TransferPlanError>>()?;
         Self::try_new(session_id, files)
     }
 
@@ -158,9 +189,12 @@ impl TransferOutcome {
         Self::Cancelled(TransferCancellation { by, phase, reason })
     }
 
-    pub fn from_remote_cancel(cancel: Cancel, expected_session_id: &str) -> Result<Self> {
+    pub fn from_remote_cancel(
+        cancel: Cancel,
+        expected_session_id: &str,
+    ) -> std::result::Result<Self, TransferPlanError> {
         if !expected_session_id.is_empty() && cancel.session_id != expected_session_id {
-            bail!("session id mismatch in cancel message");
+            return Err(TransferPlanError::SessionIdMismatchInCancelMessage);
         }
         Ok(Self::Cancelled(TransferCancellation {
             by: cancel.by,

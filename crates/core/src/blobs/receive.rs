@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use anyhow::{Context, Result, anyhow};
 use futures_lite::StreamExt;
 use iroh::Endpoint;
 use iroh_blobs::{
@@ -11,13 +10,14 @@ use tokio::task::JoinHandle;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tracing::trace;
 
+use super::error::{BlobError, BlobTextError, Result};
 use super::util::ScratchDir;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug)]
 pub enum BlobDownloadUpdate {
     Progress { bytes_received: u64 },
     Done,
-    Failed { message: String },
+    Failed { error: BlobError },
 }
 
 pub type BlobDownloadUpdateStream = UnboundedReceiverStream<BlobDownloadUpdate>;
@@ -53,13 +53,13 @@ impl BlobDownloadSession {
         let task_result = match task.await {
             Ok(v) => v,
             Err(error) if error.is_cancelled() => Ok(()),
-            Err(error) => Err(error).context("joining blob download task"),
+            Err(error) => Err(BlobError::join_download_task(error)),
         };
-        let store = Arc::try_unwrap(store).map_err(|_| anyhow!("blob store still shared"))?;
+        let store = Arc::try_unwrap(store).map_err(|_| BlobError::store_still_shared())?;
         store
             .shutdown()
             .await
-            .context("shutting down blob download store")?;
+            .map_err(|source| BlobError::store_shutdown("blob download session", source))?;
         drop(root);
         task_result?;
         Ok(())
@@ -88,10 +88,11 @@ impl BlobDownloadStrategy for SequentialBlobDownload {
         update_tx: mpsc::UnboundedSender<BlobDownloadUpdate>,
     ) -> JoinHandle<Result<()>> {
         tokio::spawn(async move {
+            let ticket_context = format!("ticket {ticket:?}");
             let connection = endpoint
                 .connect(ticket.addr().clone(), BLOBS_ALPN)
                 .await
-                .context("connecting to blob provider")?;
+                .map_err(|source| BlobError::connect(format!("ticket {ticket:?}"), source))?;
 
             let mut stream = store.remote().fetch(connection, ticket).stream();
 
@@ -107,12 +108,17 @@ impl BlobDownloadStrategy for SequentialBlobDownload {
                         break Ok(());
                     }
                     Some(GetProgressItem::Error(err)) => {
-                        let message =
-                            format!("{:#}", anyhow!(err.to_string()).context("blob fetch error"));
+                        let message = format!("blob fetch error: {err}");
                         let _ = update_tx.send(BlobDownloadUpdate::Failed {
-                            message: message.clone(),
+                            error: BlobError::fetch(
+                                ticket_context.clone(),
+                                BlobTextError::new(message.clone()),
+                            ),
                         });
-                        break Err(anyhow!(message));
+                        break Err(BlobError::fetch(
+                            ticket_context,
+                            BlobTextError::new(message),
+                        ));
                     }
                 }
             }
@@ -148,7 +154,7 @@ where
         let store = Arc::new(
             FsStore::load(&root.path)
                 .await
-                .with_context(|| format!("loading blob store {}", root.path.display()))?,
+                .map_err(|source| BlobError::store_load(root.path.clone(), source))?,
         );
         let (update_tx, update_rx) = mpsc::unbounded_channel();
         let task = self

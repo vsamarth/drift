@@ -8,6 +8,8 @@ anyhow.workspace = true
 drift-core = { path = "../core" }
 iroh.workspace = true
 rand.workspace = true
+reqwest.workspace = true
+thiserror.workspace = true
 time.workspace = true
 tokio.workspace = true
 tokio-stream = { workspace = true, features = ["sync"] }

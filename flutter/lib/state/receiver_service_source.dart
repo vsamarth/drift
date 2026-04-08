@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../platform/storage_access_source.dart';
+import '../src/rust/api/error_bridge.dart';
 import '../src/rust/api/receiver.dart' as rust_receiver;
 import 'app_identity.dart';
 
@@ -104,17 +105,33 @@ class LocalReceiverServiceSource implements ReceiverServiceSource {
 
   @override
   Future<void> setDiscoverable({required bool enabled}) {
-    return rust_receiver.setReceiverDiscoverable(enabled: enabled);
+    return _wrapRustCall(
+      () => rust_receiver.setReceiverDiscoverable(enabled: enabled),
+    );
   }
 
   @override
   Future<void> respondToOffer({required bool accept}) {
-    return rust_receiver.respondToReceiverOffer(accept: accept);
+    return _wrapRustCall(
+      () => rust_receiver.respondToReceiverOffer(accept: accept),
+    );
   }
 
   @override
   Future<void> cancelTransfer() {
-    return rust_receiver.cancelReceiverTransfer();
+    return _wrapRustCall(rust_receiver.cancelReceiverTransfer);
+  }
+}
+
+Future<void> _wrapRustCall(Future<void> Function() run) async {
+  try {
+    await run();
+  } catch (error, stackTrace) {
+    final structured = tryParseUserFacingBridgeError(error);
+    if (structured != null) {
+      Error.throwWithStackTrace(structured, stackTrace);
+    }
+    rethrow;
   }
 }
 

@@ -1,6 +1,7 @@
 import 'package:file_selector/file_selector.dart';
 
 import '../core/models/transfer_models.dart';
+import '../src/rust/api/error_bridge.dart';
 import '../src/rust/api/preview.dart' as rust_preview;
 
 abstract class SendItemSource {
@@ -65,7 +66,9 @@ class LocalSendItemSource implements SendItemSource {
       return const [];
     }
 
-    final preview = await rust_preview.inspectPaths(paths: normalizedPaths);
+    final preview = await _loadPreview(
+      () => rust_preview.inspectPaths(paths: normalizedPaths),
+    );
     return List<TransferItemViewData>.unmodifiable(
       preview.items.map(_mapPreviewItem),
     );
@@ -76,9 +79,11 @@ class LocalSendItemSource implements SendItemSource {
     required List<String> existingPaths,
     required List<String> incomingPaths,
   }) async {
-    final preview = await rust_preview.appendPaths(
-      existingPaths: _normalizePaths(existingPaths),
-      newPaths: _normalizePaths(incomingPaths),
+    final preview = await _loadPreview(
+      () => rust_preview.appendPaths(
+        existingPaths: _normalizePaths(existingPaths),
+        newPaths: _normalizePaths(incomingPaths),
+      ),
     );
     return List<TransferItemViewData>.unmodifiable(
       preview.items.map(_mapPreviewItem),
@@ -90,13 +95,29 @@ class LocalSendItemSource implements SendItemSource {
     required List<String> existingPaths,
     required String removedPath,
   }) async {
-    final preview = await rust_preview.removePath(
-      existingPaths: _normalizePaths(existingPaths),
-      removedPath: removedPath.trim(),
+    final preview = await _loadPreview(
+      () => rust_preview.removePath(
+        existingPaths: _normalizePaths(existingPaths),
+        removedPath: removedPath.trim(),
+      ),
     );
     return List<TransferItemViewData>.unmodifiable(
       preview.items.map(_mapPreviewItem),
     );
+  }
+
+  static Future<rust_preview.SelectionPreview> _loadPreview(
+    Future<rust_preview.SelectionPreview> Function() run,
+  ) async {
+    try {
+      return await run();
+    } catch (error, stackTrace) {
+      final structured = tryParseUserFacingBridgeError(error);
+      if (structured != null) {
+        Error.throwWithStackTrace(structured, stackTrace);
+      }
+      rethrow;
+    }
   }
 
   static List<String> _normalizePaths(List<String> paths) {

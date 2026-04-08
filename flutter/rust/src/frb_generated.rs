@@ -72,11 +72,12 @@ fn wire__crate__api__preview__append_paths_impl(
             let api_new_paths = <Vec<String>>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
-                transform_result_sse::<_, String>((move || {
+                transform_result_sse::<_, crate::api::error::UserFacingErrorData>((move || {
                     let output_ok =
                         crate::api::preview::append_paths(api_existing_paths, api_new_paths)?;
                     Ok(output_ok)
-                })())
+                })(
+                ))
             }
         },
     )
@@ -105,10 +106,11 @@ fn wire__crate__api__sender__cancel_active_send_transfer_impl(
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             deserializer.end();
             move |context| {
-                transform_result_sse::<_, String>((move || {
+                transform_result_sse::<_, crate::api::error::UserFacingErrorData>((move || {
                     let output_ok = crate::api::sender::cancel_active_send_transfer()?;
                     Ok(output_ok)
-                })())
+                })(
+                ))
             }
         },
     )
@@ -137,10 +139,11 @@ fn wire__crate__api__receiver__cancel_receiver_transfer_impl(
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             deserializer.end();
             move |context| {
-                transform_result_sse::<_, String>((move || {
+                transform_result_sse::<_, crate::api::error::UserFacingErrorData>((move || {
                     let output_ok = crate::api::receiver::cancel_receiver_transfer()?;
                     Ok(output_ok)
-                })())
+                })(
+                ))
             }
         },
     )
@@ -204,13 +207,14 @@ fn wire__crate__api__receiver__ensure_receiver_registration_impl(
             let api_device_name = <String>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
-                transform_result_sse::<_, String>((move || {
+                transform_result_sse::<_, crate::api::error::UserFacingErrorData>((move || {
                     let output_ok = crate::api::receiver::ensure_receiver_registration(
                         api_server_url,
                         api_device_name,
                     )?;
                     Ok(output_ok)
-                })())
+                })(
+                ))
             }
         },
     )
@@ -304,10 +308,11 @@ fn wire__crate__api__preview__inspect_paths_impl(
             let api_paths = <Vec<String>>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
-                transform_result_sse::<_, String>((move || {
+                transform_result_sse::<_, crate::api::error::UserFacingErrorData>((move || {
                     let output_ok = crate::api::preview::inspect_paths(api_paths)?;
                     Ok(output_ok)
-                })())
+                })(
+                ))
             }
         },
     )
@@ -367,11 +372,12 @@ fn wire__crate__api__receiver__register_receiver_impl(
             let api_device_name = <String>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
-                transform_result_sse::<_, String>((move || {
+                transform_result_sse::<_, crate::api::error::UserFacingErrorData>((move || {
                     let output_ok =
                         crate::api::receiver::register_receiver(api_server_url, api_device_name)?;
                     Ok(output_ok)
-                })())
+                })(
+                ))
             }
         },
     )
@@ -402,11 +408,12 @@ fn wire__crate__api__preview__remove_path_impl(
             let api_removed_path = <String>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
-                transform_result_sse::<_, String>((move || {
+                transform_result_sse::<_, crate::api::error::UserFacingErrorData>((move || {
                     let output_ok =
                         crate::api::preview::remove_path(api_existing_paths, api_removed_path)?;
                     Ok(output_ok)
-                })())
+                })(
+                ))
             }
         },
     )
@@ -436,10 +443,11 @@ fn wire__crate__api__receiver__respond_to_receiver_offer_impl(
             let api_accept = <bool>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
-                transform_result_sse::<_, String>((move || {
+                transform_result_sse::<_, crate::api::error::UserFacingErrorData>((move || {
                     let output_ok = crate::api::receiver::respond_to_receiver_offer(api_accept)?;
                     Ok(output_ok)
-                })())
+                })(
+                ))
             }
         },
     )
@@ -469,10 +477,11 @@ fn wire__crate__api__lan__scan_nearby_receivers_impl(
             let api_timeout_secs = <u64>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
-                transform_result_sse::<_, String>((move || {
+                transform_result_sse::<_, crate::api::error::UserFacingErrorData>((move || {
                     let output_ok = crate::api::lan::scan_nearby_receivers(api_timeout_secs)?;
                     Ok(output_ok)
-                })())
+                })(
+                ))
             }
         },
     )
@@ -502,10 +511,11 @@ fn wire__crate__api__receiver__set_receiver_discoverable_impl(
             let api_enabled = <bool>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
-                transform_result_sse::<_, String>((move || {
+                transform_result_sse::<_, crate::api::error::UserFacingErrorData>((move || {
                     let output_ok = crate::api::receiver::set_receiver_discoverable(api_enabled)?;
                     Ok(output_ok)
-                })())
+                })(
+                ))
             }
         },
     )
@@ -542,7 +552,7 @@ fn wire__crate__api__receiver__start_receiver_transfer_listener_impl(
             >>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
-                transform_result_sse::<_, String>((move || {
+                transform_result_sse::<_, crate::api::error::UserFacingErrorData>((move || {
                     let output_ok = crate::api::receiver::start_receiver_transfer_listener(
                         api_server_url,
                         api_download_root,
@@ -551,7 +561,8 @@ fn wire__crate__api__receiver__start_receiver_transfer_listener_impl(
                         api_updates,
                     )?;
                     Ok(output_ok)
-                })())
+                })(
+                ))
             }
         },
     )
@@ -586,11 +597,12 @@ fn wire__crate__api__sender__start_send_transfer_impl(
             >>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
-                transform_result_sse::<_, String>((move || {
+                transform_result_sse::<_, crate::api::error::UserFacingErrorData>((move || {
                     let output_ok =
                         crate::api::sender::start_send_transfer(api_request, api_updates)?;
                     Ok(output_ok)
-                })())
+                })(
+                ))
             }
         },
     )
@@ -627,7 +639,7 @@ fn wire__crate__api__receiver__watch_receiver_pairing_impl(
             >>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
-                transform_result_sse::<_, String>((move || {
+                transform_result_sse::<_, crate::api::error::UserFacingErrorData>((move || {
                     let output_ok = crate::api::receiver::watch_receiver_pairing(
                         api_server_url,
                         api_download_root,
@@ -636,7 +648,8 @@ fn wire__crate__api__receiver__watch_receiver_pairing_impl(
                         api_updates,
                     )?;
                     Ok(output_ok)
-                })())
+                })(
+                ))
             }
         },
     )
@@ -881,6 +894,19 @@ impl SseDecode for Option<u64> {
     }
 }
 
+impl SseDecode for Option<crate::api::error::UserFacingErrorData> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(<crate::api::error::UserFacingErrorData>::sse_decode(
+                deserializer,
+            ));
+        } else {
+            return None;
+        }
+    }
+}
+
 impl SseDecode for crate::api::receiver::ReceiverPairingState {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -924,7 +950,8 @@ impl SseDecode for crate::api::receiver::ReceiverTransferEvent {
         let mut var_totalSizeLabel = <String>::sse_decode(deserializer);
         let mut var_files =
             <Vec<crate::api::receiver::ReceiverTransferFile>>::sse_decode(deserializer);
-        let mut var_errorMessage = <Option<String>>::sse_decode(deserializer);
+        let mut var_error =
+            <Option<crate::api::error::UserFacingErrorData>>::sse_decode(deserializer);
         return crate::api::receiver::ReceiverTransferEvent {
             phase: var_phase,
             sender_name: var_senderName,
@@ -939,7 +966,7 @@ impl SseDecode for crate::api::receiver::ReceiverTransferEvent {
             snapshot: var_snapshot,
             total_size_label: var_totalSizeLabel,
             files: var_files,
-            error_message: var_errorMessage,
+            error: var_error,
         };
     }
 }
@@ -1019,7 +1046,8 @@ impl SseDecode for crate::api::sender::SendTransferEvent {
         let mut var_snapshot =
             <Option<crate::api::transfer::TransferSnapshotData>>::sse_decode(deserializer);
         let mut var_remoteDeviceType = <Option<String>>::sse_decode(deserializer);
-        let mut var_errorMessage = <Option<String>>::sse_decode(deserializer);
+        let mut var_error =
+            <Option<crate::api::error::UserFacingErrorData>>::sse_decode(deserializer);
         return crate::api::sender::SendTransferEvent {
             phase: var_phase,
             destination_label: var_destinationLabel,
@@ -1030,7 +1058,7 @@ impl SseDecode for crate::api::sender::SendTransferEvent {
             plan: var_plan,
             snapshot: var_snapshot,
             remote_device_type: var_remoteDeviceType,
-            error_message: var_errorMessage,
+            error: var_error,
         };
     }
 }
@@ -1175,6 +1203,44 @@ impl SseDecode for u8 {
 impl SseDecode for () {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {}
+}
+
+impl SseDecode for crate::api::error::UserFacingErrorData {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_kind = <crate::api::error::UserFacingErrorKindData>::sse_decode(deserializer);
+        let mut var_title = <String>::sse_decode(deserializer);
+        let mut var_message = <String>::sse_decode(deserializer);
+        let mut var_recovery = <Option<String>>::sse_decode(deserializer);
+        let mut var_retryable = <bool>::sse_decode(deserializer);
+        return crate::api::error::UserFacingErrorData {
+            kind: var_kind,
+            title: var_title,
+            message: var_message,
+            recovery: var_recovery,
+            retryable: var_retryable,
+        };
+    }
+}
+
+impl SseDecode for crate::api::error::UserFacingErrorKindData {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => crate::api::error::UserFacingErrorKindData::InvalidInput,
+            1 => crate::api::error::UserFacingErrorKindData::PairingUnavailable,
+            2 => crate::api::error::UserFacingErrorKindData::PeerDeclined,
+            3 => crate::api::error::UserFacingErrorKindData::NetworkUnavailable,
+            4 => crate::api::error::UserFacingErrorKindData::ConnectionLost,
+            5 => crate::api::error::UserFacingErrorKindData::PermissionDenied,
+            6 => crate::api::error::UserFacingErrorKindData::FileConflict,
+            7 => crate::api::error::UserFacingErrorKindData::ProtocolIncompatible,
+            8 => crate::api::error::UserFacingErrorKindData::Cancelled,
+            9 => crate::api::error::UserFacingErrorKindData::Internal,
+            _ => unreachable!("Invalid variant for UserFacingErrorKindData: {}", inner),
+        };
+    }
 }
 
 fn pde_ffi_dispatcher_primary_impl(
@@ -1343,7 +1409,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::receiver::ReceiverTransferEve
             self.snapshot.into_into_dart().into_dart(),
             self.total_size_label.into_into_dart().into_dart(),
             self.files.into_into_dart().into_dart(),
-            self.error_message.into_into_dart().into_dart(),
+            self.error.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -1465,7 +1531,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::sender::SendTransferEvent {
             self.plan.into_into_dart().into_dart(),
             self.snapshot.into_into_dart().into_dart(),
             self.remote_device_type.into_into_dart().into_dart(),
-            self.error_message.into_into_dart().into_dart(),
+            self.error.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -1631,6 +1697,59 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::transfer::TransferSnapshotDat
     for crate::api::transfer::TransferSnapshotData
 {
     fn into_into_dart(self) -> crate::api::transfer::TransferSnapshotData {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::error::UserFacingErrorData {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.kind.into_into_dart().into_dart(),
+            self.title.into_into_dart().into_dart(),
+            self.message.into_into_dart().into_dart(),
+            self.recovery.into_into_dart().into_dart(),
+            self.retryable.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::error::UserFacingErrorData
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::error::UserFacingErrorData>
+    for crate::api::error::UserFacingErrorData
+{
+    fn into_into_dart(self) -> crate::api::error::UserFacingErrorData {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::error::UserFacingErrorKindData {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            Self::InvalidInput => 0.into_dart(),
+            Self::PairingUnavailable => 1.into_dart(),
+            Self::PeerDeclined => 2.into_dart(),
+            Self::NetworkUnavailable => 3.into_dart(),
+            Self::ConnectionLost => 4.into_dart(),
+            Self::PermissionDenied => 5.into_dart(),
+            Self::FileConflict => 6.into_dart(),
+            Self::ProtocolIncompatible => 7.into_dart(),
+            Self::Cancelled => 8.into_dart(),
+            Self::Internal => 9.into_dart(),
+            _ => unreachable!(),
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::error::UserFacingErrorKindData
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::error::UserFacingErrorKindData>
+    for crate::api::error::UserFacingErrorKindData
+{
+    fn into_into_dart(self) -> crate::api::error::UserFacingErrorKindData {
         self
     }
 }
@@ -1829,6 +1948,16 @@ impl SseEncode for Option<u64> {
     }
 }
 
+impl SseEncode for Option<crate::api::error::UserFacingErrorData> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <crate::api::error::UserFacingErrorData>::sse_encode(value, serializer);
+        }
+    }
+}
+
 impl SseEncode for crate::api::receiver::ReceiverPairingState {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -1861,7 +1990,7 @@ impl SseEncode for crate::api::receiver::ReceiverTransferEvent {
         <Option<crate::api::transfer::TransferSnapshotData>>::sse_encode(self.snapshot, serializer);
         <String>::sse_encode(self.total_size_label, serializer);
         <Vec<crate::api::receiver::ReceiverTransferFile>>::sse_encode(self.files, serializer);
-        <Option<String>>::sse_encode(self.error_message, serializer);
+        <Option<crate::api::error::UserFacingErrorData>>::sse_encode(self.error, serializer);
     }
 }
 
@@ -1926,7 +2055,7 @@ impl SseEncode for crate::api::sender::SendTransferEvent {
         <Option<crate::api::transfer::TransferPlanData>>::sse_encode(self.plan, serializer);
         <Option<crate::api::transfer::TransferSnapshotData>>::sse_encode(self.snapshot, serializer);
         <Option<String>>::sse_encode(self.remote_device_type, serializer);
-        <Option<String>>::sse_encode(self.error_message, serializer);
+        <Option<crate::api::error::UserFacingErrorData>>::sse_encode(self.error, serializer);
     }
 }
 
@@ -2045,6 +2174,41 @@ impl SseEncode for u8 {
 impl SseEncode for () {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {}
+}
+
+impl SseEncode for crate::api::error::UserFacingErrorData {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <crate::api::error::UserFacingErrorKindData>::sse_encode(self.kind, serializer);
+        <String>::sse_encode(self.title, serializer);
+        <String>::sse_encode(self.message, serializer);
+        <Option<String>>::sse_encode(self.recovery, serializer);
+        <bool>::sse_encode(self.retryable, serializer);
+    }
+}
+
+impl SseEncode for crate::api::error::UserFacingErrorKindData {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(
+            match self {
+                crate::api::error::UserFacingErrorKindData::InvalidInput => 0,
+                crate::api::error::UserFacingErrorKindData::PairingUnavailable => 1,
+                crate::api::error::UserFacingErrorKindData::PeerDeclined => 2,
+                crate::api::error::UserFacingErrorKindData::NetworkUnavailable => 3,
+                crate::api::error::UserFacingErrorKindData::ConnectionLost => 4,
+                crate::api::error::UserFacingErrorKindData::PermissionDenied => 5,
+                crate::api::error::UserFacingErrorKindData::FileConflict => 6,
+                crate::api::error::UserFacingErrorKindData::ProtocolIncompatible => 7,
+                crate::api::error::UserFacingErrorKindData::Cancelled => 8,
+                crate::api::error::UserFacingErrorKindData::Internal => 9,
+                _ => {
+                    unimplemented!("");
+                }
+            },
+            serializer,
+        );
+    }
 }
 
 #[cfg(not(target_family = "wasm"))]

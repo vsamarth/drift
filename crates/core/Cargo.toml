@@ -4,7 +4,6 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
-anyhow.workspace = true
 blake3.workspace = true
 base64.workspace = true
 bincode.workspace = true
@@ -23,4 +22,5 @@ time.workspace = true
 tokio.workspace = true
 tokio-stream.workspace = true
 tracing.workspace = true
+thiserror.workspace = true
 walkdir.workspace = true

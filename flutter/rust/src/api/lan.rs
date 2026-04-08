@@ -11,7 +11,9 @@ pub struct NearbyReceiverInfo {
     pub ticket: String,
 }
 
-pub fn scan_nearby_receivers(timeout_secs: u64) -> Result<Vec<NearbyReceiverInfo>, String> {
+pub fn scan_nearby_receivers(
+    timeout_secs: u64,
+) -> Result<Vec<NearbyReceiverInfo>, crate::api::error::UserFacingErrorData> {
     RUNTIME.block_on(super::receiver::scan_nearby_with_receiver(timeout_secs))
 }
 

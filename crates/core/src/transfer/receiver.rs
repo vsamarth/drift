@@ -1,6 +1,5 @@
 #![allow(dead_code)]
 
-use anyhow::{Context, Result, anyhow, bail};
 use futures_lite::StreamExt;
 use iroh::{Endpoint, endpoint::Connection};
 use iroh_blobs::{
@@ -20,17 +19,21 @@ use tracing::{info, instrument};
 
 use crate::{
     blobs::receive::{BlobDownloadSession, BlobDownloadUpdate, BlobReceiver},
-    protocol::ALPN,
     protocol::message as protocol_message,
+    protocol::message::MessageKind,
     protocol::wire as protocol_wire,
+    protocol::{ALPN, ProtocolError},
     rendezvous::OfferManifest,
 };
 
+use super::error::{Result as TransferResult, TransferError};
 use super::path::{ensure_destination_available, resolve_output_dir, resolve_transfer_destination};
 use super::progress::ProgressTracker;
 use super::types::{
     TransferOutcome, TransferPhase, TransferPlan, TransferSnapshot, wait_for_cancel,
 };
+
+type Result<T> = TransferResult<T>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReceiverRequest {
@@ -62,7 +65,7 @@ pub struct ReceiverOffer {
     pub total_size: u64,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug)]
 pub enum ReceiverEvent {
     Listening {
         endpoint_id: iroh::EndpointId,
@@ -88,14 +91,14 @@ pub enum ReceiverEvent {
     },
     Failed {
         session_id: String,
-        message: String,
+        error: TransferError,
     },
     Completed {
         session_id: String,
     },
 }
 
-pub type ReceiverEventStream = UnboundedReceiverStream<Result<ReceiverEvent>>;
+pub type ReceiverEventStream = UnboundedReceiverStream<ReceiverEvent>;
 
 #[derive(Debug)]
 pub struct ReceiverControl {
@@ -107,7 +110,7 @@ pub struct ReceiverControl {
 pub struct ReceiverStart {
     pub events: ReceiverEventStream,
     pub offer_rx: oneshot::Receiver<Result<ReceiverOffer>>,
-    pub outcome_rx: oneshot::Receiver<Result<TransferOutcome>>,
+    pub outcome_rx: oneshot::Receiver<TransferResult<TransferOutcome>>,
     pub control: ReceiverControl,
 }
 
@@ -149,7 +152,8 @@ impl ReceiverSession {
                 decision_rx,
                 cancel_rx,
             )
-            .await;
+            .await
+            .map_err(|error| TransferError::other("running receiver session", error));
             let _ = outcome_tx.send(outcome);
         });
 
@@ -170,7 +174,7 @@ async fn run_session(
     endpoint: Endpoint,
     connection: Connection,
     mut request: ReceiverRequest,
-    event_tx: Option<mpsc::UnboundedSender<Result<ReceiverEvent>>>,
+    event_tx: Option<mpsc::UnboundedSender<ReceiverEvent>>,
     offer_tx: oneshot::Sender<Result<ReceiverOffer>>,
     decision_rx: oneshot::Receiver<ReceiverDecision>,
     mut cancel_rx: watch::Receiver<bool>,
@@ -189,7 +193,10 @@ async fn run_session(
         match do_handshake(&endpoint, &request, &connection, &mut cancel_rx).await? {
             HandshakeResult::Ok(s, r, h, o) => (s, r, h, o),
             HandshakeResult::Cancelled(outcome) => {
-                let _ = offer_tx.send(Err(anyhow!("cancelled during handshake")));
+                let _ = offer_tx.send(Err(TransferError::other(
+                    "cancelled during handshake",
+                    std::io::Error::other("cancelled during handshake"),
+                )));
                 return Ok(outcome);
             }
         };
@@ -203,8 +210,12 @@ async fn run_session(
     let expected_files = match build_expected_files(&manifest, &request.out_dir).await {
         Ok(f) => f,
         Err(err) => {
-            let _ = send_receiver_decline(&mut control_send, &session_id, err.to_string()).await;
-            let _ = offer_tx.send(Err(anyhow!(err.to_string())));
+            let reason = err.to_string();
+            let _ = send_receiver_decline(&mut control_send, &session_id, reason.clone()).await;
+            let _ = offer_tx.send(Err(TransferError::other(
+                "building receiver offer",
+                std::io::Error::other(reason.clone()),
+            )));
             return Err(err);
         }
     };
@@ -241,10 +252,10 @@ async fn run_session(
 
     // --- Phase 3: User Decision ---
     let decision = tokio::select! {
-        res = decision_rx => res.map_err(|_| anyhow!("decision channel closed"))?,
+        res = decision_rx => res.map_err(|_| TransferError::channel_closed("waiting for receiver decision"))?,
         _ = wait_for_cancel(&mut cancel_rx) => return abort_session(&mut control_send, &session_id, protocol_message::CancelPhase::WaitingForDecision).await,
-        _ = connection.closed() => bail!("connection closed before decision"),
-        _ = tokio::time::sleep(Duration::from_secs(120)) => bail!("offer timed out"),
+        _ = connection.closed() => return Err(TransferError::connection_closed("before receiver decision")),
+        _ = tokio::time::sleep(Duration::from_secs(120)) => return Err(TransferError::timeout("waiting for receiver decision")),
     };
 
     if decision == ReceiverDecision::Decline {
@@ -269,26 +280,38 @@ async fn run_session(
     .await?;
 
     let ticket_message = tokio::select! {
-        res = protocol_wire::read_sender_message(&mut control_recv) => match res.context("waiting for ticket")? {
+        res = protocol_wire::read_sender_message(&mut control_recv) => match res? {
             protocol_message::SenderMessage::BlobTicket(msg) => msg,
-            protocol_message::SenderMessage::Cancel(c) => return TransferOutcome::from_remote_cancel(c, &session_id),
-            _ => bail!("unexpected message while waiting for ticket"),
+            protocol_message::SenderMessage::Cancel(c) => {
+                return Ok(TransferOutcome::from_remote_cancel(c, &session_id)?)
+            }
+            other => {
+                return Err(ProtocolError::unexpected_message_kind(
+                    "sender ticket",
+                    MessageKind::BlobTicket,
+                    other.kind(),
+                )
+                .into())
+            }
         },
         _ = wait_for_cancel(&mut cancel_rx) => return abort_session(&mut control_send, &session_id, protocol_message::CancelPhase::Transferring).await,
-        _ = connection.closed() => bail!("connection closed waiting for ticket"),
-        _ = tokio::time::sleep(Duration::from_secs(30)) => bail!("timeout waiting for blob ticket"),
+        _ = connection.closed() => return Err(TransferError::connection_closed("waiting for blob ticket")),
+        _ = tokio::time::sleep(Duration::from_secs(30)) => return Err(TransferError::timeout("waiting for blob ticket")),
     };
 
     let blob_ticket: BlobTicket = ticket_message
         .ticket
         .parse()
-        .context("parsing blob ticket")?;
+        .map_err(|source| TransferError::other("parsing blob ticket", source))?;
     let blob_receiver = BlobReceiver::new(endpoint.clone());
     let mut blob_download = blob_receiver
         .start(&session_id, blob_ticket.clone())
         .await
-        .context("starting blob download")?;
-    let mut progress_send = connection.open_uni().await?;
+        .map_err(|source| TransferError::other("starting blob download", source))?;
+    let mut progress_send = connection
+        .open_uni()
+        .await
+        .map_err(|source| TransferError::other("opening progress stream", source))?;
 
     let (transfer_outcome, mut tracker) = match do_transfer(
         &session_id,
@@ -303,15 +326,16 @@ async fn run_session(
     {
         Ok(v) => v,
         Err(error) => {
+            if let TransferError::Protocol(protocol_error) = &error {
+                let _ = send_transfer_result(
+                    &mut control_send,
+                    &session_id,
+                    protocol_error.transfer_status(),
+                )
+                .await;
+            }
             blob_download.abort();
             let _ = blob_download.shutdown().await;
-            emit_receiver_event(
-                &event_tx,
-                ReceiverEvent::Failed {
-                    session_id: session_id.clone(),
-                    message: format!("{error:#}"),
-                },
-            );
             return Err(error);
         }
     };
@@ -401,12 +425,15 @@ async fn run_session(
         Ok(_) => {
             blob_download.abort();
             let _ = blob_download.shutdown().await;
-            bail!("missing final transfer ack from sender");
+            return Err(TransferError::other(
+                "waiting for sender ack",
+                std::io::Error::other("missing final transfer ack from sender"),
+            ));
         }
         Err(error) => {
             blob_download.abort();
             let _ = blob_download.shutdown().await;
-            return Err(error);
+            return Err(error.into());
         }
     };
 
@@ -434,12 +461,21 @@ async fn do_handshake(
         res = async {
             let (mut send, mut recv) = tokio::time::timeout(Duration::from_secs(30), conn.accept_bi())
                 .await
-                .context("handshake stream timeout")?
-                .context("accepting bi-stream")?;
+                .map_err(|source| TransferError::other("handshake stream timeout", source))?
+                .map_err(|source| TransferError::other("accepting bi-stream", source))?;
             let hello = match protocol_wire::read_sender_message(&mut recv).await? {
                 protocol_message::SenderMessage::Hello(h) => h,
-                protocol_message::SenderMessage::Cancel(c) => return Ok(HandshakeResult::Cancelled(TransferOutcome::from_remote_cancel(c, "")?)),
-                _ => bail!("expected hello from sender"),
+                protocol_message::SenderMessage::Cancel(c) => {
+                    return Ok(HandshakeResult::Cancelled(TransferOutcome::from_remote_cancel(c, "")?))
+                }
+                other => {
+                    return Err(ProtocolError::unexpected_message_kind(
+                        "sender handshake",
+                        MessageKind::Hello,
+                        other.kind(),
+                    )
+                    .into())
+                }
             };
             protocol_wire::write_receiver_message(&mut send, &protocol_message::ReceiverMessage::Hello(protocol_message::Hello {
                 version: protocol_message::PROTOCOL_VERSION,
@@ -453,14 +489,23 @@ async fn do_handshake(
             })).await?;
             let offer = match protocol_wire::read_sender_message(&mut recv).await? {
                 protocol_message::SenderMessage::Offer(o) => o,
-                protocol_message::SenderMessage::Cancel(c) => return Ok(HandshakeResult::Cancelled(TransferOutcome::from_remote_cancel(c, &hello.session_id)?)),
-                _ => bail!("expected offer from sender"),
+                protocol_message::SenderMessage::Cancel(c) => {
+                    return Ok(HandshakeResult::Cancelled(TransferOutcome::from_remote_cancel(c, &hello.session_id)?))
+                }
+                other => {
+                    return Err(ProtocolError::unexpected_message_kind(
+                        "sender offer",
+                        MessageKind::Offer,
+                        other.kind(),
+                    )
+                    .into())
+                }
             };
             Ok(HandshakeResult::Ok(send, recv, hello, offer))
         } => res,
         _ = wait_for_cancel(cancel_rx) => Ok(HandshakeResult::Cancelled(TransferOutcome::local_cancel(protocol_message::TransferRole::Receiver, protocol_message::CancelPhase::WaitingForDecision))),
-        _ = tokio::time::sleep(Duration::from_secs(30)) => bail!("handshake timed out"),
-        _ = conn.closed() => bail!("connection closed during handshake"),
+        _ = tokio::time::sleep(Duration::from_secs(30)) => return Err(TransferError::timeout("waiting for handshake")),
+        _ = conn.closed() => return Err(TransferError::connection_closed("during handshake")),
     }
 }
 
@@ -471,7 +516,7 @@ async fn do_transfer(
     progress_send: &mut iroh::endpoint::SendStream,
     control_recv: &mut iroh::endpoint::RecvStream,
     cancel_rx: &mut watch::Receiver<bool>,
-    event_tx: &Option<mpsc::UnboundedSender<Result<ReceiverEvent>>>,
+    event_tx: &Option<mpsc::UnboundedSender<ReceiverEvent>>,
 ) -> Result<(TransferOutcome, ProgressTracker)> {
     let mut tracker = ProgressTracker::new(plan.clone());
     tracker.set_phase(TransferPhase::Transferring, std::time::Instant::now());
@@ -507,20 +552,26 @@ async fn do_transfer(
                 }
                 None => {
                     download.abort();
-                    bail!("blob download stream closed unexpectedly");
+                    return Err(TransferError::channel_closed("blob download stream"));
                 }
-                Some(BlobDownloadUpdate::Failed { message }) => {
+                Some(BlobDownloadUpdate::Failed { error }) => {
                     download.abort();
-                    bail!("blob fetch error: {message}");
+                    return Err(error.into());
                 }
             },
             msg = protocol_wire::read_sender_message(control_recv) => match msg? {
                 protocol_message::SenderMessage::Cancel(c) => {
                     download.abort();
-                    return TransferOutcome::from_remote_cancel(c, session_id)
-                        .map(|outcome| (outcome, tracker));
+                    return Ok(TransferOutcome::from_remote_cancel(c, session_id).map(|outcome| (outcome, tracker))?);
                 }
-                _ => bail!("unexpected control message during transfer"),
+                other => {
+                    return Err(ProtocolError::unexpected_message_kind(
+                        "sender transfer",
+                        MessageKind::Cancel,
+                        other.kind(),
+                    )
+                    .into())
+                }
             },
             _ = wait_for_cancel(cancel_rx) => {
                 download.abort();
@@ -555,14 +606,21 @@ pub async fn export_downloaded_collection(
     root_hash: iroh_blobs::Hash,
     expected_files: &[ExpectedTransferFile],
 ) -> Result<()> {
-    let collection = Collection::load(root_hash, store.as_ref()).await?;
+    let collection = Collection::load(root_hash, store.as_ref())
+        .await
+        .map_err(|source| TransferError::other("loading downloaded collection", source))?;
     let hashes: BTreeMap<_, _> = collection.into_iter().collect();
     for exp in expected_files {
-        let hash = *hashes
-            .get(&exp.path)
-            .ok_or_else(|| anyhow!("missing file in collection: {}", exp.path))?;
+        let hash = *hashes.get(&exp.path).ok_or_else(|| {
+            TransferError::other(
+                "exporting downloaded collection",
+                std::io::Error::other(format!("missing file in collection: {}", exp.path)),
+            )
+        })?;
         if let Some(p) = exp.destination.parent() {
-            fs::create_dir_all(p).await?;
+            fs::create_dir_all(p)
+                .await
+                .map_err(|source| TransferError::other("creating export directory", source))?;
         }
         store
             .export_with_opts(ExportOptions {
@@ -571,7 +629,8 @@ pub async fn export_downloaded_collection(
                 mode: ExportMode::Copy,
             })
             .finish()
-            .await?;
+            .await
+            .map_err(|source| TransferError::other("exporting downloaded file", source))?;
     }
     Ok(())
 }
@@ -604,9 +663,12 @@ fn build_expected_transfer_files(
         .files
         .iter()
         .map(|f| {
-            expected_files
-                .remove(&f.path)
-                .ok_or_else(|| anyhow!("missing expected file for {}", f.path))
+            expected_files.remove(&f.path).ok_or_else(|| {
+                TransferError::other(
+                    "building expected transfer files",
+                    std::io::Error::other(format!("missing expected file for {}", f.path)),
+                )
+            })
         })
         .collect()
 }
@@ -657,12 +719,9 @@ fn to_wire_snapshot(snapshot: &TransferSnapshot) -> protocol_message::TransferPr
     }
 }
 
-fn emit_receiver_event(
-    tx: &Option<mpsc::UnboundedSender<Result<ReceiverEvent>>>,
-    event: ReceiverEvent,
-) {
+fn emit_receiver_event(tx: &Option<mpsc::UnboundedSender<ReceiverEvent>>, event: ReceiverEvent) {
     if let Some(tx) = tx {
-        let _ = tx.send(Ok(event));
+        let _ = tx.send(event);
     }
 }
 
@@ -683,6 +742,7 @@ async fn send_receiver_cancel(
         }),
     )
     .await
+    .map_err(Into::into)
 }
 
 async fn send_transfer_result(
@@ -698,6 +758,7 @@ async fn send_transfer_result(
         }),
     )
     .await
+    .map_err(Into::into)
 }
 
 async fn send_receiver_decline(
@@ -713,6 +774,7 @@ async fn send_receiver_decline(
         }),
     )
     .await
+    .map_err(Into::into)
 }
 
 pub async fn bind_endpoint() -> Result<Endpoint> {
@@ -721,5 +783,5 @@ pub async fn bind_endpoint() -> Result<Endpoint> {
         .relay_mode(iroh::RelayMode::Default)
         .bind()
         .await
-        .context("binding iroh endpoint")
+        .map_err(|source| TransferError::other("binding iroh endpoint", source))
 }

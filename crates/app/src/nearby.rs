@@ -1,16 +1,17 @@
 use std::collections::BTreeMap;
 use std::time::Duration;
 
+use crate::error::{AppError, AppResult};
 use crate::types::NearbyReceiver;
-use anyhow::{Context, Result};
 
-pub async fn scan_nearby_receivers(timeout_secs: u64) -> Result<Vec<NearbyReceiver>> {
+pub async fn scan_nearby_receivers(timeout_secs: u64) -> AppResult<Vec<NearbyReceiver>> {
     let secs = timeout_secs.max(1);
     let receivers = tokio::task::spawn_blocking(move || {
         drift_core::lan::browse_nearby_receivers(Duration::from_secs(secs), None)
     })
     .await
-    .context("mDNS scan task")??;
+    .map_err(|_| AppError::DiscoveryFailed)?
+    .map_err(|_| AppError::DiscoveryFailed)?;
 
     let mut by_fullname = BTreeMap::new();
     for receiver in receivers {

@@ -3,8 +3,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use super::error::{BlobError, BlobTextError, Result};
 use super::util::import_files;
-use anyhow::{Context, Result, bail};
 use iroh::{Endpoint, protocol::Router};
 use iroh_blobs::{
     ALPN, BlobFormat, BlobsProtocol, api::TempTag, format::collection::Collection,
@@ -29,18 +29,23 @@ impl PreparedStore {
     pub(crate) async fn prepare(root_dir: &Path, files: Vec<PathBuf>) -> Result<Self> {
         let store = FsStore::load(root_dir)
             .await
-            .with_context(|| format!("loading blob store at {}", root_dir.display()))?;
+            .map_err(|source| BlobError::store_load(root_dir.to_path_buf(), source))?;
 
         let mut collection = Collection::default();
         let mut seen_transfer_paths = HashSet::new();
         let mut files_out = Vec::new();
         for path in files {
             trace!(input_path = %path.display(), "processing import input path");
-            let imported = import_files(&store, path).await?;
+            let imported = import_files(&store, path.clone()).await.map_err(|source| {
+                BlobError::import_files(
+                    path.display().to_string(),
+                    BlobTextError::new(format!("{source:#}")),
+                )
+            })?;
             for file in imported {
                 let transfer_path = file.transfer_path.clone();
                 if !seen_transfer_paths.insert(transfer_path.clone()) {
-                    bail!("duplicate transfer path in manifest: {}", transfer_path);
+                    return Err(BlobError::duplicate_transfer_path(transfer_path));
                 }
                 collection.extend([(transfer_path.clone(), file.temp_tag.hash())]);
                 files_out.push(PreparedFile {
@@ -52,7 +57,10 @@ impl PreparedStore {
 
         files_out.sort_by(|left, right| left.path.cmp(&right.path));
 
-        let collection_tag = collection.store(store.as_ref()).await?;
+        let collection_tag = collection
+            .store(store.as_ref())
+            .await
+            .map_err(|source| BlobError::store_collection(source))?;
         trace!(
             collection_hash = %collection_tag.hash(),
             item_count = seen_transfer_paths.len(),
@@ -130,7 +138,10 @@ impl BlobRegistration {
     }
 
     pub(crate) async fn shutdown(self) -> Result<()> {
-        self.router.shutdown().await?;
+        self.router
+            .shutdown()
+            .await
+            .map_err(|source| BlobError::store_shutdown("blob registration", source))?;
         Ok(())
     }
 }
@@ -141,9 +152,9 @@ mod tests {
     use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    use anyhow::Result;
-
     use super::PreparedStore;
+
+    type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
     fn unique_temp_dir(prefix: &str) -> PathBuf {
         static NEXT_TEMP_ID: AtomicU64 = AtomicU64::new(0);
