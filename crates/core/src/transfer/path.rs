@@ -1,27 +1,71 @@
 use std::path::{Component, Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use anyhow::{Context, Result, anyhow, bail};
+use thiserror::Error;
 use tokio::fs;
 
 /// Validates a transfer path string: non-empty, relative, `/`-separated, no `.` or `..`.
-pub fn validate_transfer_path(path: &str) -> Result<Vec<&str>> {
+#[derive(Debug, Error)]
+pub enum TransferPathError {
+    #[error("transfer path must not be empty")]
+    Empty,
+    #[error("transfer path must use '/' separators")]
+    InvalidSeparator,
+    #[error("transfer path must be relative")]
+    NotRelative,
+    #[error("transfer path contains an invalid segment")]
+    InvalidSegment,
+    #[error("{path} does not have a valid UTF-8 final path component")]
+    InvalidUtf8RootName { path: PathBuf },
+    #[error("{path} contains a path component that is not valid UTF-8")]
+    InvalidUtf8PathComponent { path: PathBuf },
+    #[error("destination already exists: {path}")]
+    DestinationExists { path: PathBuf },
+    #[error("destination parent is not a directory: {path}")]
+    DestinationParentNotDirectory { path: PathBuf },
+    #[error("checking {path}")]
+    CheckPath {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+    #[error("resolving current working directory")]
+    CurrentDirectory {
+        #[source]
+        source: std::io::Error,
+    },
+    #[error("output directory is not absolute: {path}")]
+    OutputNotAbsolute { path: PathBuf },
+    #[error("system clock before unix epoch")]
+    SystemClockBeforeUnixEpoch {
+        #[source]
+        source: std::time::SystemTimeError,
+    },
+    #[error("creating temp directory {path}")]
+    CreateScratchDir {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+}
+
+pub fn validate_transfer_path(path: &str) -> std::result::Result<Vec<&str>, TransferPathError> {
     if path.is_empty() {
-        bail!("transfer path must not be empty");
+        return Err(TransferPathError::Empty);
     }
 
     if path.contains('\\') {
-        bail!("transfer path must use '/' separators");
+        return Err(TransferPathError::InvalidSeparator);
     }
 
     if Path::new(path).is_absolute() {
-        bail!("transfer path must be relative");
+        return Err(TransferPathError::NotRelative);
     }
 
     let mut segments = Vec::new();
     for segment in path.split('/') {
         if segment.is_empty() || segment == "." || segment == ".." {
-            bail!("transfer path contains an invalid segment");
+            return Err(TransferPathError::InvalidSegment);
         }
         segments.push(segment);
     }
@@ -29,38 +73,34 @@ pub fn validate_transfer_path(path: &str) -> Result<Vec<&str>> {
     Ok(segments)
 }
 
-pub fn input_root_name(path: &Path) -> Result<String> {
+pub fn input_root_name(path: &Path) -> std::result::Result<String, TransferPathError> {
     path.file_name()
         .and_then(|name| name.to_str())
-        .ok_or_else(|| {
-            anyhow!(
-                "{} does not have a valid UTF-8 final path component",
-                path.display()
-            )
+        .ok_or_else(|| TransferPathError::InvalidUtf8RootName {
+            path: path.to_path_buf(),
         })
         .map(|name| name.to_owned())
 }
 
-pub fn normalize_transfer_path(path: &Path) -> Result<String> {
+pub fn normalize_transfer_path(path: &Path) -> std::result::Result<String, TransferPathError> {
     let mut segments = Vec::new();
 
     for component in path.components() {
         match component {
             Component::Normal(segment) => {
                 let segment = segment.to_str().ok_or_else(|| {
-                    anyhow!(
-                        "{} contains a path component that is not valid UTF-8",
-                        path.display()
-                    )
+                    TransferPathError::InvalidUtf8PathComponent {
+                        path: path.to_path_buf(),
+                    }
                 })?;
                 segments.push(segment);
             }
-            _ => bail!("transfer path must be relative"),
+            _ => return Err(TransferPathError::NotRelative),
         }
     }
 
     if segments.is_empty() {
-        bail!("transfer path must not be empty");
+        return Err(TransferPathError::Empty);
     }
 
     let normalized = segments.join("/");
@@ -68,7 +108,10 @@ pub fn normalize_transfer_path(path: &Path) -> Result<String> {
     Ok(normalized)
 }
 
-pub fn resolve_transfer_destination(out_dir: &Path, transfer_path: &str) -> Result<PathBuf> {
+pub fn resolve_transfer_destination(
+    out_dir: &Path,
+    transfer_path: &str,
+) -> std::result::Result<PathBuf, TransferPathError> {
     let segments = validate_transfer_path(transfer_path)?;
     let mut destination = out_dir.to_path_buf();
     for segment in segments {
@@ -77,9 +120,14 @@ pub fn resolve_transfer_destination(out_dir: &Path, transfer_path: &str) -> Resu
     Ok(destination)
 }
 
-pub async fn ensure_destination_available(out_dir: &Path, destination: &Path) -> Result<()> {
+pub async fn ensure_destination_available(
+    out_dir: &Path,
+    destination: &Path,
+) -> std::result::Result<(), TransferPathError> {
     if path_exists(destination).await? {
-        bail!("destination already exists: {}", destination.display());
+        return Err(TransferPathError::DestinationExists {
+            path: destination.to_path_buf(),
+        });
     }
 
     let mut current = destination.parent();
@@ -91,15 +139,17 @@ pub async fn ensure_destination_available(out_dir: &Path, destination: &Path) ->
         match fs::metadata(parent).await {
             Ok(metadata) => {
                 if !metadata.is_dir() {
-                    bail!(
-                        "destination parent is not a directory: {}",
-                        parent.display()
-                    );
+                    return Err(TransferPathError::DestinationParentNotDirectory {
+                        path: parent.to_path_buf(),
+                    });
                 }
             }
             Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
             Err(err) => {
-                return Err(err).with_context(|| format!("checking {}", parent.display()));
+                return Err(TransferPathError::CheckPath {
+                    path: parent.to_path_buf(),
+                    source: err,
+                });
             }
         }
 
@@ -109,12 +159,12 @@ pub async fn ensure_destination_available(out_dir: &Path, destination: &Path) ->
     Ok(())
 }
 
-pub fn resolve_output_dir(out_dir: &Path) -> Result<PathBuf> {
+pub fn resolve_output_dir(out_dir: &Path) -> std::result::Result<PathBuf, TransferPathError> {
     let base = if out_dir.is_absolute() {
         out_dir.to_path_buf()
     } else {
         std::env::current_dir()
-            .context("resolving current working directory")?
+            .map_err(|source| TransferPathError::CurrentDirectory { source })?
             .join(out_dir)
     };
 
@@ -132,17 +182,20 @@ pub fn resolve_output_dir(out_dir: &Path) -> Result<PathBuf> {
     }
 
     if !resolved.is_absolute() {
-        bail!("output directory is not absolute: {}", resolved.display());
+        return Err(TransferPathError::OutputNotAbsolute { path: resolved });
     }
 
     Ok(resolved)
 }
 
-async fn path_exists(path: &Path) -> Result<bool> {
+async fn path_exists(path: &Path) -> std::result::Result<bool, TransferPathError> {
     match fs::metadata(path).await {
         Ok(_) => Ok(true),
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(false),
-        Err(err) => Err(err).with_context(|| format!("checking {}", path.display())),
+        Err(err) => Err(TransferPathError::CheckPath {
+            path: path.to_path_buf(),
+            source: err,
+        }),
     }
 }
 
@@ -153,19 +206,22 @@ pub struct ScratchDir {
 }
 
 impl ScratchDir {
-    pub async fn new(prefix: &str, session_id: &str) -> Result<Self> {
+    pub async fn new(prefix: &str, session_id: &str) -> std::result::Result<Self, TransferPathError> {
         let id_digest = blake3::hash(session_id.as_bytes()).to_hex();
         let unique = format!(
             "{prefix}-{id_digest}-{}",
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
-                .context("system clock before unix epoch")?
+                .map_err(|source| TransferPathError::SystemClockBeforeUnixEpoch { source })?
                 .as_nanos()
         );
         let path = std::env::temp_dir().join(unique);
         fs::create_dir_all(&path)
             .await
-            .with_context(|| format!("creating temp directory {}", path.display()))?;
+            .map_err(|source| TransferPathError::CreateScratchDir {
+                path: path.clone(),
+                source,
+            })?;
         Ok(Self { path })
     }
 }

@@ -233,13 +233,13 @@ async fn consume_sender_run(
             }
             res = &mut outcome_rx => {
                 finish_progress_bar(progress_bar);
-                return res.context("waiting for send outcome")?;
+                return Ok(res.context("waiting for send outcome")??);
             }
         }
     }
 
     finish_progress_bar(progress_bar);
-    outcome_rx.await.context("waiting for send outcome")?
+    Ok(outcome_rx.await.context("waiting for send outcome")??)
 }
 
 fn render_sender_event(
@@ -432,13 +432,13 @@ async fn consume_receiver_run(start: ReceiverStart) -> Result<TransferOutcome> {
             }
             res = &mut outcome_rx => {
                 finish_progress_bar(&mut progress_bar);
-                return res.context("waiting for outcome")?;
+                return Ok(res.context("waiting for outcome")??);
             }
         }
     }
 
     finish_progress_bar(&mut progress_bar);
-    outcome_rx.await.context("waiting for outcome")?
+    Ok(outcome_rx.await.context("waiting for outcome")??)
 }
 
 fn render_offer(offer: &ReceiverOffer) {

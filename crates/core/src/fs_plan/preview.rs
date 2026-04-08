@@ -1,6 +1,8 @@
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result, anyhow, bail};
+use crate::fs_plan::error::FsPlanError;
+
+type Result<T> = std::result::Result<T, FsPlanError>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SelectedPathKind {
@@ -40,15 +42,15 @@ pub fn inspect_selected_paths(paths: &[PathBuf]) -> Result<SelectionPreview> {
         let preview = inspect_selected_path(path)?;
         total_file_count = total_file_count
             .checked_add(preview.file_count)
-            .ok_or_else(|| anyhow!("total transfer file count exceeds u64"))?;
+            .ok_or(FsPlanError::FileCountOverflow)?;
         total_size = total_size
             .checked_add(preview.total_size)
-            .ok_or_else(|| anyhow!("total transfer size exceeds u64"))?;
+            .ok_or(FsPlanError::TotalSizeOverflow)?;
         items.push(preview);
     }
 
     if !paths.is_empty() && total_file_count == 0 {
-        bail!("no regular files found to send");
+        return Err(FsPlanError::NoRegularFiles);
     }
 
     Ok(SelectionPreview {
@@ -59,15 +61,16 @@ pub fn inspect_selected_paths(paths: &[PathBuf]) -> Result<SelectionPreview> {
 }
 
 fn inspect_selected_path(path: &Path) -> Result<SelectedPathPreview> {
-    let metadata = std::fs::symlink_metadata(path)
-        .with_context(|| format!("reading metadata for {}", path.display()))?;
+    let metadata = std::fs::symlink_metadata(path).map_err(|source| FsPlanError::ReadMetadata {
+        path: path.to_path_buf(),
+        source,
+    })?;
     let file_type = metadata.file_type();
 
     if file_type.is_symlink() {
-        bail!(
-            "{} is a symbolic link; only regular files are supported",
-            path.display()
-        );
+        return Err(FsPlanError::SymbolicLink {
+            path: path.to_path_buf(),
+        });
     }
 
     if file_type.is_file() {
@@ -85,23 +88,26 @@ fn inspect_selected_path(path: &Path) -> Result<SelectedPathPreview> {
         let mut stack = vec![path.to_path_buf()];
 
         while let Some(current) = stack.pop() {
-            let entries = std::fs::read_dir(&current)
-                .with_context(|| format!("reading directory {}", current.display()))?;
+            let entries =
+                std::fs::read_dir(&current).map_err(|source| FsPlanError::ReadDirectory {
+                    path: current.clone(),
+                    source,
+                })?;
 
             for entry in entries {
-                let entry =
-                    entry.with_context(|| format!("reading directory {}", current.display()))?;
+                let entry = entry.map_err(|source| FsPlanError::ReadDirectory {
+                    path: current.clone(),
+                    source,
+                })?;
                 let child_path = entry.path();
-                let metadata = entry
-                    .metadata()
-                    .with_context(|| format!("reading metadata for {}", child_path.display()))?;
+                let metadata = entry.metadata().map_err(|source| FsPlanError::ReadMetadata {
+                    path: child_path.clone(),
+                    source,
+                })?;
                 let child_type = metadata.file_type();
 
                 if child_type.is_symlink() {
-                    bail!(
-                        "{} is a symbolic link; only regular files are supported",
-                        child_path.display()
-                    );
+                    return Err(FsPlanError::SymbolicLink { path: child_path });
                 }
 
                 if child_type.is_dir() {
@@ -110,18 +116,15 @@ fn inspect_selected_path(path: &Path) -> Result<SelectedPathPreview> {
                 }
 
                 if !child_type.is_file() {
-                    bail!(
-                        "{} is not a regular file or directory",
-                        child_path.display()
-                    );
+                    return Err(FsPlanError::UnsupportedFileType { path: child_path });
                 }
 
                 file_count = file_count
                     .checked_add(1)
-                    .ok_or_else(|| anyhow!("total transfer file count exceeds u64"))?;
+                    .ok_or(FsPlanError::FileCountOverflow)?;
                 total_size = total_size
                     .checked_add(metadata.len())
-                    .ok_or_else(|| anyhow!("total transfer size exceeds u64"))?;
+                    .ok_or(FsPlanError::TotalSizeOverflow)?;
             }
         }
 
@@ -133,7 +136,9 @@ fn inspect_selected_path(path: &Path) -> Result<SelectedPathPreview> {
         });
     }
 
-    bail!("{} is not a regular file or directory", path.display())
+    Err(FsPlanError::UnsupportedFileType {
+        path: path.to_path_buf(),
+    })
 }
 
 #[cfg(test)]

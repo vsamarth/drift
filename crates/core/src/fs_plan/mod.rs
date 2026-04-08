@@ -4,6 +4,7 @@
 //! - [`prepare`] — async walk, hashing, and [`OfferManifest`](crate::rendezvous::OfferManifest) for sending.
 
 pub mod conflict;
+pub mod error;
 pub mod prepare;
 pub mod preview;
 
@@ -11,6 +12,7 @@ pub mod preview;
 mod test_support;
 
 pub use conflict::ConflictPolicy;
+pub use error::FsPlanError;
 pub use prepare::{PreparedFile, PreparedFiles, prepare_files};
 pub use preview::{
     SelectedPathKind, SelectedPathPreview, SelectionPreview, inspect_selected_paths,

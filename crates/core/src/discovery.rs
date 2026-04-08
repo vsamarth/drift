@@ -1,12 +1,13 @@
 use std::time::Duration;
 
-use anyhow::{Context, Result};
 use iroh::{EndpointAddr, EndpointId};
+use thiserror::Error;
 use tracing::debug;
 
 use crate::lan;
-use crate::rendezvous::{RendezvousClient, resolve_server_url, validate_code};
-use crate::util::decode_ticket;
+use crate::lan::LanError;
+use crate::rendezvous::{RendezvousClient, RendezvousError, resolve_server_url, validate_code};
+use crate::util::{TicketError, decode_ticket};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NearbyEndpoint {
@@ -28,26 +29,46 @@ impl From<&NearbyEndpoint> for EndpointId {
     }
 }
 
-pub async fn resolve_pairing_code(code: &str, server_url: Option<&str>) -> Result<EndpointAddr> {
+#[derive(Debug, Error)]
+pub enum DiscoveryError {
+    #[error(transparent)]
+    Rendezvous(#[from] RendezvousError),
+    #[error(transparent)]
+    Ticket(#[from] TicketError),
+    #[error("nearby discovery task")]
+    NearbyTask {
+        #[source]
+        source: tokio::task::JoinError,
+    },
+    #[error(transparent)]
+    NearbyBrowse(#[from] LanError),
+}
+
+pub async fn resolve_pairing_code(
+    code: &str,
+    server_url: Option<&str>,
+) -> std::result::Result<EndpointAddr, DiscoveryError> {
     validate_code(code)?;
     let client = RendezvousClient::new(resolve_server_url(server_url));
     let response = client.claim_peer(code).await?;
     endpoint_addr_from_ticket(&response.ticket)
 }
 
-pub async fn resolve_nearby(timeout: Duration) -> Result<Vec<NearbyEndpoint>> {
+pub async fn resolve_nearby(
+    timeout: Duration,
+) -> std::result::Result<Vec<NearbyEndpoint>, DiscoveryError> {
     resolve_nearby_with_exclusion(timeout, None).await
 }
 
 pub async fn resolve_nearby_with_exclusion(
     timeout: Duration,
     exclude_endpoint_id: Option<EndpointId>,
-) -> Result<Vec<NearbyEndpoint>> {
+) -> std::result::Result<Vec<NearbyEndpoint>, DiscoveryError> {
     let receivers = tokio::task::spawn_blocking(move || {
         lan::browse_nearby_receivers(timeout, exclude_endpoint_id)
     })
     .await
-    .context("nearby discovery task")??;
+    .map_err(|source| DiscoveryError::NearbyTask { source })??;
 
     receivers
         .into_iter()
@@ -55,17 +76,21 @@ pub async fn resolve_nearby_with_exclusion(
         .collect()
 }
 
-pub fn endpoint_id_from_ticket(ticket: &str) -> Result<EndpointId> {
+pub fn endpoint_id_from_ticket(ticket: &str) -> std::result::Result<EndpointId, DiscoveryError> {
     let addr = endpoint_addr_from_ticket(ticket)?;
     Ok(addr.id)
 }
 
-pub fn endpoint_addr_from_ticket(ticket: &str) -> Result<EndpointAddr> {
+pub fn endpoint_addr_from_ticket(
+    ticket: &str,
+) -> std::result::Result<EndpointAddr, DiscoveryError> {
     let addr: EndpointAddr = decode_ticket(ticket.trim())?;
     Ok(addr)
 }
 
-pub fn nearby_endpoint_from_receiver(receiver: lan::NearbyReceiver) -> Result<NearbyEndpoint> {
+pub fn nearby_endpoint_from_receiver(
+    receiver: lan::NearbyReceiver,
+) -> std::result::Result<NearbyEndpoint, DiscoveryError> {
     let endpoint_addr = endpoint_addr_from_ticket(&receiver.ticket)?;
     let endpoint_id = endpoint_addr.id;
     debug!(

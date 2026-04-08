@@ -1,7 +1,7 @@
-use anyhow::{Context, Result, bail};
 use reqwest::StatusCode;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 
 pub const DEFAULT_RENDEZVOUS_URL: &str = "https://drift.samarthv.com";
 pub const CODE_LENGTH: usize = 6;
@@ -58,6 +58,34 @@ pub struct RendezvousClient {
     http: reqwest::Client,
 }
 
+#[derive(Debug, Error)]
+pub enum RendezvousError {
+    #[error(
+        "short code must be exactly {code_length} characters from {code_alphabet}"
+    )]
+    InvalidCode {
+        code_length: usize,
+        code_alphabet: &'static str,
+    },
+    #[error("{action} with rendezvous server")]
+    Request {
+        action: &'static str,
+        #[source]
+        source: reqwest::Error,
+    },
+    #[error("parsing rendezvous response for {action}")]
+    ResponseParse {
+        action: &'static str,
+        #[source]
+        source: reqwest::Error,
+    },
+    #[error("rendezvous server error ({status})")]
+    Api {
+        status: StatusCode,
+        message: Option<String>,
+    },
+}
+
 impl RendezvousClient {
     pub fn new(base_url: String) -> Self {
         Self {
@@ -66,7 +94,10 @@ impl RendezvousClient {
         }
     }
 
-    pub async fn register_peer(&self, ticket: String) -> Result<RegisterPeerResponse> {
+    pub async fn register_peer(
+        &self,
+        ticket: String,
+    ) -> std::result::Result<RegisterPeerResponse, RendezvousError> {
         let request = RegisterPeerRequest { ticket };
         let response = self
             .http
@@ -74,35 +105,41 @@ impl RendezvousClient {
             .json(&request)
             .send()
             .await
-            .context("registering peer with rendezvous server")?;
-        parse_json(response).await
+            .map_err(|source| RendezvousError::request("registering peer", source))?;
+        parse_json(response, "registering peer").await
     }
 
-    pub async fn claim_peer(&self, code: &str) -> Result<ClaimPeerResponse> {
+    pub async fn claim_peer(
+        &self,
+        code: &str,
+    ) -> std::result::Result<ClaimPeerResponse, RendezvousError> {
         validate_code(code)?;
         let response = self
             .http
             .post(self.url(&format!("/v1/pairs/{code}/claim")))
             .send()
             .await
-            .with_context(|| format!("claiming peer for code {code}"))?;
-        parse_json(response).await
+            .map_err(|source| RendezvousError::request("claiming peer", source))?;
+        parse_json(response, "claiming peer").await
     }
 
-    pub async fn pair_status(&self, code: &str) -> Result<Option<PairStatusResponse>> {
+    pub async fn pair_status(
+        &self,
+        code: &str,
+    ) -> std::result::Result<Option<PairStatusResponse>, RendezvousError> {
         validate_code(code)?;
         let response = self
             .http
             .get(self.url(&format!("/v1/pairs/{code}/status")))
             .send()
             .await
-            .with_context(|| format!("checking status for peer {code}"))?;
+            .map_err(|source| RendezvousError::request("checking pair status", source))?;
 
         if response.status() == StatusCode::NOT_FOUND {
             return Ok(None);
         }
 
-        parse_json(response).await.map(Some)
+        parse_json(response, "checking pair status").await.map(Some)
     }
 
     fn url(&self, path: &str) -> String {
@@ -110,7 +147,7 @@ impl RendezvousClient {
     }
 }
 
-pub fn validate_code(code: &str) -> Result<()> {
+pub fn validate_code(code: &str) -> std::result::Result<(), RendezvousError> {
     let valid = code.len() == CODE_LENGTH
         && code.bytes().all(|byte| {
             CODE_ALPHABET
@@ -120,11 +157,10 @@ pub fn validate_code(code: &str) -> Result<()> {
     if valid {
         Ok(())
     } else {
-        bail!(
-            "short code must be exactly {} characters from {}",
-            CODE_LENGTH,
-            CODE_ALPHABET
-        )
+        Err(RendezvousError::InvalidCode {
+            code_length: CODE_LENGTH,
+            code_alphabet: CODE_ALPHABET,
+        })
     }
 }
 
@@ -148,25 +184,47 @@ fn normalize_url(url: &str) -> String {
     url.trim().trim_end_matches('/').to_owned()
 }
 
-async fn parse_json<T: DeserializeOwned>(response: reqwest::Response) -> Result<T> {
+async fn parse_json<T: DeserializeOwned>(
+    response: reqwest::Response,
+    action: &'static str,
+) -> std::result::Result<T, RendezvousError> {
     if response.status().is_success() {
         return response
             .json::<T>()
             .await
-            .context("parsing rendezvous response");
+            .map_err(|source| RendezvousError::response_parse(action, source));
     }
 
-    let message = error_message(response).await;
-    bail!("{message}");
+    let (status, message) = error_message(response).await;
+    Err(RendezvousError::Api { status, message })
 }
 
-async fn error_message(response: reqwest::Response) -> String {
+async fn error_message(response: reqwest::Response) -> (StatusCode, Option<String>) {
     let status = response.status();
     match response.json::<ApiErrorBody>().await {
-        Ok(body) if !body.error.is_empty() => {
-            format!("rendezvous server error ({status}): {}", body.error)
+        Ok(body) if !body.error.is_empty() => (status, Some(body.error)),
+        _ => (status, None),
+    }
+}
+
+impl RendezvousError {
+    fn request(action: &'static str, source: reqwest::Error) -> Self {
+        Self::Request { action, source }
+    }
+
+    fn response_parse(action: &'static str, source: reqwest::Error) -> Self {
+        Self::ResponseParse { action, source }
+    }
+
+    pub fn is_invalid_code(&self) -> bool {
+        matches!(self, Self::InvalidCode { .. })
+    }
+
+    pub fn status_code(&self) -> Option<StatusCode> {
+        match self {
+            Self::Api { status, .. } => Some(*status),
+            _ => None,
         }
-        _ => format!("rendezvous server error ({status})"),
     }
 }
 
