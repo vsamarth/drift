@@ -29,6 +29,11 @@ jobs:
             Cargo.toml
             Cargo.lock
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
@@ -52,10 +57,11 @@ jobs:
       - name: Build macOS app
         run: flutter build macos --release
 
-      - name: Package macOS zip
+      - name: Create macOS DMG
         run: |
-          cd build/macos/Build/Products/Release
-          zip -r ../../../../drift-macos-${{ github.ref_name }}.zip Drift.app
+          npm install --global create-dmg
+          create-dmg build/macos/Build/Products/Release/Drift.app --no-code-sign || true
+          mv Drift\ *.dmg ../drift-macos-${{ github.ref_name }}.dmg
 
       - name: Build iOS (no code signing)
         run: flutter build ios --release --no-codesign
@@ -69,7 +75,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: drift-macos
-          path: flutter/drift-macos-${{ github.ref_name }}.zip
+          path: drift-macos-${{ github.ref_name }}.dmg
           if-no-files-found: error
 
       - name: Upload iOS artifact
@@ -277,6 +283,7 @@ jobs:
           find artifacts -name "*.zip" -exec mv {} release-dist/ \;
           find artifacts -name "*.msix" -exec mv {} release-dist/ \;
           find artifacts -name "*.apk" -exec mv {} release-dist/ \;
+          find artifacts -name "*.dmg" -exec mv {} release-dist/ \;
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
