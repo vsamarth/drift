@@ -45,6 +45,8 @@ pub enum AppError {
     ReceiverUnavailable { action: &'static str },
     #[error("receiver snapshot channel closed")]
     SnapshotChannelClosed,
+    #[error("discovery failed")]
+    DiscoveryFailed,
 }
 
 pub type AppResult<T> = std::result::Result<T, AppError>;
@@ -209,6 +211,11 @@ impl From<AppError> for UserFacingError {
                     "The receiver is not available right now.",
                 )
             }
+            AppError::DiscoveryFailed => UserFacingError::new(
+                UserFacingErrorKind::NetworkUnavailable,
+                "Discovery failed",
+                "Drift could not search for nearby devices.",
+            ),
         }
     }
 }

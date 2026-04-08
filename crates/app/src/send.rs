@@ -150,7 +150,9 @@ impl SendDraft {
     }
 
     pub async fn scan_nearby(&self, timeout_secs: u64) -> Result<Vec<NearbyReceiver>> {
-        crate::nearby::scan_nearby_receivers(timeout_secs).await
+        crate::nearby::scan_nearby_receivers(timeout_secs)
+            .await
+            .map_err(anyhow::Error::from)
     }
 
     pub fn into_session(self, destination: SendDestination) -> SendSession {

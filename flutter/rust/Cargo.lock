@@ -859,6 +859,7 @@ dependencies = [
  "drift-core",
  "iroh",
  "rand 0.8.5",
+ "reqwest",
  "thiserror 2.0.18",
  "time",
  "tokio",
@@ -870,7 +871,6 @@ dependencies = [
 name = "drift-core"
 version = "0.1.0"
 dependencies = [
- "anyhow",
  "base64",
  "bincode",
  "blake3",
