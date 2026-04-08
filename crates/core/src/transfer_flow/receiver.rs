@@ -23,7 +23,9 @@ use crate::{
     rendezvous::OfferManifest,
 };
 
-use super::path::{ScratchDir, ensure_destination_available, resolve_transfer_destination};
+use super::path::{
+    ScratchDir, ensure_destination_available, resolve_output_dir, resolve_transfer_destination,
+};
 use super::types::{TransferOutcome, wait_for_cancel};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -157,12 +159,14 @@ impl ReceiverSession {
 async fn run_session(
     endpoint: Endpoint,
     connection: Connection,
-    request: ReceiverRequest,
+    mut request: ReceiverRequest,
     event_tx: Option<mpsc::UnboundedSender<Result<ReceiverEvent>>>,
     offer_tx: oneshot::Sender<Result<ReceiverOffer>>,
     decision_rx: oneshot::Receiver<ReceiverDecision>,
     mut cancel_rx: watch::Receiver<bool>,
 ) -> Result<TransferOutcome> {
+    request.out_dir = resolve_output_dir(&request.out_dir)?;
+
     emit_receiver_event(
         &event_tx,
         ReceiverEvent::Listening {
