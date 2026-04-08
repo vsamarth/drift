@@ -14,7 +14,7 @@ class TransferFlowLayout extends StatelessWidget {
     required this.subtitle,
     this.explainer,
     required this.illustration,
-    required this.manifest,
+    this.manifest,
     required this.footer,
   });
 
@@ -24,7 +24,7 @@ class TransferFlowLayout extends StatelessWidget {
   final String subtitle;
   final Widget? explainer;
   final Widget illustration;
-  final Widget manifest;
+  final Widget? manifest;
   final Widget footer;
 
   @override
@@ -111,24 +111,25 @@ class TransferFlowLayout extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 24),
-                // Manifest Card
-                Container(
-                  decoration: BoxDecoration(
-                    color: kSurface2,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: kBorder.withValues(alpha: 0.8)),
+                if (manifest != null) ...[
+                  Container(
+                    decoration: BoxDecoration(
+                      color: kSurface2,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: kBorder.withValues(alpha: 0.8)),
+                    ),
+                    child: Column(
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(18, 16, 18, 0),
+                          child: manifest!,
+                        ),
+                        const SizedBox(height: 16),
+                      ],
+                    ),
                   ),
-                  child: Column(
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(18, 16, 18, 0),
-                        child: manifest,
-                      ),
-                      const SizedBox(height: 16),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 24),
+                  const SizedBox(height: 24),
+                ],
               ],
             ),
           ),

@@ -214,9 +214,13 @@ class FakeReceiverServiceSource implements ReceiverServiceSource {
       status: 'Ready',
       phase: ReceiverBadgePhase.ready,
     ),
+    this.respondError,
+    this.cancelError,
   });
 
   final ReceiverBadgeState initialBadge;
+  final Object? respondError;
+  final Object? cancelError;
   final List<bool> discoverableCalls = <bool>[];
   final List<bool> respondToOfferCalls = <bool>[];
   final StreamController<ReceiverBadgeState> badgeController =
@@ -227,11 +231,18 @@ class FakeReceiverServiceSource implements ReceiverServiceSource {
 
   @override
   Future<void> respondToOffer({required bool accept}) async {
+    if (respondError != null) {
+      throw respondError!;
+    }
     respondToOfferCalls.add(accept);
   }
 
   @override
-  Future<void> cancelTransfer() async {}
+  Future<void> cancelTransfer() async {
+    if (cancelError != null) {
+      throw cancelError!;
+    }
+  }
 
   @override
   Future<void> setDiscoverable({required bool enabled}) async {
@@ -309,6 +320,42 @@ rust_receiver.ReceiverTransferEvent _incomingReceivingEvent({
     itemCount: BigInt.one,
     totalSizeBytes: BigInt.from(18 * 1024),
     bytesReceived: receivedBytes,
+    totalSizeLabel: '18 KB',
+    files: const [],
+  );
+}
+
+rust_receiver.ReceiverTransferEvent _incomingFailedEvent({
+  required BigInt receivedBytes,
+  String errorMessage = 'Drift lost the connection while receiving files.',
+}) {
+  return rust_receiver.ReceiverTransferEvent(
+    phase: rust_receiver.ReceiverTransferPhase.failed,
+    senderName: 'Maya',
+    senderDeviceType: 'phone',
+    destinationLabel: 'Downloads',
+    saveRootLabel: 'Downloads',
+    statusMessage: 'Transfer failed.',
+    itemCount: BigInt.one,
+    totalSizeBytes: BigInt.from(18 * 1024),
+    bytesReceived: receivedBytes,
+    totalSizeLabel: '18 KB',
+    files: const [],
+    errorMessage: errorMessage,
+  );
+}
+
+rust_receiver.ReceiverTransferEvent _incomingDeclinedEvent() {
+  return rust_receiver.ReceiverTransferEvent(
+    phase: rust_receiver.ReceiverTransferPhase.declined,
+    senderName: 'Maya',
+    senderDeviceType: 'phone',
+    destinationLabel: 'Downloads',
+    saveRootLabel: 'Downloads',
+    statusMessage: 'Transfer declined.',
+    itemCount: BigInt.one,
+    totalSizeBytes: BigInt.from(18 * 1024),
+    bytesReceived: BigInt.zero,
     totalSizeLabel: '18 KB',
     files: const [],
   );
@@ -689,6 +736,85 @@ void main() {
   });
 
   testWidgets(
+    'send result actions preserve selection and clear device choice when needed',
+    (tester) async {
+      final receiverService = FakeReceiverServiceSource();
+      final sendTransferSource = FakeSendTransferSource();
+      final container = _buildContainer(
+        receiverServiceSource: receiverService,
+        sendTransferSource: sendTransferSource,
+      );
+      addTearDown(sendTransferSource.dispose);
+      addTearDown(receiverService.dispose);
+      addTearDown(container.dispose);
+
+      final notifier = container.read(driftAppNotifierProvider.notifier);
+      await _flushAsyncWork(tester);
+
+      notifier.pickSendItems();
+      await _flushAsyncWork(tester);
+      notifier.updateSendDestinationCode('ab2cd3');
+      await _flushAsyncWork(tester);
+      notifier.startSend();
+      await _flushAsyncWork(tester);
+
+      sendTransferSource.controller.add(
+        _sendUpdate(
+          phase: SendTransferUpdatePhase.failed,
+          statusMessage: 'receiver disconnected unexpectedly',
+        ),
+      );
+      await _flushAsyncWork(tester);
+
+      final failedState = container.read(driftAppNotifierProvider);
+      expect(
+        failedState.transferResult?.outcome,
+        TransferResultOutcomeData.failed,
+      );
+      expect(
+        failedState.transferResult?.primaryAction,
+        TransferResultPrimaryActionData.tryAgain,
+      );
+
+      notifier.handleTransferResultPrimaryAction();
+      await _flushAsyncWork(tester);
+
+      final retryState = container.read(driftAppNotifierProvider);
+      expect(retryState.session, isA<SendDraftSession>());
+      expect(retryState.sendItems, _sampleSendItems);
+      expect(retryState.sendDestinationCode, 'AB2CD3');
+
+      notifier.startSend();
+      await _flushAsyncWork(tester);
+      sendTransferSource.controller.add(
+        _sendUpdate(phase: SendTransferUpdatePhase.declined),
+      );
+      await _flushAsyncWork(tester);
+
+      final declinedState = container.read(driftAppNotifierProvider);
+      expect(
+        declinedState.transferResult?.outcome,
+        TransferResultOutcomeData.declined,
+      );
+      expect(
+        declinedState.transferResult?.primaryAction,
+        TransferResultPrimaryActionData.chooseAnotherDevice,
+      );
+
+      notifier.handleTransferResultPrimaryAction();
+      await _flushAsyncWork(tester);
+
+      final chooseAnotherState = container.read(driftAppNotifierProvider);
+      expect(chooseAnotherState.session, isA<SendDraftSession>());
+      expect(chooseAnotherState.sendItems, _sampleSendItems);
+      expect(chooseAnotherState.sendDestinationCode, isEmpty);
+
+      notifier.resetShell();
+      await _flushAsyncWork(tester);
+    },
+  );
+
+  testWidgets(
     'incoming offers move to review and accept/decline use receiver service',
     (tester) async {
       final receiverService = FakeReceiverServiceSource();
@@ -729,11 +855,144 @@ void main() {
       await _flushAsyncWork(tester);
       container.read(driftAppNotifierProvider.notifier).declineReceiveOffer();
       await _flushAsyncWork(tester);
+      receiverService.incomingController.add(_incomingDeclinedEvent());
+      await _flushAsyncWork(tester);
       expect(
         container.read(driftAppNotifierProvider).session,
-        isA<IdleSession>(),
+        isA<ReceiveResultSession>(),
       );
       expect(receiverService.respondToOfferCalls.last, isFalse);
     },
   );
+
+  testWidgets('incoming receive failure stays on a terminal error state', (
+    tester,
+  ) async {
+    final receiverService = FakeReceiverServiceSource();
+    final container = _buildContainer(
+      receiverServiceSource: receiverService,
+      enableIdleIncomingListener: true,
+    );
+    addTearDown(receiverService.dispose);
+    addTearDown(container.dispose);
+
+    container.read(driftAppNotifierProvider.notifier);
+    await _flushAsyncWork(tester);
+
+    receiverService.incomingController.add(_incomingOfferEvent());
+    await _flushAsyncWork(tester);
+    container.read(driftAppNotifierProvider.notifier).acceptReceiveOffer();
+    await _flushAsyncWork(tester);
+
+    receiverService.incomingController.add(
+      _incomingReceivingEvent(receivedBytes: BigInt.from(9 * 1024)),
+    );
+    await _flushAsyncWork(tester);
+
+    receiverService.incomingController.add(
+      _incomingFailedEvent(receivedBytes: BigInt.from(9 * 1024)),
+    );
+    await _flushAsyncWork(tester);
+
+    final state = container.read(driftAppNotifierProvider);
+    expect(state.session, isA<ReceiveResultSession>());
+    expect(state.transferResult?.outcome, TransferResultOutcomeData.failed);
+    expect(
+      state.transferResult?.message,
+      'Drift lost the connection while receiving files.',
+    );
+    expect(state.receivePayloadBytesReceived, 9 * 1024);
+  });
+
+  testWidgets('incoming declined stays on a terminal declined state', (
+    tester,
+  ) async {
+    final receiverService = FakeReceiverServiceSource();
+    final container = _buildContainer(
+      receiverServiceSource: receiverService,
+      enableIdleIncomingListener: true,
+    );
+    addTearDown(receiverService.dispose);
+    addTearDown(container.dispose);
+
+    container.read(driftAppNotifierProvider.notifier);
+    await _flushAsyncWork(tester);
+
+    receiverService.incomingController.add(_incomingOfferEvent());
+    await _flushAsyncWork(tester);
+    receiverService.incomingController.add(_incomingDeclinedEvent());
+    await _flushAsyncWork(tester);
+
+    final state = container.read(driftAppNotifierProvider);
+    expect(state.session, isA<ReceiveResultSession>());
+    expect(state.transferResult?.outcome, TransferResultOutcomeData.declined);
+    expect(state.transferResult?.title, 'Transfer declined');
+  });
+
+  testWidgets('respond to offer failure stays visible as a receive error', (
+    tester,
+  ) async {
+    final receiverService = FakeReceiverServiceSource(
+      respondError: Exception('backend unavailable'),
+    );
+    final container = _buildContainer(
+      receiverServiceSource: receiverService,
+      enableIdleIncomingListener: true,
+    );
+    addTearDown(receiverService.dispose);
+    addTearDown(container.dispose);
+
+    container.read(driftAppNotifierProvider.notifier);
+    await _flushAsyncWork(tester);
+
+    receiverService.incomingController.add(_incomingOfferEvent());
+    await _flushAsyncWork(tester);
+    container.read(driftAppNotifierProvider.notifier).acceptReceiveOffer();
+    await _flushAsyncWork(tester);
+
+    final state = container.read(driftAppNotifierProvider);
+    expect(state.session, isA<ReceiveResultSession>());
+    expect(state.transferResult?.outcome, TransferResultOutcomeData.failed);
+    expect(
+      state.transferResult?.message,
+      'Drift couldn\'t accept the transfer.',
+    );
+  });
+
+  testWidgets('receive cancel failure stays visible as a receive error', (
+    tester,
+  ) async {
+    final receiverService = FakeReceiverServiceSource(
+      cancelError: Exception('cancel failed'),
+    );
+    final container = _buildContainer(
+      receiverServiceSource: receiverService,
+      enableIdleIncomingListener: true,
+    );
+    addTearDown(receiverService.dispose);
+    addTearDown(container.dispose);
+
+    container.read(driftAppNotifierProvider.notifier);
+    await _flushAsyncWork(tester);
+
+    receiverService.incomingController.add(_incomingOfferEvent());
+    await _flushAsyncWork(tester);
+    container.read(driftAppNotifierProvider.notifier).acceptReceiveOffer();
+    await _flushAsyncWork(tester);
+    receiverService.incomingController.add(
+      _incomingReceivingEvent(receivedBytes: BigInt.from(9 * 1024)),
+    );
+    await _flushAsyncWork(tester);
+
+    container.read(driftAppNotifierProvider.notifier).cancelReceiveInProgress();
+    await _flushAsyncWork(tester);
+
+    final state = container.read(driftAppNotifierProvider);
+    expect(state.session, isA<ReceiveResultSession>());
+    expect(state.transferResult?.outcome, TransferResultOutcomeData.failed);
+    expect(
+      state.transferResult?.message,
+      'Drift couldn\'t cancel the transfer.',
+    );
+  });
 }

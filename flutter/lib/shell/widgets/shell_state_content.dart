@@ -72,7 +72,7 @@ class ShellStateContent extends ConsumerWidget {
         height: availableHeight,
         width: double.infinity,
         child: _buildTransferResultCard(
-          onReset: notifier.resetShell,
+          onPrimary: notifier.handleTransferResultPrimaryAction,
           result: result,
         ),
       ),
@@ -80,7 +80,7 @@ class ShellStateContent extends ConsumerWidget {
         height: availableHeight,
         width: double.infinity,
         child: _buildTransferResultCard(
-          onReset: notifier.resetShell,
+          onPrimary: notifier.handleTransferResultPrimaryAction,
           result: result,
         ),
       ),
@@ -98,7 +98,7 @@ class ShellStateContent extends ConsumerWidget {
         height: availableHeight,
         width: double.infinity,
         child: _buildTransferResultCard(
-          onReset: notifier.resetShell,
+          onPrimary: notifier.handleTransferResultPrimaryAction,
           result: result,
         ),
       ),
@@ -107,7 +107,7 @@ class ShellStateContent extends ConsumerWidget {
 }
 
 Widget _buildTransferResultCard({
-  required VoidCallback onReset,
+  required VoidCallback onPrimary,
   required TransferResultViewData? result,
 }) {
   if (result == null) {
@@ -116,14 +116,11 @@ Widget _buildTransferResultCard({
 
   return TransferResultCard(
     fillBody: true,
-    tone: switch (result.tone) {
-      TransferResultToneData.success => TransferResultTone.success,
-      TransferResultToneData.error => TransferResultTone.error,
-    },
+    outcome: result.outcome,
     title: result.title,
     message: result.message,
     metrics: result.metrics,
     primaryLabel: result.primaryLabel,
-    onPrimary: result.primaryLabel == null ? null : onReset,
+    onPrimary: result.primaryLabel == null ? null : onPrimary,
   );
 }

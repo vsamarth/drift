@@ -21,15 +21,14 @@ class MobileTransferResultView extends ConsumerWidget {
 
     return TransferResultCard(
       fillBody: true,
-      tone: switch (result.tone) {
-        TransferResultToneData.success => TransferResultTone.success,
-        TransferResultToneData.error => TransferResultTone.error,
-      },
+      outcome: result.outcome,
       title: result.title,
       message: result.message,
       metrics: result.metrics,
       primaryLabel: result.primaryLabel,
-      onPrimary: result.primaryLabel == null ? null : notifier.resetShell,
+      onPrimary: result.primaryLabel == null
+          ? null
+          : notifier.handleTransferResultPrimaryAction,
     );
   }
 }
