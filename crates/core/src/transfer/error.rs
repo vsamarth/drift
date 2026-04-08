@@ -1,6 +1,4 @@
-use std::error::Error as StdError;
-use std::fmt;
-
+use anyhow::Error as AnyhowError;
 use thiserror::Error;
 
 use crate::{
@@ -23,28 +21,11 @@ pub enum TransferError {
     Other {
         context: &'static str,
         #[source]
-        source: TransferTextError,
+        source: AnyhowError,
     },
 }
 
 pub(crate) type Result<T> = std::result::Result<T, TransferError>;
-
-#[derive(Debug)]
-pub struct TransferTextError(String);
-
-impl TransferTextError {
-    pub(crate) fn new(message: impl Into<String>) -> Self {
-        Self(message.into())
-    }
-}
-
-impl fmt::Display for TransferTextError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0)
-    }
-}
-
-impl StdError for TransferTextError {}
 
 impl TransferError {
     pub(crate) fn connection_closed(context: &'static str) -> Self {
@@ -59,10 +40,10 @@ impl TransferError {
         Self::ChannelClosed { context }
     }
 
-    pub(crate) fn other(context: &'static str, source: impl Into<String>) -> Self {
+    pub(crate) fn other(context: &'static str, source: impl Into<AnyhowError>) -> Self {
         Self::Other {
             context,
-            source: TransferTextError::new(source),
+            source: source.into(),
         }
     }
 

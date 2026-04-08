@@ -175,7 +175,7 @@ impl Sender {
             let outcome = session
                 .run(cancel_rx)
                 .await
-                .map_err(|error| TransferError::other("running sender session", error.to_string()));
+                .map_err(|error| TransferError::other("running sender session", error));
             if let Err(e) = &outcome {
                 events.fail(e);
             }

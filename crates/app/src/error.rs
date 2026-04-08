@@ -372,9 +372,10 @@ impl From<TransferError> for UserFacingError {
             TransferError::ConnectionClosed { .. } | TransferError::Timeout { .. } => {
                 UserFacingError::from_kind(UserFacingErrorKind::ConnectionLost)
             }
-            TransferError::ChannelClosed { .. } | TransferError::Other { .. } => {
+            TransferError::ChannelClosed { .. } => {
                 UserFacingError::from_kind(UserFacingErrorKind::Internal)
             }
+            TransferError::Other { source, .. } => from_anyhow_error(&source),
         }
     }
 }
@@ -695,9 +696,10 @@ pub fn from_anyhow_error(error: &AnyhowError) -> UserFacingError {
                 TransferError::ConnectionClosed { .. } | TransferError::Timeout { .. } => {
                     UserFacingError::from_kind(UserFacingErrorKind::ConnectionLost)
                 }
-                TransferError::ChannelClosed { .. } | TransferError::Other { .. } => {
+                TransferError::ChannelClosed { .. } => {
                     UserFacingError::from_kind(UserFacingErrorKind::Internal)
                 }
+                TransferError::Other { source, .. } => from_anyhow_error(source),
             };
         }
         if let Some(core_error) = cause.downcast_ref::<BlobError>() {
@@ -855,6 +857,22 @@ mod tests {
         assert_eq!(
             from_anyhow_error(&error).kind(),
             UserFacingErrorKind::PairingUnavailable
+        );
+    }
+
+    #[test]
+    fn transfer_other_preserves_nested_destination_exists_classification() {
+        let nested = AnyhowError::new(TransferPathError::DestinationExists {
+            path: "/tmp/a.txt".into(),
+        });
+        let error = AnyhowError::new(TransferError::Other {
+            context: "running receiver session",
+            source: nested,
+        });
+
+        assert_eq!(
+            from_anyhow_error(&error).kind(),
+            UserFacingErrorKind::FileConflict
         );
     }
 }

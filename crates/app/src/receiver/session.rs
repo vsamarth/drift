@@ -13,7 +13,7 @@ use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 use tokio_stream::StreamExt;
 
-use crate::error::{UserFacingError, UserFacingErrorKind, format_error_chain};
+use crate::error::{UserFacingError, UserFacingErrorKind, format_error_chain, from_anyhow_error};
 use crate::types::{ReceiverOfferEvent, ReceiverOfferFile, ReceiverOfferPhase};
 
 use super::actor::ReceiverCommand;
@@ -107,10 +107,7 @@ impl ReceiverSession {
                             &save_root_label,
                             device_type,
                             "Transfer failed.".to_owned(),
-                            UserFacingError::internal(
-                                "Transfer failed",
-                                format_error_chain(&error),
-                            ),
+                            from_anyhow_error(&error),
                         ),
                     })
                     .await;
@@ -391,7 +388,7 @@ impl ReceiverSession {
                 &save_root_label,
                 sender_device_type,
                 "Transfer failed.".to_owned(),
-                UserFacingError::internal("Transfer failed", error.to_string()),
+                UserFacingError::from(error),
             ),
             Err(error) => failed_offer_event(
                 &save_root_label,

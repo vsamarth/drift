@@ -151,7 +151,7 @@ impl ReceiverSession {
                 cancel_rx,
             )
             .await
-            .map_err(|error| TransferError::other("running receiver session", error.to_string()));
+            .map_err(|error| TransferError::other("running receiver session", error));
             let _ = outcome_tx.send(outcome);
         });
 
@@ -205,9 +205,10 @@ async fn run_session(
     let expected_files = match build_expected_files(&manifest, &request.out_dir).await {
         Ok(f) => f,
         Err(err) => {
-            let _ = send_receiver_decline(&mut control_send, &session_id, err.to_string()).await;
-            let _ = offer_tx.send(Err(anyhow!(err.to_string())));
-            return Err(err);
+            let reason = err.to_string();
+            let _ = send_receiver_decline(&mut control_send, &session_id, reason.clone()).await;
+            let _ = offer_tx.send(Err(err));
+            return Err(anyhow!(reason));
         }
     };
 
