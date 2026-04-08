@@ -21,12 +21,6 @@ enum EncodedTransportAddr {
     Ip(String),
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct LegacyTransferTicket {
-    node_id: String,
-    relay_url: Option<String>,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConnectionPathKind {
     Direct,
@@ -215,18 +209,7 @@ pub fn decode_ticket(ticket: &str) -> std::result::Result<EndpointAddr, TicketEr
 }
 
 fn parse_transfer_ticket(bytes: &[u8]) -> std::result::Result<TransferTicket, TicketError> {
-    if let Ok(ticket) = bincode::deserialize::<TransferTicket>(bytes) {
-        return Ok(ticket);
-    }
-    if let Ok(ticket) = bincode::deserialize::<LegacyTransferTicket>(bytes) {
-        return Ok(TransferTicket::from(ticket));
-    }
-    if let Ok(ticket) = serde_json::from_slice::<TransferTicket>(bytes) {
-        return Ok(ticket);
-    }
-    let legacy = serde_json::from_slice::<LegacyTransferTicket>(bytes)
-        .map_err(|_| TicketError::InvalidPayload)?;
-    Ok(TransferTicket::from(legacy))
+    bincode::deserialize::<TransferTicket>(bytes).map_err(|_| TicketError::InvalidPayload)
 }
 
 impl From<TransportAddr> for EncodedTransportAddr {
@@ -260,19 +243,6 @@ impl TryFrom<EncodedTransportAddr> for TransportAddr {
                     }
                 })?))
             }
-        }
-    }
-}
-
-impl From<LegacyTransferTicket> for TransferTicket {
-    fn from(value: LegacyTransferTicket) -> Self {
-        let mut addrs = Vec::new();
-        if let Some(url) = value.relay_url {
-            addrs.push(EncodedTransportAddr::Relay(url));
-        }
-        Self {
-            node_id: value.node_id,
-            addrs,
         }
     }
 }

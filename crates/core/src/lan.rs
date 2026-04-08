@@ -1,9 +1,3 @@
-//! mDNS LAN discovery for CLI: publish the same iroh ticket as rendezvous while receiving,
-//! and browse for nearby receivers when sending with `--nearby`.
-//!
-//! Receivers answer a small UDP **presence** protocol on [`DRIFT_LAN_PRESENCE_PORT`]; browsers
-//! only list peers that respond, so stale mDNS cache entries are dropped.
-
 use std::collections::HashMap;
 use std::error::Error as StdError;
 use std::mem::ManuallyDrop;
