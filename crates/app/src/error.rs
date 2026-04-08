@@ -3,6 +3,7 @@ use std::error::Error as StdError;
 use std::fmt;
 use std::io;
 
+use anyhow::Error as AnyhowError;
 use drift_core::blobs::BlobError;
 use drift_core::discovery::DiscoveryError;
 use drift_core::fs_plan::error::FsPlanError;
@@ -163,11 +164,9 @@ impl UserFacingError {
                 "Update Drift on both devices and try again.",
                 false,
             ),
-            UserFacingErrorKind::Cancelled => Self::new(
-                kind,
-                "Transfer cancelled",
-                "The transfer was cancelled.",
-            ),
+            UserFacingErrorKind::Cancelled => {
+                Self::new(kind, "Transfer cancelled", "The transfer was cancelled.")
+            }
             UserFacingErrorKind::Internal => {
                 Self::internal("Something went wrong", "Please try again.")
             }
@@ -234,9 +233,7 @@ impl From<RendezvousError> for UserFacingError {
             RendezvousError::ResponseParse { .. } => {
                 UserFacingError::from_kind(UserFacingErrorKind::Internal)
             }
-            RendezvousError::Api { status, .. } => {
-                map_rendezvous_api_status(status.as_u16())
-            }
+            RendezvousError::Api { status, .. } => map_rendezvous_api_status(status.as_u16()),
         }
     }
 }
@@ -468,6 +465,264 @@ pub fn format_error_chain(error: &anyhow::Error) -> String {
         .join(": ")
 }
 
+pub fn from_anyhow_error(error: &AnyhowError) -> UserFacingError {
+    for cause in error.chain() {
+        if let Some(app_error) = cause.downcast_ref::<AppError>() {
+            return UserFacingError::from(app_error.clone());
+        }
+        if let Some(core_error) = cause.downcast_ref::<RendezvousError>() {
+            return match core_error {
+                RendezvousError::InvalidCode { .. } => {
+                    UserFacingError::from_kind(UserFacingErrorKind::InvalidInput)
+                }
+                RendezvousError::Request { .. } => {
+                    UserFacingError::from_kind(UserFacingErrorKind::NetworkUnavailable)
+                }
+                RendezvousError::ResponseParse { .. } => {
+                    UserFacingError::from_kind(UserFacingErrorKind::Internal)
+                }
+                RendezvousError::Api { status, .. } => map_rendezvous_api_status(status.as_u16()),
+            };
+        }
+        if let Some(core_error) = cause.downcast_ref::<DiscoveryError>() {
+            return match core_error {
+                DiscoveryError::Rendezvous(error) => match error {
+                    RendezvousError::InvalidCode { .. } => {
+                        UserFacingError::from_kind(UserFacingErrorKind::InvalidInput)
+                    }
+                    RendezvousError::Request { .. } => {
+                        UserFacingError::from_kind(UserFacingErrorKind::NetworkUnavailable)
+                    }
+                    RendezvousError::ResponseParse { .. } => {
+                        UserFacingError::from_kind(UserFacingErrorKind::Internal)
+                    }
+                    RendezvousError::Api { status, .. } => {
+                        map_rendezvous_api_status(status.as_u16())
+                    }
+                },
+                DiscoveryError::Ticket(error) => match error {
+                    TicketError::Serialize { .. } => {
+                        UserFacingError::from_kind(UserFacingErrorKind::Internal)
+                    }
+                    TicketError::DecodeBase64 { .. }
+                    | TicketError::InvalidPayload
+                    | TicketError::ParseNodeId { .. }
+                    | TicketError::ParseRelayUrl { .. }
+                    | TicketError::ParseSocketAddr { .. } => {
+                        UserFacingError::from_kind(UserFacingErrorKind::InvalidInput)
+                    }
+                },
+                DiscoveryError::NearbyTask { .. } => {
+                    UserFacingError::from_kind(UserFacingErrorKind::Internal)
+                }
+                DiscoveryError::NearbyBrowse(error) => match error {
+                    LanError::NoUsableIpv4Address => {
+                        UserFacingError::from_kind(UserFacingErrorKind::NetworkUnavailable)
+                    }
+                    LanError::Mdns { source, .. } => map_network_io_error(source.as_ref()),
+                    LanError::Io { source, .. } => map_network_io_error(source),
+                    LanError::SpawnPresenceThread { source } => map_network_io_error(source),
+                    LanError::PresenceUnexpectedReply | LanError::PresenceInvalidPong => {
+                        UserFacingError::from_kind(UserFacingErrorKind::Internal)
+                    }
+                },
+            };
+        }
+        if let Some(core_error) = cause.downcast_ref::<TicketError>() {
+            return match core_error {
+                TicketError::Serialize { .. } => {
+                    UserFacingError::from_kind(UserFacingErrorKind::Internal)
+                }
+                TicketError::DecodeBase64 { .. }
+                | TicketError::InvalidPayload
+                | TicketError::ParseNodeId { .. }
+                | TicketError::ParseRelayUrl { .. }
+                | TicketError::ParseSocketAddr { .. } => {
+                    UserFacingError::from_kind(UserFacingErrorKind::InvalidInput)
+                }
+            };
+        }
+        if let Some(core_error) = cause.downcast_ref::<LanError>() {
+            return match core_error {
+                LanError::NoUsableIpv4Address => {
+                    UserFacingError::from_kind(UserFacingErrorKind::NetworkUnavailable)
+                }
+                LanError::Mdns { source, .. } => map_network_io_error(source.as_ref()),
+                LanError::Io { source, .. } => map_network_io_error(source),
+                LanError::SpawnPresenceThread { source } => map_network_io_error(source),
+                LanError::PresenceUnexpectedReply | LanError::PresenceInvalidPong => {
+                    UserFacingError::from_kind(UserFacingErrorKind::Internal)
+                }
+            };
+        }
+        if let Some(core_error) = cause.downcast_ref::<FsPlanError>() {
+            return match core_error {
+                FsPlanError::EmptySelection | FsPlanError::NoRegularFiles => {
+                    UserFacingError::from_kind(UserFacingErrorKind::InvalidInput)
+                }
+                FsPlanError::FileCountOverflow | FsPlanError::TotalSizeOverflow => {
+                    UserFacingError::from_kind(UserFacingErrorKind::Internal)
+                }
+                FsPlanError::ReadMetadata { source, .. }
+                | FsPlanError::ReadDirectory { source, .. }
+                | FsPlanError::CurrentDirectory { source } => map_local_io_error(source),
+                FsPlanError::SymbolicLink { .. }
+                | FsPlanError::UnsupportedFileType { .. }
+                | FsPlanError::InvalidUtf8PathComponent { .. } => {
+                    UserFacingError::from_kind(UserFacingErrorKind::InvalidInput)
+                }
+                FsPlanError::DuplicateTransferPath { .. } => {
+                    UserFacingError::from_kind(UserFacingErrorKind::FileConflict)
+                }
+                FsPlanError::TransferPath(error) => match error {
+                    TransferPathError::Empty
+                    | TransferPathError::InvalidSeparator
+                    | TransferPathError::NotRelative
+                    | TransferPathError::InvalidSegment
+                    | TransferPathError::InvalidUtf8RootName { .. }
+                    | TransferPathError::InvalidUtf8PathComponent { .. }
+                    | TransferPathError::OutputNotAbsolute { .. } => {
+                        UserFacingError::from_kind(UserFacingErrorKind::InvalidInput)
+                    }
+                    TransferPathError::DestinationExists { .. } => {
+                        UserFacingError::from_kind(UserFacingErrorKind::FileConflict)
+                    }
+                    TransferPathError::DestinationParentNotDirectory { .. } => {
+                        UserFacingError::from_kind(UserFacingErrorKind::InvalidInput)
+                    }
+                    TransferPathError::CheckPath { source, .. }
+                    | TransferPathError::CurrentDirectory { source }
+                    | TransferPathError::CreateScratchDir { source, .. } => {
+                        map_local_io_error(source)
+                    }
+                    TransferPathError::SystemClockBeforeUnixEpoch { .. } => {
+                        UserFacingError::from_kind(UserFacingErrorKind::Internal)
+                    }
+                },
+            };
+        }
+        if let Some(core_error) = cause.downcast_ref::<TransferPathError>() {
+            return match core_error {
+                TransferPathError::Empty
+                | TransferPathError::InvalidSeparator
+                | TransferPathError::NotRelative
+                | TransferPathError::InvalidSegment
+                | TransferPathError::InvalidUtf8RootName { .. }
+                | TransferPathError::InvalidUtf8PathComponent { .. }
+                | TransferPathError::OutputNotAbsolute { .. } => {
+                    UserFacingError::from_kind(UserFacingErrorKind::InvalidInput)
+                }
+                TransferPathError::DestinationExists { .. } => {
+                    UserFacingError::from_kind(UserFacingErrorKind::FileConflict)
+                }
+                TransferPathError::DestinationParentNotDirectory { .. } => {
+                    UserFacingError::from_kind(UserFacingErrorKind::InvalidInput)
+                }
+                TransferPathError::CheckPath { source, .. }
+                | TransferPathError::CurrentDirectory { source }
+                | TransferPathError::CreateScratchDir { source, .. } => map_local_io_error(source),
+                TransferPathError::SystemClockBeforeUnixEpoch { .. } => {
+                    UserFacingError::from_kind(UserFacingErrorKind::Internal)
+                }
+            };
+        }
+        if let Some(core_error) = cause.downcast_ref::<ProtocolError>() {
+            return match core_error {
+                ProtocolError::UnsupportedVersion { .. } => UserFacingError::with_recovery(
+                    UserFacingErrorKind::ProtocolIncompatible,
+                    "Protocol mismatch",
+                    "This version of Drift cannot complete the transfer.",
+                    "Update Drift on both devices and try again.",
+                    false,
+                ),
+                ProtocolError::UnexpectedRole { .. }
+                | ProtocolError::UnexpectedMessageKind { .. }
+                | ProtocolError::SessionIdMismatch { .. }
+                | ProtocolError::EmptyDeviceName { .. }
+                | ProtocolError::InvalidTransition { .. }
+                | ProtocolError::MissingPeerIdentity { .. }
+                | ProtocolError::MessageTooLarge { .. }
+                | ProtocolError::FrameRead { .. }
+                | ProtocolError::FrameWrite { .. }
+                | ProtocolError::MessageSerialize { .. }
+                | ProtocolError::MessageDeserialize { .. } => {
+                    UserFacingError::from_kind(UserFacingErrorKind::ProtocolIncompatible)
+                }
+            };
+        }
+        if let Some(core_error) = cause.downcast_ref::<TransferError>() {
+            return match core_error {
+                TransferError::Protocol(error) => match error {
+                    ProtocolError::UnsupportedVersion { .. } => UserFacingError::with_recovery(
+                        UserFacingErrorKind::ProtocolIncompatible,
+                        "Protocol mismatch",
+                        "This version of Drift cannot complete the transfer.",
+                        "Update Drift on both devices and try again.",
+                        false,
+                    ),
+                    ProtocolError::UnexpectedRole { .. }
+                    | ProtocolError::UnexpectedMessageKind { .. }
+                    | ProtocolError::SessionIdMismatch { .. }
+                    | ProtocolError::EmptyDeviceName { .. }
+                    | ProtocolError::InvalidTransition { .. }
+                    | ProtocolError::MissingPeerIdentity { .. }
+                    | ProtocolError::MessageTooLarge { .. }
+                    | ProtocolError::FrameRead { .. }
+                    | ProtocolError::FrameWrite { .. }
+                    | ProtocolError::MessageSerialize { .. }
+                    | ProtocolError::MessageDeserialize { .. } => {
+                        UserFacingError::from_kind(UserFacingErrorKind::ProtocolIncompatible)
+                    }
+                },
+                TransferError::Blob(error) => match error {
+                    BlobError::DuplicateTransferPath { .. } => {
+                        UserFacingError::from_kind(UserFacingErrorKind::FileConflict)
+                    }
+                    BlobError::Connect { source, .. } | BlobError::Fetch { source, .. } => {
+                        map_network_io_error(source.as_ref())
+                    }
+                    BlobError::StoreLoad { source, .. }
+                    | BlobError::StoreShutdown { source, .. }
+                    | BlobError::StoreCollection { source }
+                    | BlobError::ImportFiles { source, .. }
+                    | BlobError::ScratchDirCreate { source, .. } => {
+                        map_local_io_error(source.as_ref())
+                    }
+                    BlobError::StoreStillShared | BlobError::JoinDownloadTask { .. } => {
+                        UserFacingError::from_kind(UserFacingErrorKind::Internal)
+                    }
+                },
+                TransferError::ConnectionClosed { .. } | TransferError::Timeout { .. } => {
+                    UserFacingError::from_kind(UserFacingErrorKind::ConnectionLost)
+                }
+                TransferError::ChannelClosed { .. } | TransferError::Other { .. } => {
+                    UserFacingError::from_kind(UserFacingErrorKind::Internal)
+                }
+            };
+        }
+        if let Some(core_error) = cause.downcast_ref::<BlobError>() {
+            return match core_error {
+                BlobError::DuplicateTransferPath { .. } => {
+                    UserFacingError::from_kind(UserFacingErrorKind::FileConflict)
+                }
+                BlobError::Connect { source, .. } | BlobError::Fetch { source, .. } => {
+                    map_network_io_error(source.as_ref())
+                }
+                BlobError::StoreLoad { source, .. }
+                | BlobError::StoreShutdown { source, .. }
+                | BlobError::StoreCollection { source }
+                | BlobError::ImportFiles { source, .. }
+                | BlobError::ScratchDirCreate { source, .. } => map_local_io_error(source.as_ref()),
+                BlobError::StoreStillShared | BlobError::JoinDownloadTask { .. } => {
+                    UserFacingError::from_kind(UserFacingErrorKind::Internal)
+                }
+            };
+        }
+    }
+
+    UserFacingError::internal("Transfer failed", format_error_chain(error))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -515,9 +770,18 @@ mod tests {
             UserFacingErrorKind::InvalidInput
         );
 
-        assert_eq!(map_rendezvous_api_status(404).kind(), UserFacingErrorKind::PairingUnavailable);
-        assert_eq!(map_rendezvous_api_status(409).kind(), UserFacingErrorKind::PairingUnavailable);
-        assert_eq!(map_rendezvous_api_status(503).kind(), UserFacingErrorKind::NetworkUnavailable);
+        assert_eq!(
+            map_rendezvous_api_status(404).kind(),
+            UserFacingErrorKind::PairingUnavailable
+        );
+        assert_eq!(
+            map_rendezvous_api_status(409).kind(),
+            UserFacingErrorKind::PairingUnavailable
+        );
+        assert_eq!(
+            map_rendezvous_api_status(503).kind(),
+            UserFacingErrorKind::NetworkUnavailable
+        );
     }
 
     #[test]
@@ -578,6 +842,19 @@ mod tests {
             })
             .kind(),
             UserFacingErrorKind::Internal
+        );
+    }
+
+    #[test]
+    fn anyhow_errors_keep_core_classification_when_available() {
+        let error = AnyhowError::new(RendezvousError::Api {
+            status: reqwest::StatusCode::NOT_FOUND,
+            message: None,
+        });
+
+        assert_eq!(
+            from_anyhow_error(&error).kind(),
+            UserFacingErrorKind::PairingUnavailable
         );
     }
 }

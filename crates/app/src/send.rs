@@ -17,7 +17,7 @@ use iroh::{EndpointAddr, EndpointId};
 use tokio::sync::{mpsc, oneshot};
 use tokio_stream::{StreamExt, wrappers::UnboundedReceiverStream};
 
-use crate::error::{UserFacingError, UserFacingErrorKind, format_error_chain};
+use crate::error::{UserFacingError, UserFacingErrorKind, from_anyhow_error};
 use crate::types::{
     NearbyReceiver, SelectionChange, SelectionItem, SelectionPreview, SendConfig, SendEvent,
     SendPhase,
@@ -346,6 +346,7 @@ fn emit_failed_event(
 }
 
 fn failed_event(destination_label: &str, error: &anyhow::Error) -> SendEvent {
+    let user_facing_error = from_anyhow_error(error);
     SendEvent {
         phase: SendPhase::Failed,
         destination_label: destination_label.to_owned(),
@@ -357,10 +358,7 @@ fn failed_event(destination_label: &str, error: &anyhow::Error) -> SendEvent {
         snapshot: None,
         remote_device_type: None,
         connection_path: None,
-        error: Some(UserFacingError::internal(
-            "Transfer failed",
-            format_error_chain(error),
-        )),
+        error: Some(user_facing_error),
     }
 }
 

@@ -478,7 +478,7 @@ fn failed_offer_event(
 
 #[cfg(test)]
 mod tests {
-    use super::{failed_offer_event, build_offer_event, connection_path_label};
+    use super::{build_offer_event, connection_path_label, failed_offer_event};
     use crate::error::UserFacingErrorKind;
     use drift_core::protocol::DeviceType;
     use drift_core::util::ConnectionPathKind;
@@ -512,11 +512,20 @@ mod tests {
             None,
             None,
             Vec::new(),
-            Some(crate::error::UserFacingError::internal("Transfer failed", "boom")),
+            Some(crate::error::UserFacingError::internal(
+                "Transfer failed",
+                "boom",
+            )),
         );
 
-        assert_eq!(event.connection_path.as_deref(), Some(connection_path_label(ConnectionPathKind::Direct).as_str()));
-        assert_eq!(event.error.as_ref().map(|error| error.kind()), Some(UserFacingErrorKind::Internal));
+        assert_eq!(
+            event.connection_path.as_deref(),
+            Some(connection_path_label(ConnectionPathKind::Direct).as_str())
+        );
+        assert_eq!(
+            event.error.as_ref().map(|error| error.kind()),
+            Some(UserFacingErrorKind::Internal)
+        );
     }
 }
 
