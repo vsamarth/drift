@@ -7,6 +7,7 @@ use tokio::sync::{broadcast, mpsc, oneshot, watch};
 use tokio::task::JoinHandle;
 use tokio::time::{MissedTickBehavior, interval};
 
+use crate::error::{AppError, AppResult};
 use crate::types::{
     ConflictPolicy, NearbyReceiver, PairingCodeState, ReceiverOfferEvent, ReceiverOfferPhase,
     ReceiverRegistration,
@@ -32,10 +33,10 @@ pub(super) enum ReceiverCommand {
     },
     RespondToOffer {
         decision: OfferDecision,
-        reply: oneshot::Sender<Result<()>>,
+        reply: oneshot::Sender<AppResult<()>>,
     },
     CancelTransfer {
-        reply: oneshot::Sender<Result<()>>,
+        reply: oneshot::Sender<AppResult<()>>,
     },
     OfferPrepared {
         run: super::session::ReceiverRun,
@@ -67,7 +68,10 @@ pub(super) fn spawn_listener_task(
     conflict_policy: ConflictPolicy,
 ) -> Result<JoinHandle<()>> {
     if matches!(conflict_policy, ConflictPolicy::Overwrite) {
-        anyhow::bail!("receiver overwrite policy is not implemented yet");
+        return Err(AppError::UnsupportedLocalOperation {
+            operation: "receiver overwrite policy",
+        }
+        .into());
     }
     let device_type = parse_device_type(&device_type)?;
     Ok(tokio::spawn(async move {
@@ -205,7 +209,7 @@ fn publish_snapshot(
             has_registration: runtime.has_registration(),
             has_pending_offer: runtime.has_pending_offer(),
         })
-        .map_err(|_| anyhow::anyhow!("receiver v2 snapshot channel closed"))?;
+        .map_err(|_| AppError::SnapshotChannelClosed)?;
     Ok(())
 }
 

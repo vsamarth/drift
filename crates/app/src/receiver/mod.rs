@@ -170,7 +170,8 @@ impl ReceiverService {
             .context("receiver actor stopped before respond_to_offer")?;
         reply_rx
             .await
-            .context("receiver actor dropped respond_to_offer reply")?
+            .context("receiver actor dropped respond_to_offer reply")??;
+        Ok(())
     }
 
     pub async fn cancel_transfer(&self) -> Result<()> {
@@ -181,7 +182,8 @@ impl ReceiverService {
             .context("receiver actor stopped before cancel_transfer")?;
         reply_rx
             .await
-            .context("receiver actor dropped cancel_transfer reply")?
+            .context("receiver actor dropped cancel_transfer reply")??;
+        Ok(())
     }
 
     pub async fn scan_nearby(&self, timeout_secs: u64) -> Result<Vec<NearbyReceiver>> {

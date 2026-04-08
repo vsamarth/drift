@@ -12,6 +12,7 @@ use drift_core::rendezvous::RendezvousError;
 use drift_core::transfer::error::TransferError;
 use drift_core::transfer::path::TransferPathError;
 use drift_core::util::TicketError;
+use thiserror::Error;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UserFacingErrorKind {
@@ -26,6 +27,26 @@ pub enum UserFacingErrorKind {
     Cancelled,
     Internal,
 }
+
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub enum AppError {
+    #[error("receiver setup has not been completed")]
+    ReceiverSetupIncomplete,
+    #[error("no pending offer")]
+    NoPendingOffer,
+    #[error("offer is no longer active")]
+    OfferNoLongerActive,
+    #[error("no active transfer")]
+    NoActiveTransfer,
+    #[error("unsupported local operation: {operation}")]
+    UnsupportedLocalOperation { operation: &'static str },
+    #[error("receiver unavailable while {action}")]
+    ReceiverUnavailable { action: &'static str },
+    #[error("receiver snapshot channel closed")]
+    SnapshotChannelClosed,
+}
+
+pub type AppResult<T> = std::result::Result<T, AppError>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UserFacingError {
@@ -149,6 +170,45 @@ impl UserFacingError {
             ),
             UserFacingErrorKind::Internal => {
                 Self::internal("Something went wrong", "Please try again.")
+            }
+        }
+    }
+}
+
+impl From<AppError> for UserFacingError {
+    fn from(error: AppError) -> Self {
+        match error {
+            AppError::ReceiverSetupIncomplete => UserFacingError::new(
+                UserFacingErrorKind::Internal,
+                "Receiver not ready",
+                "Open the receiver setup before trying that again.",
+            ),
+            AppError::NoPendingOffer => UserFacingError::new(
+                UserFacingErrorKind::Internal,
+                "No pending offer",
+                "There is no pending offer to respond to.",
+            ),
+            AppError::OfferNoLongerActive => UserFacingError::new(
+                UserFacingErrorKind::Internal,
+                "Offer no longer active",
+                "That offer is no longer active.",
+            ),
+            AppError::NoActiveTransfer => UserFacingError::new(
+                UserFacingErrorKind::Internal,
+                "No active transfer",
+                "There is no active transfer to cancel.",
+            ),
+            AppError::UnsupportedLocalOperation { operation } => UserFacingError::new(
+                UserFacingErrorKind::Internal,
+                "Unsupported operation",
+                format!("Drift does not support {operation} yet."),
+            ),
+            AppError::ReceiverUnavailable { .. } | AppError::SnapshotChannelClosed => {
+                UserFacingError::new(
+                    UserFacingErrorKind::Internal,
+                    "Receiver unavailable",
+                    "The receiver is not available right now.",
+                )
             }
         }
     }
@@ -503,6 +563,21 @@ mod tests {
         assert_eq!(
             UserFacingError::from(error).kind(),
             UserFacingErrorKind::PermissionDenied
+        );
+    }
+
+    #[test]
+    fn app_errors_map_to_internal_user_facing_errors() {
+        assert_eq!(
+            UserFacingError::from(AppError::NoPendingOffer).kind(),
+            UserFacingErrorKind::Internal
+        );
+        assert_eq!(
+            UserFacingError::from(AppError::UnsupportedLocalOperation {
+                operation: "receiver overwrite policy",
+            })
+            .kind(),
+            UserFacingErrorKind::Internal
         );
     }
 }

@@ -4,6 +4,8 @@ use anyhow::Result;
 use iroh::SecretKey;
 use tokio::sync::{oneshot, watch};
 
+use crate::error::AppError;
+
 use super::runtime::{
     OfferResolution, ReceiverRuntime, registration_needs_refresh, should_advertise,
 };
@@ -74,7 +76,8 @@ async fn respond_to_offer_fails_without_pending_offer() -> Result<()> {
         .respond_to_offer(OfferDecision::Accept)
         .await
         .unwrap_err();
-    assert!(error.to_string().contains("no pending offer"));
+    let app_error = error.downcast_ref::<AppError>().expect("app error");
+    assert!(matches!(app_error, AppError::NoPendingOffer));
     service.shutdown().await?;
     Ok(())
 }

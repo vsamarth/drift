@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 use drift_core::lan::LanReceiveAdvertisement;
 use drift_core::rendezvous::{RendezvousClient, resolve_server_url};
 use drift_core::util::make_ticket;
@@ -9,6 +9,7 @@ use tokio::sync::{broadcast, watch};
 use tokio::task::JoinHandle;
 use tracing::warn;
 
+use crate::error::{AppError, AppResult};
 use crate::types::{PairingCodeState, ReceiverConfig, ReceiverRegistration};
 
 use super::session::ReceiverRun;
@@ -152,7 +153,7 @@ impl ReceiverRuntime {
         let resolved_url = self
             .server_url
             .clone()
-            .context("receiver setup has not been completed")?;
+            .ok_or(AppError::ReceiverSetupIncomplete)?;
         let ticket = make_ticket(&self.endpoint).await?;
         let registration = RendezvousClient::new(resolved_url)
             .register_peer(ticket)
@@ -229,11 +230,11 @@ impl ReceiverRuntime {
         Ok(())
     }
 
-    pub(super) fn respond_to_offer(&mut self, decision: OfferDecision) -> Result<()> {
+    pub(super) fn respond_to_offer(&mut self, decision: OfferDecision) -> AppResult<()> {
         let OfferState::Pending(pending_offer) =
             std::mem::replace(&mut self.offer_state, OfferState::Idle)
         else {
-            return Err(anyhow::anyhow!("no pending offer"));
+            return Err(AppError::NoPendingOffer);
         };
         let run = pending_offer.run;
 
@@ -249,7 +250,7 @@ impl ReceiverRuntime {
         };
         run.decision_tx
             .send(resolution)
-            .map_err(|_| anyhow::anyhow!("offer is no longer active"))?;
+            .map_err(|_| AppError::OfferNoLongerActive)?;
         Ok(())
     }
 
@@ -302,13 +303,13 @@ impl ReceiverRuntime {
         }
     }
 
-    pub(super) fn cancel_active_transfer(&mut self) -> Result<()> {
+    pub(super) fn cancel_active_transfer(&mut self) -> AppResult<()> {
         match &self.offer_state {
             OfferState::Receiving { cancel_tx, .. } => {
                 let _ = cancel_tx.send(true);
                 Ok(())
             }
-            _ => Err(anyhow::anyhow!("no active transfer")),
+            _ => Err(AppError::NoActiveTransfer),
         }
     }
 
