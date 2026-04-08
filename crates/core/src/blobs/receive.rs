@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use anyhow::anyhow;
 use futures_lite::StreamExt;
 use iroh::Endpoint;
 use iroh_blobs::{
@@ -109,8 +108,7 @@ impl BlobDownloadStrategy for SequentialBlobDownload {
                         break Ok(());
                     }
                     Some(GetProgressItem::Error(err)) => {
-                        let message =
-                            format!("{:#}", anyhow!(err.to_string()).context("blob fetch error"));
+                        let message = format!("blob fetch error: {err}");
                         let _ = update_tx.send(BlobDownloadUpdate::Failed {
                             message: message.clone(),
                         });
