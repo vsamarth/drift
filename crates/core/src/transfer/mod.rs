@@ -1,11 +1,13 @@
 #![allow(dead_code)]
 
+pub mod error;
 pub mod path;
 pub mod progress;
 pub mod receiver;
 pub mod sender;
 pub mod types;
 
+pub use error::TransferError;
 pub use progress::{ProgressTracker, SpeedCalculator};
 pub use receiver::{
     ReceiverControl, ReceiverDecision, ReceiverEvent, ReceiverEventStream, ReceiverOffer,

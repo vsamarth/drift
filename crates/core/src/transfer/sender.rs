@@ -18,6 +18,7 @@ use crate::{
     protocol::{message as protocol_message, send as protocol_sender},
 };
 
+use super::error::{Result as TransferResult, TransferError};
 use super::path::ScratchDir;
 use super::progress::ProgressTracker;
 use super::types::{TransferOutcome, TransferPlan, TransferSnapshot, wait_for_cancel};
@@ -73,7 +74,7 @@ pub type SenderEventStream = UnboundedReceiverStream<Result<SenderEvent>>;
 pub struct SenderRun {
     pub events: SenderEventStream,
     pub cancel_tx: watch::Sender<bool>,
-    outcome_rx: oneshot::Receiver<Result<TransferOutcome>>,
+    outcome_rx: oneshot::Receiver<TransferResult<TransferOutcome>>,
 }
 
 impl SenderRun {
@@ -82,12 +83,14 @@ impl SenderRun {
     ) -> (
         SenderEventStream,
         watch::Sender<bool>,
-        oneshot::Receiver<Result<TransferOutcome>>,
+        oneshot::Receiver<TransferResult<TransferOutcome>>,
     ) {
         (self.events, self.cancel_tx, self.outcome_rx)
     }
-    pub async fn outcome(self) -> Result<TransferOutcome> {
-        self.outcome_rx.await.context("waiting for outcome")?
+    pub async fn outcome(self) -> TransferResult<TransferOutcome> {
+        self.outcome_rx
+            .await
+            .map_err(|_| TransferError::channel_closed("waiting for sender outcome"))?
     }
 }
 
@@ -111,13 +114,13 @@ impl SenderEventSink {
             let _ = tx.send(Ok(e));
         }
     }
-    fn fail(&self, err: &anyhow::Error) {
+    fn fail<E: std::fmt::Display>(&self, err: &E) {
         self.emit(SenderEvent::Failed {
             session_id: self.session_id.clone(),
-            message: format!("{err:#}"),
+            message: format!("{err}"),
         });
         if let Some(tx) = &self.tx {
-            let _ = tx.send(Err(anyhow!("{err:#}")));
+            let _ = tx.send(Err(anyhow!("{err}")));
         }
     }
 }
@@ -169,7 +172,10 @@ impl Sender {
                 request: self.request,
                 events: events.clone(),
             };
-            let outcome = session.run(cancel_rx).await;
+            let outcome = session
+                .run(cancel_rx)
+                .await
+                .map_err(|error| TransferError::other("running sender session", error.to_string()));
             if let Err(e) = &outcome {
                 events.fail(e);
             }

@@ -26,6 +26,7 @@ use crate::{
     rendezvous::OfferManifest,
 };
 
+use super::error::{Result as TransferResult, TransferError};
 use super::path::{ensure_destination_available, resolve_output_dir, resolve_transfer_destination};
 use super::progress::ProgressTracker;
 use super::types::{
@@ -107,7 +108,7 @@ pub struct ReceiverControl {
 pub struct ReceiverStart {
     pub events: ReceiverEventStream,
     pub offer_rx: oneshot::Receiver<Result<ReceiverOffer>>,
-    pub outcome_rx: oneshot::Receiver<Result<TransferOutcome>>,
+    pub outcome_rx: oneshot::Receiver<TransferResult<TransferOutcome>>,
     pub control: ReceiverControl,
 }
 
@@ -149,7 +150,8 @@ impl ReceiverSession {
                 decision_rx,
                 cancel_rx,
             )
-            .await;
+            .await
+            .map_err(|error| TransferError::other("running receiver session", error.to_string()));
             let _ = outcome_tx.send(outcome);
         });
 

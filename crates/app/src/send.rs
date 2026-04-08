@@ -314,8 +314,7 @@ impl SendSession {
             }
         }
 
-        let core_outcome: Result<CoreTransferOutcome> =
-            outcome_rx.await.context("waiting for sender outcome")?;
+        let core_outcome = outcome_rx.await.context("waiting for sender outcome")?;
 
         match core_outcome {
             Ok(CoreTransferOutcome::Completed) => Ok(SendSessionOutcome::Accepted {
@@ -328,7 +327,7 @@ impl SendSession {
             Ok(CoreTransferOutcome::Cancelled(cancellation)) => {
                 Err(anyhow::anyhow!(cancellation.reason))
             }
-            Err(error) => Err(error),
+            Err(error) => Err(error.into()),
         }
     }
 }

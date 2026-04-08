@@ -3,7 +3,7 @@ use std::error::Error as StdError;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
-pub(crate) enum ProtocolError {
+pub enum ProtocolError {
     #[error("unsupported protocol version {actual} (expected {expected})")]
     UnsupportedVersion { expected: u32, actual: u32 },
     #[error("unexpected message role {actual:?} (expected {expected:?})")]
