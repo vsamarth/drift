@@ -916,7 +916,10 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
       statusMessage: update.errorMessage ?? update.statusMessage,
     );
     final progress = _progressFromSnapshot(update.snapshot);
-    if (_sendPayloadStartedAt == null && (progress.bytesTransferred ?? 0) > 0) {
+    final bytesTransferred =
+        progress.bytesTransferred ??
+        (update.bytesSent > 0 ? update.bytesSent : null);
+    if (_sendPayloadStartedAt == null && (bytesTransferred ?? 0) > 0) {
       _sendPayloadStartedAt = DateTime.now();
     }
 
@@ -968,6 +971,10 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
           ),
         );
       case SendTransferUpdatePhase.sending:
+        final payloadBytesSent = bytesTransferred;
+        final payloadTotalBytes =
+            progress.totalBytes ??
+            (update.totalBytes > 0 ? update.totalBytes : null);
         _setSession(
           SendTransferSession(
             phase: SendTransferSessionPhase.sending,
@@ -976,8 +983,8 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
             plan: update.plan ?? state.sendTransferPlan,
             snapshot: update.snapshot,
             remoteDeviceType: update.remoteDeviceType,
-            payloadBytesSent: progress.bytesTransferred,
-            payloadTotalBytes: progress.totalBytes,
+            payloadBytesSent: payloadBytesSent,
+            payloadTotalBytes: payloadTotalBytes,
             payloadSpeedLabel: progress.speedLabel,
             payloadEtaLabel: progress.etaLabel,
           ),
