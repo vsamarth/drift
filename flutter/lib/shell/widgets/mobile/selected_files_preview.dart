@@ -112,7 +112,10 @@ class SelectedFilesPreview extends StatelessWidget {
           const SizedBox(height: 12),
           SizedBox(
             height: previewHeight,
-            child: PreviewTableViewport(items: items, maxHeight: previewHeight),
+            child: PreviewTableViewport(
+              items: plainTransferDisplayItems(items),
+              maxHeight: previewHeight,
+            ),
           ),
         ],
       ),

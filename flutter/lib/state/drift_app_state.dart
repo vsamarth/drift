@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 
 import '../core/models/transfer_models.dart';
 import '../shell/shell_routing.dart';
+import '../src/rust/api/transfer.dart' as rust_transfer;
 import 'app_identity.dart';
 import 'receiver_service_source.dart';
 
@@ -159,6 +160,12 @@ class DriftAppState {
     _ => const [],
   };
 
+  List<TransferDisplayItemViewData> get sendDisplayItems =>
+      _displayItemsFor(sendItems, sendTransferPlan, sendTransferSnapshot);
+
+  List<TransferDisplayItemViewData> get receiveDisplayItems =>
+      _displayItemsFor(receiveItems, receiveTransferPlan, receiveTransferSnapshot);
+
   List<SendDestinationViewData> get nearbySendDestinations => switch (session) {
     SendDraftSession(:final nearbyDestinations) => nearbyDestinations,
     _ => const [],
@@ -212,6 +219,18 @@ class DriftAppState {
     _ => null,
   };
 
+  rust_transfer.TransferPlanData? get sendTransferPlan => switch (session) {
+    SendTransferSession(:final plan) => plan,
+    SendResultSession(:final plan) => plan,
+    _ => null,
+  };
+
+  rust_transfer.TransferSnapshotData? get sendTransferSnapshot => switch (session) {
+    SendTransferSession(:final snapshot) => snapshot,
+    SendResultSession(:final snapshot) => snapshot,
+    _ => null,
+  };
+
   int? get receivePayloadBytesReceived => switch (session) {
     ReceiveTransferSession(:final payloadBytesReceived) => payloadBytesReceived,
     ReceiveResultSession(:final payloadBytesReceived) => payloadBytesReceived,
@@ -242,6 +261,20 @@ class DriftAppState {
 
   List<TransferMetricRow>? get receiveCompletionMetrics => switch (session) {
     ReceiveResultSession(:final metrics) => metrics,
+    _ => null,
+  };
+
+  rust_transfer.TransferPlanData? get receiveTransferPlan => switch (session) {
+    ReceiveOfferSession(:final plan) => plan,
+    ReceiveTransferSession(:final plan) => plan,
+    ReceiveResultSession(:final plan) => plan,
+    _ => null,
+  };
+
+  rust_transfer.TransferSnapshotData? get receiveTransferSnapshot => switch (session) {
+    ReceiveOfferSession(:final snapshot) => snapshot,
+    ReceiveTransferSession(:final snapshot) => snapshot,
+    ReceiveResultSession(:final snapshot) => snapshot,
     _ => null,
   };
 
@@ -297,6 +330,94 @@ class DriftAppState {
   ShellView get shellView => shellViewFor(this);
 }
 
+List<TransferDisplayItemViewData> _displayItemsFor(
+  List<TransferItemViewData> fallbackItems,
+  rust_transfer.TransferPlanData? plan,
+  rust_transfer.TransferSnapshotData? snapshot,
+) {
+  if (plan == null) {
+    return plainTransferDisplayItems(fallbackItems);
+  }
+
+  return List<TransferDisplayItemViewData>.unmodifiable(
+    plan.files.map((file) {
+      final item = TransferItemViewData(
+        name: _fileNameFromPath(file.path),
+        path: file.path,
+        size: _formatBytes(_bigIntToInt(file.size)),
+        kind: TransferItemKind.file,
+        sizeBytes: _bigIntToInt(file.size),
+      );
+
+      if (snapshot == null) {
+        return TransferDisplayItemViewData(
+          item: item,
+          state: TransferItemProgressState.pending,
+        );
+      }
+
+      final isCompleted = file.id < snapshot.completedFiles;
+      if (isCompleted) {
+        return TransferDisplayItemViewData(
+          item: item,
+          state: TransferItemProgressState.completed,
+          progress: 1,
+          statusLabel: 'Done',
+        );
+      }
+
+      final isActive = snapshot.activeFileId == file.id;
+      if (isActive) {
+        final transferred =
+            snapshot.activeFileBytes == null
+                ? 0
+                : _bigIntToInt(snapshot.activeFileBytes!);
+        final total = _bigIntToInt(file.size);
+        return TransferDisplayItemViewData(
+          item: item,
+          state: TransferItemProgressState.active,
+          progress: total <= 0 ? 1.0 : (transferred / total).clamp(0.0, 1.0),
+          statusLabel: total <= 0
+              ? 'Preparing'
+              : '${_formatBytes(transferred)} / ${_formatBytes(total)}',
+        );
+      }
+
+      return TransferDisplayItemViewData(
+        item: item,
+        state: TransferItemProgressState.pending,
+      );
+    }),
+  );
+}
+
+String _fileNameFromPath(String path) {
+  final segments = path.split('/')..removeWhere((segment) => segment.isEmpty);
+  return segments.isEmpty ? path : segments.last;
+}
+
+int _bigIntToInt(BigInt value) {
+  if (value.bitLength > 63) {
+    return 0x7fffffffffffffff;
+  }
+  return value.toInt();
+}
+
+String _formatBytes(int bytes) {
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  var value = bytes.toDouble();
+  var unitIndex = 0;
+
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+
+  final decimals = value >= 10 || unitIndex == 0 ? 0 : 1;
+  final formatted = value.toStringAsFixed(decimals);
+  return '$formatted ${units[unitIndex]}';
+}
+
 bool _isCancelledMessage(String message) =>
     message.toLowerCase().contains('cancel');
 
@@ -309,11 +430,15 @@ sealed class TransferResultSession extends ShellSessionState {
     required this.items,
     required this.summary,
     this.metrics,
+    this.plan,
+    this.snapshot,
   });
 
   final List<TransferItemViewData> items;
   final TransferSummaryViewData summary;
   final List<TransferMetricRow>? metrics;
+  final rust_transfer.TransferPlanData? plan;
+  final rust_transfer.TransferSnapshotData? snapshot;
 }
 
 class IdleSession extends ShellSessionState {
@@ -378,6 +503,8 @@ class SendTransferSession extends ShellSessionState {
     required this.phase,
     required this.items,
     required this.summary,
+    this.plan,
+    this.snapshot,
     this.remoteDeviceType,
     this.payloadBytesSent,
     this.payloadTotalBytes,
@@ -388,6 +515,8 @@ class SendTransferSession extends ShellSessionState {
   final SendTransferSessionPhase phase;
   final List<TransferItemViewData> items;
   final TransferSummaryViewData summary;
+  final rust_transfer.TransferPlanData? plan;
+  final rust_transfer.TransferSnapshotData? snapshot;
   final String? remoteDeviceType;
   final int? payloadBytesSent;
   final int? payloadTotalBytes;
@@ -398,6 +527,8 @@ class SendTransferSession extends ShellSessionState {
     SendTransferSessionPhase? phase,
     List<TransferItemViewData>? items,
     TransferSummaryViewData? summary,
+    rust_transfer.TransferPlanData? plan,
+    rust_transfer.TransferSnapshotData? snapshot,
     String? remoteDeviceType,
     int? payloadBytesSent,
     int? payloadTotalBytes,
@@ -408,6 +539,8 @@ class SendTransferSession extends ShellSessionState {
       phase: phase ?? this.phase,
       items: items ?? this.items,
       summary: summary ?? this.summary,
+      plan: plan ?? this.plan,
+      snapshot: snapshot ?? this.snapshot,
       remoteDeviceType: remoteDeviceType ?? this.remoteDeviceType,
       payloadBytesSent: payloadBytesSent ?? this.payloadBytesSent,
       payloadTotalBytes: payloadTotalBytes ?? this.payloadTotalBytes,
@@ -423,6 +556,8 @@ class SendResultSession extends TransferResultSession {
     required super.items,
     required super.summary,
     super.metrics,
+    super.plan,
+    super.snapshot,
     this.remoteDeviceType,
   }) : super();
 
@@ -436,6 +571,8 @@ class ReceiveOfferSession extends ShellSessionState {
     required this.summary,
     required this.decisionPending,
     required this.payloadTotalBytes,
+    this.plan,
+    this.snapshot,
     this.senderDeviceType,
   });
 
@@ -443,6 +580,8 @@ class ReceiveOfferSession extends ShellSessionState {
   final TransferSummaryViewData summary;
   final bool decisionPending;
   final int? payloadTotalBytes;
+  final rust_transfer.TransferPlanData? plan;
+  final rust_transfer.TransferSnapshotData? snapshot;
   final String? senderDeviceType;
 }
 
@@ -450,6 +589,8 @@ class ReceiveTransferSession extends ShellSessionState {
   const ReceiveTransferSession({
     required this.items,
     required this.summary,
+    this.plan,
+    this.snapshot,
     this.payloadBytesReceived,
     this.payloadTotalBytes,
     this.payloadSpeedLabel,
@@ -459,6 +600,8 @@ class ReceiveTransferSession extends ShellSessionState {
 
   final List<TransferItemViewData> items;
   final TransferSummaryViewData summary;
+  final rust_transfer.TransferPlanData? plan;
+  final rust_transfer.TransferSnapshotData? snapshot;
   final int? payloadBytesReceived;
   final int? payloadTotalBytes;
   final String? payloadSpeedLabel;
@@ -468,6 +611,8 @@ class ReceiveTransferSession extends ShellSessionState {
   ReceiveTransferSession copyWith({
     List<TransferItemViewData>? items,
     TransferSummaryViewData? summary,
+    rust_transfer.TransferPlanData? plan,
+    rust_transfer.TransferSnapshotData? snapshot,
     int? payloadBytesReceived,
     int? payloadTotalBytes,
     String? payloadSpeedLabel,
@@ -477,6 +622,8 @@ class ReceiveTransferSession extends ShellSessionState {
     return ReceiveTransferSession(
       items: items ?? this.items,
       summary: summary ?? this.summary,
+      plan: plan ?? this.plan,
+      snapshot: snapshot ?? this.snapshot,
       payloadBytesReceived: payloadBytesReceived ?? this.payloadBytesReceived,
       payloadTotalBytes: payloadTotalBytes ?? this.payloadTotalBytes,
       payloadSpeedLabel: payloadSpeedLabel ?? this.payloadSpeedLabel,
@@ -492,6 +639,8 @@ class ReceiveResultSession extends TransferResultSession {
     required super.items,
     required super.summary,
     super.metrics,
+    super.plan,
+    super.snapshot,
     this.payloadBytesReceived,
     this.payloadTotalBytes,
     this.senderDeviceType,

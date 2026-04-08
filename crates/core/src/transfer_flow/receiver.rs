@@ -23,10 +23,11 @@ use crate::{
     rendezvous::OfferManifest,
 };
 
+use super::progress::ProgressTracker;
 use super::path::{
     ScratchDir, ensure_destination_available, resolve_output_dir, resolve_transfer_destination,
 };
-use super::types::{TransferOutcome, wait_for_cancel};
+use super::types::{TransferOutcome, TransferPhase, TransferPlan, TransferSnapshot, wait_for_cancel};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReceiverRequest {
@@ -72,13 +73,19 @@ pub enum ReceiverEvent {
     },
     TransferStarted {
         session_id: String,
-        file_count: u64,
-        total_bytes: u64,
+        plan: TransferPlan,
     },
     TransferProgress {
         session_id: String,
-        bytes_received: u64,
-        total_bytes: u64,
+        snapshot: TransferSnapshot,
+    },
+    TransferCompleted {
+        session_id: String,
+        snapshot: TransferSnapshot,
+    },
+    Failed {
+        session_id: String,
+        message: String,
     },
     Completed {
         session_id: String,
@@ -189,6 +196,7 @@ async fn run_session(
 
     // --- Phase 2: Offer Processing ---
     let manifest = to_offer_manifest(&offer);
+    let plan = TransferPlan::from_manifest(session_id.clone(), &offer.manifest)?;
     let expected_files = match build_expected_files(&manifest, &request.out_dir).await {
         Ok(f) => f,
         Err(err) => {
@@ -279,9 +287,14 @@ async fn run_session(
         let blob_conn = endpoint.connect(blob_ticket.addr().clone(), BLOBS_ALPN).await?;
         let mut progress_send = connection.open_uni().await?;
 
-        let transfer_outcome = do_transfer(
-            &session_id, &manifest, store.remote().fetch(blob_conn, blob_ticket.clone()).stream(),
-            &mut progress_send, &mut control_recv, &mut cancel_rx, &event_tx
+        let (transfer_outcome, mut tracker) = do_transfer(
+            &session_id,
+            &plan,
+            store.remote().fetch(blob_conn, blob_ticket.clone()).stream(),
+            &mut progress_send,
+            &mut control_recv,
+            &mut cancel_rx,
+            &event_tx,
         ).await?;
 
         if let TransferOutcome::Cancelled(c) = &transfer_outcome {
@@ -291,18 +304,45 @@ async fn run_session(
 
         // --- Phase 5: Export & Acknowledgement ---
         info!(%session_id, "exporting files to {}", request.out_dir.display());
-        tokio::select! {
-            res = export_downloaded_collection(&store, blob_ticket.hash(), &expected_transfer_files) => res?,
+        tracker.mark_finalizing(std::time::Instant::now());
+        let finalizing_snapshot = tracker.snapshot(std::time::Instant::now());
+        emit_receiver_event(&event_tx, ReceiverEvent::TransferProgress {
+            session_id: session_id.clone(),
+            snapshot: finalizing_snapshot.clone(),
+        });
+        let _ = protocol_wire::write_receiver_message(
+            &mut progress_send,
+            &protocol_message::ReceiverMessage::TransferProgress(protocol_message::TransferProgress {
+                session_id: session_id.clone(),
+                snapshot: to_wire_snapshot(&finalizing_snapshot),
+            }),
+        ).await;
+        let final_snapshot = tokio::select! {
+            res = export_downloaded_collection(&store, blob_ticket.hash(), &expected_transfer_files) => {
+                res?;
+                tracker.mark_completed(std::time::Instant::now());
+                tracker.snapshot(std::time::Instant::now())
+            },
             _ = wait_for_cancel(&mut cancel_rx) => return abort_session(&mut control_send, &session_id, protocol_message::CancelPhase::Transferring).await,
         };
 
-        let _ = protocol_wire::write_receiver_message(&mut progress_send, &protocol_message::ReceiverMessage::TransferCompleted(protocol_message::TransferCompleted { session_id: session_id.clone() })).await;
+        let _ = protocol_wire::write_receiver_message(
+            &mut progress_send,
+            &protocol_message::ReceiverMessage::TransferCompleted(protocol_message::TransferCompleted {
+                session_id: session_id.clone(),
+                snapshot: to_wire_snapshot(&final_snapshot),
+            }),
+        ).await;
         let _ = send_transfer_result(&mut control_send, &session_id, protocol_message::TransferStatus::Ok).await;
 
         // Final wait for Sender to acknowledge our result
         match protocol_wire::read_sender_message(&mut control_recv).await? {
             protocol_message::SenderMessage::TransferAck(_) => {
                 let _ = control_send.finish();
+                emit_receiver_event(&event_tx, ReceiverEvent::TransferCompleted {
+                    session_id: session_id.clone(),
+                    snapshot: final_snapshot,
+                });
                 emit_receiver_event(&event_tx, ReceiverEvent::Completed { session_id: session_id.clone() });
                 Ok(TransferOutcome::Completed)
             },
@@ -310,6 +350,15 @@ async fn run_session(
         }
     }.await;
 
+    if let Err(error) = &outcome {
+        emit_receiver_event(
+            &event_tx,
+            ReceiverEvent::Failed {
+                session_id: session_id.clone(),
+                message: format!("{error:#}"),
+            },
+        );
+    }
     let _ = store.shutdown().await;
     outcome
 }
@@ -366,20 +415,20 @@ async fn do_handshake(
 
 async fn do_transfer(
     session_id: &str,
-    manifest: &OfferManifest,
+    plan: &TransferPlan,
     mut stream: impl futures_lite::Stream<Item = GetProgressItem> + Unpin,
     progress_send: &mut iroh::endpoint::SendStream,
     control_recv: &mut iroh::endpoint::RecvStream,
     cancel_rx: &mut watch::Receiver<bool>,
     event_tx: &Option<mpsc::UnboundedSender<Result<ReceiverEvent>>>,
-) -> Result<TransferOutcome> {
-    let mut last_report = 0u64;
+) -> Result<(TransferOutcome, ProgressTracker)> {
+    let mut tracker = ProgressTracker::new(plan.clone());
+    tracker.set_phase(TransferPhase::Transferring, std::time::Instant::now());
     emit_receiver_event(
         event_tx,
         ReceiverEvent::TransferStarted {
             session_id: session_id.to_owned(),
-            file_count: manifest.file_count,
-            total_bytes: manifest.total_size,
+            plan: plan.clone(),
         },
     );
 
@@ -387,26 +436,42 @@ async fn do_transfer(
         tokio::select! {
             item = stream.next() => match item {
                 Some(GetProgressItem::Progress(offset)) => {
-                    emit_receiver_event(event_tx, ReceiverEvent::TransferProgress { session_id: session_id.to_owned(), bytes_received: offset, total_bytes: manifest.total_size });
-                    if offset - last_report >= 1024 * 1024 || offset == manifest.total_size {
-                        let _ = protocol_wire::write_receiver_message(progress_send, &protocol_message::ReceiverMessage::TransferProgress(protocol_message::TransferProgress { session_id: session_id.to_owned(), bytes_sent: offset, total_bytes: manifest.total_size })).await;
-                        last_report = offset;
-                    }
+                    let now = std::time::Instant::now();
+                    tracker.set_bytes_transferred(offset, now);
+                    let snapshot = tracker.snapshot(now);
+                    emit_receiver_event(event_tx, ReceiverEvent::TransferProgress {
+                        session_id: session_id.to_owned(),
+                        snapshot: snapshot.clone(),
+                    });
+                    let _ = protocol_wire::write_receiver_message(
+                        progress_send,
+                        &protocol_message::ReceiverMessage::TransferProgress(protocol_message::TransferProgress {
+                            session_id: session_id.to_owned(),
+                            snapshot: to_wire_snapshot(&snapshot),
+                        }),
+                    ).await;
                 }
                 Some(GetProgressItem::Done(_)) | None => {
-                    // Final ensure: report 100% progress if not already sent
-                    if last_report < manifest.total_size {
-                        let _ = protocol_wire::write_receiver_message(progress_send, &protocol_message::ReceiverMessage::TransferProgress(protocol_message::TransferProgress { session_id: session_id.to_owned(), bytes_sent: manifest.total_size, total_bytes: manifest.total_size })).await;
-                    }
-                    return Ok(TransferOutcome::Completed);
+                    return Ok((TransferOutcome::Completed, tracker));
                 },
                 Some(GetProgressItem::Error(e)) => bail!("blob fetch error: {e}"),
             },
             msg = protocol_wire::read_sender_message(control_recv) => match msg? {
-                protocol_message::SenderMessage::Cancel(c) => return TransferOutcome::from_remote_cancel(c, session_id),
+                protocol_message::SenderMessage::Cancel(c) => {
+                    return TransferOutcome::from_remote_cancel(c, session_id)
+                        .map(|outcome| (outcome, tracker));
+                }
                 _ => bail!("unexpected control message during transfer"),
             },
-            _ = wait_for_cancel(cancel_rx) => return Ok(TransferOutcome::local_cancel(protocol_message::TransferRole::Receiver, protocol_message::CancelPhase::Transferring)),
+            _ = wait_for_cancel(cancel_rx) => {
+                return Ok((
+                    TransferOutcome::local_cancel(
+                        protocol_message::TransferRole::Receiver,
+                        protocol_message::CancelPhase::Transferring,
+                    ),
+                    tracker,
+                ))
+            },
         }
     }
 }
@@ -517,6 +582,18 @@ fn to_offer_manifest(offer: &protocol_message::Offer) -> OfferManifest {
             .collect(),
         file_count: offer.manifest.count() as u64,
         total_size: offer.manifest.total_size(),
+    }
+}
+
+fn to_wire_snapshot(snapshot: &TransferSnapshot) -> protocol_message::TransferProgressPayload {
+    protocol_message::TransferProgressPayload {
+        phase: snapshot.phase,
+        completed_files: snapshot.completed_files,
+        total_files: snapshot.total_files,
+        bytes_transferred: snapshot.bytes_transferred,
+        total_bytes: snapshot.total_bytes,
+        active_file_id: snapshot.active_file_id,
+        active_file_bytes: snapshot.active_file_bytes,
     }
 }
 

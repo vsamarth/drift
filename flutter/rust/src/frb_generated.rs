@@ -779,6 +779,20 @@ impl SseDecode for Vec<crate::api::preview::SelectionItem> {
     }
 }
 
+impl SseDecode for Vec<crate::api::transfer::TransferPlanFileData> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::api::transfer::TransferPlanFileData>::sse_decode(
+                deserializer,
+            ));
+        }
+        return ans_;
+    }
+}
+
 impl SseDecode for crate::api::lan::NearbyReceiverInfo {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -813,6 +827,54 @@ impl SseDecode for Option<crate::api::receiver::ReceiverRegistration> {
             return Some(<crate::api::receiver::ReceiverRegistration>::sse_decode(
                 deserializer,
             ));
+        } else {
+            return None;
+        }
+    }
+}
+
+impl SseDecode for Option<crate::api::transfer::TransferPlanData> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(<crate::api::transfer::TransferPlanData>::sse_decode(
+                deserializer,
+            ));
+        } else {
+            return None;
+        }
+    }
+}
+
+impl SseDecode for Option<crate::api::transfer::TransferSnapshotData> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(<crate::api::transfer::TransferSnapshotData>::sse_decode(
+                deserializer,
+            ));
+        } else {
+            return None;
+        }
+    }
+}
+
+impl SseDecode for Option<u32> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(<u32>::sse_decode(deserializer));
+        } else {
+            return None;
+        }
+    }
+}
+
+impl SseDecode for Option<u64> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(<u64>::sse_decode(deserializer));
         } else {
             return None;
         }
@@ -855,6 +917,10 @@ impl SseDecode for crate::api::receiver::ReceiverTransferEvent {
         let mut var_itemCount = <u64>::sse_decode(deserializer);
         let mut var_totalSizeBytes = <u64>::sse_decode(deserializer);
         let mut var_bytesReceived = <u64>::sse_decode(deserializer);
+        let mut var_plan =
+            <Option<crate::api::transfer::TransferPlanData>>::sse_decode(deserializer);
+        let mut var_snapshot =
+            <Option<crate::api::transfer::TransferSnapshotData>>::sse_decode(deserializer);
         let mut var_totalSizeLabel = <String>::sse_decode(deserializer);
         let mut var_files =
             <Vec<crate::api::receiver::ReceiverTransferFile>>::sse_decode(deserializer);
@@ -869,6 +935,8 @@ impl SseDecode for crate::api::receiver::ReceiverTransferEvent {
             item_count: var_itemCount,
             total_size_bytes: var_totalSizeBytes,
             bytes_received: var_bytesReceived,
+            plan: var_plan,
+            snapshot: var_snapshot,
             total_size_label: var_totalSizeLabel,
             files: var_files,
             error_message: var_errorMessage,
@@ -946,6 +1014,10 @@ impl SseDecode for crate::api::sender::SendTransferEvent {
         let mut var_itemCount = <u64>::sse_decode(deserializer);
         let mut var_totalSize = <u64>::sse_decode(deserializer);
         let mut var_bytesSent = <u64>::sse_decode(deserializer);
+        let mut var_plan =
+            <Option<crate::api::transfer::TransferPlanData>>::sse_decode(deserializer);
+        let mut var_snapshot =
+            <Option<crate::api::transfer::TransferSnapshotData>>::sse_decode(deserializer);
         let mut var_remoteDeviceType = <Option<String>>::sse_decode(deserializer);
         let mut var_errorMessage = <Option<String>>::sse_decode(deserializer);
         return crate::api::sender::SendTransferEvent {
@@ -955,6 +1027,8 @@ impl SseDecode for crate::api::sender::SendTransferEvent {
             item_count: var_itemCount,
             total_size: var_totalSize,
             bytes_sent: var_bytesSent,
+            plan: var_plan,
+            snapshot: var_snapshot,
             remote_device_type: var_remoteDeviceType,
             error_message: var_errorMessage,
         };
@@ -998,6 +1072,89 @@ impl SseDecode for crate::api::sender::SendTransferRequest {
             ticket: var_ticket,
             lan_destination_label: var_lanDestinationLabel,
         };
+    }
+}
+
+impl SseDecode for crate::api::transfer::TransferPhaseData {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => crate::api::transfer::TransferPhaseData::Connecting,
+            1 => crate::api::transfer::TransferPhaseData::AwaitingAcceptance,
+            2 => crate::api::transfer::TransferPhaseData::Transferring,
+            3 => crate::api::transfer::TransferPhaseData::Finalizing,
+            4 => crate::api::transfer::TransferPhaseData::Completed,
+            5 => crate::api::transfer::TransferPhaseData::Cancelled,
+            6 => crate::api::transfer::TransferPhaseData::Failed,
+            _ => unreachable!("Invalid variant for TransferPhaseData: {}", inner),
+        };
+    }
+}
+
+impl SseDecode for crate::api::transfer::TransferPlanData {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_sessionId = <String>::sse_decode(deserializer);
+        let mut var_totalFiles = <u32>::sse_decode(deserializer);
+        let mut var_totalBytes = <u64>::sse_decode(deserializer);
+        let mut var_files =
+            <Vec<crate::api::transfer::TransferPlanFileData>>::sse_decode(deserializer);
+        return crate::api::transfer::TransferPlanData {
+            session_id: var_sessionId,
+            total_files: var_totalFiles,
+            total_bytes: var_totalBytes,
+            files: var_files,
+        };
+    }
+}
+
+impl SseDecode for crate::api::transfer::TransferPlanFileData {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_id = <u32>::sse_decode(deserializer);
+        let mut var_path = <String>::sse_decode(deserializer);
+        let mut var_size = <u64>::sse_decode(deserializer);
+        return crate::api::transfer::TransferPlanFileData {
+            id: var_id,
+            path: var_path,
+            size: var_size,
+        };
+    }
+}
+
+impl SseDecode for crate::api::transfer::TransferSnapshotData {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_sessionId = <String>::sse_decode(deserializer);
+        let mut var_phase = <crate::api::transfer::TransferPhaseData>::sse_decode(deserializer);
+        let mut var_totalFiles = <u32>::sse_decode(deserializer);
+        let mut var_completedFiles = <u32>::sse_decode(deserializer);
+        let mut var_totalBytes = <u64>::sse_decode(deserializer);
+        let mut var_bytesTransferred = <u64>::sse_decode(deserializer);
+        let mut var_activeFileId = <Option<u32>>::sse_decode(deserializer);
+        let mut var_activeFileBytes = <Option<u64>>::sse_decode(deserializer);
+        let mut var_bytesPerSec = <Option<u64>>::sse_decode(deserializer);
+        let mut var_etaSeconds = <Option<u64>>::sse_decode(deserializer);
+        return crate::api::transfer::TransferSnapshotData {
+            session_id: var_sessionId,
+            phase: var_phase,
+            total_files: var_totalFiles,
+            completed_files: var_completedFiles,
+            total_bytes: var_totalBytes,
+            bytes_transferred: var_bytesTransferred,
+            active_file_id: var_activeFileId,
+            active_file_bytes: var_activeFileBytes,
+            bytes_per_sec: var_bytesPerSec,
+            eta_seconds: var_etaSeconds,
+        };
+    }
+}
+
+impl SseDecode for u32 {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        deserializer.cursor.read_u32::<NativeEndian>().unwrap()
     }
 }
 
@@ -1182,6 +1339,8 @@ impl flutter_rust_bridge::IntoDart for crate::api::receiver::ReceiverTransferEve
             self.item_count.into_into_dart().into_dart(),
             self.total_size_bytes.into_into_dart().into_dart(),
             self.bytes_received.into_into_dart().into_dart(),
+            self.plan.into_into_dart().into_dart(),
+            self.snapshot.into_into_dart().into_dart(),
             self.total_size_label.into_into_dart().into_dart(),
             self.files.into_into_dart().into_dart(),
             self.error_message.into_into_dart().into_dart(),
@@ -1303,6 +1462,8 @@ impl flutter_rust_bridge::IntoDart for crate::api::sender::SendTransferEvent {
             self.item_count.into_into_dart().into_dart(),
             self.total_size.into_into_dart().into_dart(),
             self.bytes_sent.into_into_dart().into_dart(),
+            self.plan.into_into_dart().into_dart(),
+            self.snapshot.into_into_dart().into_dart(),
             self.remote_device_type.into_into_dart().into_dart(),
             self.error_message.into_into_dart().into_dart(),
         ]
@@ -1370,6 +1531,106 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::sender::SendTransferRequest>
     for crate::api::sender::SendTransferRequest
 {
     fn into_into_dart(self) -> crate::api::sender::SendTransferRequest {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::transfer::TransferPhaseData {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            Self::Connecting => 0.into_dart(),
+            Self::AwaitingAcceptance => 1.into_dart(),
+            Self::Transferring => 2.into_dart(),
+            Self::Finalizing => 3.into_dart(),
+            Self::Completed => 4.into_dart(),
+            Self::Cancelled => 5.into_dart(),
+            Self::Failed => 6.into_dart(),
+            _ => unreachable!(),
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::transfer::TransferPhaseData
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::transfer::TransferPhaseData>
+    for crate::api::transfer::TransferPhaseData
+{
+    fn into_into_dart(self) -> crate::api::transfer::TransferPhaseData {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::transfer::TransferPlanData {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.session_id.into_into_dart().into_dart(),
+            self.total_files.into_into_dart().into_dart(),
+            self.total_bytes.into_into_dart().into_dart(),
+            self.files.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::transfer::TransferPlanData
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::transfer::TransferPlanData>
+    for crate::api::transfer::TransferPlanData
+{
+    fn into_into_dart(self) -> crate::api::transfer::TransferPlanData {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::transfer::TransferPlanFileData {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.id.into_into_dart().into_dart(),
+            self.path.into_into_dart().into_dart(),
+            self.size.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::transfer::TransferPlanFileData
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::transfer::TransferPlanFileData>
+    for crate::api::transfer::TransferPlanFileData
+{
+    fn into_into_dart(self) -> crate::api::transfer::TransferPlanFileData {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::transfer::TransferSnapshotData {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.session_id.into_into_dart().into_dart(),
+            self.phase.into_into_dart().into_dart(),
+            self.total_files.into_into_dart().into_dart(),
+            self.completed_files.into_into_dart().into_dart(),
+            self.total_bytes.into_into_dart().into_dart(),
+            self.bytes_transferred.into_into_dart().into_dart(),
+            self.active_file_id.into_into_dart().into_dart(),
+            self.active_file_bytes.into_into_dart().into_dart(),
+            self.bytes_per_sec.into_into_dart().into_dart(),
+            self.eta_seconds.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::transfer::TransferSnapshotData
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::transfer::TransferSnapshotData>
+    for crate::api::transfer::TransferSnapshotData
+{
+    fn into_into_dart(self) -> crate::api::transfer::TransferSnapshotData {
         self
     }
 }
@@ -1488,6 +1749,16 @@ impl SseEncode for Vec<crate::api::preview::SelectionItem> {
     }
 }
 
+impl SseEncode for Vec<crate::api::transfer::TransferPlanFileData> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::transfer::TransferPlanFileData>::sse_encode(item, serializer);
+        }
+    }
+}
+
 impl SseEncode for crate::api::lan::NearbyReceiverInfo {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -1514,6 +1785,46 @@ impl SseEncode for Option<crate::api::receiver::ReceiverRegistration> {
         <bool>::sse_encode(self.is_some(), serializer);
         if let Some(value) = self {
             <crate::api::receiver::ReceiverRegistration>::sse_encode(value, serializer);
+        }
+    }
+}
+
+impl SseEncode for Option<crate::api::transfer::TransferPlanData> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <crate::api::transfer::TransferPlanData>::sse_encode(value, serializer);
+        }
+    }
+}
+
+impl SseEncode for Option<crate::api::transfer::TransferSnapshotData> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <crate::api::transfer::TransferSnapshotData>::sse_encode(value, serializer);
+        }
+    }
+}
+
+impl SseEncode for Option<u32> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <u32>::sse_encode(value, serializer);
+        }
+    }
+}
+
+impl SseEncode for Option<u64> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <u64>::sse_encode(value, serializer);
         }
     }
 }
@@ -1546,6 +1857,8 @@ impl SseEncode for crate::api::receiver::ReceiverTransferEvent {
         <u64>::sse_encode(self.item_count, serializer);
         <u64>::sse_encode(self.total_size_bytes, serializer);
         <u64>::sse_encode(self.bytes_received, serializer);
+        <Option<crate::api::transfer::TransferPlanData>>::sse_encode(self.plan, serializer);
+        <Option<crate::api::transfer::TransferSnapshotData>>::sse_encode(self.snapshot, serializer);
         <String>::sse_encode(self.total_size_label, serializer);
         <Vec<crate::api::receiver::ReceiverTransferFile>>::sse_encode(self.files, serializer);
         <Option<String>>::sse_encode(self.error_message, serializer);
@@ -1610,6 +1923,8 @@ impl SseEncode for crate::api::sender::SendTransferEvent {
         <u64>::sse_encode(self.item_count, serializer);
         <u64>::sse_encode(self.total_size, serializer);
         <u64>::sse_encode(self.bytes_sent, serializer);
+        <Option<crate::api::transfer::TransferPlanData>>::sse_encode(self.plan, serializer);
+        <Option<crate::api::transfer::TransferSnapshotData>>::sse_encode(self.snapshot, serializer);
         <Option<String>>::sse_encode(self.remote_device_type, serializer);
         <Option<String>>::sse_encode(self.error_message, serializer);
     }
@@ -1647,6 +1962,69 @@ impl SseEncode for crate::api::sender::SendTransferRequest {
         <String>::sse_encode(self.device_type, serializer);
         <Option<String>>::sse_encode(self.ticket, serializer);
         <Option<String>>::sse_encode(self.lan_destination_label, serializer);
+    }
+}
+
+impl SseEncode for crate::api::transfer::TransferPhaseData {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(
+            match self {
+                crate::api::transfer::TransferPhaseData::Connecting => 0,
+                crate::api::transfer::TransferPhaseData::AwaitingAcceptance => 1,
+                crate::api::transfer::TransferPhaseData::Transferring => 2,
+                crate::api::transfer::TransferPhaseData::Finalizing => 3,
+                crate::api::transfer::TransferPhaseData::Completed => 4,
+                crate::api::transfer::TransferPhaseData::Cancelled => 5,
+                crate::api::transfer::TransferPhaseData::Failed => 6,
+                _ => {
+                    unimplemented!("");
+                }
+            },
+            serializer,
+        );
+    }
+}
+
+impl SseEncode for crate::api::transfer::TransferPlanData {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.session_id, serializer);
+        <u32>::sse_encode(self.total_files, serializer);
+        <u64>::sse_encode(self.total_bytes, serializer);
+        <Vec<crate::api::transfer::TransferPlanFileData>>::sse_encode(self.files, serializer);
+    }
+}
+
+impl SseEncode for crate::api::transfer::TransferPlanFileData {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <u32>::sse_encode(self.id, serializer);
+        <String>::sse_encode(self.path, serializer);
+        <u64>::sse_encode(self.size, serializer);
+    }
+}
+
+impl SseEncode for crate::api::transfer::TransferSnapshotData {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.session_id, serializer);
+        <crate::api::transfer::TransferPhaseData>::sse_encode(self.phase, serializer);
+        <u32>::sse_encode(self.total_files, serializer);
+        <u32>::sse_encode(self.completed_files, serializer);
+        <u64>::sse_encode(self.total_bytes, serializer);
+        <u64>::sse_encode(self.bytes_transferred, serializer);
+        <Option<u32>>::sse_encode(self.active_file_id, serializer);
+        <Option<u64>>::sse_encode(self.active_file_bytes, serializer);
+        <Option<u64>>::sse_encode(self.bytes_per_sec, serializer);
+        <Option<u64>>::sse_encode(self.eta_seconds, serializer);
+    }
+}
+
+impl SseEncode for u32 {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        serializer.cursor.write_u32::<NativeEndian>(self).unwrap();
     }
 }
 

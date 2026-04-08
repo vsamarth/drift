@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 
 pub mod path;
+pub mod progress;
 pub mod receiver;
 pub mod sender;
 pub mod types;
@@ -10,4 +11,8 @@ pub use receiver::{
     ReceiverOfferItem, ReceiverRequest, ReceiverSession, ReceiverStart,
 };
 pub use sender::{SendRequest, Sender, SenderEvent, SenderEventStream, SenderRun};
-pub use types::{TransferCancellation, TransferOutcome};
+pub use progress::{ProgressTracker, SpeedCalculator};
+pub use types::{
+    FileLifecycleState, FileStateUpdate, TransferCancellation, TransferFileId, TransferOutcome,
+    TransferPhase, TransferPlan, TransferPlanFile, TransferSnapshot,
+};

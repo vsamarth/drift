@@ -4,6 +4,7 @@ import '../../core/models/transfer_models.dart';
 import '../../core/theme/drift_theme.dart';
 
 const double _kPreviewTableSizeColumnWidth = 76;
+const Color _kCompletedColor = Color(0xFF49B36C);
 
 /// Table-style list: columns + hairline dividers only (no panel border/fill).
 class PreviewTable extends StatelessWidget {
@@ -13,7 +14,7 @@ class PreviewTable extends StatelessWidget {
     required this.footerSummary,
   });
 
-  final List<TransferItemViewData> items;
+  final List<TransferDisplayItemViewData> items;
   final String footerSummary;
 
   static final _divider = Divider(
@@ -104,7 +105,7 @@ class PreviewTableViewport extends StatefulWidget {
     this.padding = EdgeInsets.zero,
   });
 
-  final List<TransferItemViewData> items;
+  final List<TransferDisplayItemViewData> items;
   final String? footerSummary;
   final double? maxHeight;
   final EdgeInsetsGeometry padding;
@@ -155,7 +156,7 @@ class _PreviewTableViewportBody extends StatelessWidget {
   });
 
   final ScrollController controller;
-  final List<TransferItemViewData> items;
+  final List<TransferDisplayItemViewData> items;
   final String? footerSummary;
 
   static final _divider = Divider(
@@ -256,44 +257,54 @@ class _PreviewTableViewportBody extends StatelessWidget {
 class _PreviewTableRow extends StatelessWidget {
   const _PreviewTableRow({required this.item});
 
-  final TransferItemViewData item;
+  final TransferDisplayItemViewData item;
 
   @override
   Widget build(BuildContext context) {
-    final isFolder = item.kind == TransferItemKind.folder;
+    final baseItem = item.item;
+    final isFolder = baseItem.kind == TransferItemKind.folder;
     final icon = isFolder
         ? Icons.folder_outlined
         : Icons.insert_drive_file_outlined;
+    final iconColor = _iconColorFor(item.state);
+    final emphasisColor = _statusColorFor(item.state);
 
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          SizedBox(width: 28, child: Icon(icon, size: 18, color: kMuted)),
+          SizedBox(width: 28, child: Icon(icon, size: 18, color: iconColor)),
           Expanded(
             child: Tooltip(
-              message: item.name,
+              message: baseItem.name,
               child: Text(
-                item.name,
+                baseItem.name,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: driftSans(
                   fontSize: 13,
-                  fontWeight: FontWeight.w500,
+                  fontWeight: item.isActive ? FontWeight.w700 : FontWeight.w500,
                   color: kInk,
                 ),
               ),
             ),
           ),
+          const SizedBox(width: 12),
           SizedBox(
-            width: _kPreviewTableSizeColumnWidth,
+            width: 116,
             child: Text(
-              item.size,
+              item.statusLabel ?? baseItem.size,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               textAlign: TextAlign.right,
-              style: driftSans(fontSize: 12, color: kMuted),
+              style: driftSans(
+                fontSize: 12,
+                fontWeight: item.isActive || item.isCompleted
+                    ? FontWeight.w700
+                    : FontWeight.w500,
+                color: item.isActive || item.isCompleted ? emphasisColor : kMuted,
+              ),
             ),
           ),
         ],
@@ -305,7 +316,7 @@ class _PreviewTableRow extends StatelessWidget {
 class PreviewList extends StatelessWidget {
   const PreviewList({super.key, required this.items});
 
-  final List<TransferItemViewData> items;
+  final List<TransferDisplayItemViewData> items;
 
   @override
   Widget build(BuildContext context) {
@@ -328,40 +339,74 @@ class PreviewList extends StatelessWidget {
 class PreviewRow extends StatelessWidget {
   const PreviewRow({super.key, required this.item});
 
-  final TransferItemViewData item;
+  final TransferDisplayItemViewData item;
 
   @override
   Widget build(BuildContext context) {
-    final isFolder = item.kind == TransferItemKind.folder;
+    final baseItem = item.item;
+    final isFolder = baseItem.kind == TransferItemKind.folder;
     final icon = isFolder
         ? Icons.folder_outlined
         : Icons.insert_drive_file_outlined;
+    final iconColor = _iconColorFor(item.state);
+    final emphasisColor = _statusColorFor(item.state);
 
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
       child: Row(
         children: [
-          Icon(icon, size: 18, color: kMuted),
+          Icon(icon, size: 18, color: iconColor),
           const SizedBox(width: 10),
           Expanded(
             child: Tooltip(
-              message: item.name,
+              message: baseItem.name,
               child: Text(
-                item.name,
+                baseItem.name,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: driftSans(
                   fontSize: 13,
-                  fontWeight: FontWeight.w500,
+                  fontWeight: item.isActive ? FontWeight.w700 : FontWeight.w500,
                   color: kInk,
                 ),
               ),
             ),
           ),
           const SizedBox(width: 8),
-          Text(item.size, style: driftSans(fontSize: 12, color: kMuted)),
+          SizedBox(
+            width: 120,
+            child: Text(
+              item.statusLabel ?? baseItem.size,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.right,
+              style: driftSans(
+                fontSize: 12,
+                fontWeight: item.isActive || item.isCompleted
+                    ? FontWeight.w700
+                    : FontWeight.w500,
+                color: item.isActive || item.isCompleted ? emphasisColor : kMuted,
+              ),
+            ),
+          ),
         ],
       ),
     );
   }
+}
+
+Color _iconColorFor(TransferItemProgressState state) {
+  return switch (state) {
+    TransferItemProgressState.completed => _kCompletedColor,
+    TransferItemProgressState.active => kAccentCyanStrong,
+    TransferItemProgressState.pending => kMuted,
+  };
+}
+
+Color _statusColorFor(TransferItemProgressState state) {
+  return switch (state) {
+    TransferItemProgressState.completed => _kCompletedColor,
+    TransferItemProgressState.active => kAccentCyanStrong,
+    TransferItemProgressState.pending => kMuted,
+  };
 }

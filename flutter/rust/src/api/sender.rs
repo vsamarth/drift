@@ -2,13 +2,17 @@ use std::path::PathBuf;
 use std::sync::{LazyLock, Mutex};
 
 use drift_app::{
-    SendConfig, SendEvent as AppSendEvent, SendPhase as AppSendPhase, SendSession,
-    SendSessionOutcome, SendDraft, SendDestination,
+    SendConfig, SendDestination, SendDraft, SendEvent as AppSendEvent,
+    SendPhase as AppSendPhase, SendSession, SendSessionOutcome,
 };
+use drift_core::transfer_flow::{TransferPhase, TransferPlan, TransferPlanFile, TransferSnapshot};
 use tokio::sync::watch;
 use futures_lite::StreamExt;
 
 use super::RUNTIME;
+use super::transfer::{
+    TransferPhaseData, TransferPlanData, TransferPlanFileData, TransferSnapshotData,
+};
 use crate::frb_generated::StreamSink;
 
 const LOCAL_RENDEZVOUS_URL: &str = "http://127.0.0.1:8787";
@@ -46,6 +50,8 @@ pub struct SendTransferEvent {
     pub item_count: u64,
     pub total_size: u64,
     pub bytes_sent: u64,
+    pub plan: Option<TransferPlanData>,
+    pub snapshot: Option<TransferSnapshotData>,
     pub remote_device_type: Option<String>,
     pub error_message: Option<String>,
 }
@@ -120,6 +126,8 @@ pub fn start_send_transfer(
                     item_count: 0,
                     total_size: 0,
                     bytes_sent: 0,
+                    plan: None,
+                    snapshot: None,
                     remote_device_type: None,
                     error_message: Some(error.to_string()),
                 });
@@ -182,7 +190,53 @@ fn map_event(event: AppSendEvent) -> SendTransferEvent {
         item_count: event.item_count,
         total_size: event.total_size,
         bytes_sent: event.bytes_sent,
+        plan: event.plan.map(map_plan),
+        snapshot: event.snapshot.map(map_snapshot),
         remote_device_type: event.remote_device_type,
         error_message: event.error_message,
+    }
+}
+
+fn map_plan(plan: TransferPlan) -> TransferPlanData {
+    TransferPlanData {
+        session_id: plan.session_id,
+        total_files: plan.total_files,
+        total_bytes: plan.total_bytes,
+        files: plan.files.into_iter().map(map_plan_file).collect(),
+    }
+}
+
+fn map_plan_file(file: TransferPlanFile) -> TransferPlanFileData {
+    TransferPlanFileData {
+        id: file.id,
+        path: file.path,
+        size: file.size,
+    }
+}
+
+fn map_snapshot(snapshot: TransferSnapshot) -> TransferSnapshotData {
+    TransferSnapshotData {
+        session_id: snapshot.session_id,
+        phase: map_phase(snapshot.phase),
+        total_files: snapshot.total_files,
+        completed_files: snapshot.completed_files,
+        total_bytes: snapshot.total_bytes,
+        bytes_transferred: snapshot.bytes_transferred,
+        active_file_id: snapshot.active_file_id,
+        active_file_bytes: snapshot.active_file_bytes,
+        bytes_per_sec: snapshot.bytes_per_sec,
+        eta_seconds: snapshot.eta_seconds,
+    }
+}
+
+fn map_phase(phase: TransferPhase) -> TransferPhaseData {
+    match phase {
+        TransferPhase::Connecting => TransferPhaseData::Connecting,
+        TransferPhase::AwaitingAcceptance => TransferPhaseData::AwaitingAcceptance,
+        TransferPhase::Transferring => TransferPhaseData::Transferring,
+        TransferPhase::Finalizing => TransferPhaseData::Finalizing,
+        TransferPhase::Completed => TransferPhaseData::Completed,
+        TransferPhase::Cancelled => TransferPhaseData::Cancelled,
+        TransferPhase::Failed => TransferPhaseData::Failed,
     }
 }

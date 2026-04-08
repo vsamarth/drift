@@ -16,19 +16,19 @@ class MobileTransferView extends ConsumerWidget {
     final notifier = ref.read(driftAppNotifierProvider.notifier);
 
     final isSending = state.mode == TransferDirection.send;
-    final items = isSending ? state.sendItems : state.receiveItems;
+    final items = isSending ? state.sendDisplayItems : state.receiveDisplayItems;
     final summary = isSending ? state.sendSummary : state.receiveSummary;
+    final snapshot = isSending
+        ? state.sendTransferSnapshot
+        : state.receiveTransferSnapshot;
 
     final progress = isSending
-        ? (state.sendPayloadTotalBytes != null &&
-                  state.sendPayloadTotalBytes! > 0
-              ? (state.sendPayloadBytesSent ?? 0) / state.sendPayloadTotalBytes!
-              : 0.0)
-        : (state.receivePayloadTotalBytes != null &&
-                  state.receivePayloadTotalBytes! > 0
-              ? (state.receivePayloadBytesReceived ?? 0) /
-                    state.receivePayloadTotalBytes!
-              : 0.0);
+        ? _snapshotProgress(snapshot, state.sendPayloadBytesSent, state.sendPayloadTotalBytes)
+        : _snapshotProgress(
+            snapshot,
+            state.receivePayloadBytesReceived,
+            state.receivePayloadTotalBytes,
+          );
 
     final status =
         summary?.statusMessage ?? (isSending ? 'Preparing...' : 'Waiting...');
@@ -132,4 +132,29 @@ class MobileTransferView extends ConsumerWidget {
       ),
     );
   }
+}
+
+double _snapshotProgress(
+  dynamic snapshot,
+  int? fallbackTransferred,
+  int? fallbackTotal,
+) {
+  if (snapshot != null) {
+    final transferred = _asInt(snapshot.bytesTransferred);
+    final total = _asInt(snapshot.totalBytes);
+    if (total > 0) {
+      return (transferred / total).clamp(0.0, 1.0);
+    }
+  }
+  if (fallbackTotal != null && fallbackTotal > 0) {
+    return (fallbackTransferred ?? 0) / fallbackTotal;
+  }
+  return 0.0;
+}
+
+int _asInt(BigInt value) {
+  if (value.bitLength > 63) {
+    return 0x7fffffffffffffff;
+  }
+  return value.toInt();
 }

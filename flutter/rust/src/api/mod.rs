@@ -7,6 +7,7 @@ pub mod lan;
 pub mod preview;
 pub mod receiver;
 pub mod sender;
+pub mod transfer;
 pub mod simple;
 
 pub(crate) static RUNTIME: LazyLock<Runtime> = LazyLock::new(|| {

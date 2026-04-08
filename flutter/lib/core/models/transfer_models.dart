@@ -14,6 +14,8 @@ enum TransferStage {
 
 enum TransferItemKind { file, folder }
 
+enum TransferItemProgressState { pending, active, completed }
+
 enum SendDestinationKind { laptop, phone, tablet }
 
 @immutable
@@ -31,6 +33,39 @@ class TransferItemViewData {
   final String size;
   final TransferItemKind kind;
   final int? sizeBytes;
+}
+
+@immutable
+class TransferDisplayItemViewData {
+  const TransferDisplayItemViewData({
+    required this.item,
+    required this.state,
+    this.progress,
+    this.detailLabel,
+    this.statusLabel,
+  });
+
+  final TransferItemViewData item;
+  final TransferItemProgressState state;
+  final double? progress;
+  final String? detailLabel;
+  final String? statusLabel;
+
+  bool get isActive => state == TransferItemProgressState.active;
+  bool get isCompleted => state == TransferItemProgressState.completed;
+}
+
+List<TransferDisplayItemViewData> plainTransferDisplayItems(
+  List<TransferItemViewData> items,
+) {
+  return List<TransferDisplayItemViewData>.unmodifiable(
+    items.map(
+      (item) => TransferDisplayItemViewData(
+        item: item,
+        state: TransferItemProgressState.pending,
+      ),
+    ),
+  );
 }
 
 @immutable

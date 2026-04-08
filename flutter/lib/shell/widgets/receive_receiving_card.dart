@@ -21,9 +21,10 @@ class ReceiveReceivingCard extends ConsumerWidget {
     final itemSummary =
         '${_fileCountLabel(itemCount)}${totalSize.isEmpty ? '' : ' · $totalSize'}';
     final senderDeviceType = state.receiveSenderDeviceType ?? 'laptop';
+    final snapshot = state.receiveTransferSnapshot;
 
-    final transferProgress = _transferProgressForStrip(state);
-    final mode = _receivingStripMode(state);
+    final transferProgress = _transferProgressForStrip(state, snapshot);
+    final mode = _receivingStripMode(state, snapshot);
 
     const accentColor = Color(0xFFD4A824);
 
@@ -32,9 +33,14 @@ class ReceiveReceivingCard extends ConsumerWidget {
       statusColor: accentColor,
       title: senderName,
       subtitle: state.receiveSummary?.statusMessage ?? 'Receiving files...',
-      explainer: LiveTransferStats(
-        speedLabel: state.receiveTransferSpeedLabel,
-        etaLabel: state.receiveTransferEtaLabel,
+      explainer: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          LiveTransferStats(
+            speedLabel: state.receiveTransferSpeedLabel,
+            etaLabel: state.receiveTransferEtaLabel,
+          ),
+        ],
       ),
       illustration: SendingConnectionStrip(
         localLabel: senderName,
@@ -46,7 +52,7 @@ class ReceiveReceivingCard extends ConsumerWidget {
         transferProgress: transferProgress,
       ),
       manifest: PreviewTable(
-        items: state.receiveItems,
+        items: state.receiveDisplayItems,
         footerSummary: itemSummary,
       ),
       footer: Row(
@@ -103,14 +109,24 @@ class ReceiveReceivingCard extends ConsumerWidget {
   }
 }
 
-SendingStripMode _receivingStripMode(DriftAppState state) {
-  if (!state.hasReceivePayloadProgress) {
+SendingStripMode _receivingStripMode(
+  DriftAppState state,
+  dynamic snapshot,
+) {
+  if (snapshot == null && !state.hasReceivePayloadProgress) {
     return SendingStripMode.waitingOnRecipient;
   }
   return SendingStripMode.transferring;
 }
 
-double _transferProgressForStrip(DriftAppState state) {
+double _transferProgressForStrip(DriftAppState state, dynamic snapshot) {
+  if (snapshot != null) {
+    final total = _asInt(snapshot.totalBytes);
+    final received = _asInt(snapshot.bytesTransferred);
+    if (total > 0) {
+      return (received / total).clamp(0.0, 1.0);
+    }
+  }
   if (!state.hasReceivePayloadProgress) {
     return 0.0;
   }
@@ -120,6 +136,13 @@ double _transferProgressForStrip(DriftAppState state) {
     return 0.0;
   }
   return (received / total).clamp(0.0, 1.0);
+}
+
+int _asInt(BigInt value) {
+  if (value.bitLength > 63) {
+    return 0x7fffffffffffffff;
+  }
+  return value.toInt();
 }
 
 String _displaySender(String? rawValue) {

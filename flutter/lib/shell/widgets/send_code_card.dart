@@ -75,11 +75,11 @@ class SendCodeCard extends ConsumerWidget {
             const SizedBox(height: 14),
             ConstrainedBox(
               constraints: const BoxConstraints(maxHeight: 360),
-              child: SingleChildScrollView(
-                physics: const BouncingScrollPhysics(),
-                child: PreviewList(items: state.sendItems),
+                child: SingleChildScrollView(
+                  physics: const BouncingScrollPhysics(),
+                  child: PreviewList(items: state.sendDisplayItems),
+                ),
               ),
-            ),
             if (primaryLabel != null && onPrimary != null) ...[
               const SizedBox(height: 20),
               FilledButton(
@@ -116,7 +116,7 @@ class SendCodeCard extends ConsumerWidget {
         transferProgress: _transferProgressForStrip(state),
       ),
       manifest: PreviewTable(
-        items: state.sendItems,
+        items: state.sendDisplayItems,
         footerSummary: itemSummary,
       ),
       footer: Row(

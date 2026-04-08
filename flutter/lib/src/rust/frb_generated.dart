@@ -9,6 +9,7 @@ import 'api/preview.dart';
 import 'api/receiver.dart';
 import 'api/sender.dart';
 import 'api/simple.dart';
+import 'api/transfer.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'frb_generated.dart';
@@ -778,6 +779,32 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  TransferPlanData dco_decode_box_autoadd_transfer_plan_data(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_transfer_plan_data(raw);
+  }
+
+  @protected
+  TransferSnapshotData dco_decode_box_autoadd_transfer_snapshot_data(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_transfer_snapshot_data(raw);
+  }
+
+  @protected
+  int dco_decode_box_autoadd_u_32(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw as int;
+  }
+
+  @protected
+  BigInt dco_decode_box_autoadd_u_64(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_u_64(raw);
+  }
+
+  @protected
   int dco_decode_i_32(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw as int;
@@ -818,6 +845,16 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  List<TransferPlanFileData> dco_decode_list_transfer_plan_file_data(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>)
+        .map(dco_decode_transfer_plan_file_data)
+        .toList();
+  }
+
+  @protected
   NearbyReceiverInfo dco_decode_nearby_receiver_info(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
@@ -848,6 +885,34 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  TransferPlanData? dco_decode_opt_box_autoadd_transfer_plan_data(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null ? null : dco_decode_box_autoadd_transfer_plan_data(raw);
+  }
+
+  @protected
+  TransferSnapshotData? dco_decode_opt_box_autoadd_transfer_snapshot_data(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null
+        ? null
+        : dco_decode_box_autoadd_transfer_snapshot_data(raw);
+  }
+
+  @protected
+  int? dco_decode_opt_box_autoadd_u_32(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null ? null : dco_decode_box_autoadd_u_32(raw);
+  }
+
+  @protected
+  BigInt? dco_decode_opt_box_autoadd_u_64(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null ? null : dco_decode_box_autoadd_u_64(raw);
+  }
+
+  @protected
   ReceiverPairingState dco_decode_receiver_pairing_state(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
@@ -875,8 +940,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ReceiverTransferEvent dco_decode_receiver_transfer_event(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 12)
-      throw Exception('unexpected arr length: expect 12 but see ${arr.length}');
+    if (arr.length != 14)
+      throw Exception('unexpected arr length: expect 14 but see ${arr.length}');
     return ReceiverTransferEvent(
       phase: dco_decode_receiver_transfer_phase(arr[0]),
       senderName: dco_decode_String(arr[1]),
@@ -887,9 +952,11 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       itemCount: dco_decode_u_64(arr[6]),
       totalSizeBytes: dco_decode_u_64(arr[7]),
       bytesReceived: dco_decode_u_64(arr[8]),
-      totalSizeLabel: dco_decode_String(arr[9]),
-      files: dco_decode_list_receiver_transfer_file(arr[10]),
-      errorMessage: dco_decode_opt_String(arr[11]),
+      plan: dco_decode_opt_box_autoadd_transfer_plan_data(arr[9]),
+      snapshot: dco_decode_opt_box_autoadd_transfer_snapshot_data(arr[10]),
+      totalSizeLabel: dco_decode_String(arr[11]),
+      files: dco_decode_list_receiver_transfer_file(arr[12]),
+      errorMessage: dco_decode_opt_String(arr[13]),
     );
   }
 
@@ -943,8 +1010,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   SendTransferEvent dco_decode_send_transfer_event(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 8)
-      throw Exception('unexpected arr length: expect 8 but see ${arr.length}');
+    if (arr.length != 10)
+      throw Exception('unexpected arr length: expect 10 but see ${arr.length}');
     return SendTransferEvent(
       phase: dco_decode_send_transfer_phase(arr[0]),
       destinationLabel: dco_decode_String(arr[1]),
@@ -952,8 +1019,10 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       itemCount: dco_decode_u_64(arr[3]),
       totalSize: dco_decode_u_64(arr[4]),
       bytesSent: dco_decode_u_64(arr[5]),
-      remoteDeviceType: dco_decode_opt_String(arr[6]),
-      errorMessage: dco_decode_opt_String(arr[7]),
+      plan: dco_decode_opt_box_autoadd_transfer_plan_data(arr[6]),
+      snapshot: dco_decode_opt_box_autoadd_transfer_snapshot_data(arr[7]),
+      remoteDeviceType: dco_decode_opt_String(arr[8]),
+      errorMessage: dco_decode_opt_String(arr[9]),
     );
   }
 
@@ -978,6 +1047,65 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       ticket: dco_decode_opt_String(arr[5]),
       lanDestinationLabel: dco_decode_opt_String(arr[6]),
     );
+  }
+
+  @protected
+  TransferPhaseData dco_decode_transfer_phase_data(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return TransferPhaseData.values[raw as int];
+  }
+
+  @protected
+  TransferPlanData dco_decode_transfer_plan_data(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 4)
+      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
+    return TransferPlanData(
+      sessionId: dco_decode_String(arr[0]),
+      totalFiles: dco_decode_u_32(arr[1]),
+      totalBytes: dco_decode_u_64(arr[2]),
+      files: dco_decode_list_transfer_plan_file_data(arr[3]),
+    );
+  }
+
+  @protected
+  TransferPlanFileData dco_decode_transfer_plan_file_data(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 3)
+      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    return TransferPlanFileData(
+      id: dco_decode_u_32(arr[0]),
+      path: dco_decode_String(arr[1]),
+      size: dco_decode_u_64(arr[2]),
+    );
+  }
+
+  @protected
+  TransferSnapshotData dco_decode_transfer_snapshot_data(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 10)
+      throw Exception('unexpected arr length: expect 10 but see ${arr.length}');
+    return TransferSnapshotData(
+      sessionId: dco_decode_String(arr[0]),
+      phase: dco_decode_transfer_phase_data(arr[1]),
+      totalFiles: dco_decode_u_32(arr[2]),
+      completedFiles: dco_decode_u_32(arr[3]),
+      totalBytes: dco_decode_u_64(arr[4]),
+      bytesTransferred: dco_decode_u_64(arr[5]),
+      activeFileId: dco_decode_opt_box_autoadd_u_32(arr[6]),
+      activeFileBytes: dco_decode_opt_box_autoadd_u_64(arr[7]),
+      bytesPerSec: dco_decode_opt_box_autoadd_u_64(arr[8]),
+      etaSeconds: dco_decode_opt_box_autoadd_u_64(arr[9]),
+    );
+  }
+
+  @protected
+  int dco_decode_u_32(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw as int;
   }
 
   @protected
@@ -1060,6 +1188,34 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  TransferPlanData sse_decode_box_autoadd_transfer_plan_data(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_transfer_plan_data(deserializer));
+  }
+
+  @protected
+  TransferSnapshotData sse_decode_box_autoadd_transfer_snapshot_data(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_transfer_snapshot_data(deserializer));
+  }
+
+  @protected
+  int sse_decode_box_autoadd_u_32(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_u_32(deserializer));
+  }
+
+  @protected
+  BigInt sse_decode_box_autoadd_u_64(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_u_64(deserializer));
+  }
+
+  @protected
   int sse_decode_i_32(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return deserializer.buffer.getInt32();
@@ -1127,6 +1283,20 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  List<TransferPlanFileData> sse_decode_list_transfer_plan_file_data(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <TransferPlanFileData>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_transfer_plan_file_data(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
   NearbyReceiverInfo sse_decode_nearby_receiver_info(
     SseDeserializer deserializer,
   ) {
@@ -1168,6 +1338,54 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  TransferPlanData? sse_decode_opt_box_autoadd_transfer_plan_data(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_box_autoadd_transfer_plan_data(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
+  TransferSnapshotData? sse_decode_opt_box_autoadd_transfer_snapshot_data(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_box_autoadd_transfer_snapshot_data(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
+  int? sse_decode_opt_box_autoadd_u_32(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_box_autoadd_u_32(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
+  BigInt? sse_decode_opt_box_autoadd_u_64(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_box_autoadd_u_64(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
   ReceiverPairingState sse_decode_receiver_pairing_state(
     SseDeserializer deserializer,
   ) {
@@ -1201,6 +1419,10 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_itemCount = sse_decode_u_64(deserializer);
     var var_totalSizeBytes = sse_decode_u_64(deserializer);
     var var_bytesReceived = sse_decode_u_64(deserializer);
+    var var_plan = sse_decode_opt_box_autoadd_transfer_plan_data(deserializer);
+    var var_snapshot = sse_decode_opt_box_autoadd_transfer_snapshot_data(
+      deserializer,
+    );
     var var_totalSizeLabel = sse_decode_String(deserializer);
     var var_files = sse_decode_list_receiver_transfer_file(deserializer);
     var var_errorMessage = sse_decode_opt_String(deserializer);
@@ -1214,6 +1436,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       itemCount: var_itemCount,
       totalSizeBytes: var_totalSizeBytes,
       bytesReceived: var_bytesReceived,
+      plan: var_plan,
+      snapshot: var_snapshot,
       totalSizeLabel: var_totalSizeLabel,
       files: var_files,
       errorMessage: var_errorMessage,
@@ -1280,6 +1504,10 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_itemCount = sse_decode_u_64(deserializer);
     var var_totalSize = sse_decode_u_64(deserializer);
     var var_bytesSent = sse_decode_u_64(deserializer);
+    var var_plan = sse_decode_opt_box_autoadd_transfer_plan_data(deserializer);
+    var var_snapshot = sse_decode_opt_box_autoadd_transfer_snapshot_data(
+      deserializer,
+    );
     var var_remoteDeviceType = sse_decode_opt_String(deserializer);
     var var_errorMessage = sse_decode_opt_String(deserializer);
     return SendTransferEvent(
@@ -1289,6 +1517,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       itemCount: var_itemCount,
       totalSize: var_totalSize,
       bytesSent: var_bytesSent,
+      plan: var_plan,
+      snapshot: var_snapshot,
       remoteDeviceType: var_remoteDeviceType,
       errorMessage: var_errorMessage,
     );
@@ -1324,6 +1554,76 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       ticket: var_ticket,
       lanDestinationLabel: var_lanDestinationLabel,
     );
+  }
+
+  @protected
+  TransferPhaseData sse_decode_transfer_phase_data(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var inner = sse_decode_i_32(deserializer);
+    return TransferPhaseData.values[inner];
+  }
+
+  @protected
+  TransferPlanData sse_decode_transfer_plan_data(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_sessionId = sse_decode_String(deserializer);
+    var var_totalFiles = sse_decode_u_32(deserializer);
+    var var_totalBytes = sse_decode_u_64(deserializer);
+    var var_files = sse_decode_list_transfer_plan_file_data(deserializer);
+    return TransferPlanData(
+      sessionId: var_sessionId,
+      totalFiles: var_totalFiles,
+      totalBytes: var_totalBytes,
+      files: var_files,
+    );
+  }
+
+  @protected
+  TransferPlanFileData sse_decode_transfer_plan_file_data(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_id = sse_decode_u_32(deserializer);
+    var var_path = sse_decode_String(deserializer);
+    var var_size = sse_decode_u_64(deserializer);
+    return TransferPlanFileData(id: var_id, path: var_path, size: var_size);
+  }
+
+  @protected
+  TransferSnapshotData sse_decode_transfer_snapshot_data(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_sessionId = sse_decode_String(deserializer);
+    var var_phase = sse_decode_transfer_phase_data(deserializer);
+    var var_totalFiles = sse_decode_u_32(deserializer);
+    var var_completedFiles = sse_decode_u_32(deserializer);
+    var var_totalBytes = sse_decode_u_64(deserializer);
+    var var_bytesTransferred = sse_decode_u_64(deserializer);
+    var var_activeFileId = sse_decode_opt_box_autoadd_u_32(deserializer);
+    var var_activeFileBytes = sse_decode_opt_box_autoadd_u_64(deserializer);
+    var var_bytesPerSec = sse_decode_opt_box_autoadd_u_64(deserializer);
+    var var_etaSeconds = sse_decode_opt_box_autoadd_u_64(deserializer);
+    return TransferSnapshotData(
+      sessionId: var_sessionId,
+      phase: var_phase,
+      totalFiles: var_totalFiles,
+      completedFiles: var_completedFiles,
+      totalBytes: var_totalBytes,
+      bytesTransferred: var_bytesTransferred,
+      activeFileId: var_activeFileId,
+      activeFileBytes: var_activeFileBytes,
+      bytesPerSec: var_bytesPerSec,
+      etaSeconds: var_etaSeconds,
+    );
+  }
+
+  @protected
+  int sse_decode_u_32(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return deserializer.buffer.getUint32();
   }
 
   @protected
@@ -1434,6 +1734,36 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_box_autoadd_transfer_plan_data(
+    TransferPlanData self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_transfer_plan_data(self, serializer);
+  }
+
+  @protected
+  void sse_encode_box_autoadd_transfer_snapshot_data(
+    TransferSnapshotData self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_transfer_snapshot_data(self, serializer);
+  }
+
+  @protected
+  void sse_encode_box_autoadd_u_32(int self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_u_32(self, serializer);
+  }
+
+  @protected
+  void sse_encode_box_autoadd_u_64(BigInt self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_u_64(self, serializer);
+  }
+
+  @protected
   void sse_encode_i_32(int self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     serializer.buffer.putInt32(self);
@@ -1495,6 +1825,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_list_transfer_plan_file_data(
+    List<TransferPlanFileData> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_transfer_plan_file_data(item, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_nearby_receiver_info(
     NearbyReceiverInfo self,
     SseSerializer serializer,
@@ -1526,6 +1868,52 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_bool(self != null, serializer);
     if (self != null) {
       sse_encode_box_autoadd_receiver_registration(self, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_opt_box_autoadd_transfer_plan_data(
+    TransferPlanData? self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_box_autoadd_transfer_plan_data(self, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_opt_box_autoadd_transfer_snapshot_data(
+    TransferSnapshotData? self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_box_autoadd_transfer_snapshot_data(self, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_opt_box_autoadd_u_32(int? self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_box_autoadd_u_32(self, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_opt_box_autoadd_u_64(BigInt? self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_box_autoadd_u_64(self, serializer);
     }
   }
 
@@ -1564,6 +1952,11 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_u_64(self.itemCount, serializer);
     sse_encode_u_64(self.totalSizeBytes, serializer);
     sse_encode_u_64(self.bytesReceived, serializer);
+    sse_encode_opt_box_autoadd_transfer_plan_data(self.plan, serializer);
+    sse_encode_opt_box_autoadd_transfer_snapshot_data(
+      self.snapshot,
+      serializer,
+    );
     sse_encode_String(self.totalSizeLabel, serializer);
     sse_encode_list_receiver_transfer_file(self.files, serializer);
     sse_encode_opt_String(self.errorMessage, serializer);
@@ -1621,6 +2014,11 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_u_64(self.itemCount, serializer);
     sse_encode_u_64(self.totalSize, serializer);
     sse_encode_u_64(self.bytesSent, serializer);
+    sse_encode_opt_box_autoadd_transfer_plan_data(self.plan, serializer);
+    sse_encode_opt_box_autoadd_transfer_snapshot_data(
+      self.snapshot,
+      serializer,
+    );
     sse_encode_opt_String(self.remoteDeviceType, serializer);
     sse_encode_opt_String(self.errorMessage, serializer);
   }
@@ -1647,6 +2045,62 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_String(self.deviceType, serializer);
     sse_encode_opt_String(self.ticket, serializer);
     sse_encode_opt_String(self.lanDestinationLabel, serializer);
+  }
+
+  @protected
+  void sse_encode_transfer_phase_data(
+    TransferPhaseData self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.index, serializer);
+  }
+
+  @protected
+  void sse_encode_transfer_plan_data(
+    TransferPlanData self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.sessionId, serializer);
+    sse_encode_u_32(self.totalFiles, serializer);
+    sse_encode_u_64(self.totalBytes, serializer);
+    sse_encode_list_transfer_plan_file_data(self.files, serializer);
+  }
+
+  @protected
+  void sse_encode_transfer_plan_file_data(
+    TransferPlanFileData self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_u_32(self.id, serializer);
+    sse_encode_String(self.path, serializer);
+    sse_encode_u_64(self.size, serializer);
+  }
+
+  @protected
+  void sse_encode_transfer_snapshot_data(
+    TransferSnapshotData self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.sessionId, serializer);
+    sse_encode_transfer_phase_data(self.phase, serializer);
+    sse_encode_u_32(self.totalFiles, serializer);
+    sse_encode_u_32(self.completedFiles, serializer);
+    sse_encode_u_64(self.totalBytes, serializer);
+    sse_encode_u_64(self.bytesTransferred, serializer);
+    sse_encode_opt_box_autoadd_u_32(self.activeFileId, serializer);
+    sse_encode_opt_box_autoadd_u_64(self.activeFileBytes, serializer);
+    sse_encode_opt_box_autoadd_u_64(self.bytesPerSec, serializer);
+    sse_encode_opt_box_autoadd_u_64(self.etaSeconds, serializer);
+  }
+
+  @protected
+  void sse_encode_u_32(int self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    serializer.buffer.putUint32(self);
   }
 
   @protected

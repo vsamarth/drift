@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/models/transfer_models.dart';
 import '../../core/theme/drift_theme.dart';
 import '../../state/drift_providers.dart';
 import 'preview_list.dart';
@@ -43,7 +44,7 @@ class ReceiveReviewCard extends ConsumerWidget {
         mode: SendingStripMode.waitingOnRecipient,
       ),
       manifest: PreviewTable(
-        items: state.receiveItems,
+        items: plainTransferDisplayItems(state.receiveItems),
         footerSummary: itemSummary,
       ),
       footer: Row(

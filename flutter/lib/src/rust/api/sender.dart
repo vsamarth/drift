@@ -5,8 +5,9 @@
 
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
+import 'transfer.dart';
 
-// These functions are ignored because they are not marked as `pub`: `fallback_destination_label`, `format_code_label`, `map_event`
+// These functions are ignored because they are not marked as `pub`: `fallback_destination_label`, `format_code_label`, `map_event`, `map_phase`, `map_plan_file`, `map_plan`, `map_snapshot`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_receiver_is_total_eq`, `clone`, `clone`, `clone`, `eq`, `fmt`, `fmt`, `fmt`
 
 Stream<SendTransferEvent> startSendTransfer({
@@ -23,6 +24,8 @@ class SendTransferEvent {
   final BigInt itemCount;
   final BigInt totalSize;
   final BigInt bytesSent;
+  final TransferPlanData? plan;
+  final TransferSnapshotData? snapshot;
   final String? remoteDeviceType;
   final String? errorMessage;
 
@@ -33,6 +36,8 @@ class SendTransferEvent {
     required this.itemCount,
     required this.totalSize,
     required this.bytesSent,
+    this.plan,
+    this.snapshot,
     this.remoteDeviceType,
     this.errorMessage,
   });
@@ -45,6 +50,8 @@ class SendTransferEvent {
       itemCount.hashCode ^
       totalSize.hashCode ^
       bytesSent.hashCode ^
+      plan.hashCode ^
+      snapshot.hashCode ^
       remoteDeviceType.hashCode ^
       errorMessage.hashCode;
 
@@ -59,6 +66,8 @@ class SendTransferEvent {
           itemCount == other.itemCount &&
           totalSize == other.totalSize &&
           bytesSent == other.bytesSent &&
+          plan == other.plan &&
+          snapshot == other.snapshot &&
           remoteDeviceType == other.remoteDeviceType &&
           errorMessage == other.errorMessage;
 }

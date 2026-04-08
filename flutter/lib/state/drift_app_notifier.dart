@@ -8,6 +8,7 @@ import '../platform/app_focus.dart';
 import '../platform/send_item_source.dart';
 import '../platform/send_transfer_source.dart';
 import '../src/rust/api/receiver.dart' as rust_receiver;
+import '../src/rust/api/transfer.dart' as rust_transfer;
 import '../state/drift_sample_data.dart';
 import 'app_identity.dart';
 import 'drift_dependencies.dart';
@@ -50,13 +51,7 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
   bool? _appliedDiscoverable;
 
   DateTime? _sendPayloadStartedAt;
-  DateTime? _lastSendProgressSampleAt;
-  int? _lastSendProgressBytes;
-  double? _sendSmoothedBps;
   DateTime? _receivePayloadStartedAt;
-  DateTime? _lastReceiveProgressSampleAt;
-  int? _lastReceiveProgressBytes;
-  double? _receiveSmoothedBps;
 
   @override
   DriftAppState build() {
@@ -573,6 +568,8 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
         ),
         decisionPending: true,
         payloadTotalBytes: _bigIntToInt(event.totalSizeBytes),
+        plan: event.plan,
+        snapshot: event.snapshot,
         senderDeviceType: event.senderDeviceType,
       ),
     );
@@ -580,15 +577,13 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
   }
 
   void _applyIncomingReceiving(rust_receiver.ReceiverTransferEvent event) {
-    final payloadBytesReceived = _bigIntToInt(event.bytesReceived);
+    final progress = _progressFromSnapshot(event.snapshot);
+    final payloadBytesReceived =
+        progress.bytesTransferred ?? _bigIntToInt(event.bytesReceived);
+    final payloadTotalBytes = progress.totalBytes ?? _bigIntToInt(event.totalSizeBytes);
     if (_receivePayloadStartedAt == null && payloadBytesReceived > 0) {
       _receivePayloadStartedAt = DateTime.now();
     }
-    final payloadTotalBytes = _bigIntToInt(event.totalSizeBytes);
-    final progress = _updateReceiveTransferMetrics(
-      payloadBytesReceived: payloadBytesReceived,
-      payloadTotalBytes: payloadTotalBytes,
-    );
 
     final currentSummary =
         state.receiveSummary ??
@@ -606,6 +601,8 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
       ReceiveTransferSession(
         items: state.receiveItems,
         summary: currentSummary.copyWith(statusMessage: event.statusMessage),
+        plan: event.plan ?? state.receiveTransferPlan,
+        snapshot: event.snapshot,
         payloadBytesReceived: payloadBytesReceived,
         payloadTotalBytes: payloadTotalBytes,
         payloadSpeedLabel: progress.speedLabel,
@@ -616,8 +613,12 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
   }
 
   void _applyIncomingCompleted(rust_receiver.ReceiverTransferEvent event) {
-    final bytesReceived = _bigIntToInt(event.bytesReceived);
-    final totalBytes = _bigIntToInt(event.totalSizeBytes);
+    final progress = _progressFromSnapshot(event.snapshot);
+    final bytesReceived = progress.bytesTransferred ?? _bigIntToInt(event.bytesReceived);
+    final totalBytes = progress.totalBytes ?? _bigIntToInt(event.totalSizeBytes);
+    if (_receivePayloadStartedAt == null && bytesReceived > 0) {
+      _receivePayloadStartedAt = DateTime.now();
+    }
     final summary =
         state.receiveSummary ??
         TransferSummaryViewData(
@@ -644,6 +645,8 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
           summary: completedSummary,
           bytesReceived: bytesReceived,
         ),
+        plan: event.plan ?? state.receiveTransferPlan,
+        snapshot: event.snapshot,
         payloadBytesReceived: bytesReceived,
         payloadTotalBytes: totalBytes,
         senderDeviceType: event.senderDeviceType,
@@ -653,8 +656,12 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
   }
 
   void _applyIncomingCancelled(rust_receiver.ReceiverTransferEvent event) {
-    final bytesReceived = _bigIntToInt(event.bytesReceived);
-    final totalBytes = _bigIntToInt(event.totalSizeBytes);
+    final progress = _progressFromSnapshot(event.snapshot);
+    final bytesReceived = progress.bytesTransferred ?? _bigIntToInt(event.bytesReceived);
+    final totalBytes = progress.totalBytes ?? _bigIntToInt(event.totalSizeBytes);
+    if (_receivePayloadStartedAt == null && bytesReceived > 0) {
+      _receivePayloadStartedAt = DateTime.now();
+    }
     final summary =
         state.receiveSummary ??
         TransferSummaryViewData(
@@ -674,6 +681,8 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
           destinationLabel: event.saveRootLabel,
           statusMessage: event.errorMessage ?? event.statusMessage,
         ),
+        plan: event.plan ?? state.receiveTransferPlan,
+        snapshot: event.snapshot,
         payloadBytesReceived: bytesReceived,
         payloadTotalBytes: totalBytes,
         senderDeviceType: event.senderDeviceType,
@@ -894,7 +903,6 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
   void _applySendUpdate(SendTransferUpdate update) {
     final items = state.sendItems.isEmpty ? sampleSendItems : state.sendItems;
     final existingSummary = state.sendSummary ?? sampleSendSummary;
-    final payloadStartedAt = _sendPayloadStartedAt;
     final summary = existingSummary.copyWith(
       itemCount: update.itemCount,
       totalSize: update.totalSize,
@@ -902,7 +910,10 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
       destinationLabel: update.destinationLabel,
       statusMessage: update.errorMessage ?? update.statusMessage,
     );
-    final progress = _updateSendTransferMetrics(update);
+    final progress = _progressFromSnapshot(update.snapshot);
+    if (_sendPayloadStartedAt == null && (progress.bytesTransferred ?? 0) > 0) {
+      _sendPayloadStartedAt = DateTime.now();
+    }
 
     switch (update.phase) {
       case SendTransferUpdatePhase.connecting:
@@ -911,6 +922,8 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
             phase: SendTransferSessionPhase.connecting,
             items: items,
             summary: summary,
+            plan: update.plan ?? state.sendTransferPlan,
+            snapshot: update.snapshot,
             remoteDeviceType: update.remoteDeviceType,
           ),
         );
@@ -920,6 +933,8 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
             phase: SendTransferSessionPhase.waitingForDecision,
             items: items,
             summary: summary,
+            plan: update.plan ?? state.sendTransferPlan,
+            snapshot: update.snapshot,
             remoteDeviceType: update.remoteDeviceType,
           ),
         );
@@ -929,6 +944,8 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
             phase: SendTransferSessionPhase.accepted,
             items: items,
             summary: summary,
+            plan: update.plan ?? state.sendTransferPlan,
+            snapshot: update.snapshot,
             remoteDeviceType: update.remoteDeviceType,
           ),
         );
@@ -940,6 +957,8 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
             summary: summary.copyWith(
               statusMessage: update.errorMessage ?? 'Transfer declined.',
             ),
+            plan: update.plan ?? state.sendTransferPlan,
+            snapshot: update.snapshot,
             remoteDeviceType: update.remoteDeviceType,
           ),
         );
@@ -949,6 +968,8 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
             phase: SendTransferSessionPhase.sending,
             items: items,
             summary: summary,
+            plan: update.plan ?? state.sendTransferPlan,
+            snapshot: update.snapshot,
             remoteDeviceType: update.remoteDeviceType,
             payloadBytesSent: progress.bytesTransferred,
             payloadTotalBytes: progress.totalBytes,
@@ -964,8 +985,10 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
             summary: summary,
             metrics: _buildSendCompletionMetrics(
               update,
-              payloadStartedAt: payloadStartedAt,
+              payloadStartedAt: _sendPayloadStartedAt,
             ),
+            plan: update.plan ?? state.sendTransferPlan,
+            snapshot: update.snapshot,
             remoteDeviceType: update.remoteDeviceType,
           ),
         );
@@ -977,6 +1000,8 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
             summary: summary.copyWith(
               statusMessage: update.errorMessage ?? 'Transfer cancelled.',
             ),
+            plan: update.plan ?? state.sendTransferPlan,
+            snapshot: update.snapshot,
             remoteDeviceType: update.remoteDeviceType,
           ),
         );
@@ -986,63 +1011,42 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
             success: false,
             items: items,
             summary: summary,
+            plan: update.plan ?? state.sendTransferPlan,
+            snapshot: update.snapshot,
             remoteDeviceType: update.remoteDeviceType,
           ),
         );
     }
   }
 
-  _TransferProgressMetrics _updateSendTransferMetrics(
-    SendTransferUpdate update,
+  _TransferProgressMetrics _progressFromSnapshot(
+    rust_transfer.TransferSnapshotData? snapshot,
   ) {
-    switch (update.phase) {
-      case SendTransferUpdatePhase.connecting:
-      case SendTransferUpdatePhase.waitingForDecision:
-      case SendTransferUpdatePhase.accepted:
-        _clearSendMetricState();
-        return const _TransferProgressMetrics();
-      case SendTransferUpdatePhase.sending:
-        _sendPayloadStartedAt ??= DateTime.now();
-        final now = DateTime.now();
-        final prevAt = _lastSendProgressSampleAt;
-        final prevBytes = _lastSendProgressBytes;
-        if (prevAt != null && prevBytes != null) {
-          final dtSec = now.difference(prevAt).inMicroseconds / 1e6;
-          final dBytes = update.bytesSent - prevBytes;
-          if (dtSec >= 0.08 && dBytes >= 0) {
-            final inst = dBytes / dtSec;
-            final prev = _sendSmoothedBps;
-            _sendSmoothedBps = prev == null ? inst : 0.22 * inst + 0.78 * prev;
-          }
-        }
-        _lastSendProgressSampleAt = now;
-        _lastSendProgressBytes = update.bytesSent;
-
-        String? speedLabel;
-        String? etaLabel;
-        final bps = _sendSmoothedBps;
-        if (bps != null && bps >= 16) {
-          speedLabel = _formatBytesPerSecond(bps);
-          final left = (update.totalBytes - update.bytesSent).clamp(
-            0,
-            update.totalBytes,
-          );
-          etaLabel = left <= 0 ? null : _formatEtaSeconds(left / bps);
-        }
-
-        return _TransferProgressMetrics(
-          bytesTransferred: update.bytesSent,
-          totalBytes: update.totalBytes,
-          speedLabel: speedLabel,
-          etaLabel: etaLabel,
-        );
-      case SendTransferUpdatePhase.completed:
-      case SendTransferUpdatePhase.failed:
-      case SendTransferUpdatePhase.cancelled:
-      case SendTransferUpdatePhase.declined:
-        _clearSendMetricState();
-        return const _TransferProgressMetrics();
+    if (snapshot == null) {
+      return const _TransferProgressMetrics();
     }
+
+    final bytesTransferred = _bigIntToInt(snapshot.bytesTransferred);
+    final totalBytes = _bigIntToInt(snapshot.totalBytes);
+    final bytesPerSec = snapshot.bytesPerSec == null
+        ? null
+        : _bigIntToInt(snapshot.bytesPerSec!);
+    final etaSeconds = snapshot.etaSeconds == null
+        ? null
+        : _bigIntToInt(snapshot.etaSeconds!);
+
+    return _TransferProgressMetrics(
+      bytesTransferred: bytesTransferred,
+      totalBytes: totalBytes,
+      speedLabel:
+          bytesPerSec != null && bytesPerSec >= 16
+              ? _formatBytesPerSecond(bytesPerSec.toDouble())
+              : null,
+      etaLabel:
+          etaSeconds != null && etaSeconds > 0
+              ? _formatEtaSeconds(etaSeconds.toDouble())
+              : null,
+    );
   }
 
   List<TransferMetricRow> _buildPerformanceMetrics({
@@ -1120,54 +1124,6 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
     return rows;
   }
 
-  _TransferProgressMetrics _updateReceiveTransferMetrics({
-    required int payloadBytesReceived,
-    required int payloadTotalBytes,
-  }) {
-    if (payloadTotalBytes <= 0) {
-      _clearReceiveMetricState();
-      return const _TransferProgressMetrics();
-    }
-
-    _receivePayloadStartedAt ??= DateTime.now();
-    final now = DateTime.now();
-    final prevAt = _lastReceiveProgressSampleAt;
-    final prevBytes = _lastReceiveProgressBytes;
-    if (prevAt != null && prevBytes != null) {
-      final dtSec = now.difference(prevAt).inMicroseconds / 1e6;
-      final dBytes = payloadBytesReceived - prevBytes;
-      if (dtSec >= 0.08 && dBytes >= 32 * 1024) {
-        final inst = dBytes / dtSec;
-        final prev = _receiveSmoothedBps;
-        _receiveSmoothedBps = prev == null ? inst : 0.22 * inst + 0.78 * prev;
-        _lastReceiveProgressSampleAt = now;
-        _lastReceiveProgressBytes = payloadBytesReceived;
-      }
-    } else {
-      _lastReceiveProgressSampleAt = now;
-      _lastReceiveProgressBytes = payloadBytesReceived;
-    }
-
-    String? speedLabel;
-    String? etaLabel;
-    final bps = _receiveSmoothedBps;
-    if (bps != null && bps >= 16) {
-      speedLabel = _formatBytesPerSecond(bps);
-      final left = (payloadTotalBytes - payloadBytesReceived).clamp(
-        0,
-        payloadTotalBytes,
-      );
-      etaLabel = left <= 0 ? null : _formatEtaSeconds(left / bps);
-    }
-
-    return _TransferProgressMetrics(
-      bytesTransferred: payloadBytesReceived,
-      totalBytes: payloadTotalBytes,
-      speedLabel: speedLabel,
-      etaLabel: etaLabel,
-    );
-  }
-
   void _setSession(ShellSessionState session) {
     state = state.copyWith(session: session);
     _syncSessionPolicies();
@@ -1220,16 +1176,10 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
 
   void _clearSendMetricState() {
     _sendPayloadStartedAt = null;
-    _lastSendProgressSampleAt = null;
-    _lastSendProgressBytes = null;
-    _sendSmoothedBps = null;
   }
 
   void _clearReceiveMetricState() {
     _receivePayloadStartedAt = null;
-    _lastReceiveProgressSampleAt = null;
-    _lastReceiveProgressBytes = null;
-    _receiveSmoothedBps = null;
   }
 
   void _dispose() {

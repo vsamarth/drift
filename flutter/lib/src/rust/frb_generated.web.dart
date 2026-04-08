@@ -12,6 +12,7 @@ import 'api/preview.dart';
 import 'api/receiver.dart';
 import 'api/sender.dart';
 import 'api/simple.dart';
+import 'api/transfer.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'frb_generated.dart';
@@ -55,6 +56,20 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   SendTransferRequest dco_decode_box_autoadd_send_transfer_request(dynamic raw);
 
   @protected
+  TransferPlanData dco_decode_box_autoadd_transfer_plan_data(dynamic raw);
+
+  @protected
+  TransferSnapshotData dco_decode_box_autoadd_transfer_snapshot_data(
+    dynamic raw,
+  );
+
+  @protected
+  int dco_decode_box_autoadd_u_32(dynamic raw);
+
+  @protected
+  BigInt dco_decode_box_autoadd_u_64(dynamic raw);
+
+  @protected
   int dco_decode_i_32(dynamic raw);
 
   @protected
@@ -75,6 +90,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<SelectionItem> dco_decode_list_selection_item(dynamic raw);
 
   @protected
+  List<TransferPlanFileData> dco_decode_list_transfer_plan_file_data(
+    dynamic raw,
+  );
+
+  @protected
   NearbyReceiverInfo dco_decode_nearby_receiver_info(dynamic raw);
 
   @protected
@@ -84,6 +104,20 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ReceiverRegistration? dco_decode_opt_box_autoadd_receiver_registration(
     dynamic raw,
   );
+
+  @protected
+  TransferPlanData? dco_decode_opt_box_autoadd_transfer_plan_data(dynamic raw);
+
+  @protected
+  TransferSnapshotData? dco_decode_opt_box_autoadd_transfer_snapshot_data(
+    dynamic raw,
+  );
+
+  @protected
+  int? dco_decode_opt_box_autoadd_u_32(dynamic raw);
+
+  @protected
+  BigInt? dco_decode_opt_box_autoadd_u_64(dynamic raw);
 
   @protected
   ReceiverPairingState dco_decode_receiver_pairing_state(dynamic raw);
@@ -114,6 +148,21 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   SendTransferRequest dco_decode_send_transfer_request(dynamic raw);
+
+  @protected
+  TransferPhaseData dco_decode_transfer_phase_data(dynamic raw);
+
+  @protected
+  TransferPlanData dco_decode_transfer_plan_data(dynamic raw);
+
+  @protected
+  TransferPlanFileData dco_decode_transfer_plan_file_data(dynamic raw);
+
+  @protected
+  TransferSnapshotData dco_decode_transfer_snapshot_data(dynamic raw);
+
+  @protected
+  int dco_decode_u_32(dynamic raw);
 
   @protected
   BigInt dco_decode_u_64(dynamic raw);
@@ -160,6 +209,22 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  TransferPlanData sse_decode_box_autoadd_transfer_plan_data(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  TransferSnapshotData sse_decode_box_autoadd_transfer_snapshot_data(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  int sse_decode_box_autoadd_u_32(SseDeserializer deserializer);
+
+  @protected
+  BigInt sse_decode_box_autoadd_u_64(SseDeserializer deserializer);
+
+  @protected
   int sse_decode_i_32(SseDeserializer deserializer);
 
   @protected
@@ -184,6 +249,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  List<TransferPlanFileData> sse_decode_list_transfer_plan_file_data(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   NearbyReceiverInfo sse_decode_nearby_receiver_info(
     SseDeserializer deserializer,
   );
@@ -195,6 +265,22 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ReceiverRegistration? sse_decode_opt_box_autoadd_receiver_registration(
     SseDeserializer deserializer,
   );
+
+  @protected
+  TransferPlanData? sse_decode_opt_box_autoadd_transfer_plan_data(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  TransferSnapshotData? sse_decode_opt_box_autoadd_transfer_snapshot_data(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  int? sse_decode_opt_box_autoadd_u_32(SseDeserializer deserializer);
+
+  @protected
+  BigInt? sse_decode_opt_box_autoadd_u_64(SseDeserializer deserializer);
 
   @protected
   ReceiverPairingState sse_decode_receiver_pairing_state(
@@ -241,6 +327,27 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   SendTransferRequest sse_decode_send_transfer_request(
     SseDeserializer deserializer,
   );
+
+  @protected
+  TransferPhaseData sse_decode_transfer_phase_data(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  TransferPlanData sse_decode_transfer_plan_data(SseDeserializer deserializer);
+
+  @protected
+  TransferPlanFileData sse_decode_transfer_plan_file_data(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  TransferSnapshotData sse_decode_transfer_snapshot_data(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  int sse_decode_u_32(SseDeserializer deserializer);
 
   @protected
   BigInt sse_decode_u_64(SseDeserializer deserializer);
@@ -294,6 +401,24 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_box_autoadd_transfer_plan_data(
+    TransferPlanData self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_transfer_snapshot_data(
+    TransferSnapshotData self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_u_32(int self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_box_autoadd_u_64(BigInt self, SseSerializer serializer);
+
+  @protected
   void sse_encode_i_32(int self, SseSerializer serializer);
 
   @protected
@@ -324,6 +449,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_transfer_plan_file_data(
+    List<TransferPlanFileData> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_nearby_receiver_info(
     NearbyReceiverInfo self,
     SseSerializer serializer,
@@ -337,6 +468,24 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
     ReceiverRegistration? self,
     SseSerializer serializer,
   );
+
+  @protected
+  void sse_encode_opt_box_autoadd_transfer_plan_data(
+    TransferPlanData? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_opt_box_autoadd_transfer_snapshot_data(
+    TransferSnapshotData? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_opt_box_autoadd_u_32(int? self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_opt_box_autoadd_u_64(BigInt? self, SseSerializer serializer);
 
   @protected
   void sse_encode_receiver_pairing_state(
@@ -394,6 +543,33 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
     SendTransferRequest self,
     SseSerializer serializer,
   );
+
+  @protected
+  void sse_encode_transfer_phase_data(
+    TransferPhaseData self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_transfer_plan_data(
+    TransferPlanData self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_transfer_plan_file_data(
+    TransferPlanFileData self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_transfer_snapshot_data(
+    TransferSnapshotData self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_u_32(int self, SseSerializer serializer);
 
   @protected
   void sse_encode_u_64(BigInt self, SseSerializer serializer);

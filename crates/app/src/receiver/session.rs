@@ -4,7 +4,8 @@ use drift_core::protocol::DeviceType;
 use drift_core::transfer_flow::{
     ReceiverDecision as CoreReceiverDecision, ReceiverEvent as CoreReceiverEvent,
     ReceiverRequest as CoreReceiverRequest, ReceiverSession as CoreReceiverSession,
-    ReceiverStart as CoreReceiverStart, TransferOutcome as CoreTransferOutcome,
+    ReceiverStart as CoreReceiverStart, TransferOutcome as CoreTransferOutcome, TransferPhase,
+    TransferPlan, TransferPlanFile, TransferSnapshot,
 };
 use drift_core::util::{ConnectionPathKind, classify_connection_path, human_size};
 use iroh::Endpoint;
@@ -130,6 +131,35 @@ impl ReceiverSession {
 
         let sender_label = display_sender_label(&offer.sender_device_name);
         let sender_device_type = offer.sender_device_type;
+        let plan = match TransferPlan::try_new(
+            offer.session_id.clone(),
+            offer
+                .items
+                .iter()
+                .enumerate()
+                .map(|(index, file)| TransferPlanFile {
+                    id: index as u32,
+                    path: file.path.clone(),
+                    size: file.size,
+                })
+                .collect(),
+        ) {
+            Ok(plan) => plan,
+            Err(error) => {
+                let _ = cmd_tx
+                    .send(ReceiverCommand::OfferFinished {
+                        offer_id,
+                        final_event: failed_offer_event(
+                            &save_root_label,
+                            sender_device_type,
+                            "Transfer failed.".to_owned(),
+                            format_error_chain(&error),
+                        ),
+                    })
+                    .await;
+                return;
+            }
+        };
         let files = offer
             .items
             .iter()
@@ -163,6 +193,8 @@ impl ReceiverSession {
             item_count: offer.file_count,
             total_size_bytes: offer.total_size,
             bytes_received: 0,
+            plan: Some(plan.clone()),
+            snapshot: None,
             connection_path: Some(connection_path_label(connection_path_kind)),
             total_size_label: human_size(offer.total_size),
             files,
@@ -186,55 +218,75 @@ impl ReceiverSession {
         let mut last_progress_bytes = 0_u64;
         while let Some(event) = events.next().await {
             match event {
-                Ok(CoreReceiverEvent::TransferStarted {
-                    session_id: _,
-                    file_count,
-                    total_bytes,
-                }) => {
+                Ok(CoreReceiverEvent::TransferStarted { session_id: _, plan }) => {
                     let _ = progress_cmd_tx.try_send(ReceiverCommand::OfferProgress {
                         offer_id,
-                        event: build_progress_event(
+                        event: build_offer_event(
+                            ReceiverOfferPhase::Receiving,
                             sender_label.clone(),
                             save_root_label.clone(),
                             sender_device_type,
                             connection_path_kind,
-                            file_count,
-                            total_bytes,
+                            plan.total_files as u64,
+                            plan.total_bytes,
                             0,
+                            Some(plan.clone()),
+                            None,
+                            Vec::new(),
+                            None,
                         ),
                     });
                 }
-                Ok(CoreReceiverEvent::TransferProgress {
-                    session_id: _,
-                    bytes_received,
-                    total_bytes,
-                }) => {
+                Ok(CoreReceiverEvent::TransferProgress { session_id: _, snapshot }) => {
                     let now = std::time::Instant::now();
                     let interval_elapsed =
                         now.duration_since(last_progress_emit_at) >= PROGRESS_EVENT_MIN_INTERVAL;
-                    let bytes_advanced = bytes_received.saturating_sub(last_progress_bytes)
+                    let bytes_advanced = snapshot.bytes_transferred.saturating_sub(last_progress_bytes)
                         >= PROGRESS_EVENT_MIN_BYTES;
-                    let is_complete = total_bytes > 0 && bytes_received >= total_bytes;
-                    if interval_elapsed || bytes_advanced || is_complete {
+                    let phase_changed = matches!(snapshot.phase, TransferPhase::Finalizing)
+                        || matches!(snapshot.phase, TransferPhase::Completed);
+                    let is_complete = snapshot.total_bytes > 0
+                        && snapshot.bytes_transferred >= snapshot.total_bytes;
+                    if interval_elapsed || bytes_advanced || is_complete || phase_changed {
                         last_progress_emit_at = now;
-                        last_progress_bytes = bytes_received;
+                        last_progress_bytes = snapshot.bytes_transferred;
                         let _ = progress_cmd_tx.try_send(ReceiverCommand::OfferProgress {
                             offer_id,
-                            event: build_progress_event(
+                            event: build_offer_event(
+                                ReceiverOfferPhase::Receiving,
                                 sender_label.clone(),
                                 save_root_label.clone(),
                                 sender_device_type,
                                 connection_path_kind,
-                                offer.file_count,
-                                total_bytes,
-                                bytes_received,
+                                snapshot.total_files as u64,
+                                snapshot.total_bytes,
+                                snapshot.bytes_transferred,
+                                Some(plan.clone()),
+                                Some(snapshot.clone()),
+                                Vec::new(),
+                                None,
                             ),
                         });
                     }
                 }
                 Ok(CoreReceiverEvent::Listening { .. }) => {}
+                Ok(CoreReceiverEvent::TransferCompleted { .. }) => {
+                    break;
+                }
                 Ok(CoreReceiverEvent::Completed { .. }) => {
                     break;
+                }
+                Ok(CoreReceiverEvent::Failed { message, .. }) => {
+                    let _ = progress_cmd_tx.try_send(ReceiverCommand::OfferFinished {
+                        offer_id,
+                        final_event: failed_offer_event(
+                            &save_root_label,
+                            sender_device_type,
+                            "Transfer failed.".to_owned(),
+                            message,
+                        ),
+                    });
+                    return;
                 }
                 Ok(CoreReceiverEvent::OfferReceived { .. }) => {}
                 Err(error) => {
@@ -264,6 +316,19 @@ impl ReceiverSession {
                     item_count: offer.file_count,
                     total_size_bytes: offer.total_size,
                     bytes_received: offer.total_size,
+                    plan: Some(plan.clone()),
+                    snapshot: Some(TransferSnapshot {
+                        session_id: offer.session_id.clone(),
+                        phase: TransferPhase::Completed,
+                        total_files: plan.total_files,
+                        completed_files: plan.total_files,
+                        total_bytes: plan.total_bytes,
+                        bytes_transferred: offer.total_size,
+                        active_file_id: None,
+                        active_file_bytes: None,
+                        bytes_per_sec: None,
+                        eta_seconds: None,
+                    }),
                     connection_path: Some(connection_path_label(connection_path_kind)),
                     total_size_label: human_size(offer.total_size),
                     files: Vec::new(),
@@ -279,6 +344,8 @@ impl ReceiverSession {
                     item_count: offer.file_count,
                     total_size_bytes: offer.total_size,
                     bytes_received: 0,
+                    plan: Some(plan.clone()),
+                    snapshot: None,
                     connection_path: Some(connection_path_label(connection_path_kind)),
                     total_size_label: human_size(offer.total_size),
                     files: Vec::new(),
@@ -294,6 +361,8 @@ impl ReceiverSession {
                     item_count: offer.file_count,
                     total_size_bytes: offer.total_size,
                     bytes_received: last_progress_bytes,
+                    plan: Some(plan.clone()),
+                    snapshot: None,
                     connection_path: Some(connection_path_label(connection_path_kind)),
                     total_size_label: human_size(offer.total_size),
                     files: Vec::new(),
@@ -323,7 +392,8 @@ impl ReceiverSession {
     }
 }
 
-fn build_progress_event(
+fn build_offer_event(
+    phase: ReceiverOfferPhase,
     sender_label: String,
     save_root_label: String,
     sender_device_type: DeviceType,
@@ -331,21 +401,35 @@ fn build_progress_event(
     file_count: u64,
     total_bytes: u64,
     bytes_received: u64,
+    plan: Option<TransferPlan>,
+    snapshot: Option<TransferSnapshot>,
+    files: Vec<ReceiverOfferFile>,
+    error_message: Option<String>,
 ) -> ReceiverOfferEvent {
     ReceiverOfferEvent {
-        phase: ReceiverOfferPhase::Receiving,
+        phase,
         sender_name: sender_label.clone(),
         sender_device_type: device_type_to_str(sender_device_type),
         destination_label: sender_label,
         save_root_label,
-        status_message: "Receiving files…".to_owned(),
+        status_message: match phase {
+            ReceiverOfferPhase::OfferReady => "Offer ready.".to_owned(),
+            ReceiverOfferPhase::Receiving => "Receiving files…".to_owned(),
+            ReceiverOfferPhase::Completed => "Files saved.".to_owned(),
+            ReceiverOfferPhase::Cancelled => "Transfer cancelled.".to_owned(),
+            ReceiverOfferPhase::Failed => "Transfer failed.".to_owned(),
+            ReceiverOfferPhase::Declined => "Transfer declined.".to_owned(),
+            ReceiverOfferPhase::Connecting => "Connecting...".to_owned(),
+        },
         item_count: file_count,
         total_size_bytes: total_bytes,
         bytes_received,
+        plan,
+        snapshot,
         connection_path: Some(connection_path_label(connection_path_kind)),
         total_size_label: human_size(total_bytes),
-        files: Vec::new(),
-        error_message: None,
+        files,
+        error_message,
     }
 }
 
@@ -365,6 +449,8 @@ fn failed_offer_event(
         item_count: 0,
         total_size_bytes: 0,
         bytes_received: 0,
+        plan: None,
+        snapshot: None,
         connection_path: None,
         total_size_label: String::new(),
         files: Vec::new(),
