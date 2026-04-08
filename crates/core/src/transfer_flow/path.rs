@@ -109,6 +109,35 @@ pub async fn ensure_destination_available(out_dir: &Path, destination: &Path) ->
     Ok(())
 }
 
+pub fn resolve_output_dir(out_dir: &Path) -> Result<PathBuf> {
+    let base = if out_dir.is_absolute() {
+        out_dir.to_path_buf()
+    } else {
+        std::env::current_dir()
+            .context("resolving current working directory")?
+            .join(out_dir)
+    };
+
+    let mut resolved = PathBuf::new();
+    for component in base.components() {
+        match component {
+            Component::Prefix(prefix) => resolved.push(prefix.as_os_str()),
+            Component::RootDir => resolved.push(component.as_os_str()),
+            Component::CurDir => {}
+            Component::ParentDir => {
+                resolved.pop();
+            }
+            Component::Normal(segment) => resolved.push(segment),
+        }
+    }
+
+    if !resolved.is_absolute() {
+        bail!("output directory is not absolute: {}", resolved.display());
+    }
+
+    Ok(resolved)
+}
+
 async fn path_exists(path: &Path) -> Result<bool> {
     match fs::metadata(path).await {
         Ok(_) => Ok(true),
@@ -144,5 +173,28 @@ impl ScratchDir {
 impl Drop for ScratchDir {
     fn drop(&mut self) {
         let _ = std::fs::remove_dir_all(&self.path);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::resolve_output_dir;
+    use anyhow::Result;
+    use std::path::Path;
+
+    #[test]
+    fn resolves_relative_output_dir_against_current_dir() -> Result<()> {
+        let cwd = std::env::current_dir()?;
+        let resolved = resolve_output_dir(Path::new("downloads"))?;
+        assert_eq!(resolved, cwd.join("downloads"));
+        Ok(())
+    }
+
+    #[test]
+    fn normalizes_output_dir_lexically() -> Result<()> {
+        let cwd = std::env::current_dir()?;
+        let resolved = resolve_output_dir(Path::new("./downloads/../downloads/inbox"))?;
+        assert_eq!(resolved, cwd.join("downloads/inbox"));
+        Ok(())
     }
 }

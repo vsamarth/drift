@@ -92,7 +92,10 @@ class _ReceiveCodeFieldState extends State<ReceiveCodeField> {
         fillColor: widget.understated
             ? kSurface.withValues(alpha: 0.6)
             : (widget.compact ? kSurface2 : kSurface),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 15,
+        ),
         hintStyle: driftSans(
           color: kSubtle,
           fontSize: 14,

@@ -231,6 +231,8 @@ async fn run_listener_loop(
                     item_count: 0,
                     total_size_bytes: 0,
                     bytes_received: 0,
+                    plan: None,
+                    snapshot: None,
                     connection_path: None,
                     total_size_label: String::new(),
                     files: Vec::new(),

@@ -8,6 +8,7 @@ pub mod preview;
 pub mod receiver;
 pub mod sender;
 pub mod simple;
+pub mod transfer;
 
 pub(crate) static RUNTIME: LazyLock<Runtime> = LazyLock::new(|| {
     tokio::runtime::Builder::new_multi_thread()

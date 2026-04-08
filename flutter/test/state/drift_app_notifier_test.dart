@@ -651,6 +651,12 @@ void main() {
     );
     await _flushAsyncWork(tester);
 
+    final sendingState = container.read(driftAppNotifierProvider);
+    expect(sendingState.session, isA<SendTransferSession>());
+    final sendingSession = sendingState.session as SendTransferSession;
+    expect(sendingSession.payloadBytesSent, 9 * 1024);
+    expect(sendingSession.payloadTotalBytes, 18 * 1024);
+
     await tester.runAsync(() async {
       await Future<void>.delayed(const Duration(milliseconds: 250));
     });

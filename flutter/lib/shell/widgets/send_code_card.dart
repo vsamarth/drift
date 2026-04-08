@@ -77,7 +77,7 @@ class SendCodeCard extends ConsumerWidget {
               constraints: const BoxConstraints(maxHeight: 360),
               child: SingleChildScrollView(
                 physics: const BouncingScrollPhysics(),
-                child: PreviewList(items: state.sendItems),
+                child: PreviewList(items: state.sendDisplayItems),
               ),
             ),
             if (primaryLabel != null && onPrimary != null) ...[
@@ -116,7 +116,7 @@ class SendCodeCard extends ConsumerWidget {
         transferProgress: _transferProgressForStrip(state),
       ),
       manifest: PreviewTable(
-        items: state.sendItems,
+        items: state.sendDisplayItems,
         footerSummary: itemSummary,
       ),
       footer: Row(

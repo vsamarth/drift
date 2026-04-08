@@ -22,7 +22,8 @@ class _SendSelectedCardState extends ConsumerState<SendSelectedCard> {
     final state = ref.watch(driftAppNotifierProvider);
     final notifier = ref.read(driftAppNotifierProvider.notifier);
 
-    final canSend = state.sendItems.isNotEmpty &&
+    final canSend =
+        state.sendItems.isNotEmpty &&
         !state.isInspectingSendItems &&
         (state.selectedSendDestination != null ||
             state.sendDestinationCode.length == 6);
@@ -64,7 +65,9 @@ class _SendSelectedCardState extends ConsumerState<SendSelectedCard> {
                 padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
                 decoration: BoxDecoration(
                   color: kBg,
-                  border: Border(top: BorderSide(color: kBorder.withValues(alpha: 0.5))),
+                  border: Border(
+                    top: BorderSide(color: kBorder.withValues(alpha: 0.5)),
+                  ),
                 ),
                 child: Row(
                   children: [
@@ -72,10 +75,16 @@ class _SendSelectedCardState extends ConsumerState<SendSelectedCard> {
                       child: FilledButton(
                         onPressed: canSend ? notifier.startSend : null,
                         style: FilledButton.styleFrom(
-                          backgroundColor: const Color(0xFF4A8E9E), // Slightly darker cyan
+                          backgroundColor: const Color(
+                            0xFF4A8E9E,
+                          ), // Slightly darker cyan
                           foregroundColor: Colors.white,
-                          disabledBackgroundColor: const Color(0xFF4A8E9E).withValues(alpha: 0.4),
-                          disabledForegroundColor: Colors.white.withValues(alpha: 0.75),
+                          disabledBackgroundColor: const Color(
+                            0xFF4A8E9E,
+                          ).withValues(alpha: 0.4),
+                          disabledForegroundColor: Colors.white.withValues(
+                            alpha: 0.75,
+                          ),
                           minimumSize: const Size(0, 48),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12),
@@ -155,15 +164,21 @@ class _SelectedItemsSectionState extends ConsumerState<SelectedItemsSection> {
     final isInspecting = state.isInspectingSendItems;
     final items = state.sendItems;
     final count = items.length;
-    
+
     final canCollapse = count > _collapsedVisibleCount;
     final visibleItems = canCollapse && !_expanded
         ? items.take(_collapsedVisibleCount).toList(growable: false)
         : items;
     final hiddenCount = count - visibleItems.length;
 
-    final totalBytes = items.fold<int>(0, (sum, item) => sum + (item.sizeBytes ?? 0));
-    final itemLabel = _selectionSummaryLabel(count: count, totalBytes: totalBytes);
+    final totalBytes = items.fold<int>(
+      0,
+      (sum, item) => sum + (item.sizeBytes ?? 0),
+    );
+    final itemLabel = _selectionSummaryLabel(
+      count: count,
+      totalBytes: totalBytes,
+    );
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -172,7 +187,9 @@ class _SelectedItemsSectionState extends ConsumerState<SelectedItemsSection> {
           children: [
             Expanded(
               child: Text(
-                isInspecting && count == 0 ? 'Preparing files' : 'Selected files',
+                isInspecting && count == 0
+                    ? 'Preparing files'
+                    : 'Selected files',
                 style: driftSans(
                   fontSize: 15,
                   fontWeight: FontWeight.w700,
@@ -228,7 +245,10 @@ class _SelectedItemsSectionState extends ConsumerState<SelectedItemsSection> {
                     const Divider(height: 1, indent: 32),
                     TextButton(
                       onPressed: () => setState(() => _expanded = false),
-                      child: Text('Show less', style: driftSans(fontSize: 12, color: kMuted)),
+                      child: Text(
+                        'Show less',
+                        style: driftSans(fontSize: 12, color: kMuted),
+                      ),
                     ),
                   ],
                 ],
@@ -242,7 +262,10 @@ class _SelectedItemsSectionState extends ConsumerState<SelectedItemsSection> {
           child: TextButton.icon(
             onPressed: notifier.appendSendItemsFromPicker,
             icon: const Icon(Icons.add_rounded, size: 16),
-            label: Text('Add files', style: driftSans(fontSize: 12.5, fontWeight: FontWeight.w600)),
+            label: Text(
+              'Add files',
+              style: driftSans(fontSize: 12.5, fontWeight: FontWeight.w600),
+            ),
             style: TextButton.styleFrom(foregroundColor: kMuted),
           ),
         ),
@@ -287,18 +310,28 @@ class NearbyDevicesSection extends ConsumerWidget {
             Expanded(
               child: Text(
                 'Nearby devices',
-                style: driftSans(fontSize: 15, fontWeight: FontWeight.w700, color: kInk),
+                style: driftSans(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                  color: kInk,
+                ),
               ),
             ),
             if (isScanning)
               const SizedBox(
                 width: 12,
                 height: 12,
-                child: CircularProgressIndicator(strokeWidth: 2, color: kAccentCyanStrong),
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: kAccentCyanStrong,
+                ),
               ),
             TextButton(
               onPressed: notifier.rescanNearbySendDestinations,
-              child: Text('Rescan', style: driftSans(fontSize: 12, color: kAccentCyanStrong)),
+              child: Text(
+                'Rescan',
+                style: driftSans(fontSize: 12, color: kAccentCyanStrong),
+              ),
             ),
           ],
         ),
@@ -314,7 +347,10 @@ class NearbyDevicesSection extends ConsumerWidget {
               itemBuilder: (context, index) {
                 final d = destinations[index];
                 final isSelected = state.selectedSendDestination == d;
-                return _NearbyDeviceTile(destination: d, isSelected: isSelected);
+                return _NearbyDeviceTile(
+                  destination: d,
+                  isSelected: isSelected,
+                );
               },
             ),
           )
@@ -329,7 +365,8 @@ class NearbyDevicesSection extends ConsumerWidget {
           _NearbyStatusPanel(
             icon: Icons.wifi_off_rounded,
             title: 'No nearby devices found',
-            message: 'Make sure both devices are on the same Wi-Fi. Local network access may be required.',
+            message:
+                'Make sure both devices are on the same Wi-Fi. Local network access may be required.',
             action: TextButton(
               onPressed: notifier.rescanNearbySendDestinations,
               child: const Text('Try again'),
@@ -357,13 +394,20 @@ class ManualCodeSection extends ConsumerWidget {
             Expanded(
               child: Text(
                 'Send with code',
-                style: driftSans(fontSize: 15, fontWeight: FontWeight.w700, color: kInk),
+                style: driftSans(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                  color: kInk,
+                ),
               ),
             ),
             if (hasCode)
               TextButton(
                 onPressed: notifier.clearSendDestinationCode,
-                child: Text('Clear', style: driftSans(fontSize: 12, color: kMuted)),
+                child: Text(
+                  'Clear',
+                  style: driftSans(fontSize: 12, color: kMuted),
+                ),
               ),
           ],
         ),
@@ -392,13 +436,18 @@ class SelectedItemRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final notifier = ProviderScope.containerOf(context, listen: false).read(driftAppNotifierProvider.notifier);
+    final notifier = ProviderScope.containerOf(
+      context,
+      listen: false,
+    ).read(driftAppNotifierProvider.notifier);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6),
       child: Row(
         children: [
           Icon(
-            item.kind == TransferItemKind.folder ? Icons.folder_outlined : Icons.insert_drive_file_outlined,
+            item.kind == TransferItemKind.folder
+                ? Icons.folder_outlined
+                : Icons.insert_drive_file_outlined,
             size: 16,
             color: kMuted,
           ),
@@ -408,7 +457,11 @@ class SelectedItemRow extends StatelessWidget {
               message: item.name,
               child: Text(
                 item.name,
-                style: driftSans(fontSize: 13.5, fontWeight: FontWeight.w600, color: kInk),
+                style: driftSans(
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w600,
+                  color: kInk,
+                ),
                 overflow: TextOverflow.ellipsis,
               ),
             ),
@@ -430,7 +483,10 @@ class SelectedItemRow extends StatelessWidget {
 }
 
 class _NearbyDeviceTile extends ConsumerWidget {
-  const _NearbyDeviceTile({required this.destination, required this.isSelected});
+  const _NearbyDeviceTile({
+    required this.destination,
+    required this.isSelected,
+  });
   final SendDestinationViewData destination;
   final bool isSelected;
 
@@ -445,9 +501,14 @@ class _NearbyDeviceTile extends ConsumerWidget {
         width: 84,
         padding: const EdgeInsets.all(8),
         decoration: BoxDecoration(
-          color: isSelected ? kAccentCyan.withValues(alpha: 0.12) : Colors.transparent,
+          color: isSelected
+              ? kAccentCyan.withValues(alpha: 0.12)
+              : Colors.transparent,
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: isSelected ? kAccentCyanStrong : Colors.transparent, width: 1.5),
+          border: Border.all(
+            color: isSelected ? kAccentCyanStrong : Colors.transparent,
+            width: 1.5,
+          ),
         ),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -468,7 +529,11 @@ class _NearbyDeviceTile extends ConsumerWidget {
             const SizedBox(height: 8),
             Text(
               destination.name,
-              style: driftSans(fontSize: 11, fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500, color: kInk),
+              style: driftSans(
+                fontSize: 11,
+                fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                color: kInk,
+              ),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               textAlign: TextAlign.center,
@@ -487,7 +552,13 @@ class _NearbyDeviceTile extends ConsumerWidget {
 }
 
 class _NearbyStatusPanel extends StatelessWidget {
-  const _NearbyStatusPanel({required this.icon, required this.title, required this.message, this.isScanning = false, this.action});
+  const _NearbyStatusPanel({
+    required this.icon,
+    required this.title,
+    required this.message,
+    this.isScanning = false,
+    this.action,
+  });
   final IconData icon;
   final String title;
   final String message;
@@ -512,7 +583,14 @@ class _NearbyStatusPanel extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title, style: driftSans(fontSize: 13, fontWeight: FontWeight.w600, color: kInk)),
+                Text(
+                  title,
+                  style: driftSans(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: kInk,
+                  ),
+                ),
                 const SizedBox(height: 2),
                 Text(message, style: driftSans(fontSize: 12, color: kMuted)),
               ],
@@ -526,7 +604,10 @@ class _NearbyStatusPanel extends StatelessWidget {
 }
 
 class _SelectedItemsOverflowRow extends StatelessWidget {
-  const _SelectedItemsOverflowRow({required this.hiddenCount, required this.onToggle});
+  const _SelectedItemsOverflowRow({
+    required this.hiddenCount,
+    required this.onToggle,
+  });
   final int hiddenCount;
   final VoidCallback onToggle;
   @override
@@ -538,7 +619,14 @@ class _SelectedItemsOverflowRow extends StatelessWidget {
         child: Row(
           children: [
             const SizedBox(width: 28),
-            Text('+$hiddenCount more files', style: driftSans(fontSize: 12, fontWeight: FontWeight.w600, color: kMuted)),
+            Text(
+              '+$hiddenCount more files',
+              style: driftSans(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: kMuted,
+              ),
+            ),
             const Spacer(),
             Icon(Icons.expand_more_rounded, size: 16, color: kMuted),
           ],
@@ -556,11 +644,32 @@ class _SelectedItemSkeleton extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: Row(
         children: [
-          Container(width: 16, height: 16, decoration: BoxDecoration(color: kBg, borderRadius: BorderRadius.circular(4))),
+          Container(
+            width: 16,
+            height: 16,
+            decoration: BoxDecoration(
+              color: kBg,
+              borderRadius: BorderRadius.circular(4),
+            ),
+          ),
           const SizedBox(width: 10),
-          Container(width: 120, height: 10, decoration: BoxDecoration(color: kBg, borderRadius: BorderRadius.circular(5))),
+          Container(
+            width: 120,
+            height: 10,
+            decoration: BoxDecoration(
+              color: kBg,
+              borderRadius: BorderRadius.circular(5),
+            ),
+          ),
           const Spacer(),
-          Container(width: 40, height: 10, decoration: BoxDecoration(color: kBg, borderRadius: BorderRadius.circular(5))),
+          Container(
+            width: 40,
+            height: 10,
+            decoration: BoxDecoration(
+              color: kBg,
+              borderRadius: BorderRadius.circular(5),
+            ),
+          ),
         ],
       ),
     );

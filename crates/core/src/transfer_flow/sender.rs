@@ -19,10 +19,12 @@ use crate::{
 };
 
 use super::path::ScratchDir;
-use super::types::{TransferOutcome, wait_for_cancel};
+use super::progress::ProgressTracker;
+use super::types::{TransferOutcome, TransferPlan, TransferSnapshot, wait_for_cancel};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SendRequest {
+    pub peer_endpoint_addr: EndpointAddr,
     pub peer_endpoint_id: EndpointId,
     pub files: Vec<std::path::PathBuf>,
 }
@@ -53,16 +55,15 @@ pub enum SenderEvent {
     },
     TransferStarted {
         session_id: String,
-        file_count: u64,
-        total_bytes: u64,
+        plan: TransferPlan,
     },
     TransferProgress {
         session_id: String,
-        bytes_sent: u64,
-        total_bytes: u64,
+        snapshot: TransferSnapshot,
     },
     TransferCompleted {
         session_id: String,
+        snapshot: TransferSnapshot,
     },
 }
 
@@ -212,7 +213,7 @@ impl SenderSession {
             peer_endpoint_id: self.request.peer_endpoint_id,
         });
         let connection = endpoint
-            .connect(EndpointAddr::new(self.request.peer_endpoint_id), ALPN)
+            .connect(self.request.peer_endpoint_addr.clone(), ALPN)
             .await?;
 
         // --- Handshake ---
@@ -332,20 +333,26 @@ async fn do_transfer(
     events: &SenderEventSink,
 ) -> Result<TransferOutcome> {
     let manifest = prepared.manifest();
-    let (file_count, total_bytes) = (manifest.count() as u64, prepared.total_bytes());
+    let plan = TransferPlan::from_manifest(session_id.to_owned(), &manifest)?;
     let registration = BlobService::new(endpoint.clone())
         .register(prepared)
         .await?;
-    let progress_task =
-        SenderProgressTask::spawn(connection, session_id.to_owned(), events.clone());
+    let progress_task = SenderProgressTask::spawn(connection, plan.clone(), events.clone());
     let blob_task = BlobTransferTask::spawn(registration);
 
     let result = async {
-        protocol_wire::write_sender_message(control_send, &protocol_message::SenderMessage::BlobTicket(protocol_message::BlobTicketMessage {
+        protocol_wire::write_sender_message(
+            control_send,
+            &protocol_message::SenderMessage::BlobTicket(protocol_message::BlobTicketMessage {
+                session_id: session_id.to_owned(),
+                ticket: blob_task.ticket().to_owned(),
+            }),
+        )
+        .await?;
+        events.emit(SenderEvent::TransferStarted {
             session_id: session_id.to_owned(),
-            ticket: blob_task.ticket().to_owned(),
-        })).await?;
-        events.emit(SenderEvent::TransferStarted { session_id: session_id.to_owned(), file_count, total_bytes });
+            plan: plan.clone(),
+        });
 
         loop {
             tokio::select! {
@@ -362,8 +369,13 @@ async fn do_transfer(
         }
 
         let _ = progress_task.wait().await;
-        protocol_wire::write_sender_message(control_send, &protocol_message::SenderMessage::TransferAck(protocol_message::TransferAck { session_id: session_id.to_owned() })).await?;
-        events.emit(SenderEvent::TransferCompleted { session_id: session_id.to_owned() });
+        protocol_wire::write_sender_message(
+            control_send,
+            &protocol_message::SenderMessage::TransferAck(protocol_message::TransferAck {
+                session_id: session_id.to_owned(),
+            }),
+        )
+        .await?;
         let _ = control_send.finish();
         Ok(TransferOutcome::Completed)
     }.await;
@@ -399,30 +411,39 @@ struct SenderProgressTask {
     shutdown: JoinHandle<Result<()>>,
 }
 impl SenderProgressTask {
-    fn spawn(conn: Connection, session_id: String, events: SenderEventSink) -> Self {
+    fn spawn(conn: Connection, plan: TransferPlan, events: SenderEventSink) -> Self {
         Self {
             shutdown: tokio::spawn(async move {
                 let mut recv = tokio::select! {
                     res = conn.accept_uni() => res?,
-                    _ = tokio::time::sleep(Duration::from_secs(30)) => { warn!(%session_id, "receiver never opened progress stream"); return Ok(()); }
+                    _ = tokio::time::sleep(Duration::from_secs(30)) => { warn!(session_id = %plan.session_id, "receiver never opened progress stream"); return Ok(()); }
                 };
+                let mut tracker = ProgressTracker::new(plan.clone());
                 loop {
                     match protocol_wire::read_receiver_message(&mut recv).await? {
                         protocol_message::ReceiverMessage::TransferStarted(m) => {
-                            events.emit(SenderEvent::TransferStarted {
-                                session_id: m.session_id,
-                                file_count: m.file_count,
-                                total_bytes: m.total_bytes,
-                            })
+                            tracker = ProgressTracker::new(m.plan);
                         }
                         protocol_message::ReceiverMessage::TransferProgress(m) => {
+                            let now = std::time::Instant::now();
+                            tracker.set_phase(m.snapshot.phase, now);
+                            tracker.set_bytes_transferred(m.snapshot.bytes_transferred, now);
                             events.emit(SenderEvent::TransferProgress {
                                 session_id: m.session_id,
-                                bytes_sent: m.bytes_sent,
-                                total_bytes: m.total_bytes,
+                                snapshot: tracker.snapshot(now),
                             })
                         }
-                        protocol_message::ReceiverMessage::TransferCompleted(_) => break Ok(()),
+                        protocol_message::ReceiverMessage::TransferCompleted(m) => {
+                            let now = std::time::Instant::now();
+                            tracker.set_phase(m.snapshot.phase, now);
+                            tracker.set_bytes_transferred(m.snapshot.bytes_transferred, now);
+                            tracker.mark_completed(now);
+                            events.emit(SenderEvent::TransferCompleted {
+                                session_id: m.session_id,
+                                snapshot: tracker.snapshot(now),
+                            });
+                            break Ok(());
+                        }
                         _ => bail!("unexpected progress message from receiver"),
                     }
                 }

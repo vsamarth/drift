@@ -7,10 +7,14 @@ use drift_app::{
     ReceiverOfferFile as AppReceiverOfferFile, ReceiverOfferPhase as AppReceiverOfferPhase,
     ReceiverRegistration as AppReceiverRegistration, ReceiverService,
 };
+use drift_core::transfer_flow::{TransferPhase, TransferPlan, TransferPlanFile, TransferSnapshot};
 use iroh::SecretKey;
 use tokio::sync::Mutex as AsyncMutex;
 use tokio::task::JoinHandle;
 
+use super::transfer::{
+    TransferPhaseData, TransferPlanData, TransferPlanFileData, TransferSnapshotData,
+};
 use super::RUNTIME;
 use crate::frb_generated::StreamSink;
 
@@ -77,6 +81,8 @@ pub struct ReceiverTransferEvent {
     pub item_count: u64,
     pub total_size_bytes: u64,
     pub bytes_received: u64,
+    pub plan: Option<TransferPlanData>,
+    pub snapshot: Option<TransferSnapshotData>,
     pub total_size_label: String,
     pub files: Vec<ReceiverTransferFile>,
     pub error_message: Option<String>,
@@ -467,9 +473,55 @@ fn map_event(event: AppReceiverOfferEvent) -> ReceiverTransferEvent {
         item_count: event.item_count,
         total_size_bytes: event.total_size_bytes,
         bytes_received: event.bytes_received,
+        plan: event.plan.map(map_plan),
+        snapshot: event.snapshot.map(map_snapshot),
         total_size_label: event.total_size_label,
         files: event.files.into_iter().map(map_file_row).collect(),
         error_message: event.error_message,
+    }
+}
+
+fn map_plan(plan: TransferPlan) -> TransferPlanData {
+    TransferPlanData {
+        session_id: plan.session_id,
+        total_files: plan.total_files,
+        total_bytes: plan.total_bytes,
+        files: plan.files.into_iter().map(map_plan_file).collect(),
+    }
+}
+
+fn map_plan_file(file: TransferPlanFile) -> TransferPlanFileData {
+    TransferPlanFileData {
+        id: file.id,
+        path: file.path,
+        size: file.size,
+    }
+}
+
+fn map_snapshot(snapshot: TransferSnapshot) -> TransferSnapshotData {
+    TransferSnapshotData {
+        session_id: snapshot.session_id,
+        phase: map_phase(snapshot.phase),
+        total_files: snapshot.total_files,
+        completed_files: snapshot.completed_files,
+        total_bytes: snapshot.total_bytes,
+        bytes_transferred: snapshot.bytes_transferred,
+        active_file_id: snapshot.active_file_id,
+        active_file_bytes: snapshot.active_file_bytes,
+        bytes_per_sec: snapshot.bytes_per_sec,
+        eta_seconds: snapshot.eta_seconds,
+    }
+}
+
+fn map_phase(phase: TransferPhase) -> TransferPhaseData {
+    match phase {
+        TransferPhase::Connecting => TransferPhaseData::Connecting,
+        TransferPhase::AwaitingAcceptance => TransferPhaseData::AwaitingAcceptance,
+        TransferPhase::Transferring => TransferPhaseData::Transferring,
+        TransferPhase::Finalizing => TransferPhaseData::Finalizing,
+        TransferPhase::Completed => TransferPhaseData::Completed,
+        TransferPhase::Cancelled => TransferPhaseData::Cancelled,
+        TransferPhase::Failed => TransferPhaseData::Failed,
     }
 }
 

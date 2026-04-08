@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/models/transfer_models.dart';
 import '../../core/theme/drift_theme.dart';
 import '../../state/drift_providers.dart';
 import 'preview_list.dart';
@@ -43,7 +44,7 @@ class ReceiveReviewCard extends ConsumerWidget {
         mode: SendingStripMode.waitingOnRecipient,
       ),
       manifest: PreviewTable(
-        items: state.receiveItems,
+        items: plainTransferDisplayItems(state.receiveItems),
         footerSummary: itemSummary,
       ),
       footer: Row(
@@ -70,11 +71,15 @@ class ReceiveReviewCard extends ConsumerWidget {
               onPressed: notifier.declineReceiveOffer,
               style: TextButton.styleFrom(
                 foregroundColor: const Color(0xFFCC3333),
-                backgroundColor: const Color(0xFFCC3333).withValues(alpha: 0.08),
+                backgroundColor: const Color(
+                  0xFFCC3333,
+                ).withValues(alpha: 0.08),
                 minimumSize: const Size(0, 48),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
-                  side: BorderSide(color: const Color(0xFFCC3333).withValues(alpha: 0.15)),
+                  side: BorderSide(
+                    color: const Color(0xFFCC3333).withValues(alpha: 0.15),
+                  ),
                 ),
               ),
               child: const Text('Decline'),

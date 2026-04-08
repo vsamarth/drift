@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 import '../src/rust/api/sender.dart' as rust_sender;
+import '../src/rust/api/transfer.dart' as rust_transfer;
 
 class SendTransferRequestData {
   const SendTransferRequestData({
@@ -48,6 +49,8 @@ class SendTransferUpdate {
     required this.totalSize,
     required this.bytesSent,
     required this.totalBytes,
+    this.plan,
+    this.snapshot,
     this.remoteDeviceType,
     this.errorMessage,
   });
@@ -59,6 +62,8 @@ class SendTransferUpdate {
   final String totalSize;
   final int bytesSent;
   final int totalBytes;
+  final rust_transfer.TransferPlanData? plan;
+  final rust_transfer.TransferSnapshotData? snapshot;
 
   /// `"phone"` or `"laptop"`, when known yet.
   final String? remoteDeviceType;
@@ -96,7 +101,7 @@ class LocalSendTransferSource implements SendTransferSource {
         .map((event) {
           final mapped = _mapEvent(event);
           debugPrint(
-            '[drift/send] update phase=${mapped.phase.name} '
+            '[drift/send] update phase=${_phaseLabel(mapped.phase)} '
             'destination=${mapped.destinationLabel} '
             'items=${mapped.itemCount} total=${mapped.totalSize} '
             'payload=${mapped.bytesSent}/${mapped.totalBytes} B'
@@ -136,6 +141,8 @@ class LocalSendTransferSource implements SendTransferSource {
       totalSize: _formatBytes(event.totalSize.toInt()),
       bytesSent: _asDartInt(event.bytesSent),
       totalBytes: _asDartInt(event.totalSize),
+      plan: event.plan,
+      snapshot: event.snapshot,
       remoteDeviceType: event.remoteDeviceType,
       errorMessage: event.errorMessage,
     );
@@ -161,5 +168,18 @@ class LocalSendTransferSource implements SendTransferSource {
     final decimals = value >= 10 || unitIndex == 0 ? 0 : 1;
     final formatted = value.toStringAsFixed(decimals);
     return '$formatted ${units[unitIndex]}';
+  }
+
+  static String _phaseLabel(SendTransferUpdatePhase phase) {
+    return switch (phase) {
+      SendTransferUpdatePhase.connecting => 'connecting',
+      SendTransferUpdatePhase.waitingForDecision => 'waiting_for_decision',
+      SendTransferUpdatePhase.accepted => 'accepted',
+      SendTransferUpdatePhase.declined => 'declined',
+      SendTransferUpdatePhase.sending => 'sending',
+      SendTransferUpdatePhase.completed => 'completed',
+      SendTransferUpdatePhase.cancelled => 'cancelled',
+      SendTransferUpdatePhase.failed => 'failed',
+    };
   }
 }

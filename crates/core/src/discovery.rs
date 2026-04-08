@@ -13,6 +13,7 @@ pub struct NearbyEndpoint {
     pub fullname: String,
     pub label: String,
     pub endpoint_id: EndpointId,
+    pub endpoint_addr: EndpointAddr,
 }
 
 impl From<NearbyEndpoint> for EndpointId {
@@ -27,11 +28,11 @@ impl From<&NearbyEndpoint> for EndpointId {
     }
 }
 
-pub async fn resolve_pairing_code(code: &str, server_url: Option<&str>) -> Result<EndpointId> {
+pub async fn resolve_pairing_code(code: &str, server_url: Option<&str>) -> Result<EndpointAddr> {
     validate_code(code)?;
     let client = RendezvousClient::new(resolve_server_url(server_url));
     let response = client.claim_peer(code).await?;
-    endpoint_id_from_ticket(&response.ticket)
+    endpoint_addr_from_ticket(&response.ticket)
 }
 
 pub async fn resolve_nearby(timeout: Duration) -> Result<Vec<NearbyEndpoint>> {
@@ -55,12 +56,18 @@ pub async fn resolve_nearby_with_exclusion(
 }
 
 pub fn endpoint_id_from_ticket(ticket: &str) -> Result<EndpointId> {
-    let addr: EndpointAddr = decode_ticket(ticket.trim())?;
+    let addr = endpoint_addr_from_ticket(ticket)?;
     Ok(addr.id)
 }
 
+pub fn endpoint_addr_from_ticket(ticket: &str) -> Result<EndpointAddr> {
+    let addr: EndpointAddr = decode_ticket(ticket.trim())?;
+    Ok(addr)
+}
+
 pub fn nearby_endpoint_from_receiver(receiver: lan::NearbyReceiver) -> Result<NearbyEndpoint> {
-    let endpoint_id = endpoint_id_from_ticket(&receiver.ticket)?;
+    let endpoint_addr = endpoint_addr_from_ticket(&receiver.ticket)?;
+    let endpoint_id = endpoint_addr.id;
     debug!(
         %endpoint_id,
         fullname = %receiver.fullname,
@@ -71,6 +78,7 @@ pub fn nearby_endpoint_from_receiver(receiver: lan::NearbyReceiver) -> Result<Ne
         fullname: receiver.fullname,
         label: receiver.label,
         endpoint_id,
+        endpoint_addr,
     })
 }
 
@@ -110,6 +118,21 @@ mod tests {
     }
 
     #[test]
+    fn endpoint_addr_round_trips_through_ticket() {
+        let endpoint_id = SecretKey::from_bytes(&[14; 32]).public();
+        let ticket = TestTransferTicket {
+            node_id: endpoint_id.to_string(),
+            addrs: Vec::new(),
+        };
+        let encoded =
+            URL_SAFE_NO_PAD.encode(bincode::serialize(&ticket).expect("serialize ticket"));
+
+        let endpoint_addr = endpoint_addr_from_ticket(&encoded).expect("endpoint addr");
+
+        assert_eq!(endpoint_addr.id, endpoint_id);
+    }
+
+    #[test]
     fn malformed_ticket_is_rejected() {
         assert!(endpoint_id_from_ticket("not-a-ticket").is_err());
     }
@@ -133,6 +156,16 @@ mod tests {
             fullname: "recv-1".to_owned(),
             label: "Receiver".to_owned(),
             endpoint_id,
+            endpoint_addr: endpoint_addr_from_ticket(
+                &URL_SAFE_NO_PAD.encode(
+                    bincode::serialize(&TestTransferTicket {
+                        node_id: endpoint_id.to_string(),
+                        addrs: Vec::new(),
+                    })
+                    .expect("serialize ticket"),
+                ),
+            )
+            .expect("endpoint addr"),
         };
 
         let converted: EndpointId = endpoint.into();

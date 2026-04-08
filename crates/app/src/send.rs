@@ -10,9 +10,10 @@ use drift_core::protocol::DeviceType;
 use drift_core::rendezvous::{RendezvousClient, resolve_server_url, validate_code};
 use drift_core::transfer_flow::{
     SendRequest, Sender, SenderEvent as CoreSenderEvent, TransferOutcome as CoreTransferOutcome,
+    TransferPlan,
 };
 use drift_core::util::{decode_ticket, format_code_label};
-use iroh::EndpointId;
+use iroh::{EndpointAddr, EndpointId};
 use tokio::sync::{mpsc, oneshot};
 use tokio_stream::{StreamExt, wrappers::UnboundedReceiverStream};
 
@@ -68,6 +69,7 @@ pub struct SendSession {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct ResolvedDestination {
     destination_label: String,
+    peer_endpoint_addr: EndpointAddr,
     peer_endpoint_id: EndpointId,
 }
 
@@ -185,6 +187,7 @@ impl SendDestination {
                 let endpoint_addr = decode_ticket(&resolved.ticket)?;
                 Ok(ResolvedDestination {
                     destination_label: format_code_label(code),
+                    peer_endpoint_addr: endpoint_addr.clone(),
                     peer_endpoint_id: endpoint_addr.id,
                 })
             }
@@ -192,6 +195,7 @@ impl SendDestination {
                 let endpoint_addr = decode_ticket(ticket.trim())?;
                 Ok(ResolvedDestination {
                     destination_label: self.display_label(),
+                    peer_endpoint_addr: endpoint_addr.clone(),
                     peer_endpoint_id: endpoint_addr.id,
                 })
             }
@@ -258,6 +262,8 @@ impl SendSession {
                 item_count: preview.file_count,
                 total_size: preview.total_size,
                 bytes_sent: 0,
+                plan: None,
+                snapshot: None,
                 remote_device_type: None,
                 connection_path: None,
                 error_message: None,
@@ -278,6 +284,7 @@ impl SendSession {
             self.draft.config.device_name.clone(),
             device_type,
             SendRequest {
+                peer_endpoint_addr: resolved.peer_endpoint_addr.clone(),
                 peer_endpoint_id: resolved.peer_endpoint_id,
                 files: self.draft.paths.clone(),
             },
@@ -286,11 +293,17 @@ impl SendSession {
         let sender_run = sender.run_with_events();
         let (mut core_events, _cancel_tx, outcome_rx) = sender_run.into_parts();
         let mut current_label = destination_label.clone();
+        let mut current_plan: Option<TransferPlan> = None;
 
         while let Some(event) = core_events.next().await {
             match event {
                 Ok(core_event) => {
-                    let mapped = map_sender_event(&mut current_label, &preview, core_event);
+                    let mapped = map_sender_event(
+                        &mut current_label,
+                        &preview,
+                        &mut current_plan,
+                        core_event,
+                    );
                     emit_send_event(&event_tx, mapped);
                 }
                 Err(error) => {
@@ -341,6 +354,8 @@ fn failed_event(destination_label: &str, error: &anyhow::Error) -> SendEvent {
         item_count: 0,
         total_size: 0,
         bytes_sent: 0,
+        plan: None,
+        snapshot: None,
         remote_device_type: None,
         connection_path: None,
         error_message: Some(format_error_chain(error)),
@@ -350,6 +365,7 @@ fn failed_event(destination_label: &str, error: &anyhow::Error) -> SendEvent {
 fn map_sender_event(
     current_label: &mut String,
     preview: &SelectionPreview,
+    current_plan: &mut Option<TransferPlan>,
     event: CoreSenderEvent,
 ) -> SendEvent {
     match event {
@@ -360,6 +376,8 @@ fn map_sender_event(
             item_count: preview.file_count,
             total_size: preview.total_size,
             bytes_sent: 0,
+            plan: None,
+            snapshot: None,
             remote_device_type: None,
             connection_path: None,
             error_message: None,
@@ -377,6 +395,8 @@ fn map_sender_event(
                 item_count: preview.file_count,
                 total_size: preview.total_size,
                 bytes_sent: 0,
+                plan: None,
+                snapshot: None,
                 remote_device_type: None,
                 connection_path: None,
                 error_message: None,
@@ -395,6 +415,8 @@ fn map_sender_event(
                 item_count: preview.file_count,
                 total_size: preview.total_size,
                 bytes_sent: 0,
+                plan: None,
+                snapshot: None,
                 remote_device_type: None,
                 connection_path: None,
                 error_message: None,
@@ -407,6 +429,8 @@ fn map_sender_event(
             item_count: preview.file_count,
             total_size: preview.total_size,
             bytes_sent: 0,
+            plan: None,
+            snapshot: None,
             remote_device_type: None,
             connection_path: None,
             error_message: Some(reason),
@@ -418,47 +442,62 @@ fn map_sender_event(
             item_count: preview.file_count,
             total_size: preview.total_size,
             bytes_sent: 0,
+            plan: None,
+            snapshot: None,
             remote_device_type: None,
             connection_path: None,
             error_message: Some(message),
         },
-        CoreSenderEvent::TransferStarted {
-            file_count,
-            total_bytes,
-            ..
-        } => SendEvent {
+        CoreSenderEvent::TransferStarted { plan, .. } => {
+            *current_plan = Some(plan.clone());
+            SendEvent {
+                phase: SendPhase::Sending,
+                destination_label: current_label.clone(),
+                status_message: format!("Sending to {current_label}."),
+                item_count: u64::from(plan.total_files),
+                total_size: plan.total_bytes,
+                bytes_sent: 0,
+                plan: Some(plan.clone()),
+                snapshot: None,
+                remote_device_type: None,
+                connection_path: None,
+                error_message: None,
+            }
+        }
+        CoreSenderEvent::TransferProgress { snapshot, .. } => SendEvent {
             phase: SendPhase::Sending,
             destination_label: current_label.clone(),
-            status_message: format!("Sending to {current_label}."),
-            item_count: file_count,
-            total_size: total_bytes,
-            bytes_sent: 0,
+            status_message: "Sending to ".to_owned() + &current_label,
+            item_count: current_plan
+                .as_ref()
+                .map(|plan| u64::from(plan.total_files))
+                .unwrap_or(u64::from(snapshot.total_files)),
+            total_size: current_plan
+                .as_ref()
+                .map(|plan| plan.total_bytes)
+                .unwrap_or(snapshot.total_bytes),
+            bytes_sent: snapshot.bytes_transferred,
+            plan: current_plan.clone(),
+            snapshot: Some(snapshot.clone()),
             remote_device_type: None,
             connection_path: None,
             error_message: None,
         },
-        CoreSenderEvent::TransferProgress {
-            bytes_sent,
-            total_bytes,
-            ..
-        } => SendEvent {
-            phase: SendPhase::Sending,
-            destination_label: current_label.clone(),
-            status_message: format!("Sending to {current_label}."),
-            item_count: preview.file_count,
-            total_size: total_bytes.max(preview.total_size),
-            bytes_sent,
-            remote_device_type: None,
-            connection_path: None,
-            error_message: None,
-        },
-        CoreSenderEvent::TransferCompleted { .. } => SendEvent {
+        CoreSenderEvent::TransferCompleted { snapshot, .. } => SendEvent {
             phase: SendPhase::Completed,
             destination_label: current_label.clone(),
             status_message: "Files sent successfully".to_owned(),
-            item_count: preview.file_count,
-            total_size: preview.total_size,
-            bytes_sent: preview.total_size,
+            item_count: current_plan
+                .as_ref()
+                .map(|plan| u64::from(plan.total_files))
+                .unwrap_or(u64::from(snapshot.total_files)),
+            total_size: current_plan
+                .as_ref()
+                .map(|plan| plan.total_bytes)
+                .unwrap_or(snapshot.total_bytes),
+            bytes_sent: snapshot.bytes_transferred,
+            plan: current_plan.clone(),
+            snapshot: Some(snapshot.clone()),
             remote_device_type: None,
             connection_path: None,
             error_message: None,

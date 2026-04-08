@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 pub use drift_core::fs_plan::ConflictPolicy;
+pub use drift_core::transfer_flow::{TransferPlan, TransferSnapshot};
 use iroh::SecretKey;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -29,6 +30,8 @@ pub struct SendEvent {
     pub item_count: u64,
     pub total_size: u64,
     pub bytes_sent: u64,
+    pub plan: Option<TransferPlan>,
+    pub snapshot: Option<TransferSnapshot>,
     pub remote_device_type: Option<String>,
     pub connection_path: Option<String>,
     pub error_message: Option<String>,
@@ -82,6 +85,8 @@ pub struct ReceiverOfferEvent {
     pub item_count: u64,
     pub total_size_bytes: u64,
     pub bytes_received: u64,
+    pub plan: Option<TransferPlan>,
+    pub snapshot: Option<TransferSnapshot>,
     pub connection_path: Option<String>,
     pub total_size_label: String,
     pub files: Vec<ReceiverOfferFile>,

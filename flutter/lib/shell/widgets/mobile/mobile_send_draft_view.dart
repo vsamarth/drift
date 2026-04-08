@@ -35,9 +35,7 @@ class MobileSendDraftView extends ConsumerWidget {
                 style: theme.textTheme.bodyMedium,
               ),
               const SizedBox(height: 20),
-              SelectedFilesPreview(
-                items: state.sendItems,
-              ),
+              SelectedFilesPreview(items: state.sendItems),
               const SizedBox(height: 8),
               Align(
                 alignment: Alignment.centerRight,

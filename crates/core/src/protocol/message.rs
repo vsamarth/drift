@@ -4,6 +4,8 @@ use iroh::EndpointId;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::transfer_flow::types::{TransferFileId, TransferPhase, TransferPlan};
+
 pub const PROTOCOL_VERSION: u32 = 2;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -125,20 +127,30 @@ pub struct Decline {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TransferStarted {
     pub session_id: String,
-    pub file_count: u64,
+    pub plan: TransferPlan,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TransferProgressPayload {
+    pub phase: TransferPhase,
+    pub completed_files: u32,
+    pub total_files: u32,
+    pub bytes_transferred: u64,
     pub total_bytes: u64,
+    pub active_file_id: Option<TransferFileId>,
+    pub active_file_bytes: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TransferProgress {
     pub session_id: String,
-    pub bytes_sent: u64,
-    pub total_bytes: u64,
+    pub snapshot: TransferProgressPayload,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TransferCompleted {
     pub session_id: String,
+    pub snapshot: TransferProgressPayload,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -237,6 +249,7 @@ impl ReceiverMessage {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::transfer_flow::types::{TransferPlan, TransferPlanFile};
     use iroh::SecretKey;
 
     #[test]
@@ -278,6 +291,24 @@ mod tests {
                 path: "a.txt".to_owned(),
                 size: 1,
             }],
+        };
+        let plan = TransferPlan::try_new(
+            "session-1",
+            vec![TransferPlanFile {
+                id: 0,
+                path: "a.txt".to_owned(),
+                size: 1,
+            }],
+        )
+        .unwrap();
+        let snapshot = TransferProgressPayload {
+            phase: TransferPhase::Transferring,
+            completed_files: 0,
+            total_files: 1,
+            bytes_transferred: 1,
+            total_bytes: 1,
+            active_file_id: Some(0),
+            active_file_bytes: Some(1),
         };
 
         let sender_messages = [
@@ -330,16 +361,15 @@ mod tests {
             }),
             ReceiverMessage::TransferStarted(TransferStarted {
                 session_id: "session-1".to_owned(),
-                file_count: 1,
-                total_bytes: 1,
+                plan: plan.clone(),
             }),
             ReceiverMessage::TransferProgress(TransferProgress {
                 session_id: "session-1".to_owned(),
-                bytes_sent: 1,
-                total_bytes: 1,
+                snapshot: snapshot.clone(),
             }),
             ReceiverMessage::TransferCompleted(TransferCompleted {
                 session_id: "session-1".to_owned(),
+                snapshot: snapshot.clone(),
             }),
             ReceiverMessage::Cancel(Cancel {
                 session_id: "session-1".to_owned(),
@@ -355,5 +385,8 @@ mod tests {
 
         assert_eq!(sender_messages.len(), 5);
         assert_eq!(receiver_messages.len(), 8);
+        let json = serde_json::to_string(&receiver_messages[3]).unwrap();
+        assert!(json.contains("\"plan\""));
+        assert!(!json.contains("bytes_per_sec"));
     }
 }

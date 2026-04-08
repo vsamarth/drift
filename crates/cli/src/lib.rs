@@ -9,7 +9,8 @@ use drift_core::protocol::DeviceType;
 use drift_core::rendezvous::{RendezvousClient, resolve_server_url};
 use drift_core::transfer_flow::{
     ReceiverDecision, ReceiverEvent, ReceiverOffer, ReceiverRequest, ReceiverSession,
-    ReceiverStart, SendRequest, Sender, SenderEvent, TransferOutcome,
+    ReceiverStart, SendRequest, Sender, SenderEvent, TransferOutcome, TransferPlan,
+    TransferSnapshot,
 };
 use drift_core::util::{confirm_accept, human_size, make_ticket, process_display_device_name};
 use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
@@ -95,13 +96,14 @@ pub async fn send_with_server(
         "send.resolving_code"
     );
 
-    let peer_endpoint_id = resolve_pairing_code(&code, server_url.as_deref()).await?;
+    let peer_endpoint_addr = resolve_pairing_code(&code, server_url.as_deref()).await?;
 
     let sender = Sender::new(
         device_name,
         DeviceType::Laptop,
         SendRequest {
-            peer_endpoint_id,
+            peer_endpoint_addr: peer_endpoint_addr.clone(),
+            peer_endpoint_id: peer_endpoint_addr.id,
             files,
         },
     );
@@ -177,6 +179,7 @@ pub async fn send_nearby(
         device_name,
         DeviceType::Laptop,
         SendRequest {
+            peer_endpoint_addr: picked.endpoint_addr.clone(),
             peer_endpoint_id: picked.endpoint_id,
             files,
         },
@@ -210,11 +213,12 @@ async fn consume_sender_run(
     let (mut events, cancel_tx, outcome_rx) = run.into_parts();
 
     let mut outcome_rx = outcome_rx;
+    let mut current_plan: Option<TransferPlan> = None;
     loop {
         tokio::select! {
             event = events.next() => {
                 match event {
-                    Some(Ok(event)) => render_sender_event(progress_bar, &event),
+                    Some(Ok(event)) => render_sender_event(progress_bar, &event, &mut current_plan),
                     Some(Err(error)) => {
                         warn!(error = %error, error_chain = %format!("{error:#}"), "send.failed");
                         finish_progress_bar(progress_bar);
@@ -238,7 +242,11 @@ async fn consume_sender_run(
     outcome_rx.await.context("waiting for send outcome")?
 }
 
-fn render_sender_event(progress_bar: &mut Option<ProgressBar>, event: &SenderEvent) {
+fn render_sender_event(
+    progress_bar: &mut Option<ProgressBar>,
+    event: &SenderEvent,
+    current_plan: &mut Option<TransferPlan>,
+) {
     match event {
         SenderEvent::Connecting {
             peer_endpoint_id, ..
@@ -262,28 +270,31 @@ fn render_sender_event(progress_bar: &mut Option<ProgressBar>, event: &SenderEve
                 "Accepted by {receiver_device_name}. Starting transfer..."
             ));
         }
-        SenderEvent::TransferStarted {
-            file_count,
-            total_bytes,
-            ..
-        } => {
+        SenderEvent::TransferStarted { plan, .. } => {
+            *current_plan = Some(plan.clone());
             let pb = ensure_spinner(progress_bar);
-            configure_transfer_bar(pb, *total_bytes);
-            pb.set_message(format!(
-                "Sending {file_count} files ({})",
-                human_size(*total_bytes)
+            configure_transfer_bar(pb, plan.total_bytes);
+            pb.set_message(render_transfer_message("Sending", Some(plan), None));
+        }
+        SenderEvent::TransferProgress { snapshot, .. } => {
+            let pb = ensure_spinner(progress_bar);
+            configure_transfer_bar(pb, snapshot.total_bytes);
+            pb.set_position(snapshot.bytes_transferred);
+            pb.set_message(render_transfer_message(
+                "Sending",
+                current_plan.as_ref(),
+                Some(snapshot),
             ));
         }
-        SenderEvent::TransferProgress {
-            bytes_sent,
-            total_bytes,
-            ..
-        } => {
+        SenderEvent::TransferCompleted { snapshot, .. } => {
             let pb = ensure_spinner(progress_bar);
-            configure_transfer_bar(pb, *total_bytes);
-            pb.set_position(*bytes_sent);
-        }
-        SenderEvent::TransferCompleted { .. } => {
+            configure_transfer_bar(pb, snapshot.total_bytes);
+            pb.set_position(snapshot.bytes_transferred);
+            pb.set_message(render_transfer_message(
+                "Sending",
+                current_plan.as_ref(),
+                Some(snapshot),
+            ));
             finish_progress_bar(progress_bar);
         }
         SenderEvent::Declined { reason, .. } => {
@@ -369,6 +380,7 @@ async fn consume_receiver_run(start: ReceiverStart) -> Result<TransferOutcome> {
     } = start;
 
     let mut progress_bar = None;
+    let mut current_plan: Option<TransferPlan> = None;
 
     // 1. Wait for offer
     let offer = tokio::select! {
@@ -401,7 +413,11 @@ async fn consume_receiver_run(start: ReceiverStart) -> Result<TransferOutcome> {
         tokio::select! {
             event = events.next() => {
                 match event {
-                    Some(Ok(event)) => render_receiver_event(&mut progress_bar, &event),
+                    Some(Ok(event)) => render_receiver_event(
+                        &mut progress_bar,
+                        &event,
+                        &mut current_plan,
+                    ),
                     Some(Err(error)) => {
                         warn!(error = %error, error_chain = %format!("{error:#}"), "receive.failed");
                         finish_progress_bar(&mut progress_bar);
@@ -432,7 +448,11 @@ fn render_offer(offer: &ReceiverOffer) {
     println!();
 }
 
-fn render_receiver_event(progress_bar: &mut Option<ProgressBar>, event: &ReceiverEvent) {
+fn render_receiver_event(
+    progress_bar: &mut Option<ProgressBar>,
+    event: &ReceiverEvent,
+    current_plan: &mut Option<TransferPlan>,
+) {
     match event {
         ReceiverEvent::Listening { .. } => {
             let pb = ensure_spinner(progress_bar);
@@ -444,26 +464,39 @@ fn render_receiver_event(progress_bar: &mut Option<ProgressBar>, event: &Receive
             let pb = ensure_spinner(progress_bar);
             pb.set_message(format!("Offer received from {sender_device_name}"));
         }
-        ReceiverEvent::TransferStarted {
-            file_count,
-            total_bytes,
-            ..
-        } => {
+        ReceiverEvent::TransferStarted { plan, .. } => {
+            *current_plan = Some(plan.clone());
             let pb = ensure_spinner(progress_bar);
-            configure_transfer_bar(pb, *total_bytes);
-            pb.set_message(format!("Receiving {file_count} files..."));
+            configure_transfer_bar(pb, plan.total_bytes);
+            pb.set_message(render_transfer_message("Receiving", Some(plan), None));
         }
-        ReceiverEvent::TransferProgress {
-            bytes_received,
-            total_bytes,
-            ..
-        } => {
+        ReceiverEvent::TransferProgress { snapshot, .. } => {
             let pb = ensure_spinner(progress_bar);
-            configure_transfer_bar(pb, *total_bytes);
-            pb.set_position(*bytes_received);
+            configure_transfer_bar(pb, snapshot.total_bytes);
+            pb.set_position(snapshot.bytes_transferred);
+            pb.set_message(render_transfer_message(
+                "Receiving",
+                current_plan.as_ref(),
+                Some(snapshot),
+            ));
+        }
+        ReceiverEvent::TransferCompleted { snapshot, .. } => {
+            let pb = ensure_spinner(progress_bar);
+            configure_transfer_bar(pb, snapshot.total_bytes);
+            pb.set_position(snapshot.bytes_transferred);
+            pb.set_message(render_transfer_message(
+                "Receiving",
+                current_plan.as_ref(),
+                Some(snapshot),
+            ));
+            finish_progress_bar(progress_bar);
         }
         ReceiverEvent::Completed { .. } => {
             finish_progress_bar(progress_bar);
+        }
+        ReceiverEvent::Failed { message, .. } => {
+            finish_progress_bar(progress_bar);
+            warn!(%message, "Transfer failed");
         }
     }
 }
@@ -490,6 +523,39 @@ fn configure_transfer_bar(progress_bar: &ProgressBar, total: u64) {
         .expect("valid indicatif transfer template"),
     );
     progress_bar.set_length(total.max(1));
+}
+
+fn render_transfer_message(
+    verb: &str,
+    plan: Option<&TransferPlan>,
+    snapshot: Option<&TransferSnapshot>,
+) -> String {
+    let mut parts = Vec::new();
+    if let (Some(plan), Some(snapshot)) = (plan, snapshot) {
+        if let Some(file_id) = snapshot.active_file_id {
+            if let Some(file) = plan.file(file_id) {
+                parts.push(format!("current: {}", file.path));
+            }
+        }
+        parts.push(format!(
+            "files {}/{}",
+            snapshot.completed_files, snapshot.total_files
+        ));
+        if let Some(rate) = snapshot.bytes_per_sec {
+            parts.push(format!("{}/s", human_size(rate)));
+        }
+        if let Some(eta) = snapshot.eta_seconds {
+            parts.push(format!("ETA {}s", eta));
+        }
+    } else if let Some(plan) = plan {
+        parts.push(format!("files {}/{}", 0, plan.total_files));
+    }
+
+    if parts.is_empty() {
+        verb.to_owned()
+    } else {
+        format!("{verb} {}", parts.join(" | "))
+    }
 }
 
 fn finish_progress_bar(progress_bar: &mut Option<ProgressBar>) {
