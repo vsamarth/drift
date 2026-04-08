@@ -1,0 +1,84 @@
+name: Build Windows portable release
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Git ref to build
+        required: true
+        default: v0.1.0
+      release_tag:
+        description: GitHub release tag to upload the zip to
+        required: true
+        default: v0.1.0
+
+permissions:
+  contents: write
+
+env:
+  FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: "2.12.0"
+
+jobs:
+  windows_portable:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: flutter
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+          sparse-checkout: |
+            flutter
+            crates
+            Cargo.toml
+            Cargo.lock
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Rust tools
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-expand,flutter_rust_bridge_codegen@${{ env.FLUTTER_RUST_BRIDGE_CODEGEN_VERSION }}
+
+      - name: Install Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Get Flutter dependencies
+        run: flutter pub get
+
+      - name: Run code generation
+        run: flutter_rust_bridge_codegen generate
+
+      - name: Build Windows app
+        run: flutter build windows --release
+
+      - name: Package portable zip
+        id: package
+        shell: pwsh
+        run: |
+          $releaseDir = Join-Path $PWD "build/windows/x64/runner/Release"
+          $zipName = "drift-windows.zip"
+          $zipPath = Join-Path $PWD $zipName
+
+          if (Test-Path $zipPath) {
+            Remove-Item $zipPath -Force
+          }
+
+          Compress-Archive -Path (Join-Path $releaseDir '*') -DestinationPath $zipPath -Force
+          "zip_name=$zipName" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      - name: Upload portable zip to release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.release_tag }}
+          files: flutter/${{ steps.package.outputs.zip_name }}
+          overwrite_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -15,7 +15,7 @@
 | Platform | Download |
 | --- | --- |
 | macOS | [drift-macos.dmg](https://github.com/vsamarth/drift/releases/latest/download/drift-macos.dmg) |
-| Windows | *Coming soon* |
+| Windows | [drift-windows.zip](https://github.com/vsamarth/drift/releases/latest/download/drift-windows.zip) |
 | Linux | *Coming soon* |
 | Android | [drift-android.apk](https://github.com/vsamarth/drift/releases/latest/download/drift-android.apk) |
 | iOS | [drift-ios.ipa](https://github.com/vsamarth/drift/releases/latest/download/drift-ios.ipa) |
