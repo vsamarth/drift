@@ -375,21 +375,22 @@ pub async fn receive(out_dir: PathBuf, conflict: String, server_url: Option<Stri
         conflict_policy: parse_conflict_policy(&conflict)?,
         secret_key: SecretKey::from_bytes(&random::<[u8; 32]>()),
     };
+let service = match ReceiverService::start(config).await {
+    Ok(service) => service,
+    Err(error) => {
+        report_anyhow_failure("receive.failed", &error.clone().into(), false);
+        return Err(error.into());
+    }
+};
 
-    let service = match ReceiverService::start(config).await {
-        Ok(service) => service,
-        Err(error) => {
-            report_anyhow_failure("receive.failed", &error, false);
-            return Err(error);
-        }
-    };
-    let registration = match service.setup(server_url).await {
-        Ok(registration) => registration,
-        Err(error) => {
-            report_anyhow_failure("receive.failed", &error, false);
-            return Err(error);
-        }
-    };
+let registration = match service.ensure_registered(server_url).await {
+    Ok(registration) => registration,
+    Err(error) => {
+        report_anyhow_failure("receive.failed", &error.clone().into(), false);
+        return Err(error.into());
+    }
+};
+
 
     info!(code = %registration.code, expires_at = %registration.expires_at, "receive.ready");
     eprintln!(

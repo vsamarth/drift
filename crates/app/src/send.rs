@@ -279,7 +279,7 @@ impl SendSession {
             Err(error) => {
                 emit_send_event(
                     &event_tx,
-                    failed_event_from_error(&destination_label, &error),
+                    failed_event_from_error(&destination_label, error.clone().into()),
                 );
                 return Err(error);
             }
@@ -327,8 +327,8 @@ impl SendSession {
                 Err(AppError::Cancelled { reason: cancellation.reason })
             }
             Err(error) => {
-                emit_send_event(&event_tx, failed_event_from_error(&current_label, &error));
-                Err(AppError::Internal { message: error.to_string() })
+                emit_send_event(&event_tx, failed_event_from_error(&current_label, error.into()));
+                Err(AppError::Internal { message: "transfer failed".to_owned() })
             }
         }
     }

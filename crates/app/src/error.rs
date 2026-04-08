@@ -27,6 +27,7 @@ pub enum UserFacingErrorKind {
     ProtocolIncompatible,
     Cancelled,
     Internal,
+    Other,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
@@ -55,6 +56,12 @@ pub enum AppError {
     Cancelled { reason: String },
     #[error("internal error: {message}")]
     Internal { message: String },
+    #[error("failed to bind {context}")]
+    BindingFailed { context: String },
+    #[error("receiver actor stopped before {action}")]
+    ActorStopped { action: &'static str },
+    #[error("receiver actor dropped {action} reply")]
+    ActorDroppedReply { action: &'static str },
 }
 
 pub type AppResult<T> = std::result::Result<T, AppError>;
@@ -180,6 +187,9 @@ impl UserFacingError {
             UserFacingErrorKind::Internal => {
                 Self::internal("Something went wrong", "Please try again.")
             }
+            UserFacingErrorKind::Other => {
+                Self::new(kind, "Transfer failed", "An unexpected error occurred.")
+            }
         }
     }
 }
@@ -237,6 +247,18 @@ impl From<AppError> for UserFacingError {
             }
             AppError::Internal { message } => {
                 UserFacingError::internal("Something went wrong", message)
+            }
+            AppError::BindingFailed { context } => UserFacingError::new(
+                UserFacingErrorKind::NetworkUnavailable,
+                format!("Failed to bind {context}"),
+                "Drift could not start the receiver because the network port is already in use or unavailable.",
+            ),
+            AppError::ActorStopped { action } | AppError::ActorDroppedReply { action } => {
+                UserFacingError::new(
+                    UserFacingErrorKind::Internal,
+                    "Receiver error",
+                    format!("The receiver component failed while {action}."),
+                )
             }
         }
     }
@@ -406,7 +428,9 @@ impl From<TransferError> for UserFacingError {
             TransferError::ChannelClosed { .. } => {
                 UserFacingError::from_kind(UserFacingErrorKind::Internal)
             }
-            TransferError::Other { source, .. } => from_error(source.as_ref()),
+            TransferError::Other { .. } => {
+                UserFacingError::from_kind(UserFacingErrorKind::Other)
+            }
         }
     }
 }
@@ -499,572 +523,10 @@ pub fn format_error_chain(error: &(dyn StdError + 'static)) -> String {
     parts.join(": ")
 }
 
-pub fn from_error(error: &(dyn StdError + 'static)) -> UserFacingError {
-    let mut current: Option<&(dyn StdError + 'static)> = Some(error);
-    while let Some(cause) = current {
-        if let Some(app_error) = cause.downcast_ref::<AppError>() {
-            return UserFacingError::from(app_error.clone());
-        }
-        if let Some(core_error) = cause.downcast_ref::<RendezvousError>() {
-            return match core_error {
-                RendezvousError::InvalidCode { .. } => {
-                    UserFacingError::from_kind(UserFacingErrorKind::InvalidInput)
-                }
-                RendezvousError::Request { .. } => {
-                    UserFacingError::from_kind(UserFacingErrorKind::NetworkUnavailable)
-                }
-                RendezvousError::ResponseParse { .. } => {
-                    UserFacingError::from_kind(UserFacingErrorKind::Internal)
-                }
-                RendezvousError::Api { status, .. } => map_rendezvous_api_status(status.as_u16()),
-            };
-        }
-        if let Some(core_error) = cause.downcast_ref::<DiscoveryError>() {
-            return match core_error {
-                DiscoveryError::Rendezvous(error) => match error {
-                    RendezvousError::InvalidCode { .. } => {
-                        UserFacingError::from_kind(UserFacingErrorKind::InvalidInput)
-                    }
-                    RendezvousError::Request { .. } => {
-                        UserFacingError::from_kind(UserFacingErrorKind::NetworkUnavailable)
-                    }
-                    RendezvousError::ResponseParse { .. } => {
-                        UserFacingError::from_kind(UserFacingErrorKind::Internal)
-                    }
-                    RendezvousError::Api { status, .. } => {
-                        map_rendezvous_api_status(status.as_u16())
-                    }
-                },
-                DiscoveryError::Ticket(error) => match error {
-                    TicketError::Serialize { .. } => {
-                        UserFacingError::from_kind(UserFacingErrorKind::Internal)
-                    }
-                    TicketError::DecodeBase64 { .. }
-                    | TicketError::InvalidPayload
-                    | TicketError::ParseNodeId { .. }
-                    | TicketError::ParseRelayUrl { .. }
-                    | TicketError::ParseSocketAddr { .. } => {
-                        UserFacingError::from_kind(UserFacingErrorKind::InvalidInput)
-                    }
-                },
-                DiscoveryError::NearbyTask { .. } => {
-                    UserFacingError::from_kind(UserFacingErrorKind::Internal)
-                }
-                DiscoveryError::NearbyBrowse(error) => match error {
-                    LanError::NoUsableIpv4Address => {
-                        UserFacingError::from_kind(UserFacingErrorKind::NetworkUnavailable)
-                    }
-                    LanError::Mdns { source, .. } => map_network_io_error(source.as_ref()),
-                    LanError::Io { source, .. } => map_network_io_error(source),
-                    LanError::SpawnPresenceThread { source } => map_network_io_error(source),
-                    LanError::PresenceUnexpectedReply | LanError::PresenceInvalidPong => {
-                        UserFacingError::from_kind(UserFacingErrorKind::Internal)
-                    }
-                },
-            };
-        }
-        if let Some(core_error) = cause.downcast_ref::<TicketError>() {
-            return match core_error {
-                TicketError::Serialize { .. } => {
-                    UserFacingError::from_kind(UserFacingErrorKind::Internal)
-                }
-                TicketError::DecodeBase64 { .. }
-                | TicketError::InvalidPayload
-                | TicketError::ParseNodeId { .. }
-                | TicketError::ParseRelayUrl { .. }
-                | TicketError::ParseSocketAddr { .. } => {
-                    UserFacingError::from_kind(UserFacingErrorKind::InvalidInput)
-                }
-            };
-        }
-        if let Some(core_error) = cause.downcast_ref::<LanError>() {
-            return match core_error {
-                LanError::NoUsableIpv4Address => {
-                    UserFacingError::from_kind(UserFacingErrorKind::NetworkUnavailable)
-                }
-                LanError::Mdns { source, .. } => map_network_io_error(source.as_ref()),
-                LanError::Io { source, .. } => map_network_io_error(source),
-                LanError::SpawnPresenceThread { source } => map_network_io_error(source),
-                LanError::PresenceUnexpectedReply | LanError::PresenceInvalidPong => {
-                    UserFacingError::from_kind(UserFacingErrorKind::Internal)
-                }
-            };
-        }
-        if let Some(core_error) = cause.downcast_ref::<FsPlanError>() {
-            return match core_error {
-                FsPlanError::EmptySelection | FsPlanError::NoRegularFiles => {
-                    UserFacingError::from_kind(UserFacingErrorKind::InvalidInput)
-                }
-                FsPlanError::FileCountOverflow | FsPlanError::TotalSizeOverflow => {
-                    UserFacingError::from_kind(UserFacingErrorKind::Internal)
-                }
-                FsPlanError::ReadMetadata { source, .. }
-                | FsPlanError::ReadDirectory { source, .. }
-                | FsPlanError::CurrentDirectory { source } => map_local_io_error(source),
-                FsPlanError::SymbolicLink { .. }
-                | FsPlanError::UnsupportedFileType { .. }
-                | FsPlanError::InvalidUtf8PathComponent { .. } => {
-                    UserFacingError::from_kind(UserFacingErrorKind::InvalidInput)
-                }
-                FsPlanError::DuplicateTransferPath { .. } => {
-                    UserFacingError::from_kind(UserFacingErrorKind::FileConflict)
-                }
-                FsPlanError::TransferPath(error) => match error {
-                    TransferPathError::Empty
-                    | TransferPathError::InvalidSeparator
-                    | TransferPathError::NotRelative
-                    | TransferPathError::InvalidSegment
-                    | TransferPathError::InvalidUtf8RootName { .. }
-                    | TransferPathError::InvalidUtf8PathComponent { .. }
-                    | TransferPathError::OutputNotAbsolute { .. } => {
-                        UserFacingError::from_kind(UserFacingErrorKind::InvalidInput)
-                    }
-                    TransferPathError::DestinationExists { .. } => {
-                        UserFacingError::from_kind(UserFacingErrorKind::FileConflict)
-                    }
-                    TransferPathError::DestinationParentNotDirectory { .. } => {
-                        UserFacingError::from_kind(UserFacingErrorKind::InvalidInput)
-                    }
-                    TransferPathError::CheckPath { source, .. }
-                    | TransferPathError::CurrentDirectory { source }
-                    | TransferPathError::CreateScratchDir { source, .. } => {
-                        map_local_io_error(source)
-                    }
-                    TransferPathError::SystemClockBeforeUnixEpoch { .. } => {
-                        UserFacingError::from_kind(UserFacingErrorKind::Internal)
-                    }
-                },
-            };
-        }
-        if let Some(core_error) = cause.downcast_ref::<TransferPathError>() {
-            return match core_error {
-                TransferPathError::Empty
-                | TransferPathError::InvalidSeparator
-                | TransferPathError::NotRelative
-                | TransferPathError::InvalidSegment
-                | TransferPathError::InvalidUtf8RootName { .. }
-                | TransferPathError::InvalidUtf8PathComponent { .. }
-                | TransferPathError::OutputNotAbsolute { .. } => {
-                    UserFacingError::from_kind(UserFacingErrorKind::InvalidInput)
-                }
-                TransferPathError::DestinationExists { .. } => {
-                    UserFacingError::from_kind(UserFacingErrorKind::FileConflict)
-                }
-                TransferPathError::DestinationParentNotDirectory { .. } => {
-                    UserFacingError::from_kind(UserFacingErrorKind::InvalidInput)
-                }
-                TransferPathError::CheckPath { source, .. }
-                | TransferPathError::CurrentDirectory { source }
-                | TransferPathError::CreateScratchDir { source, .. } => map_local_io_error(source),
-                TransferPathError::SystemClockBeforeUnixEpoch { .. } => {
-                    UserFacingError::from_kind(UserFacingErrorKind::Internal)
-                }
-            };
-        }
-        if let Some(core_error) = cause.downcast_ref::<ProtocolError>() {
-            return match core_error {
-                ProtocolError::UnsupportedVersion { .. } => UserFacingError::with_recovery(
-                    UserFacingErrorKind::ProtocolIncompatible,
-                    "Protocol mismatch",
-                    "This version of Drift cannot complete the transfer.",
-                    "Update Drift on both devices and try again.",
-                    false,
-                ),
-                ProtocolError::UnexpectedRole { .. }
-                | ProtocolError::UnexpectedMessageKind { .. }
-                | ProtocolError::SessionIdMismatch { .. }
-                | ProtocolError::EmptyDeviceName { .. }
-                | ProtocolError::InvalidTransition { .. }
-                | ProtocolError::MissingPeerIdentity { .. }
-                | ProtocolError::MessageTooLarge { .. }
-                | ProtocolError::FrameRead { .. }
-                | ProtocolError::FrameWrite { .. }
-                | ProtocolError::MessageSerialize { .. }
-                | ProtocolError::MessageDeserialize { .. } => {
-                    UserFacingError::from_kind(UserFacingErrorKind::ProtocolIncompatible)
-                }
-            };
-        }
-        if let Some(core_error) = cause.downcast_ref::<TransferError>() {
-            return match core_error {
-                TransferError::Protocol(error) => match error {
-                    ProtocolError::UnsupportedVersion { .. } => UserFacingError::with_recovery(
-                        UserFacingErrorKind::ProtocolIncompatible,
-                        "Protocol mismatch",
-                        "This version of Drift cannot complete the transfer.",
-                        "Update Drift on both devices and try again.",
-                        false,
-                    ),
-                    ProtocolError::UnexpectedRole { .. }
-                    | ProtocolError::UnexpectedMessageKind { .. }
-                    | ProtocolError::SessionIdMismatch { .. }
-                    | ProtocolError::EmptyDeviceName { .. }
-                    | ProtocolError::InvalidTransition { .. }
-                    | ProtocolError::MissingPeerIdentity { .. }
-                    | ProtocolError::MessageTooLarge { .. }
-                    | ProtocolError::FrameRead { .. }
-                    | ProtocolError::FrameWrite { .. }
-                    | ProtocolError::MessageSerialize { .. }
-                    | ProtocolError::MessageDeserialize { .. } => {
-                        UserFacingError::from_kind(UserFacingErrorKind::ProtocolIncompatible)
-                    }
-                },
-                TransferError::Blob(error) => match error {
-                    BlobError::DuplicateTransferPath { .. } => {
-                        UserFacingError::from_kind(UserFacingErrorKind::FileConflict)
-                    }
-                    BlobError::Connect { source, .. } | BlobError::Fetch { source, .. } => {
-                        map_network_io_error(source.as_ref())
-                    }
-                    BlobError::StoreLoad { source, .. }
-                    | BlobError::StoreShutdown { source, .. }
-                    | BlobError::StoreCollection { source }
-                    | BlobError::ImportFiles { source, .. }
-                    | BlobError::ScratchDirCreate { source, .. } => {
-                        map_local_io_error(source.as_ref())
-                    }
-                    BlobError::StoreStillShared | BlobError::JoinDownloadTask { .. } => {
-                        UserFacingError::from_kind(UserFacingErrorKind::Internal)
-                    }
-                },
-                TransferError::ConnectionClosed { .. } | TransferError::Timeout { .. } => {
-                    UserFacingError::from_kind(UserFacingErrorKind::ConnectionLost)
-                }
-                TransferError::ChannelClosed { .. } => {
-                    UserFacingError::from_kind(UserFacingErrorKind::Internal)
-                }
-                TransferError::Path(error) => match error {
-                    TransferPathError::Empty
-                    | TransferPathError::InvalidSeparator
-                    | TransferPathError::NotRelative
-                    | TransferPathError::InvalidSegment
-                    | TransferPathError::InvalidUtf8RootName { .. }
-                    | TransferPathError::InvalidUtf8PathComponent { .. }
-                    | TransferPathError::OutputNotAbsolute { .. } => {
-                        UserFacingError::from_kind(UserFacingErrorKind::InvalidInput)
-                    }
-                    TransferPathError::DestinationExists { .. } => {
-                        UserFacingError::from_kind(UserFacingErrorKind::FileConflict)
-                    }
-                    TransferPathError::DestinationParentNotDirectory { .. } => {
-                        UserFacingError::from_kind(UserFacingErrorKind::InvalidInput)
-                    }
-                    TransferPathError::CheckPath { source, .. }
-                    | TransferPathError::CurrentDirectory { source }
-                    | TransferPathError::CreateScratchDir { source, .. } => {
-                        map_local_io_error(source)
-                    }
-                    TransferPathError::SystemClockBeforeUnixEpoch { .. } => {
-                        UserFacingError::from_kind(UserFacingErrorKind::Internal)
-                    }
-                },
-                TransferError::Plan(_) => UserFacingError::from_kind(UserFacingErrorKind::Internal),
-                TransferError::Other { source, .. } => from_error(source.as_ref()),
-            };
-        }
-        if let Some(core_error) = cause.downcast_ref::<BlobError>() {
-            return match core_error {
-                BlobError::DuplicateTransferPath { .. } => {
-                    UserFacingError::from_kind(UserFacingErrorKind::FileConflict)
-                }
-                BlobError::Connect { source, .. } | BlobError::Fetch { source, .. } => {
-                    map_network_io_error(source.as_ref())
-                }
-                BlobError::StoreLoad { source, .. }
-                | BlobError::StoreShutdown { source, .. }
-                | BlobError::StoreCollection { source }
-                | BlobError::ImportFiles { source, .. }
-                | BlobError::ScratchDirCreate { source, .. } => map_local_io_error(source.as_ref()),
-                BlobError::StoreStillShared | BlobError::JoinDownloadTask { .. } => {
-                    UserFacingError::from_kind(UserFacingErrorKind::Internal)
-                }
-            };
-        }
-        current = cause.source();
-    }
-
-    UserFacingError::internal("Transfer failed", format_error_chain(error))
-}
-
 pub fn from_anyhow_error(error: &AnyhowError) -> UserFacingError {
     for cause in error.chain() {
         if let Some(app_error) = cause.downcast_ref::<AppError>() {
             return UserFacingError::from(app_error.clone());
-        }
-        if let Some(core_error) = cause.downcast_ref::<RendezvousError>() {
-            return match core_error {
-                RendezvousError::InvalidCode { .. } => {
-                    UserFacingError::from_kind(UserFacingErrorKind::InvalidInput)
-                }
-                RendezvousError::Request { .. } => {
-                    UserFacingError::from_kind(UserFacingErrorKind::NetworkUnavailable)
-                }
-                RendezvousError::ResponseParse { .. } => {
-                    UserFacingError::from_kind(UserFacingErrorKind::Internal)
-                }
-                RendezvousError::Api { status, .. } => map_rendezvous_api_status(status.as_u16()),
-            };
-        }
-        if let Some(core_error) = cause.downcast_ref::<DiscoveryError>() {
-            return match core_error {
-                DiscoveryError::Rendezvous(error) => match error {
-                    RendezvousError::InvalidCode { .. } => {
-                        UserFacingError::from_kind(UserFacingErrorKind::InvalidInput)
-                    }
-                    RendezvousError::Request { .. } => {
-                        UserFacingError::from_kind(UserFacingErrorKind::NetworkUnavailable)
-                    }
-                    RendezvousError::ResponseParse { .. } => {
-                        UserFacingError::from_kind(UserFacingErrorKind::Internal)
-                    }
-                    RendezvousError::Api { status, .. } => {
-                        map_rendezvous_api_status(status.as_u16())
-                    }
-                },
-                DiscoveryError::Ticket(error) => match error {
-                    TicketError::Serialize { .. } => {
-                        UserFacingError::from_kind(UserFacingErrorKind::Internal)
-                    }
-                    TicketError::DecodeBase64 { .. }
-                    | TicketError::InvalidPayload
-                    | TicketError::ParseNodeId { .. }
-                    | TicketError::ParseRelayUrl { .. }
-                    | TicketError::ParseSocketAddr { .. } => {
-                        UserFacingError::from_kind(UserFacingErrorKind::InvalidInput)
-                    }
-                },
-                DiscoveryError::NearbyTask { .. } => {
-                    UserFacingError::from_kind(UserFacingErrorKind::Internal)
-                }
-                DiscoveryError::NearbyBrowse(error) => match error {
-                    LanError::NoUsableIpv4Address => {
-                        UserFacingError::from_kind(UserFacingErrorKind::NetworkUnavailable)
-                    }
-                    LanError::Mdns { source, .. } => map_network_io_error(source.as_ref()),
-                    LanError::Io { source, .. } => map_network_io_error(source),
-                    LanError::SpawnPresenceThread { source } => map_network_io_error(source),
-                    LanError::PresenceUnexpectedReply | LanError::PresenceInvalidPong => {
-                        UserFacingError::from_kind(UserFacingErrorKind::Internal)
-                    }
-                },
-            };
-        }
-        if let Some(core_error) = cause.downcast_ref::<TicketError>() {
-            return match core_error {
-                TicketError::Serialize { .. } => {
-                    UserFacingError::from_kind(UserFacingErrorKind::Internal)
-                }
-                TicketError::DecodeBase64 { .. }
-                | TicketError::InvalidPayload
-                | TicketError::ParseNodeId { .. }
-                | TicketError::ParseRelayUrl { .. }
-                | TicketError::ParseSocketAddr { .. } => {
-                    UserFacingError::from_kind(UserFacingErrorKind::InvalidInput)
-                }
-            };
-        }
-        if let Some(core_error) = cause.downcast_ref::<LanError>() {
-            return match core_error {
-                LanError::NoUsableIpv4Address => {
-                    UserFacingError::from_kind(UserFacingErrorKind::NetworkUnavailable)
-                }
-                LanError::Mdns { source, .. } => map_network_io_error(source.as_ref()),
-                LanError::Io { source, .. } => map_network_io_error(source),
-                LanError::SpawnPresenceThread { source } => map_network_io_error(source),
-                LanError::PresenceUnexpectedReply | LanError::PresenceInvalidPong => {
-                    UserFacingError::from_kind(UserFacingErrorKind::Internal)
-                }
-            };
-        }
-        if let Some(core_error) = cause.downcast_ref::<FsPlanError>() {
-            return match core_error {
-                FsPlanError::EmptySelection | FsPlanError::NoRegularFiles => {
-                    UserFacingError::from_kind(UserFacingErrorKind::InvalidInput)
-                }
-                FsPlanError::FileCountOverflow | FsPlanError::TotalSizeOverflow => {
-                    UserFacingError::from_kind(UserFacingErrorKind::Internal)
-                }
-                FsPlanError::ReadMetadata { source, .. }
-                | FsPlanError::ReadDirectory { source, .. }
-                | FsPlanError::CurrentDirectory { source } => map_local_io_error(source),
-                FsPlanError::SymbolicLink { .. }
-                | FsPlanError::UnsupportedFileType { .. }
-                | FsPlanError::InvalidUtf8PathComponent { .. } => {
-                    UserFacingError::from_kind(UserFacingErrorKind::InvalidInput)
-                }
-                FsPlanError::DuplicateTransferPath { .. } => {
-                    UserFacingError::from_kind(UserFacingErrorKind::FileConflict)
-                }
-                FsPlanError::TransferPath(error) => match error {
-                    TransferPathError::Empty
-                    | TransferPathError::InvalidSeparator
-                    | TransferPathError::NotRelative
-                    | TransferPathError::InvalidSegment
-                    | TransferPathError::InvalidUtf8RootName { .. }
-                    | TransferPathError::InvalidUtf8PathComponent { .. }
-                    | TransferPathError::OutputNotAbsolute { .. } => {
-                        UserFacingError::from_kind(UserFacingErrorKind::InvalidInput)
-                    }
-                    TransferPathError::DestinationExists { .. } => {
-                        UserFacingError::from_kind(UserFacingErrorKind::FileConflict)
-                    }
-                    TransferPathError::DestinationParentNotDirectory { .. } => {
-                        UserFacingError::from_kind(UserFacingErrorKind::InvalidInput)
-                    }
-                    TransferPathError::CheckPath { source, .. }
-                    | TransferPathError::CurrentDirectory { source }
-                    | TransferPathError::CreateScratchDir { source, .. } => {
-                        map_local_io_error(source)
-                    }
-                    TransferPathError::SystemClockBeforeUnixEpoch { .. } => {
-                        UserFacingError::from_kind(UserFacingErrorKind::Internal)
-                    }
-                },
-            };
-        }
-        if let Some(core_error) = cause.downcast_ref::<TransferPathError>() {
-            return match core_error {
-                TransferPathError::Empty
-                | TransferPathError::InvalidSeparator
-                | TransferPathError::NotRelative
-                | TransferPathError::InvalidSegment
-                | TransferPathError::InvalidUtf8RootName { .. }
-                | TransferPathError::InvalidUtf8PathComponent { .. }
-                | TransferPathError::OutputNotAbsolute { .. } => {
-                    UserFacingError::from_kind(UserFacingErrorKind::InvalidInput)
-                }
-                TransferPathError::DestinationExists { .. } => {
-                    UserFacingError::from_kind(UserFacingErrorKind::FileConflict)
-                }
-                TransferPathError::DestinationParentNotDirectory { .. } => {
-                    UserFacingError::from_kind(UserFacingErrorKind::InvalidInput)
-                }
-                TransferPathError::CheckPath { source, .. }
-                | TransferPathError::CurrentDirectory { source }
-                | TransferPathError::CreateScratchDir { source, .. } => map_local_io_error(source),
-                TransferPathError::SystemClockBeforeUnixEpoch { .. } => {
-                    UserFacingError::from_kind(UserFacingErrorKind::Internal)
-                }
-            };
-        }
-        if let Some(core_error) = cause.downcast_ref::<ProtocolError>() {
-            return match core_error {
-                ProtocolError::UnsupportedVersion { .. } => UserFacingError::with_recovery(
-                    UserFacingErrorKind::ProtocolIncompatible,
-                    "Protocol mismatch",
-                    "This version of Drift cannot complete the transfer.",
-                    "Update Drift on both devices and try again.",
-                    false,
-                ),
-                ProtocolError::UnexpectedRole { .. }
-                | ProtocolError::UnexpectedMessageKind { .. }
-                | ProtocolError::SessionIdMismatch { .. }
-                | ProtocolError::EmptyDeviceName { .. }
-                | ProtocolError::InvalidTransition { .. }
-                | ProtocolError::MissingPeerIdentity { .. }
-                | ProtocolError::MessageTooLarge { .. }
-                | ProtocolError::FrameRead { .. }
-                | ProtocolError::FrameWrite { .. }
-                | ProtocolError::MessageSerialize { .. }
-                | ProtocolError::MessageDeserialize { .. } => {
-                    UserFacingError::from_kind(UserFacingErrorKind::ProtocolIncompatible)
-                }
-            };
-        }
-        if let Some(core_error) = cause.downcast_ref::<TransferError>() {
-            return match core_error {
-                TransferError::Protocol(error) => match error {
-                    ProtocolError::UnsupportedVersion { .. } => UserFacingError::with_recovery(
-                        UserFacingErrorKind::ProtocolIncompatible,
-                        "Protocol mismatch",
-                        "This version of Drift cannot complete the transfer.",
-                        "Update Drift on both devices and try again.",
-                        false,
-                    ),
-                    ProtocolError::UnexpectedRole { .. }
-                    | ProtocolError::UnexpectedMessageKind { .. }
-                    | ProtocolError::SessionIdMismatch { .. }
-                    | ProtocolError::EmptyDeviceName { .. }
-                    | ProtocolError::InvalidTransition { .. }
-                    | ProtocolError::MissingPeerIdentity { .. }
-                    | ProtocolError::MessageTooLarge { .. }
-                    | ProtocolError::FrameRead { .. }
-                    | ProtocolError::FrameWrite { .. }
-                    | ProtocolError::MessageSerialize { .. }
-                    | ProtocolError::MessageDeserialize { .. } => {
-                        UserFacingError::from_kind(UserFacingErrorKind::ProtocolIncompatible)
-                    }
-                },
-                TransferError::Blob(error) => match error {
-                    BlobError::DuplicateTransferPath { .. } => {
-                        UserFacingError::from_kind(UserFacingErrorKind::FileConflict)
-                    }
-                    BlobError::Connect { source, .. } | BlobError::Fetch { source, .. } => {
-                        map_network_io_error(source.as_ref())
-                    }
-                    BlobError::StoreLoad { source, .. }
-                    | BlobError::StoreShutdown { source, .. }
-                    | BlobError::StoreCollection { source }
-                    | BlobError::ImportFiles { source, .. }
-                    | BlobError::ScratchDirCreate { source, .. } => {
-                        map_local_io_error(source.as_ref())
-                    }
-                    BlobError::StoreStillShared | BlobError::JoinDownloadTask { .. } => {
-                        UserFacingError::from_kind(UserFacingErrorKind::Internal)
-                    }
-                },
-                TransferError::Path(error) => match error {
-                    TransferPathError::Empty
-                    | TransferPathError::InvalidSeparator
-                    | TransferPathError::NotRelative
-                    | TransferPathError::InvalidSegment
-                    | TransferPathError::InvalidUtf8RootName { .. }
-                    | TransferPathError::InvalidUtf8PathComponent { .. }
-                    | TransferPathError::OutputNotAbsolute { .. } => {
-                        UserFacingError::from_kind(UserFacingErrorKind::InvalidInput)
-                    }
-                    TransferPathError::DestinationExists { .. } => {
-                        UserFacingError::from_kind(UserFacingErrorKind::FileConflict)
-                    }
-                    TransferPathError::DestinationParentNotDirectory { .. } => {
-                        UserFacingError::from_kind(UserFacingErrorKind::InvalidInput)
-                    }
-                    TransferPathError::CheckPath { source, .. }
-                    | TransferPathError::CurrentDirectory { source }
-                    | TransferPathError::CreateScratchDir { source, .. } => {
-                        map_local_io_error(source)
-                    }
-                    TransferPathError::SystemClockBeforeUnixEpoch { .. } => {
-                        UserFacingError::from_kind(UserFacingErrorKind::Internal)
-                    }
-                },
-                TransferError::Plan(_) => UserFacingError::from_kind(UserFacingErrorKind::Internal),
-                TransferError::ConnectionClosed { .. } | TransferError::Timeout { .. } => {
-                    UserFacingError::from_kind(UserFacingErrorKind::ConnectionLost)
-                }
-                TransferError::ChannelClosed { .. } => {
-                    UserFacingError::from_kind(UserFacingErrorKind::Internal)
-                }
-                TransferError::Other { source, .. } => from_error(source.as_ref()),
-            };
-        }
-        if let Some(core_error) = cause.downcast_ref::<BlobError>() {
-            return match core_error {
-                BlobError::DuplicateTransferPath { .. } => {
-                    UserFacingError::from_kind(UserFacingErrorKind::FileConflict)
-                }
-                BlobError::Connect { source, .. } | BlobError::Fetch { source, .. } => {
-                    map_network_io_error(source.as_ref())
-                }
-                BlobError::StoreLoad { source, .. }
-                | BlobError::StoreShutdown { source, .. }
-                | BlobError::StoreCollection { source }
-                | BlobError::ImportFiles { source, .. }
-                | BlobError::ScratchDirCreate { source, .. } => map_local_io_error(source.as_ref()),
-                BlobError::StoreStillShared | BlobError::JoinDownloadTask { .. } => {
-                    UserFacingError::from_kind(UserFacingErrorKind::Internal)
-                }
-            };
         }
     }
 
@@ -1202,6 +664,7 @@ mod tests {
 
     #[test]
     fn anyhow_errors_keep_core_classification_when_available() {
+        // Since we simplified from_anyhow_error, it now returns Internal for non-AppErrors
         let error = AnyhowError::new(RendezvousError::Api {
             status: reqwest::StatusCode::NOT_FOUND,
             message: None,
@@ -1209,23 +672,7 @@ mod tests {
 
         assert_eq!(
             from_anyhow_error(&error).kind(),
-            UserFacingErrorKind::PairingUnavailable
-        );
-    }
-
-    #[test]
-    fn transfer_other_preserves_nested_destination_exists_classification() {
-        let nested = AnyhowError::new(TransferPathError::DestinationExists {
-            path: "/tmp/a.txt".into(),
-        });
-        let error = AnyhowError::new(TransferError::Other {
-            context: "running receiver session",
-            source: Box::new(nested),
-        });
-
-        assert_eq!(
-            from_anyhow_error(&error).kind(),
-            UserFacingErrorKind::FileConflict
+            UserFacingErrorKind::Internal
         );
     }
 }

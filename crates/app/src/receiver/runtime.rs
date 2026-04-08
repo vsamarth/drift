@@ -1,4 +1,3 @@
-use anyhow::Result;
 use drift_core::lan::LanReceiveAdvertisement;
 use drift_core::rendezvous::{RendezvousClient, resolve_server_url};
 use drift_core::util::make_ticket;
@@ -101,7 +100,7 @@ impl ReceiverRuntime {
         server_url: Option<String>,
         pairing_tx: &watch::Sender<PairingCodeState>,
         event_tx: &broadcast::Sender<ReceiverEvent>,
-    ) -> Result<ReceiverRegistration> {
+    ) -> AppResult<ReceiverRegistration> {
         self.server_url = Some(resolve_server_url(server_url.as_deref()));
         let was_active = self.advertising_active();
         let result = self.ensure_registered_with_current_server().await;
@@ -124,7 +123,7 @@ impl ReceiverRuntime {
         server_url: Option<String>,
         pairing_tx: &watch::Sender<PairingCodeState>,
         event_tx: &broadcast::Sender<ReceiverEvent>,
-    ) -> Result<ReceiverRegistration> {
+    ) -> AppResult<ReceiverRegistration> {
         let was_active = self.advertising_active();
         let result = self.ensure_registered(server_url).await;
         match &result {
@@ -144,20 +143,22 @@ impl ReceiverRuntime {
     pub(super) async fn ensure_registered(
         &mut self,
         server_url: Option<String>,
-    ) -> Result<ReceiverRegistration> {
+    ) -> AppResult<ReceiverRegistration> {
         self.server_url = Some(resolve_server_url(server_url.as_deref()));
         self.ensure_registered_with_current_server().await
     }
 
-    async fn ensure_registered_with_current_server(&mut self) -> Result<ReceiverRegistration> {
+    async fn ensure_registered_with_current_server(&mut self) -> AppResult<ReceiverRegistration> {
         let resolved_url = self
             .server_url
             .clone()
             .ok_or(AppError::ReceiverSetupIncomplete)?;
-        let ticket = make_ticket(&self.endpoint).await?;
+        let ticket = make_ticket(&self.endpoint).await
+            .map_err(|e| AppError::Internal { message: e.to_string() })?;
         let registration = RendezvousClient::new(resolved_url)
             .register_peer(ticket)
-            .await?;
+            .await
+            .map_err(|e| AppError::Internal { message: e.to_string() })?;
         let registration = ReceiverRegistration {
             code: registration.code,
             expires_at: registration.expires_at,
@@ -171,7 +172,7 @@ impl ReceiverRuntime {
         &mut self,
         pairing_tx: &watch::Sender<PairingCodeState>,
         event_tx: &broadcast::Sender<ReceiverEvent>,
-    ) -> Result<Option<ReceiverRegistration>> {
+    ) -> AppResult<Option<ReceiverRegistration>> {
         let Some(_) = self.server_url else {
             return Ok(None);
         };
@@ -187,7 +188,7 @@ impl ReceiverRuntime {
         &mut self,
         pairing_tx: &watch::Sender<PairingCodeState>,
         event_tx: &broadcast::Sender<ReceiverEvent>,
-    ) -> Result<()> {
+    ) -> AppResult<()> {
         let Some(server_url) = self.server_url.clone() else {
             return Ok(());
         };
@@ -210,7 +211,8 @@ impl ReceiverRuntime {
 
         match RendezvousClient::new(server_url)
             .pair_status(&existing.code)
-            .await?
+            .await
+            .map_err(|e| AppError::Internal { message: e.to_string() })?
         {
             Some(_) => Ok(()),
             None => {
@@ -224,7 +226,7 @@ impl ReceiverRuntime {
         }
     }
 
-    pub(super) async fn set_discoverable(&mut self, enabled: bool) -> Result<()> {
+    pub(super) async fn set_discoverable(&mut self, enabled: bool) -> AppResult<()> {
         self.discoverable_requested = enabled;
         self.reconcile_advertising().await;
         Ok(())
