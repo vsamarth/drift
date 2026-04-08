@@ -2,14 +2,13 @@ import 'package:flutter/material.dart';
 
 import '../../core/models/transfer_models.dart';
 import '../../core/theme/drift_theme.dart';
+import '../../state/drift_app_state.dart';
 import 'transfer_layout.dart';
-
-enum TransferResultTone { success, error }
 
 class TransferResultCard extends StatelessWidget {
   const TransferResultCard({
     super.key,
-    required this.tone,
+    required this.outcome,
     required this.title,
     required this.message,
     this.metrics,
@@ -18,7 +17,7 @@ class TransferResultCard extends StatelessWidget {
     this.fillBody = false,
   });
 
-  final TransferResultTone tone;
+  final TransferResultOutcomeData outcome;
   final String title;
   final String message;
   final List<TransferMetricRow>? metrics;
@@ -31,22 +30,27 @@ class TransferResultCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isSuccess = tone == TransferResultTone.success;
-    final accentColor = isSuccess
-        ? const Color(0xFF49B36C)
-        : const Color(0xFFCC3333);
-    final icon = isSuccess ? Icons.check_circle_rounded : Icons.error_rounded;
+    final visual = _visualForOutcome(outcome);
 
     if (fillBody) {
       return TransferFlowLayout(
-        statusLabel: isSuccess ? 'Complete' : 'Error',
-        statusColor: accentColor,
+        statusLabel: visual.statusLabel,
+        statusColor: visual.accentColor,
         title: title,
         subtitle: message,
-        illustration: Icon(icon, size: 48, color: accentColor),
+        illustration: DecoratedBox(
+          decoration: BoxDecoration(
+            color: visual.accentColor.withValues(alpha: 0.1),
+            shape: BoxShape.circle,
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(18),
+            child: Icon(visual.icon, size: 42, color: visual.accentColor),
+          ),
+        ),
         manifest: metrics != null && metrics!.isNotEmpty
             ? _TransferMetricsList(metrics: metrics!)
-            : const SizedBox.shrink(),
+            : null,
         footer: Row(
           children: [
             if (primaryLabel != null && onPrimary != null)
@@ -54,7 +58,7 @@ class TransferResultCard extends StatelessWidget {
                 child: FilledButton(
                   onPressed: onPrimary,
                   style: FilledButton.styleFrom(
-                    backgroundColor: const Color(0xFF4A8E9E),
+                    backgroundColor: visual.buttonColor,
                     foregroundColor: Colors.white,
                     minimumSize: const Size(0, 48),
                     shape: RoundedRectangleBorder(
@@ -82,7 +86,15 @@ class TransferResultCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, size: 32, color: accentColor),
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: visual.accentColor.withValues(alpha: 0.1),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(visual.icon, size: 24, color: visual.accentColor),
+          ),
           const SizedBox(height: 14),
           Text(title, style: titleStyle),
           const SizedBox(height: 4),
@@ -109,7 +121,7 @@ class TransferResultCard extends StatelessWidget {
             FilledButton(
               onPressed: onPrimary,
               style: FilledButton.styleFrom(
-                backgroundColor: const Color(0xFF4A8E9E),
+                backgroundColor: visual.buttonColor,
                 foregroundColor: Colors.white,
                 minimumSize: const Size(0, 48),
                 shape: RoundedRectangleBorder(
@@ -123,6 +135,49 @@ class TransferResultCard extends StatelessWidget {
       ),
     );
   }
+}
+
+class _TransferResultVisualData {
+  const _TransferResultVisualData({
+    required this.statusLabel,
+    required this.accentColor,
+    required this.buttonColor,
+    required this.icon,
+  });
+
+  final String statusLabel;
+  final Color accentColor;
+  final Color buttonColor;
+  final IconData icon;
+}
+
+_TransferResultVisualData _visualForOutcome(TransferResultOutcomeData outcome) {
+  return switch (outcome) {
+    TransferResultOutcomeData.success => const _TransferResultVisualData(
+      statusLabel: 'Complete',
+      accentColor: Color(0xFF49B36C),
+      buttonColor: Color(0xFF4A8E9E),
+      icon: Icons.check_circle_rounded,
+    ),
+    TransferResultOutcomeData.cancelled => const _TransferResultVisualData(
+      statusLabel: 'Cancelled',
+      accentColor: Color(0xFFC0912C),
+      buttonColor: Color(0xFF617B87),
+      icon: Icons.do_not_disturb_on_rounded,
+    ),
+    TransferResultOutcomeData.declined => const _TransferResultVisualData(
+      statusLabel: 'Declined',
+      accentColor: Color(0xFF7C8C97),
+      buttonColor: Color(0xFF4A8E9E),
+      icon: Icons.remove_circle_outline_rounded,
+    ),
+    TransferResultOutcomeData.failed => const _TransferResultVisualData(
+      statusLabel: 'Failed',
+      accentColor: Color(0xFFCC3333),
+      buttonColor: Color(0xFFB34A4A),
+      icon: Icons.error_rounded,
+    ),
+  };
 }
 
 class _TransferMetricsList extends StatelessWidget {

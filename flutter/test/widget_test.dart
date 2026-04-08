@@ -325,9 +325,13 @@ class FakeReceiverServiceSource implements ReceiverServiceSource {
       status: 'Ready',
       phase: ReceiverBadgePhase.ready,
     ),
+    this.respondError,
+    this.cancelError,
   });
 
   final ReceiverBadgeState initialBadge;
+  final Object? respondError;
+  final Object? cancelError;
   final StreamController<ReceiverBadgeState> _badgeController =
       StreamController<ReceiverBadgeState>.broadcast();
   final StreamController<rust_receiver.ReceiverTransferEvent>
@@ -337,7 +341,11 @@ class FakeReceiverServiceSource implements ReceiverServiceSource {
   final List<bool> respondToOfferCalls = <bool>[];
 
   @override
-  Future<void> cancelTransfer() async {}
+  Future<void> cancelTransfer() async {
+    if (cancelError != null) {
+      throw cancelError!;
+    }
+  }
 
   void emitBadge(ReceiverBadgeState badge) {
     _badgeController.add(badge);
@@ -354,6 +362,9 @@ class FakeReceiverServiceSource implements ReceiverServiceSource {
 
   @override
   Future<void> respondToOffer({required bool accept}) async {
+    if (respondError != null) {
+      throw respondError!;
+    }
     respondToOfferCalls.add(accept);
   }
 
@@ -394,6 +405,42 @@ rust_receiver.ReceiverTransferEvent _incomingOfferEvent() {
         size: BigInt.from(18 * 1024),
       ),
     ],
+  );
+}
+
+rust_receiver.ReceiverTransferEvent _incomingFailedEvent({
+  required BigInt receivedBytes,
+  String errorMessage = 'Drift lost the connection while receiving files.',
+}) {
+  return rust_receiver.ReceiverTransferEvent(
+    phase: rust_receiver.ReceiverTransferPhase.failed,
+    senderName: 'Maya',
+    senderDeviceType: 'phone',
+    destinationLabel: 'Downloads',
+    saveRootLabel: 'Downloads',
+    statusMessage: 'Transfer failed.',
+    itemCount: BigInt.one,
+    totalSizeBytes: BigInt.from(18 * 1024),
+    bytesReceived: receivedBytes,
+    totalSizeLabel: '18 KB',
+    files: const [],
+    errorMessage: errorMessage,
+  );
+}
+
+rust_receiver.ReceiverTransferEvent _incomingDeclinedEvent() {
+  return rust_receiver.ReceiverTransferEvent(
+    phase: rust_receiver.ReceiverTransferPhase.declined,
+    senderName: 'Maya',
+    senderDeviceType: 'phone',
+    destinationLabel: 'Downloads',
+    saveRootLabel: 'Downloads',
+    statusMessage: 'Transfer declined.',
+    itemCount: BigInt.one,
+    totalSizeBytes: BigInt.from(18 * 1024),
+    bytesReceived: BigInt.zero,
+    totalSizeLabel: '18 KB',
+    files: const [],
   );
 }
 
@@ -569,7 +616,14 @@ void main() {
     await tester.tap(find.text('Decline'));
     await pumpUiSettled(tester);
 
-    expect(find.text('Tap to choose files to send.'), findsOneWidget);
+    receiverService.emitIncoming(_incomingDeclinedEvent());
+    await pumpUiSettled(tester);
+
+    expect(find.text('Transfer declined'), findsOneWidget);
+    expect(
+      find.text('The transfer was declined before any files were received.'),
+      findsOneWidget,
+    );
     expectNoFlutterError(tester);
   });
 
@@ -615,6 +669,63 @@ void main() {
 
     expect(find.text('Tap to choose files to send.'), findsOneWidget);
     expectNoFlutterError(tester);
+  });
+
+  testWidgets('mobile receive failure stays on a transfer error state', (
+    tester,
+  ) async {
+    final receiverService = FakeReceiverServiceSource();
+    final container = buildTestContainer(
+      receiverServiceSource: receiverService,
+      enableIdleIncomingListener: true,
+    );
+    await pumpMobileShell(tester, container: container);
+
+    receiverService.emitIncoming(_incomingOfferEvent());
+    await pumpUiSettled(tester);
+    await tester.tap(saveToDownloadsButton());
+    await pumpUiSettled(tester);
+
+    receiverService.emitIncoming(
+      _incomingFailedEvent(receivedBytes: BigInt.from(9 * 1024)),
+    );
+    await pumpUiSettled(tester);
+
+    expect(find.text('Couldn\'t finish receiving files'), findsOneWidget);
+    expect(
+      find.text('Drift lost the connection while receiving files.'),
+      findsOneWidget,
+    );
+    expect(find.text('Done'), findsOneWidget);
+
+    await tester.tap(find.text('Done'));
+    await pumpUiSettled(tester);
+
+    expect(find.text('Tap to choose files to send.'), findsOneWidget);
+    expectNoFlutterError(tester);
+  });
+
+  testWidgets('mobile receive declined stays on a terminal declined state', (
+    tester,
+  ) async {
+    final receiverService = FakeReceiverServiceSource();
+    final container = buildTestContainer(
+      receiverServiceSource: receiverService,
+      enableIdleIncomingListener: true,
+    );
+    await pumpMobileShell(tester, container: container);
+
+    receiverService.emitIncoming(_incomingOfferEvent());
+    await pumpUiSettled(tester);
+    receiverService.emitIncoming(_incomingDeclinedEvent());
+    await pumpUiSettled(tester);
+
+    expect(find.text('Transfer declined'), findsOneWidget);
+    expect(
+      find.text('The transfer was declined before any files were received.'),
+      findsOneWidget,
+    );
+    expect(find.text('Done'), findsOneWidget);
   });
 
   testWidgets('after drop state routes straight to manual code entry', (
@@ -809,7 +920,17 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Transfer cancelled'), findsOneWidget);
-    expect(find.text('Transfer cancelled.'), findsOneWidget);
+    expect(
+      find.text('The transfer was stopped before all files were sent.'),
+      findsOneWidget,
+    );
+    expect(find.text('Send again'), findsOneWidget);
+
+    await tester.tap(find.text('Send again'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Send with code'), findsOneWidget);
+    expect(find.text('sample.txt'), findsWidgets);
     container.read(driftAppNotifierProvider.notifier).resetShell();
     await tester.pumpAndSettle();
     expectNoFlutterError(tester);
@@ -883,60 +1004,60 @@ void main() {
     expectNoFlutterError(tester);
   });
 
-  testWidgets(
-    'send failure shows the rust error and back returns to selection',
-    (tester) async {
-      final sendTransferSource = FakeSendTransferSource();
-      final container = buildTestContainer(
-        sendTransferSource: sendTransferSource,
-      );
-      await pumpUtilityApp(tester, container: container);
+  testWidgets('send failure shows retry action and preserves selection', (
+    tester,
+  ) async {
+    final sendTransferSource = FakeSendTransferSource();
+    final container = buildTestContainer(
+      sendTransferSource: sendTransferSource,
+    );
+    await pumpUtilityApp(tester, container: container);
 
-      await tester.tap(chooseFilesButton());
-      await tester.pumpAndSettle();
-      await tester.enterText(sendCodeField(), 'ab2cd3');
-      await tester.pump();
+    await tester.tap(chooseFilesButton());
+    await tester.pumpAndSettle();
+    await tester.enterText(sendCodeField(), 'ab2cd3');
+    await tester.pump();
 
-      await tester.tap(find.text('Send'));
-      await tester.pump();
+    await tester.tap(find.text('Send'));
+    await tester.pump();
 
-      sendTransferSource.emit(
-        sendTransferUpdate(
-          phase: SendTransferUpdatePhase.connecting,
-          destinationLabel: 'Code AB2 CD3',
-          statusMessage: 'Request sent',
-        ),
-      );
-      await tester.pumpAndSettle();
+    sendTransferSource.emit(
+      sendTransferUpdate(
+        phase: SendTransferUpdatePhase.connecting,
+        destinationLabel: 'Code AB2 CD3',
+        statusMessage: 'Request sent',
+      ),
+    );
+    await tester.pumpAndSettle();
 
-      sendTransferSource.emit(
-        sendTransferUpdate(
-          phase: SendTransferUpdatePhase.failed,
-          destinationLabel: 'Code AB2 CD3',
-          statusMessage: 'Request sent',
-          errorMessage:
-              'receiver declined the offer: receiver declined the offer',
-        ),
-      );
-      await sendTransferSource.finish();
-      await tester.pumpAndSettle();
+    sendTransferSource.emit(
+      sendTransferUpdate(
+        phase: SendTransferUpdatePhase.failed,
+        destinationLabel: 'Code AB2 CD3',
+        statusMessage: 'Request sent',
+        errorMessage:
+            'receiver declined the offer: receiver declined the offer',
+      ),
+    );
+    await sendTransferSource.finish();
+    await tester.pumpAndSettle();
 
-      expect(find.text('Transfer failed'), findsOneWidget);
-      expect(
-        find.text('receiver declined the offer: receiver declined the offer'),
-        findsOneWidget,
-      );
+    expect(find.text('Transfer failed'), findsOneWidget);
+    expect(
+      find.text('receiver declined the offer: receiver declined the offer'),
+      findsOneWidget,
+    );
+    expect(find.text('Try again'), findsOneWidget);
 
-      await tester.tap(shellBackButton());
-      await tester.pumpAndSettle();
+    await tester.tap(find.text('Try again'));
+    await tester.pumpAndSettle();
 
-      expect(find.text('Send with code'), findsOneWidget);
-      expect(find.text('sample.txt'), findsWidgets);
-      container.read(driftAppNotifierProvider.notifier).resetShell();
-      await tester.pumpAndSettle();
-      expectNoFlutterError(tester);
-    },
-  );
+    expect(find.text('Send with code'), findsOneWidget);
+    expect(find.text('sample.txt'), findsWidgets);
+    container.read(driftAppNotifierProvider.notifier).resetShell();
+    await tester.pumpAndSettle();
+    expectNoFlutterError(tester);
+  });
 
   testWidgets('recipient fallback avoids raw unknown device labels', (
     tester,
