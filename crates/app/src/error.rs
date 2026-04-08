@@ -47,6 +47,14 @@ pub enum AppError {
     SnapshotChannelClosed,
     #[error("discovery failed")]
     DiscoveryFailed,
+    #[error("invalid device type: {value}")]
+    InvalidDeviceType { value: String },
+    #[error("invalid code: {code}")]
+    InvalidCode { code: String },
+    #[error("operation cancelled: {reason}")]
+    Cancelled { reason: String },
+    #[error("internal error: {message}")]
+    Internal { message: String },
 }
 
 pub type AppResult<T> = std::result::Result<T, AppError>;
@@ -216,6 +224,20 @@ impl From<AppError> for UserFacingError {
                 "Discovery failed",
                 "Drift could not search for nearby devices.",
             ),
+            AppError::InvalidDeviceType { .. } => {
+                UserFacingError::new(UserFacingErrorKind::Internal, "Invalid device type", "Please try again.")
+            }
+            AppError::InvalidCode { .. } => UserFacingError::new(
+                UserFacingErrorKind::InvalidInput,
+                "Invalid code",
+                "Check the code and try again.",
+            ),
+            AppError::Cancelled { reason } => {
+                UserFacingError::new(UserFacingErrorKind::Cancelled, "Transfer cancelled", reason)
+            }
+            AppError::Internal { message } => {
+                UserFacingError::internal("Something went wrong", message)
+            }
         }
     }
 }

@@ -1,8 +1,6 @@
 use std::collections::HashSet;
-use std::error::Error as StdError;
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result, bail};
 use drift_core::fs_plan::preview::{
     SelectedPathKind, SelectedPathPreview, SelectionPreview as CoreSelectionPreview,
     inspect_selected_paths,
@@ -18,7 +16,7 @@ use iroh::{EndpointAddr, EndpointId};
 use tokio::sync::{mpsc, oneshot};
 use tokio_stream::{StreamExt, wrappers::UnboundedReceiverStream};
 
-use crate::error::{UserFacingError, UserFacingErrorKind, from_anyhow_error, from_error};
+use crate::error::{AppError, AppResult, UserFacingError, UserFacingErrorKind};
 use crate::types::{
     NearbyReceiver, SelectionChange, SelectionItem, SelectionPreview, SendConfig, SendEvent,
     SendPhase,
@@ -56,7 +54,7 @@ pub enum SendSessionOutcome {
 #[derive(Debug)]
 pub struct SendRun {
     pub events: SendEventStream,
-    outcome_rx: oneshot::Receiver<Result<SendSessionOutcome>>,
+    outcome_rx: oneshot::Receiver<AppResult<SendSessionOutcome>>,
 }
 
 pub type SendEventStream = UnboundedReceiverStream<SendEvent>;
@@ -144,15 +142,14 @@ impl SendDraft {
         self.paths.is_empty()
     }
 
-    pub fn inspect(&self) -> Result<SelectionPreview> {
-        let preview = inspect_selected_paths(&self.paths)?;
+    pub fn inspect(&self) -> AppResult<SelectionPreview> {
+        let preview = inspect_selected_paths(&self.paths)
+            .map_err(|e| AppError::Internal { message: e.to_string() })?;
         Ok(map_preview(preview))
     }
 
-    pub async fn scan_nearby(&self, timeout_secs: u64) -> Result<Vec<NearbyReceiver>> {
-        crate::nearby::scan_nearby_receivers(timeout_secs)
-            .await
-            .map_err(anyhow::Error::from)
+    pub async fn scan_nearby(&self, timeout_secs: u64) -> AppResult<Vec<NearbyReceiver>> {
+        crate::nearby::scan_nearby_receivers(timeout_secs).await
     }
 
     pub fn into_session(self, destination: SendDestination) -> SendSession {
@@ -181,13 +178,15 @@ impl SendDestination {
         }
     }
 
-    async fn resolve(&self) -> Result<ResolvedDestination> {
+    async fn resolve(&self) -> AppResult<ResolvedDestination> {
         match self {
             Self::Code { code, server_url } => {
-                validate_code(code)?;
+                validate_code(code).map_err(|_| AppError::InvalidCode { code: code.clone() })?;
                 let client = RendezvousClient::new(resolve_server_url(server_url.as_deref()));
-                let resolved = client.claim_peer(code).await?;
-                let endpoint_addr = decode_ticket(&resolved.ticket)?;
+                let resolved = client.claim_peer(code).await
+                    .map_err(|e| AppError::Internal { message: e.to_string() })?;
+                let endpoint_addr = decode_ticket(&resolved.ticket)
+                    .map_err(|e| AppError::Internal { message: e.to_string() })?;
                 Ok(ResolvedDestination {
                     destination_label: format_code_label(code),
                     peer_endpoint_addr: endpoint_addr.clone(),
@@ -195,7 +194,8 @@ impl SendDestination {
                 })
             }
             Self::Nearby { ticket, .. } => {
-                let endpoint_addr = decode_ticket(ticket.trim())?;
+                let endpoint_addr = decode_ticket(ticket.trim())
+                    .map_err(|e| AppError::Internal { message: e.to_string() })?;
                 Ok(ResolvedDestination {
                     destination_label: self.display_label(),
                     peer_endpoint_addr: endpoint_addr.clone(),
@@ -211,13 +211,14 @@ impl SendRun {
         self,
     ) -> (
         SendEventStream,
-        oneshot::Receiver<Result<SendSessionOutcome>>,
+        oneshot::Receiver<AppResult<SendSessionOutcome>>,
     ) {
         (self.events, self.outcome_rx)
     }
 
-    pub async fn outcome(self) -> Result<SendSessionOutcome> {
-        self.outcome_rx.await.context("waiting for send outcome")?
+    pub async fn outcome(self) -> AppResult<SendSessionOutcome> {
+        self.outcome_rx.await
+            .map_err(|_| AppError::Internal { message: "waiting for send outcome".to_owned() })?
     }
 }
 
@@ -252,8 +253,8 @@ impl SendSession {
     async fn drive(
         self,
         event_tx: mpsc::UnboundedSender<SendEvent>,
-    ) -> Result<SendSessionOutcome> {
-        let preview = self.draft.inspect().context("inspecting selected paths")?;
+    ) -> AppResult<SendSessionOutcome> {
+        let preview = self.draft.inspect()?;
         let mut destination_label = self.destination.display_label();
 
         emit_send_event(
@@ -278,7 +279,7 @@ impl SendSession {
             Err(error) => {
                 emit_send_event(
                     &event_tx,
-                    failed_event_from_anyhow(&destination_label, &error),
+                    failed_event_from_error(&destination_label, &error),
                 );
                 return Err(error);
             }
@@ -311,7 +312,8 @@ impl SendSession {
             emit_send_event(&event_tx, mapped);
         }
 
-        let core_outcome = outcome_rx.await.context("waiting for sender outcome")?;
+        let core_outcome = outcome_rx.await
+            .map_err(|e| AppError::Internal { message: e.to_string() })?;
 
         match core_outcome {
             Ok(CoreTransferOutcome::Completed) => Ok(SendSessionOutcome::Accepted {
@@ -322,11 +324,11 @@ impl SendSession {
                 Ok(SendSessionOutcome::Declined { reason })
             }
             Ok(CoreTransferOutcome::Cancelled(cancellation)) => {
-                Err(anyhow::anyhow!(cancellation.reason))
+                Err(AppError::Cancelled { reason: cancellation.reason })
             }
             Err(error) => {
                 emit_send_event(&event_tx, failed_event_from_error(&current_label, &error));
-                Err(error.into())
+                Err(AppError::Internal { message: error.to_string() })
             }
         }
     }
@@ -336,8 +338,7 @@ fn emit_send_event(event_tx: &mpsc::UnboundedSender<SendEvent>, event: SendEvent
     let _ = event_tx.send(event);
 }
 
-fn failed_event_from_anyhow(destination_label: &str, error: &anyhow::Error) -> SendEvent {
-    let user_facing_error = from_anyhow_error(error);
+fn failed_event_from_error(destination_label: &str, error: UserFacingError) -> SendEvent {
     SendEvent {
         phase: SendPhase::Failed,
         destination_label: destination_label.to_owned(),
@@ -349,24 +350,7 @@ fn failed_event_from_anyhow(destination_label: &str, error: &anyhow::Error) -> S
         snapshot: None,
         remote_device_type: None,
         connection_path: None,
-        error: Some(user_facing_error),
-    }
-}
-
-fn failed_event_from_error(destination_label: &str, error: &(dyn StdError + 'static)) -> SendEvent {
-    let user_facing_error = from_error(error);
-    SendEvent {
-        phase: SendPhase::Failed,
-        destination_label: destination_label.to_owned(),
-        status_message: format!("Starting transfer to {destination_label}."),
-        item_count: 0,
-        total_size: 0,
-        bytes_sent: 0,
-        plan: None,
-        snapshot: None,
-        remote_device_type: None,
-        connection_path: None,
-        error: Some(user_facing_error),
+        error: Some(error),
     }
 }
 
@@ -539,11 +523,13 @@ fn map_item(item: SelectedPathPreview) -> SelectionItem {
     }
 }
 
-fn parse_device_type(value: &str) -> Result<DeviceType> {
+fn parse_device_type(value: &str) -> AppResult<DeviceType> {
     match value.trim().to_ascii_lowercase().as_str() {
         "phone" => Ok(DeviceType::Phone),
         "laptop" => Ok(DeviceType::Laptop),
-        other => bail!("invalid device_type {other:?} (expected \"phone\" or \"laptop\")"),
+        other => Err(AppError::InvalidDeviceType {
+            value: other.to_owned(),
+        }),
     }
 }
 
@@ -576,10 +562,9 @@ fn selection_path_key(path: &Path) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{SendDraft, display_destination_label};
-    use crate::error::UserFacingErrorKind;
+    use super::{SendDraft, display_destination_label, failed_event_from_error};
+    use crate::error::{AppError, UserFacingErrorKind};
     use crate::types::SendConfig;
-    use anyhow::anyhow;
     use std::path::{Path, PathBuf};
 
     #[test]
@@ -676,11 +661,14 @@ mod tests {
 
     #[test]
     fn failed_event_uses_structured_error() {
-        let event = super::failed_event("Remote", &anyhow!("boom"));
+        let error = AppError::Internal {
+            message: "boom".to_owned(),
+        };
+        let event = failed_event_from_error("Remote", &error);
 
         let error = event.error.expect("structured error");
         assert_eq!(error.kind(), UserFacingErrorKind::Internal);
-        assert_eq!(error.title(), "Transfer failed");
+        assert_eq!(error.title(), "Something went wrong");
         assert!(error.message().contains("boom"));
     }
 }
