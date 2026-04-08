@@ -209,8 +209,8 @@ fn parse_transfer_ticket(bytes: &[u8]) -> std::result::Result<TransferTicket, Ti
     if let Ok(ticket) = serde_json::from_slice::<TransferTicket>(bytes) {
         return Ok(ticket);
     }
-    let legacy =
-        serde_json::from_slice::<LegacyTransferTicket>(bytes).map_err(|_| TicketError::InvalidPayload)?;
+    let legacy = serde_json::from_slice::<LegacyTransferTicket>(bytes)
+        .map_err(|_| TicketError::InvalidPayload)?;
     Ok(TransferTicket::from(legacy))
 }
 
@@ -229,20 +229,22 @@ impl TryFrom<EncodedTransportAddr> for TransportAddr {
 
     fn try_from(value: EncodedTransportAddr) -> std::result::Result<Self, Self::Error> {
         match value {
-            EncodedTransportAddr::Relay(url) => Ok(TransportAddr::Relay(
-                url.parse()
-                    .map_err(|source| TicketError::ParseRelayUrl {
+            EncodedTransportAddr::Relay(url) => {
+                Ok(TransportAddr::Relay(url.parse().map_err(|source| {
+                    TicketError::ParseRelayUrl {
                         value: url.clone(),
                         source: Box::new(source),
-                    })?,
-            )),
-            EncodedTransportAddr::Ip(addr) => Ok(TransportAddr::Ip(
-                addr.parse()
-                    .map_err(|source| TicketError::ParseSocketAddr {
+                    }
+                })?))
+            }
+            EncodedTransportAddr::Ip(addr) => {
+                Ok(TransportAddr::Ip(addr.parse().map_err(|source| {
+                    TicketError::ParseSocketAddr {
                         value: addr.clone(),
                         source,
-                    })?,
-            )),
+                    }
+                })?))
+            }
         }
     }
 }

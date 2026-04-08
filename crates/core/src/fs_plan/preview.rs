@@ -100,10 +100,12 @@ fn inspect_selected_path(path: &Path) -> Result<SelectedPathPreview> {
                     source,
                 })?;
                 let child_path = entry.path();
-                let metadata = entry.metadata().map_err(|source| FsPlanError::ReadMetadata {
-                    path: child_path.clone(),
-                    source,
-                })?;
+                let metadata = entry
+                    .metadata()
+                    .map_err(|source| FsPlanError::ReadMetadata {
+                        path: child_path.clone(),
+                        source,
+                    })?;
                 let child_type = metadata.file_type();
 
                 if child_type.is_symlink() {

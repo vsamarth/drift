@@ -168,12 +168,10 @@ pub fn presence_ping(target: SocketAddr, timeout: Duration) -> std::result::Resu
         })?;
 
     let mut buf = [0u8; PRESENCE_PKT_LEN];
-    let (n, from) = socket
-        .recv_from(&mut buf)
-        .map_err(|source| LanError::Io {
-            context: "presence ping recv_from",
-            source,
-        })?;
+    let (n, from) = socket.recv_from(&mut buf).map_err(|source| LanError::Io {
+        context: "presence ping recv_from",
+        source,
+    })?;
     if from != target {
         return Err(LanError::PresenceUnexpectedReply);
     }
@@ -206,13 +204,12 @@ pub struct PresenceResponder {
 
 impl PresenceResponder {
     pub fn bind(port: u16) -> std::result::Result<Self, LanError> {
-        let socket =
-            UdpSocket::bind(SocketAddr::from(([0, 0, 0, 0], port))).map_err(|source| {
-                LanError::Io {
-                    context: "binding presence UDP",
-                    source,
-                }
-            })?;
+        let socket = UdpSocket::bind(SocketAddr::from(([0, 0, 0, 0], port))).map_err(|source| {
+            LanError::Io {
+                context: "binding presence UDP",
+                source,
+            }
+        })?;
         socket
             .set_read_timeout(Some(Duration::from_millis(500)))
             .map_err(|source| LanError::Io {
@@ -328,12 +325,10 @@ impl LanReceiveAdvertisement {
         .enable_addr_auto();
 
         let fullname = service.get_fullname().to_owned();
-        let daemon = ServiceDaemon::new().map_err(|source| LanError::mdns("creating mDNS daemon", source))?;
+        let daemon = ServiceDaemon::new()
+            .map_err(|source| LanError::mdns("creating mDNS daemon", source))?;
         if let Err(e) = daemon.register(service) {
-            return Err(LanError::mdns(
-                "registering mDNS drift receive service",
-                e,
-            ));
+            return Err(LanError::mdns("registering mDNS drift receive service", e));
         }
 
         Ok(Some(Self {
@@ -457,10 +452,7 @@ pub fn browse_nearby_receivers(
 }
 
 impl LanError {
-    fn mdns(
-        context: &'static str,
-        source: impl StdError + Send + Sync + 'static,
-    ) -> Self {
+    fn mdns(context: &'static str, source: impl StdError + Send + Sync + 'static) -> Self {
         Self::Mdns {
             context,
             source: Box::new(source),

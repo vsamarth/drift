@@ -206,7 +206,10 @@ pub struct ScratchDir {
 }
 
 impl ScratchDir {
-    pub async fn new(prefix: &str, session_id: &str) -> std::result::Result<Self, TransferPathError> {
+    pub async fn new(
+        prefix: &str,
+        session_id: &str,
+    ) -> std::result::Result<Self, TransferPathError> {
         let id_digest = blake3::hash(session_id.as_bytes()).to_hex();
         let unique = format!(
             "{prefix}-{id_digest}-{}",

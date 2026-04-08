@@ -213,7 +213,10 @@ pub(crate) fn transfer_plan_from_files(
     session_id: impl Into<String>,
     files: impl IntoIterator<Item = TransferPlanFile>,
 ) -> anyhow::Result<TransferPlan> {
-    Ok(TransferPlan::try_new(session_id, files.into_iter().collect())?)
+    Ok(TransferPlan::try_new(
+        session_id,
+        files.into_iter().collect(),
+    )?)
 }
 
 #[cfg(test)]

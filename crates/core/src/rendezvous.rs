@@ -60,9 +60,7 @@ pub struct RendezvousClient {
 
 #[derive(Debug, Error)]
 pub enum RendezvousError {
-    #[error(
-        "short code must be exactly {code_length} characters from {code_alphabet}"
-    )]
+    #[error("short code must be exactly {code_length} characters from {code_alphabet}")]
     InvalidCode {
         code_length: usize,
         code_alphabet: &'static str,

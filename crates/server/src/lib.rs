@@ -218,9 +218,10 @@ async fn claim_peer(
             warn!(client_ip = %addr.ip(), %code, "claim rejected because peer expired");
             Err(ApiError::new(StatusCode::NOT_FOUND, "peer expired"))
         }
-        Err(DiscoveryError::EmptyTicket | DiscoveryError::InvalidExpiry) => {
-            Err(ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "invalid peer state"))
-        }
+        Err(DiscoveryError::EmptyTicket | DiscoveryError::InvalidExpiry) => Err(ApiError::new(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "invalid peer state",
+        )),
     }
 }
 

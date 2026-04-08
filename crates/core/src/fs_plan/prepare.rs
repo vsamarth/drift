@@ -35,12 +35,12 @@ pub async fn prepare_files(paths: Vec<PathBuf>) -> Result<PreparedFiles> {
         let mut stack = vec![(path, PathBuf::from(root_name))];
 
         while let Some((source_path, transfer_path)) = stack.pop() {
-            let metadata = fs::symlink_metadata(&source_path)
-                .await
-                .map_err(|source| FsPlanError::ReadMetadata {
+            let metadata = fs::symlink_metadata(&source_path).await.map_err(|source| {
+                FsPlanError::ReadMetadata {
                     path: source_path.clone(),
                     source,
-                })?;
+                }
+            })?;
             let file_type = metadata.file_type();
 
             if file_type.is_symlink() {
@@ -48,19 +48,20 @@ pub async fn prepare_files(paths: Vec<PathBuf>) -> Result<PreparedFiles> {
             }
 
             if file_type.is_dir() {
-                let mut entries = fs::read_dir(&source_path)
-                    .await
-                    .map_err(|source| FsPlanError::ReadDirectory {
+                let mut entries = fs::read_dir(&source_path).await.map_err(|source| {
+                    FsPlanError::ReadDirectory {
                         path: source_path.clone(),
                         source,
-                    })?;
-                while let Some(entry) = entries
-                    .next_entry()
-                    .await
-                    .map_err(|source| FsPlanError::ReadDirectory {
-                        path: source_path.clone(),
-                        source,
-                    })?
+                    }
+                })?;
+                while let Some(entry) =
+                    entries
+                        .next_entry()
+                        .await
+                        .map_err(|source| FsPlanError::ReadDirectory {
+                            path: source_path.clone(),
+                            source,
+                        })?
                 {
                     let child_name = entry.file_name();
                     let child_name = child_name.to_str().ok_or_else(|| {
