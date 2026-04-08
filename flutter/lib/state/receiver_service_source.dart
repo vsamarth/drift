@@ -105,12 +105,16 @@ class LocalReceiverServiceSource implements ReceiverServiceSource {
 
   @override
   Future<void> setDiscoverable({required bool enabled}) {
-    return _wrapRustCall(() => rust_receiver.setReceiverDiscoverable(enabled: enabled));
+    return _wrapRustCall(
+      () => rust_receiver.setReceiverDiscoverable(enabled: enabled),
+    );
   }
 
   @override
   Future<void> respondToOffer({required bool accept}) {
-    return _wrapRustCall(() => rust_receiver.respondToReceiverOffer(accept: accept));
+    return _wrapRustCall(
+      () => rust_receiver.respondToReceiverOffer(accept: accept),
+    );
   }
 
   @override

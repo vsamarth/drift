@@ -8,7 +8,8 @@ class UserFacingBridgeError implements Exception {
   final UserFacingErrorData error;
 
   @override
-  String toString() => 'UserFacingBridgeError(${error.kind.name}: ${error.message})';
+  String toString() =>
+      'UserFacingBridgeError(${error.kind.name}: ${error.message})';
 }
 
 UserFacingBridgeError? tryParseUserFacingBridgeError(Object error) {

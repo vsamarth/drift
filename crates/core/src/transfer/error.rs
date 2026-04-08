@@ -3,10 +3,7 @@ use thiserror::Error;
 
 use crate::{
     blobs::error::BlobError,
-    protocol::{
-        error::ProtocolError,
-        message::TransferErrorCode,
-    },
+    protocol::{error::ProtocolError, message::TransferErrorCode},
     transfer::{path::TransferPathError, types::TransferPlanError},
 };
 
@@ -49,7 +46,10 @@ impl TransferError {
         Self::ChannelClosed { context }
     }
 
-    pub(crate) fn other(context: &'static str, source: impl StdError + Send + Sync + 'static) -> Self {
+    pub(crate) fn other(
+        context: &'static str,
+        source: impl StdError + Send + Sync + 'static,
+    ) -> Self {
         Self::Other {
             context,
             source: Box::new(source),

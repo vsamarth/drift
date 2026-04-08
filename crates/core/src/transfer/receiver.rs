@@ -20,9 +20,9 @@ use tracing::{info, instrument};
 use crate::{
     blobs::receive::{BlobDownloadSession, BlobDownloadUpdate, BlobReceiver},
     protocol::message as protocol_message,
+    protocol::message::MessageKind,
     protocol::wire as protocol_wire,
     protocol::{ALPN, ProtocolError},
-    protocol::message::MessageKind,
     rendezvous::OfferManifest,
 };
 
@@ -663,14 +663,12 @@ fn build_expected_transfer_files(
         .files
         .iter()
         .map(|f| {
-            expected_files
-                .remove(&f.path)
-                .ok_or_else(|| {
-                    TransferError::other(
-                        "building expected transfer files",
-                        std::io::Error::other(format!("missing expected file for {}", f.path)),
-                    )
-                })
+            expected_files.remove(&f.path).ok_or_else(|| {
+                TransferError::other(
+                    "building expected transfer files",
+                    std::io::Error::other(format!("missing expected file for {}", f.path)),
+                )
+            })
         })
         .collect()
 }

@@ -186,7 +186,8 @@ mod tests {
     use tokio::io::duplex;
 
     #[tokio::test]
-    async fn sender_message_roundtrips_through_envelope() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    async fn sender_message_roundtrips_through_envelope()
+    -> std::result::Result<(), Box<dyn std::error::Error>> {
         let (mut a, mut b) = duplex(1024);
         let message = SenderMessage::Offer(Offer {
             session_id: "session-1".to_owned(),
@@ -206,7 +207,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn receiver_message_roundtrips_through_envelope() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    async fn receiver_message_roundtrips_through_envelope()
+    -> std::result::Result<(), Box<dyn std::error::Error>> {
         let (mut a, mut b) = duplex(1024);
         let message = ReceiverMessage::TransferResult(TransferResult {
             session_id: "session-1".to_owned(),

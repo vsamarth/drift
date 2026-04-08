@@ -13,6 +13,7 @@ pub enum UserFacingErrorKindData {
     ProtocolIncompatible,
     Cancelled,
     Internal,
+    Other,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -60,6 +61,7 @@ impl From<UserFacingErrorKind> for UserFacingErrorKindData {
             UserFacingErrorKind::ProtocolIncompatible => Self::ProtocolIncompatible,
             UserFacingErrorKind::Cancelled => Self::Cancelled,
             UserFacingErrorKind::Internal => Self::Internal,
+            UserFacingErrorKind::Other => Self::Other,
         }
     }
 }

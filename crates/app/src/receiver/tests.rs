@@ -40,7 +40,9 @@ async fn try_bind_endpoint() -> AppResult<Option<iroh::Endpoint>> {
     {
         Ok(endpoint) => Ok(Some(endpoint)),
         Err(error) => {
-            let error = AppError::BindingFailed { context: error.to_string() };
+            let error = AppError::BindingFailed {
+                context: error.to_string(),
+            };
             if bind_unavailable(&error) {
                 Ok(None)
             } else {

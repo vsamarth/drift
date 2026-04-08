@@ -1,8 +1,8 @@
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
-use tokio::fs;
 use thiserror::Error;
+use tokio::fs;
 
 type Result<T> = std::result::Result<T, ConflictError>;
 
@@ -42,11 +42,9 @@ impl ConflictPolicy {
         }
 
         match self {
-            ConflictPolicy::Reject => {
-                Err(ConflictError::DestinationExists {
-                    path: destination.to_path_buf(),
-                })
-            }
+            ConflictPolicy::Reject => Err(ConflictError::DestinationExists {
+                path: destination.to_path_buf(),
+            }),
             ConflictPolicy::Overwrite => Ok(destination.to_path_buf()),
             ConflictPolicy::Rename => find_available_name(destination).await,
         }

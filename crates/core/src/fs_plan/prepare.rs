@@ -138,7 +138,8 @@ mod tests {
     use crate::fs_plan::test_support::{TestDir, write_test_file};
 
     #[tokio::test]
-    async fn prepare_files_expands_directories_and_preserves_roots() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    async fn prepare_files_expands_directories_and_preserves_roots()
+    -> std::result::Result<(), Box<dyn std::error::Error>> {
         let temp = TestDir::new("drift-prepare").await?;
         let notes = temp.path.join("notes.txt");
         let photos = temp.path.join("photos");
@@ -165,7 +166,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn prepare_files_rejects_duplicate_transfer_paths() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    async fn prepare_files_rejects_duplicate_transfer_paths()
+    -> std::result::Result<(), Box<dyn std::error::Error>> {
         let temp = TestDir::new("drift-duplicates").await?;
         let file = temp.path.join("dup.txt");
         write_test_file(&file, "dup").await?;
@@ -177,7 +179,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn prepare_files_normalizes_source_paths_for_imports() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    async fn prepare_files_normalizes_source_paths_for_imports()
+    -> std::result::Result<(), Box<dyn std::error::Error>> {
         let prepared = prepare_files(vec![PathBuf::from("Cargo.toml")]).await?;
         assert!(prepared.files[0].source_path.is_absolute());
 
@@ -186,7 +189,8 @@ mod tests {
 
     #[cfg(unix)]
     #[tokio::test]
-    async fn prepare_files_rejects_symbolic_links() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    async fn prepare_files_rejects_symbolic_links()
+    -> std::result::Result<(), Box<dyn std::error::Error>> {
         use std::os::unix::fs::symlink;
 
         let temp = TestDir::new("drift-symlink").await?;

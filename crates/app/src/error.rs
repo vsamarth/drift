@@ -234,9 +234,11 @@ impl From<AppError> for UserFacingError {
                 "Discovery failed",
                 "Drift could not search for nearby devices.",
             ),
-            AppError::InvalidDeviceType { .. } => {
-                UserFacingError::new(UserFacingErrorKind::Internal, "Invalid device type", "Please try again.")
-            }
+            AppError::InvalidDeviceType { .. } => UserFacingError::new(
+                UserFacingErrorKind::Internal,
+                "Invalid device type",
+                "Please try again.",
+            ),
             AppError::InvalidCode { .. } => UserFacingError::new(
                 UserFacingErrorKind::InvalidInput,
                 "Invalid code",
@@ -428,9 +430,7 @@ impl From<TransferError> for UserFacingError {
             TransferError::ChannelClosed { .. } => {
                 UserFacingError::from_kind(UserFacingErrorKind::Internal)
             }
-            TransferError::Other { .. } => {
-                UserFacingError::from_kind(UserFacingErrorKind::Other)
-            }
+            TransferError::Other { .. } => UserFacingError::from_kind(UserFacingErrorKind::Other),
         }
     }
 }

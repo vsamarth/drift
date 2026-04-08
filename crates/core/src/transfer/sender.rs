@@ -12,9 +12,9 @@ use tracing::{instrument, warn};
 
 use crate::{
     blobs::send::{BlobRegistration, BlobService, PreparedStore},
-    protocol::{ALPN, ProtocolError},
     protocol::message::MessageKind,
     protocol::wire as protocol_wire,
+    protocol::{ALPN, ProtocolError},
     protocol::{message as protocol_message, send as protocol_sender},
 };
 
@@ -102,10 +102,7 @@ struct SenderEventSink {
     tx: Option<mpsc::UnboundedSender<SenderEvent>>,
 }
 impl SenderEventSink {
-    fn new(
-        session_id: String,
-        tx: Option<mpsc::UnboundedSender<SenderEvent>>,
-    ) -> Self {
+    fn new(session_id: String, tx: Option<mpsc::UnboundedSender<SenderEvent>>) -> Self {
         Self { session_id, tx }
     }
     fn silent(session_id: String) -> Self {
@@ -484,7 +481,7 @@ impl SenderProgressTask {
                                 MessageKind::TransferStarted,
                                 other.kind(),
                             )
-                            .into())
+                            .into());
                         }
                     }
                 }

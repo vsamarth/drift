@@ -150,7 +150,8 @@ mod tests {
     use crate::fs_plan::test_support::{TestDir, write_test_file};
 
     #[tokio::test]
-    async fn inspect_selected_paths_reports_file_counts_and_sizes() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    async fn inspect_selected_paths_reports_file_counts_and_sizes()
+    -> std::result::Result<(), Box<dyn std::error::Error>> {
         let temp = TestDir::new("drift-inspect").await?;
         let notes = temp.path.join("notes.txt");
         let photos = temp.path.join("photos");
@@ -174,7 +175,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn inspect_selected_paths_rejects_empty_directory_only_selection() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    async fn inspect_selected_paths_rejects_empty_directory_only_selection()
+    -> std::result::Result<(), Box<dyn std::error::Error>> {
         let temp = TestDir::new("drift-empty-dir").await?;
         let empty_dir = temp.path.join("empty");
         tokio::fs::create_dir_all(&empty_dir).await?;

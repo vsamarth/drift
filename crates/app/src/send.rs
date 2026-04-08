@@ -143,8 +143,9 @@ impl SendDraft {
     }
 
     pub fn inspect(&self) -> AppResult<SelectionPreview> {
-        let preview = inspect_selected_paths(&self.paths)
-            .map_err(|e| AppError::Internal { message: e.to_string() })?;
+        let preview = inspect_selected_paths(&self.paths).map_err(|e| AppError::Internal {
+            message: e.to_string(),
+        })?;
         Ok(map_preview(preview))
     }
 
@@ -183,10 +184,16 @@ impl SendDestination {
             Self::Code { code, server_url } => {
                 validate_code(code).map_err(|_| AppError::InvalidCode { code: code.clone() })?;
                 let client = RendezvousClient::new(resolve_server_url(server_url.as_deref()));
-                let resolved = client.claim_peer(code).await
-                    .map_err(|e| AppError::Internal { message: e.to_string() })?;
-                let endpoint_addr = decode_ticket(&resolved.ticket)
-                    .map_err(|e| AppError::Internal { message: e.to_string() })?;
+                let resolved = client
+                    .claim_peer(code)
+                    .await
+                    .map_err(|e| AppError::Internal {
+                        message: e.to_string(),
+                    })?;
+                let endpoint_addr =
+                    decode_ticket(&resolved.ticket).map_err(|e| AppError::Internal {
+                        message: e.to_string(),
+                    })?;
                 Ok(ResolvedDestination {
                     destination_label: format_code_label(code),
                     peer_endpoint_addr: endpoint_addr.clone(),
@@ -194,8 +201,10 @@ impl SendDestination {
                 })
             }
             Self::Nearby { ticket, .. } => {
-                let endpoint_addr = decode_ticket(ticket.trim())
-                    .map_err(|e| AppError::Internal { message: e.to_string() })?;
+                let endpoint_addr =
+                    decode_ticket(ticket.trim()).map_err(|e| AppError::Internal {
+                        message: e.to_string(),
+                    })?;
                 Ok(ResolvedDestination {
                     destination_label: self.display_label(),
                     peer_endpoint_addr: endpoint_addr.clone(),
@@ -217,8 +226,9 @@ impl SendRun {
     }
 
     pub async fn outcome(self) -> AppResult<SendSessionOutcome> {
-        self.outcome_rx.await
-            .map_err(|_| AppError::Internal { message: "waiting for send outcome".to_owned() })?
+        self.outcome_rx.await.map_err(|_| AppError::Internal {
+            message: "waiting for send outcome".to_owned(),
+        })?
     }
 }
 
@@ -303,17 +313,14 @@ impl SendSession {
         let mut current_plan: Option<TransferPlan> = None;
 
         while let Some(core_event) = core_events.next().await {
-            let mapped = map_sender_event(
-                &mut current_label,
-                &preview,
-                &mut current_plan,
-                core_event,
-            );
+            let mapped =
+                map_sender_event(&mut current_label, &preview, &mut current_plan, core_event);
             emit_send_event(&event_tx, mapped);
         }
 
-        let core_outcome = outcome_rx.await
-            .map_err(|e| AppError::Internal { message: e.to_string() })?;
+        let core_outcome = outcome_rx.await.map_err(|e| AppError::Internal {
+            message: e.to_string(),
+        })?;
 
         match core_outcome {
             Ok(CoreTransferOutcome::Completed) => Ok(SendSessionOutcome::Accepted {
@@ -323,12 +330,17 @@ impl SendSession {
             Ok(CoreTransferOutcome::Declined { reason }) => {
                 Ok(SendSessionOutcome::Declined { reason })
             }
-            Ok(CoreTransferOutcome::Cancelled(cancellation)) => {
-                Err(AppError::Cancelled { reason: cancellation.reason })
-            }
+            Ok(CoreTransferOutcome::Cancelled(cancellation)) => Err(AppError::Cancelled {
+                reason: cancellation.reason,
+            }),
             Err(error) => {
-                emit_send_event(&event_tx, failed_event_from_error(&current_label, error.into()));
-                Err(AppError::Internal { message: "transfer failed".to_owned() })
+                emit_send_event(
+                    &event_tx,
+                    failed_event_from_error(&current_label, error.into()),
+                );
+                Err(AppError::Internal {
+                    message: "transfer failed".to_owned(),
+                })
             }
         }
     }
@@ -664,7 +676,7 @@ mod tests {
         let error = AppError::Internal {
             message: "boom".to_owned(),
         };
-        let event = failed_event_from_error("Remote", &error);
+        let event = failed_event_from_error("Remote", error.into());
 
         let error = event.error.expect("structured error");
         assert_eq!(error.kind(), UserFacingErrorKind::Internal);

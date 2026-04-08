@@ -105,9 +105,7 @@ pub fn start_send_transfer(
         let event_updates = updates.clone();
         tokio::spawn(async move {
             while let Some(event) = events.next().await {
-                if let Ok(event) = event {
-                    let _ = event_updates.add(map_event(event));
-                }
+                let _ = event_updates.add(map_event(event));
             }
         });
 

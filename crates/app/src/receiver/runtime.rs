@@ -153,12 +153,17 @@ impl ReceiverRuntime {
             .server_url
             .clone()
             .ok_or(AppError::ReceiverSetupIncomplete)?;
-        let ticket = make_ticket(&self.endpoint).await
-            .map_err(|e| AppError::Internal { message: e.to_string() })?;
+        let ticket = make_ticket(&self.endpoint)
+            .await
+            .map_err(|e| AppError::Internal {
+                message: e.to_string(),
+            })?;
         let registration = RendezvousClient::new(resolved_url)
             .register_peer(ticket)
             .await
-            .map_err(|e| AppError::Internal { message: e.to_string() })?;
+            .map_err(|e| AppError::Internal {
+                message: e.to_string(),
+            })?;
         let registration = ReceiverRegistration {
             code: registration.code,
             expires_at: registration.expires_at,
@@ -212,8 +217,9 @@ impl ReceiverRuntime {
         match RendezvousClient::new(server_url)
             .pair_status(&existing.code)
             .await
-            .map_err(|e| AppError::Internal { message: e.to_string() })?
-        {
+            .map_err(|e| AppError::Internal {
+                message: e.to_string(),
+            })? {
             Some(_) => Ok(()),
             None => {
                 let was_active = self.advertising_active();

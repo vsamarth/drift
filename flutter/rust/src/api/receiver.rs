@@ -342,7 +342,7 @@ async fn ensure_receiver_service(
             secret_key: RECEIVER_SECRET_KEY.clone(),
         })
         .await
-        .map_err(|e| internal_user_facing_error("Receiver unavailable", format!("{e:#}")))?,
+        .map_err(|e| format!("{e:#}"))?,
     );
 
     println!("[bridge] receiver service started");
