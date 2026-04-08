@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::error::Error as StdError;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
@@ -17,7 +18,7 @@ use iroh::{EndpointAddr, EndpointId};
 use tokio::sync::{mpsc, oneshot};
 use tokio_stream::{StreamExt, wrappers::UnboundedReceiverStream};
 
-use crate::error::{UserFacingError, UserFacingErrorKind, from_anyhow_error};
+use crate::error::{UserFacingError, UserFacingErrorKind, from_anyhow_error, from_error};
 use crate::types::{
     NearbyReceiver, SelectionChange, SelectionItem, SelectionPreview, SendConfig, SendEvent,
     SendPhase,
@@ -58,7 +59,7 @@ pub struct SendRun {
     outcome_rx: oneshot::Receiver<Result<SendSessionOutcome>>,
 }
 
-pub type SendEventStream = UnboundedReceiverStream<Result<SendEvent>>;
+pub type SendEventStream = UnboundedReceiverStream<SendEvent>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SendSession {
@@ -248,7 +249,7 @@ impl SendSession {
 
     async fn drive(
         self,
-        event_tx: mpsc::UnboundedSender<Result<SendEvent>>,
+        event_tx: mpsc::UnboundedSender<SendEvent>,
     ) -> Result<SendSessionOutcome> {
         let preview = self.draft.inspect().context("inspecting selected paths")?;
         let mut destination_label = self.destination.display_label();
@@ -273,7 +274,10 @@ impl SendSession {
         let resolved = match self.destination.resolve().await {
             Ok(resolved) => resolved,
             Err(error) => {
-                emit_failed_event(&event_tx, &destination_label, &error);
+                emit_send_event(
+                    &event_tx,
+                    failed_event_from_anyhow(&destination_label, &error),
+                );
                 return Err(error);
             }
         };
@@ -295,23 +299,14 @@ impl SendSession {
         let mut current_label = destination_label.clone();
         let mut current_plan: Option<TransferPlan> = None;
 
-        while let Some(event) = core_events.next().await {
-            match event {
-                Ok(core_event) => {
-                    let mapped = map_sender_event(
-                        &mut current_label,
-                        &preview,
-                        &mut current_plan,
-                        core_event,
-                    );
-                    emit_send_event(&event_tx, mapped);
-                }
-                Err(error) => {
-                    let message = format!("{error:#}");
-                    let _ = event_tx.send(Err(anyhow::anyhow!(message.clone())));
-                    return Err(anyhow::anyhow!(message));
-                }
-            }
+        while let Some(core_event) = core_events.next().await {
+            let mapped = map_sender_event(
+                &mut current_label,
+                &preview,
+                &mut current_plan,
+                core_event,
+            );
+            emit_send_event(&event_tx, mapped);
         }
 
         let core_outcome = outcome_rx.await.context("waiting for sender outcome")?;
@@ -327,26 +322,37 @@ impl SendSession {
             Ok(CoreTransferOutcome::Cancelled(cancellation)) => {
                 Err(anyhow::anyhow!(cancellation.reason))
             }
-            Err(error) => Err(error.into()),
+            Err(error) => {
+                emit_send_event(&event_tx, failed_event_from_error(&current_label, &error));
+                Err(error.into())
+            }
         }
     }
 }
 
-fn emit_send_event(event_tx: &mpsc::UnboundedSender<Result<SendEvent>>, event: SendEvent) {
-    let _ = event_tx.send(Ok(event));
+fn emit_send_event(event_tx: &mpsc::UnboundedSender<SendEvent>, event: SendEvent) {
+    let _ = event_tx.send(event);
 }
 
-fn emit_failed_event(
-    event_tx: &mpsc::UnboundedSender<Result<SendEvent>>,
-    destination_label: &str,
-    error: &anyhow::Error,
-) {
-    emit_send_event(event_tx, failed_event(destination_label, error));
-    let _ = event_tx.send(Err(anyhow::anyhow!(format!("{error:#}"))));
-}
-
-fn failed_event(destination_label: &str, error: &anyhow::Error) -> SendEvent {
+fn failed_event_from_anyhow(destination_label: &str, error: &anyhow::Error) -> SendEvent {
     let user_facing_error = from_anyhow_error(error);
+    SendEvent {
+        phase: SendPhase::Failed,
+        destination_label: destination_label.to_owned(),
+        status_message: format!("Starting transfer to {destination_label}."),
+        item_count: 0,
+        total_size: 0,
+        bytes_sent: 0,
+        plan: None,
+        snapshot: None,
+        remote_device_type: None,
+        connection_path: None,
+        error: Some(user_facing_error),
+    }
+}
+
+fn failed_event_from_error(destination_label: &str, error: &(dyn StdError + 'static)) -> SendEvent {
+    let user_facing_error = from_error(error);
     SendEvent {
         phase: SendPhase::Failed,
         destination_label: destination_label.to_owned(),
@@ -439,7 +445,7 @@ fn map_sender_event(
                 reason,
             )),
         },
-        CoreSenderEvent::Failed { message, .. } => SendEvent {
+        CoreSenderEvent::Failed { error, .. } => SendEvent {
             phase: SendPhase::Failed,
             destination_label: current_label.clone(),
             status_message: format!("Starting transfer to {current_label}."),
@@ -450,7 +456,7 @@ fn map_sender_event(
             snapshot: None,
             remote_device_type: None,
             connection_path: None,
-            error: Some(UserFacingError::internal("Transfer failed", message)),
+            error: Some(UserFacingError::from(error)),
         },
         CoreSenderEvent::TransferStarted { plan, .. } => {
             *current_plan = Some(plan.clone());

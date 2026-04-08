@@ -1,8 +1,13 @@
-use anyhow::Error as AnyhowError;
+use std::error::Error as StdError;
 use thiserror::Error;
 
 use crate::{
-    blobs::error::BlobError, protocol::error::ProtocolError, protocol::message::TransferErrorCode,
+    blobs::error::BlobError,
+    protocol::{
+        error::ProtocolError,
+        message::TransferErrorCode,
+    },
+    transfer::{path::TransferPathError, types::TransferPlanError},
 };
 
 #[derive(Debug, Error)]
@@ -11,6 +16,10 @@ pub enum TransferError {
     Protocol(#[from] ProtocolError),
     #[error(transparent)]
     Blob(#[from] BlobError),
+    #[error(transparent)]
+    Path(#[from] TransferPathError),
+    #[error(transparent)]
+    Plan(#[from] TransferPlanError),
     #[error("connection closed while {context}")]
     ConnectionClosed { context: &'static str },
     #[error("timed out while {context}")]
@@ -21,7 +30,7 @@ pub enum TransferError {
     Other {
         context: &'static str,
         #[source]
-        source: AnyhowError,
+        source: Box<dyn StdError + Send + Sync>,
     },
 }
 
@@ -40,10 +49,10 @@ impl TransferError {
         Self::ChannelClosed { context }
     }
 
-    pub(crate) fn other(context: &'static str, source: impl Into<AnyhowError>) -> Self {
+    pub(crate) fn other(context: &'static str, source: impl StdError + Send + Sync + 'static) -> Self {
         Self::Other {
             context,
-            source: source.into(),
+            source: Box::new(source),
         }
     }
 
@@ -62,6 +71,22 @@ impl TransferError {
                 | BlobError::ScratchDirCreate { .. }
                 | BlobError::JoinDownloadTask { .. } => TransferErrorCode::IoError,
             },
+            Self::Path(error) => match error {
+                TransferPathError::DestinationExists { .. } => TransferErrorCode::FileConflict,
+                TransferPathError::Empty
+                | TransferPathError::InvalidSeparator
+                | TransferPathError::NotRelative
+                | TransferPathError::InvalidSegment
+                | TransferPathError::InvalidUtf8RootName { .. }
+                | TransferPathError::InvalidUtf8PathComponent { .. }
+                | TransferPathError::DestinationParentNotDirectory { .. }
+                | TransferPathError::CheckPath { .. }
+                | TransferPathError::CurrentDirectory { .. }
+                | TransferPathError::OutputNotAbsolute { .. }
+                | TransferPathError::SystemClockBeforeUnixEpoch { .. }
+                | TransferPathError::CreateScratchDir { .. } => TransferErrorCode::IoError,
+            },
+            Self::Plan(_) => TransferErrorCode::IoError,
             Self::ConnectionClosed { .. }
             | Self::Timeout { .. }
             | Self::ChannelClosed { .. }

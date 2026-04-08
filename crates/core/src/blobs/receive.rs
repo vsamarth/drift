@@ -13,11 +13,11 @@ use tracing::trace;
 use super::error::{BlobError, BlobTextError, Result};
 use super::util::ScratchDir;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug)]
 pub enum BlobDownloadUpdate {
     Progress { bytes_received: u64 },
     Done,
-    Failed { message: String },
+    Failed { error: BlobError },
 }
 
 pub type BlobDownloadUpdateStream = UnboundedReceiverStream<BlobDownloadUpdate>;
@@ -110,7 +110,10 @@ impl BlobDownloadStrategy for SequentialBlobDownload {
                     Some(GetProgressItem::Error(err)) => {
                         let message = format!("blob fetch error: {err}");
                         let _ = update_tx.send(BlobDownloadUpdate::Failed {
-                            message: message.clone(),
+                            error: BlobError::fetch(
+                                ticket_context.clone(),
+                                BlobTextError::new(message.clone()),
+                            ),
                         });
                         break Err(BlobError::fetch(
                             ticket_context,

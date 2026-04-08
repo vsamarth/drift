@@ -1,8 +1,28 @@
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result, anyhow, bail};
 use serde::{Deserialize, Serialize};
 use tokio::fs;
+use thiserror::Error;
+
+type Result<T> = std::result::Result<T, ConflictError>;
+
+#[derive(Debug, Error)]
+pub enum ConflictError {
+    #[error("destination already exists: {path}")]
+    DestinationExists { path: PathBuf },
+    #[error("cannot rename root path")]
+    CannotRenameRootPath,
+    #[error("invalid file name")]
+    InvalidFileName,
+    #[error("too many conflicting files for {path}")]
+    TooManyConflicts { path: String },
+    #[error("checking {path}")]
+    CheckPath {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ConflictPolicy {
@@ -23,7 +43,9 @@ impl ConflictPolicy {
 
         match self {
             ConflictPolicy::Reject => {
-                bail!("destination already exists: {}", destination.display());
+                Err(ConflictError::DestinationExists {
+                    path: destination.to_path_buf(),
+                })
             }
             ConflictPolicy::Overwrite => Ok(destination.to_path_buf()),
             ConflictPolicy::Rename => find_available_name(destination).await,
@@ -32,13 +54,11 @@ impl ConflictPolicy {
 }
 
 async fn find_available_name(path: &Path) -> Result<PathBuf> {
-    let parent = path
-        .parent()
-        .ok_or_else(|| anyhow!("cannot rename root path"))?;
+    let parent = path.parent().ok_or(ConflictError::CannotRenameRootPath)?;
     let file_name = path
         .file_name()
         .and_then(|n| n.to_str())
-        .ok_or_else(|| anyhow!("invalid file name"))?;
+        .ok_or(ConflictError::InvalidFileName)?;
 
     let (stem, extension) = match file_name.rfind('.') {
         Some(idx) if idx > 0 => (&file_name[..idx], &file_name[idx..]),
@@ -56,7 +76,9 @@ async fn find_available_name(path: &Path) -> Result<PathBuf> {
 
         counter += 1;
         if counter > 1000 {
-            bail!("too many conflicting files for {}", file_name);
+            return Err(ConflictError::TooManyConflicts {
+                path: file_name.to_owned(),
+            });
         }
     }
 }
@@ -65,7 +87,10 @@ async fn path_exists(path: &Path) -> Result<bool> {
     match fs::metadata(path).await {
         Ok(_) => Ok(true),
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(false),
-        Err(err) => Err(err).with_context(|| format!("checking {}", path.display())),
+        Err(err) => Err(ConflictError::CheckPath {
+            path: path.to_path_buf(),
+            source: err,
+        }),
     }
 }
 
@@ -73,9 +98,12 @@ async fn path_exists(path: &Path) -> Result<bool> {
 mod tests {
     use super::*;
     use crate::fs_plan::test_support::{TestDir, write_test_file};
+    use std::error::Error as StdError;
+
+    type TestResult<T> = std::result::Result<T, Box<dyn StdError>>;
 
     #[tokio::test]
-    async fn test_policy_reject() -> Result<()> {
+    async fn test_policy_reject() -> TestResult<()> {
         let temp = TestDir::new("drift-policy-reject").await?;
         let file = temp.path.join("test.txt");
         write_test_file(&file, "content").await?;
@@ -92,7 +120,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_policy_overwrite() -> Result<()> {
+    async fn test_policy_overwrite() -> TestResult<()> {
         let temp = TestDir::new("drift-policy-overwrite").await?;
         let file = temp.path.join("test.txt");
         write_test_file(&file, "content").await?;
@@ -105,7 +133,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_policy_rename() -> Result<()> {
+    async fn test_policy_rename() -> TestResult<()> {
         let temp = TestDir::new("drift-policy-rename").await?;
         let file = temp.path.join("test.txt");
         write_test_file(&file, "content").await?;
@@ -125,7 +153,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_policy_rename_no_extension() -> Result<()> {
+    async fn test_policy_rename_no_extension() -> TestResult<()> {
         let temp = TestDir::new("drift-policy-rename-no-ext").await?;
         let file = temp.path.join("README");
         write_test_file(&file, "content").await?;
@@ -138,7 +166,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_policy_rename_hidden_file() -> Result<()> {
+    async fn test_policy_rename_hidden_file() -> TestResult<()> {
         let temp = TestDir::new("drift-policy-rename-hidden").await?;
         let file = temp.path.join(".gitignore");
         write_test_file(&file, "content").await?;

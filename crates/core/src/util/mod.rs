@@ -2,7 +2,6 @@ mod device_name;
 
 pub use device_name::{normalize_hostname_label, process_display_device_name, random_device_name};
 
-use anyhow::Context;
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use iroh::{Endpoint, EndpointAddr, TransportAddr};
@@ -69,6 +68,20 @@ pub enum TicketError {
     },
 }
 
+#[derive(Debug, Error)]
+pub enum ConfirmAcceptError {
+    #[error("flushing prompt")]
+    FlushPrompt {
+        #[source]
+        source: io::Error,
+    },
+    #[error("reading confirmation")]
+    ReadConfirmation {
+        #[source]
+        source: io::Error,
+    },
+}
+
 pub async fn classify_connection_path(
     endpoint: &iroh::Endpoint,
     remote_id: iroh::EndpointId,
@@ -96,14 +109,16 @@ pub async fn classify_connection_path(
     }
 }
 
-pub fn confirm_accept() -> anyhow::Result<bool> {
+pub fn confirm_accept() -> std::result::Result<bool, ConfirmAcceptError> {
     print!("Accept? [y/N]: ");
-    io::stdout().flush().context("flushing prompt")?;
+    io::stdout()
+        .flush()
+        .map_err(|source| ConfirmAcceptError::FlushPrompt { source })?;
 
     let mut input = String::new();
     io::stdin()
         .read_line(&mut input)
-        .context("reading confirmation")?;
+        .map_err(|source| ConfirmAcceptError::ReadConfirmation { source })?;
 
     let response = input.trim().to_ascii_lowercase();
     Ok(matches!(response.as_str(), "y" | "yes"))

@@ -212,13 +212,8 @@ async fn consume_sender_run(
         tokio::select! {
             event = events.next() => {
                 match event {
-                    Some(Ok(event)) => {
+                    Some(event) => {
                         reported_failure |= render_sender_event(progress_bar, &event, &mut current_plan);
-                    }
-                    Some(Err(error)) => {
-                        report_anyhow_failure("send.failed", &error, reported_failure);
-                        finish_progress_bar(progress_bar);
-                        return Err(error);
                     }
                     None => break,
                 }
@@ -233,7 +228,9 @@ async fn consume_sender_run(
                 match outcome {
                     Ok(outcome) => return Ok(outcome),
                     Err(error) => {
-                        report_anyhow_failure("send.failed", &error, reported_failure);
+                        if !reported_failure {
+                            report_anyhow_failure("send.failed", &error, false);
+                        }
                         return Err(error);
                     }
                 }
@@ -246,7 +243,9 @@ async fn consume_sender_run(
     match outcome {
         Ok(outcome) => Ok(outcome),
         Err(error) => {
-            report_anyhow_failure("send.failed", &error, reported_failure);
+            if !reported_failure {
+                report_anyhow_failure("send.failed", &error, false);
+            }
             Err(error)
         }
     }

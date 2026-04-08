@@ -170,10 +170,11 @@ mod tests {
     use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    use anyhow::Result;
     use iroh_blobs::{api::Store, store::mem::MemStore};
 
     use super::import_files;
+
+    type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
     fn unique_temp_dir(prefix: &str) -> PathBuf {
         static NEXT_TEMP_ID: AtomicU64 = AtomicU64::new(0);

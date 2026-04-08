@@ -13,7 +13,7 @@ use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 use tokio_stream::StreamExt;
 
-use crate::error::{UserFacingError, UserFacingErrorKind, format_error_chain, from_anyhow_error};
+use crate::error::{UserFacingError, UserFacingErrorKind, format_error_chain};
 use crate::types::{ReceiverOfferEvent, ReceiverOfferFile, ReceiverOfferPhase};
 
 use super::actor::ReceiverCommand;
@@ -107,7 +107,7 @@ impl ReceiverSession {
                             &save_root_label,
                             device_type,
                             "Transfer failed.".to_owned(),
-                            from_anyhow_error(&error),
+                            UserFacingError::from(error),
                         ),
                     })
                     .await;
@@ -153,10 +153,7 @@ impl ReceiverSession {
                             &save_root_label,
                             sender_device_type,
                             "Transfer failed.".to_owned(),
-                            UserFacingError::internal(
-                                "Transfer failed",
-                                format_error_chain(&anyhow::Error::new(error)),
-                            ),
+                            UserFacingError::internal("Transfer failed", format_error_chain(&error)),
                         ),
                     })
                     .await;
@@ -221,10 +218,10 @@ impl ReceiverSession {
         let mut last_progress_bytes = 0_u64;
         while let Some(event) = events.next().await {
             match event {
-                Ok(CoreReceiverEvent::TransferStarted {
+                CoreReceiverEvent::TransferStarted {
                     session_id: _,
                     plan,
-                }) => {
+                } => {
                     let _ = progress_cmd_tx.try_send(ReceiverCommand::OfferProgress {
                         offer_id,
                         event: build_offer_event(
@@ -243,10 +240,10 @@ impl ReceiverSession {
                         ),
                     });
                 }
-                Ok(CoreReceiverEvent::TransferProgress {
+                CoreReceiverEvent::TransferProgress {
                     session_id: _,
                     snapshot,
-                }) => {
+                } => {
                     let now = std::time::Instant::now();
                     let interval_elapsed =
                         now.duration_since(last_progress_emit_at) >= PROGRESS_EVENT_MIN_INTERVAL;
@@ -280,38 +277,26 @@ impl ReceiverSession {
                         });
                     }
                 }
-                Ok(CoreReceiverEvent::Listening { .. }) => {}
-                Ok(CoreReceiverEvent::TransferCompleted { .. }) => {
+                CoreReceiverEvent::Listening { .. } => {}
+                CoreReceiverEvent::TransferCompleted { .. } => {
                     break;
                 }
-                Ok(CoreReceiverEvent::Completed { .. }) => {
+                CoreReceiverEvent::Completed { .. } => {
                     break;
                 }
-                Ok(CoreReceiverEvent::Failed { message, .. }) => {
+                CoreReceiverEvent::Failed { error, .. } => {
                     let _ = progress_cmd_tx.try_send(ReceiverCommand::OfferFinished {
                         offer_id,
                         final_event: failed_offer_event(
                             &save_root_label,
                             sender_device_type,
                             "Transfer failed.".to_owned(),
-                            UserFacingError::internal("Transfer failed", message),
+                            UserFacingError::from(error),
                         ),
                     });
                     return;
                 }
-                Ok(CoreReceiverEvent::OfferReceived { .. }) => {}
-                Err(error) => {
-                    let _ = progress_cmd_tx.try_send(ReceiverCommand::OfferFinished {
-                        offer_id,
-                        final_event: failed_offer_event(
-                            &save_root_label,
-                            sender_device_type,
-                            "Transfer failed.".to_owned(),
-                            UserFacingError::internal("Transfer failed", format!("{error}")),
-                        ),
-                    });
-                    return;
-                }
+                CoreReceiverEvent::OfferReceived { .. } => {}
             }
         }
 

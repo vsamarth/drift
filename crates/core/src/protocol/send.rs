@@ -281,7 +281,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn sender_handler_runs_handshake() -> anyhow::Result<()> {
+    async fn sender_handler_runs_handshake() -> std::result::Result<(), Box<dyn std::error::Error>> {
         let (local, remote) = duplex(1024);
         let (mut local_read, mut local_write) = tokio::io::split(local);
         let (mut remote_read, mut remote_write) = tokio::io::split(remote);

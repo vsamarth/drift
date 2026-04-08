@@ -238,8 +238,9 @@ impl Drop for ScratchDir {
 #[cfg(test)]
 mod tests {
     use super::resolve_output_dir;
-    use anyhow::Result;
     use std::path::Path;
+
+    type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
     #[test]
     fn resolves_relative_output_dir_against_current_dir() -> Result<()> {
