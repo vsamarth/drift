@@ -20,9 +20,9 @@ use tracing::{info, instrument};
 
 use crate::{
     blobs::receive::{BlobDownloadSession, BlobDownloadUpdate, BlobReceiver},
-    protocol::ALPN,
     protocol::message as protocol_message,
     protocol::wire as protocol_wire,
+    protocol::{ALPN, error::ProtocolError},
     rendezvous::OfferManifest,
 };
 
@@ -303,6 +303,14 @@ async fn run_session(
     {
         Ok(v) => v,
         Err(error) => {
+            if let Some(protocol_error) = error.downcast_ref::<ProtocolError>() {
+                let _ = send_transfer_result(
+                    &mut control_send,
+                    &session_id,
+                    protocol_error.transfer_status(),
+                )
+                .await;
+            }
             blob_download.abort();
             let _ = blob_download.shutdown().await;
             emit_receiver_event(
@@ -312,7 +320,7 @@ async fn run_session(
                     message: format!("{error:#}"),
                 },
             );
-            return Err(error);
+            return Err(error.into());
         }
     };
 
@@ -406,7 +414,7 @@ async fn run_session(
         Err(error) => {
             blob_download.abort();
             let _ = blob_download.shutdown().await;
-            return Err(error);
+            return Err(error.into());
         }
     };
 
@@ -683,6 +691,7 @@ async fn send_receiver_cancel(
         }),
     )
     .await
+    .map_err(Into::into)
 }
 
 async fn send_transfer_result(
@@ -698,6 +707,7 @@ async fn send_transfer_result(
         }),
     )
     .await
+    .map_err(Into::into)
 }
 
 async fn send_receiver_decline(
@@ -713,6 +723,7 @@ async fn send_receiver_decline(
         }),
     )
     .await
+    .map_err(Into::into)
 }
 
 pub async fn bind_endpoint() -> Result<Endpoint> {

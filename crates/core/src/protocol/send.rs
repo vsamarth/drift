@@ -1,10 +1,11 @@
 #![allow(dead_code)]
 
-use anyhow::{Context, Result, bail};
 use tokio::io::{AsyncRead, AsyncWrite};
 
+use super::error::{ProtocolError, Result};
 use super::message::{
-    Decline, Hello, Identity, Offer, PROTOCOL_VERSION, ReceiverMessage, SenderMessage, TransferRole,
+    Decline, Hello, Identity, MessageKind, Offer, PROTOCOL_VERSION, ReceiverMessage, SenderMessage,
+    TransferRole,
 };
 use super::wire::{read_receiver_message, write_sender_message};
 
@@ -47,7 +48,11 @@ impl SenderMachine {
         );
 
         if !allowed {
-            bail!("invalid sender transition: {:?} -> {:?}", self.state, next);
+            return Err(ProtocolError::invalid_transition(
+                "sender",
+                format!("{:?}", self.state),
+                format!("{:?}", next),
+            ));
         }
 
         self.state = next;
@@ -143,7 +148,11 @@ impl Sender {
             ReceiverMessage::Hello(message) => message,
             other => {
                 self.machine.transition(SenderState::Failed)?;
-                bail!("expected hello from receiver, got {:?}", other);
+                return Err(ProtocolError::unexpected_message_kind(
+                    "receiver handshake",
+                    MessageKind::Hello,
+                    other.kind(),
+                ));
             }
         };
 
@@ -187,7 +196,7 @@ impl Sender {
                     identity: self
                         .peer_identity
                         .clone()
-                        .context("receiver identity missing after hello")?,
+                        .ok_or_else(|| ProtocolError::missing_peer_identity("receiver"))?,
                 })
             }
             ReceiverMessage::Decline(message) => {
@@ -197,7 +206,11 @@ impl Sender {
             }
             other => {
                 self.machine.transition(SenderState::Failed)?;
-                bail!("unexpected decision message from receiver: {:?}", other);
+                return Err(ProtocolError::unexpected_message_kind(
+                    "receiver decision",
+                    MessageKind::Accept,
+                    other.kind(),
+                ));
             }
         };
 
@@ -211,27 +224,28 @@ fn validate_hello(
     expected_role: TransferRole,
 ) -> Result<()> {
     if message.version != PROTOCOL_VERSION {
-        bail!("unsupported protocol version {}", message.version);
+        return Err(ProtocolError::unsupported_version(
+            PROTOCOL_VERSION,
+            message.version,
+        ));
     }
 
     if message.session_id != expected_session_id {
-        bail!(
-            "session id mismatch: expected {}, got {}",
+        return Err(ProtocolError::session_id_mismatch(
             expected_session_id,
-            message.session_id
-        );
+            message.session_id.clone(),
+        ));
     }
 
     if message.identity.role != expected_role {
-        bail!(
-            "unexpected identity role {:?}, expected {:?}",
+        return Err(ProtocolError::unexpected_role(
+            expected_role,
             message.identity.role,
-            expected_role
-        );
+        ));
     }
 
     if message.identity.device_name.trim().is_empty() {
-        bail!("device name must not be empty");
+        return Err(ProtocolError::empty_device_name(message.identity.role));
     }
 
     Ok(())
@@ -241,7 +255,7 @@ fn ensure_session_id(actual: &str, expected: &str) -> Result<()> {
     if actual == expected {
         Ok(())
     } else {
-        bail!("session id mismatch: expected {expected}, got {actual}")
+        Err(ProtocolError::session_id_mismatch(expected, actual))
     }
 }
 
