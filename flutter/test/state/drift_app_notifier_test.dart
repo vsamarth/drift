@@ -9,6 +9,7 @@ import 'package:drift_app/state/drift_providers.dart';
 import 'package:drift_app/state/nearby_discovery_source.dart';
 import 'package:drift_app/state/receiver_service_source.dart';
 import 'package:drift_app/state/settings_store.dart';
+import 'package:drift_app/src/rust/api/error.dart' as rust_error;
 import 'package:drift_app/src/rust/api/receiver.dart' as rust_receiver;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -85,6 +86,7 @@ class FakeSendItemSource implements SendItemSource {
     List<List<String>>? pickResponses,
     Map<String, TransferItemViewData>? itemCatalog,
     this.appendPathsHandler,
+    this.pickFilesError,
   }) : _pickResponses =
            pickResponses ??
            const [
@@ -101,6 +103,7 @@ class FakeSendItemSource implements SendItemSource {
     required List<String> incomingPaths,
   })?
   appendPathsHandler;
+  final Object? pickFilesError;
   int _pickIndex = 0;
 
   @override
@@ -142,8 +145,9 @@ class FakeSendItemSource implements SendItemSource {
       _mapPaths(paths);
 
   @override
-  Future<List<TransferItemViewData>> pickFiles() async =>
-      _mapPaths(_nextPickResponse());
+  Future<List<TransferItemViewData>> pickFiles() async => pickFilesError == null
+      ? _mapPaths(_nextPickResponse())
+      : Future<List<TransferItemViewData>>.error(pickFilesError!);
 
   @override
   Future<List<TransferItemViewData>> removePath({
@@ -174,9 +178,12 @@ class FakeSendItemSource implements SendItemSource {
 }
 
 class FakeSendTransferSource implements SendTransferSource {
+  FakeSendTransferSource({this.cancelError});
+
   SendTransferRequestData? lastRequest;
   final StreamController<SendTransferUpdate> controller =
       StreamController<SendTransferUpdate>.broadcast();
+  final Object? cancelError;
 
   @override
   Stream<SendTransferUpdate> startTransfer(SendTransferRequestData request) {
@@ -185,7 +192,11 @@ class FakeSendTransferSource implements SendTransferSource {
   }
 
   @override
-  Future<void> cancelTransfer() async {}
+  Future<void> cancelTransfer() async {
+    if (cancelError != null) {
+      throw cancelError!;
+    }
+  }
 
   Future<void> dispose() async {
     await controller.close();
@@ -322,12 +333,18 @@ rust_receiver.ReceiverTransferEvent _incomingReceivingEvent({
     bytesReceived: receivedBytes,
     totalSizeLabel: '18 KB',
     files: const [],
+    error: const rust_error.UserFacingErrorData(
+      kind: rust_error.UserFacingErrorKindData.connectionLost,
+      title: 'Connection lost',
+      message: 'Drift lost the connection while receiving files.',
+      recovery: 'Try again when both devices are connected.',
+      retryable: true,
+    ),
   );
 }
 
 rust_receiver.ReceiverTransferEvent _incomingFailedEvent({
   required BigInt receivedBytes,
-  String errorMessage = 'Drift lost the connection while receiving files.',
 }) {
   return rust_receiver.ReceiverTransferEvent(
     phase: rust_receiver.ReceiverTransferPhase.failed,
@@ -341,7 +358,13 @@ rust_receiver.ReceiverTransferEvent _incomingFailedEvent({
     bytesReceived: receivedBytes,
     totalSizeLabel: '18 KB',
     files: const [],
-    errorMessage: errorMessage,
+    error: const rust_error.UserFacingErrorData(
+      kind: rust_error.UserFacingErrorKindData.connectionLost,
+      title: 'Connection lost',
+      message: 'Drift lost the connection while receiving files.',
+      recovery: 'Try again when both devices are connected.',
+      retryable: true,
+    ),
   );
 }
 
@@ -813,6 +836,75 @@ void main() {
       await _flushAsyncWork(tester);
     },
   );
+
+  testWidgets('send selection failure stays visible on the idle screen', (
+    tester,
+  ) async {
+    final receiverService = FakeReceiverServiceSource();
+    final sendItemSource = FakeSendItemSource(
+      pickFilesError: Exception('permission denied'),
+    );
+    final container = _buildContainer(
+      receiverServiceSource: receiverService,
+      sendItemSource: sendItemSource,
+    );
+    addTearDown(receiverService.dispose);
+    addTearDown(container.dispose);
+
+    final notifier = container.read(driftAppNotifierProvider.notifier);
+    await _flushAsyncWork(tester);
+
+    notifier.pickSendItems();
+    await _flushAsyncWork(tester);
+
+    final state = container.read(driftAppNotifierProvider);
+    expect(state.session, isA<IdleSession>());
+    expect(
+      state.sendSetupErrorMessage,
+      'Drift couldn\'t prepare the selected files.',
+    );
+  });
+
+  testWidgets('send cancel failure becomes a terminal send error', (
+    tester,
+  ) async {
+    final receiverService = FakeReceiverServiceSource();
+    final sendTransferSource = FakeSendTransferSource(
+      cancelError: Exception('cancel failed'),
+    );
+    final container = _buildContainer(
+      receiverServiceSource: receiverService,
+      sendTransferSource: sendTransferSource,
+    );
+    addTearDown(sendTransferSource.dispose);
+    addTearDown(receiverService.dispose);
+    addTearDown(container.dispose);
+
+    final notifier = container.read(driftAppNotifierProvider.notifier);
+    await _flushAsyncWork(tester);
+
+    notifier.pickSendItems();
+    await _flushAsyncWork(tester);
+    notifier.updateSendDestinationCode('ab2cd3');
+    await _flushAsyncWork(tester);
+    notifier.startSend();
+    await _flushAsyncWork(tester);
+    sendTransferSource.controller.add(
+      _sendUpdate(phase: SendTransferUpdatePhase.connecting),
+    );
+    await _flushAsyncWork(tester);
+
+    notifier.cancelSendInProgress();
+    await _flushAsyncWork(tester);
+
+    final state = container.read(driftAppNotifierProvider);
+    expect(state.session, isA<SendResultSession>());
+    expect(state.transferResult?.outcome, TransferResultOutcomeData.failed);
+    expect(
+      state.transferResult?.message,
+      'Drift couldn\'t cancel the transfer.',
+    );
+  });
 
   testWidgets(
     'incoming offers move to review and accept/decline use receiver service',

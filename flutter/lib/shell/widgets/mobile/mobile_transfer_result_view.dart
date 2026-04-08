@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../state/drift_app_state.dart';
 import '../../../state/drift_providers.dart';
 import '../transfer_result_card.dart';
 

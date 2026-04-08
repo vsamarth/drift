@@ -43,6 +43,7 @@ class ShellStateContent extends ConsumerWidget {
         onChooseFiles: notifier.pickSendItems,
         onDropPaths: notifier.acceptDroppedSendItems,
         height: availableHeight,
+        errorMessage: state.sendSetupErrorMessage,
       ),
       ShellView.sendSelected => SizedBox(
         height: availableHeight,

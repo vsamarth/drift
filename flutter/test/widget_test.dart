@@ -12,6 +12,7 @@ import 'package:drift_app/state/drift_providers.dart';
 import 'package:drift_app/state/nearby_discovery_source.dart';
 import 'package:drift_app/state/receiver_service_source.dart';
 import 'package:drift_app/state/settings_store.dart';
+import 'package:drift_app/src/rust/api/error.dart' as rust_error;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -177,6 +178,7 @@ class FakeSendItemSource implements SendItemSource {
     required List<TransferItemViewData> pickedItems,
     List<List<String>>? pickResponses,
     Map<String, TransferItemViewData>? itemCatalog,
+    this.pickFilesError,
   }) : _pickResponses =
            pickResponses ??
            [pickedItems.map((item) => item.path).toList(growable: false)],
@@ -187,11 +189,13 @@ class FakeSendItemSource implements SendItemSource {
 
   final List<List<String>> _pickResponses;
   final Map<String, TransferItemViewData> _itemCatalog;
+  final Object? pickFilesError;
   int _pickIndex = 0;
 
   @override
-  Future<List<TransferItemViewData>> pickFiles() async =>
-      _mapPaths(_nextPickResponse());
+  Future<List<TransferItemViewData>> pickFiles() async => pickFilesError == null
+      ? _mapPaths(_nextPickResponse())
+      : Future<List<TransferItemViewData>>.error(pickFilesError!);
 
   @override
   Future<List<String>> pickAdditionalPaths() async => _nextPickResponse();
@@ -285,8 +289,11 @@ class FakeNearbyDiscoverySource implements NearbyDiscoverySource {
 }
 
 class FakeSendTransferSource implements SendTransferSource {
+  FakeSendTransferSource({this.cancelError});
+
   SendTransferRequestData? lastRequest;
   StreamController<SendTransferUpdate>? _controller;
+  final Object? cancelError;
 
   @override
   Stream<SendTransferUpdate> startTransfer(SendTransferRequestData request) {
@@ -298,6 +305,9 @@ class FakeSendTransferSource implements SendTransferSource {
 
   @override
   Future<void> cancelTransfer() async {
+    if (cancelError != null) {
+      throw cancelError!;
+    }
     _controller?.add(
       sendTransferUpdate(
         phase: SendTransferUpdatePhase.cancelled,
@@ -410,7 +420,6 @@ rust_receiver.ReceiverTransferEvent _incomingOfferEvent() {
 
 rust_receiver.ReceiverTransferEvent _incomingFailedEvent({
   required BigInt receivedBytes,
-  String errorMessage = 'Drift lost the connection while receiving files.',
 }) {
   return rust_receiver.ReceiverTransferEvent(
     phase: rust_receiver.ReceiverTransferPhase.failed,
@@ -424,7 +433,13 @@ rust_receiver.ReceiverTransferEvent _incomingFailedEvent({
     bytesReceived: receivedBytes,
     totalSizeLabel: '18 KB',
     files: const [],
-    errorMessage: errorMessage,
+    error: const rust_error.UserFacingErrorData(
+      kind: rust_error.UserFacingErrorKindData.connectionLost,
+      title: 'Connection lost',
+      message: 'Drift lost the connection while receiving files.',
+      recovery: 'Try again when both devices are connected.',
+      retryable: true,
+    ),
   );
 }
 
@@ -530,6 +545,30 @@ void main() {
     expect(find.text('Drop files to send'), findsOneWidget);
     expect(find.text('Send with code'), findsNothing);
     expect(shellBackButton(), findsNothing);
+    expectNoFlutterError(tester);
+  });
+
+  testWidgets('send selection failure is shown on the idle picker', (
+    tester,
+  ) async {
+    await pumpUtilityApp(
+      tester,
+      container: buildTestContainer(
+        sendItemSource: FakeSendItemSource(
+          pickedItems: const [],
+          pickFilesError: Exception('permission denied'),
+        ),
+      ),
+    );
+
+    await tester.tap(chooseFilesButton());
+    await tester.pumpAndSettle();
+
+    expect(find.text('Drop files to send'), findsOneWidget);
+    expect(
+      find.text('Drift couldn\'t prepare the selected files.'),
+      findsOneWidget,
+    );
     expectNoFlutterError(tester);
   });
 
@@ -936,6 +975,47 @@ void main() {
     expectNoFlutterError(tester);
   });
 
+  testWidgets('cancel failure during send shows a terminal error', (
+    tester,
+  ) async {
+    final sendTransferSource = FakeSendTransferSource(
+      cancelError: Exception('cancel failed'),
+    );
+    final container = buildTestContainer(
+      sendTransferSource: sendTransferSource,
+    );
+    await pumpUtilityApp(tester, container: container);
+
+    await tester.tap(chooseFilesButton());
+    await tester.pumpAndSettle();
+    await tester.enterText(sendCodeField(), 'ab2cd3');
+    await tester.pump();
+
+    await tester.tap(find.text('Send'));
+    await tester.pump();
+
+    sendTransferSource.emit(
+      sendTransferUpdate(
+        phase: SendTransferUpdatePhase.connecting,
+        destinationLabel: 'Code AB2 CD3',
+        statusMessage: 'Request sent',
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Yes, cancel'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Transfer failed'), findsOneWidget);
+    expect(find.text('Drift couldn\'t cancel the transfer.'), findsOneWidget);
+    expect(find.text('Try again'), findsOneWidget);
+    container.read(driftAppNotifierProvider.notifier).resetShell();
+    await tester.pumpAndSettle();
+    expectNoFlutterError(tester);
+  });
+
   testWidgets(
     'nearby device selection starts send with LAN ticket after Send',
     (tester) async {
@@ -1104,6 +1184,27 @@ void main() {
     expect(find.text('Nearby devices'), findsOneWidget);
     expect(find.text('No nearby devices found'), findsOneWidget);
     expect(sendCodeField(), findsOneWidget);
+    container.read(driftAppNotifierProvider.notifier).resetShell();
+    await tester.pumpAndSettle();
+    expectNoFlutterError(tester);
+  });
+
+  testWidgets('nearby scan failure is shown in the send draft', (tester) async {
+    Future<List<SendDestinationViewData>> failingScan() async {
+      throw Exception('mdns unavailable');
+    }
+
+    final container = buildTestContainer(nearbySendScan: failingScan);
+    await pumpUtilityApp(tester, container: container);
+
+    await tester.tap(chooseFilesButton());
+    await tester.pumpAndSettle();
+
+    expect(find.text('Send with code'), findsOneWidget);
+    expect(
+      find.text('Drift couldn\'t scan for nearby devices right now.'),
+      findsOneWidget,
+    );
     container.read(driftAppNotifierProvider.notifier).resetShell();
     await tester.pumpAndSettle();
     expectNoFlutterError(tester);
