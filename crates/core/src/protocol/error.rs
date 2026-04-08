@@ -1,8 +1,6 @@
-use std::error::Error as StdError;
-
-use thiserror::Error;
-
 use crate::protocol::message::{MessageKind, TransferErrorCode, TransferRole, TransferStatus};
+use std::error::Error as StdError;
+use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub(crate) enum ProtocolError {

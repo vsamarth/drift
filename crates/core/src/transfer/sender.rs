@@ -461,7 +461,7 @@ impl BlobTransferTask {
         let (tx, rx) = oneshot::channel();
         let shutdown = tokio::spawn(async move {
             let _ = rx.await;
-            reg.shutdown().await
+            reg.shutdown().await.map_err(Into::into)
         });
         Self {
             ticket,

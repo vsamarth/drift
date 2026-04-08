@@ -13,6 +13,7 @@ use tokio::fs;
 use tracing::{instrument, trace};
 use walkdir::WalkDir;
 
+use super::error::{BlobError, BlobTextError, Result as BlobResult};
 use crate::transfer::path::normalize_transfer_path;
 
 /// Temporary directory under the process temp dir; deleted on drop.
@@ -22,19 +23,19 @@ pub(super) struct ScratchDir {
 }
 
 impl ScratchDir {
-    pub(super) async fn new(prefix: &str, session_id: &str) -> Result<Self> {
+    pub(super) async fn new(prefix: &str, session_id: &str) -> BlobResult<Self> {
         let id_digest = blake3::hash(session_id.as_bytes()).to_hex();
         let unique = format!(
             "{prefix}-{id_digest}-{}",
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
-                .context("system clock before unix epoch")?
+                .map_err(|source| BlobError::scratch_dir_create(std::env::temp_dir(), source))?
                 .as_nanos()
         );
         let path = std::env::temp_dir().join(unique);
         fs::create_dir_all(&path)
             .await
-            .with_context(|| format!("creating temp directory {}", path.display()))?;
+            .map_err(|source| BlobError::scratch_dir_create(path.clone(), source))?;
         Ok(Self { path })
     }
 }
@@ -92,7 +93,12 @@ fn walk_files(path: PathBuf) -> Result<Vec<(String, PathBuf)>> {
 #[instrument(skip(store), fields(input_path = %path.display()))]
 pub(super) async fn import_files(store: &Store, path: PathBuf) -> Result<Vec<ImportedFile>> {
     let path_display = path.display().to_string();
-    let files = walk_files(path).with_context(|| format!("walking files in {}", path_display))?;
+    let files = walk_files(path).map_err(|source| {
+        BlobError::import_files(
+            path_display.clone(),
+            BlobTextError::new(format!("{source:#}")),
+        )
+    })?;
 
     let mut imported = Vec::with_capacity(files.len());
     for (transfer_path, local_path) in files {
