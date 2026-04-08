@@ -163,8 +163,11 @@ class DriftAppState {
   List<TransferDisplayItemViewData> get sendDisplayItems =>
       _displayItemsFor(sendItems, sendTransferPlan, sendTransferSnapshot);
 
-  List<TransferDisplayItemViewData> get receiveDisplayItems =>
-      _displayItemsFor(receiveItems, receiveTransferPlan, receiveTransferSnapshot);
+  List<TransferDisplayItemViewData> get receiveDisplayItems => _displayItemsFor(
+    receiveItems,
+    receiveTransferPlan,
+    receiveTransferSnapshot,
+  );
 
   List<SendDestinationViewData> get nearbySendDestinations => switch (session) {
     SendDraftSession(:final nearbyDestinations) => nearbyDestinations,
@@ -225,11 +228,12 @@ class DriftAppState {
     _ => null,
   };
 
-  rust_transfer.TransferSnapshotData? get sendTransferSnapshot => switch (session) {
-    SendTransferSession(:final snapshot) => snapshot,
-    SendResultSession(:final snapshot) => snapshot,
-    _ => null,
-  };
+  rust_transfer.TransferSnapshotData? get sendTransferSnapshot =>
+      switch (session) {
+        SendTransferSession(:final snapshot) => snapshot,
+        SendResultSession(:final snapshot) => snapshot,
+        _ => null,
+      };
 
   int? get receivePayloadBytesReceived => switch (session) {
     ReceiveTransferSession(:final payloadBytesReceived) => payloadBytesReceived,
@@ -271,12 +275,13 @@ class DriftAppState {
     _ => null,
   };
 
-  rust_transfer.TransferSnapshotData? get receiveTransferSnapshot => switch (session) {
-    ReceiveOfferSession(:final snapshot) => snapshot,
-    ReceiveTransferSession(:final snapshot) => snapshot,
-    ReceiveResultSession(:final snapshot) => snapshot,
-    _ => null,
-  };
+  rust_transfer.TransferSnapshotData? get receiveTransferSnapshot =>
+      switch (session) {
+        ReceiveOfferSession(:final snapshot) => snapshot,
+        ReceiveTransferSession(:final snapshot) => snapshot,
+        ReceiveResultSession(:final snapshot) => snapshot,
+        _ => null,
+      };
 
   TransferResultSession? get transferResultSession => switch (session) {
     SendResultSession() => session as SendResultSession,
@@ -368,10 +373,9 @@ List<TransferDisplayItemViewData> _displayItemsFor(
 
       final isActive = snapshot.activeFileId == file.id;
       if (isActive) {
-        final transferred =
-            snapshot.activeFileBytes == null
-                ? 0
-                : _bigIntToInt(snapshot.activeFileBytes!);
+        final transferred = snapshot.activeFileBytes == null
+            ? 0
+            : _bigIntToInt(snapshot.activeFileBytes!);
         final total = _bigIntToInt(file.size);
         return TransferDisplayItemViewData(
           item: item,

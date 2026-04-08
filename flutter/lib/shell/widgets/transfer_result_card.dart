@@ -96,7 +96,10 @@ class TransferResultCard extends StatelessWidget {
                 border: Border.all(color: kBorder.withValues(alpha: 0.75)),
               ),
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 12,
+                ),
                 child: _TransferMetricsList(metrics: metrics!),
               ),
             ),

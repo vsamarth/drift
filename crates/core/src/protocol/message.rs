@@ -4,9 +4,7 @@ use iroh::EndpointId;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::transfer_flow::types::{
-    TransferFileId, TransferPhase, TransferPlan,
-};
+use crate::transfer_flow::types::{TransferFileId, TransferPhase, TransferPlan};
 
 pub const PROTOCOL_VERSION: u32 = 2;
 
@@ -251,8 +249,8 @@ impl ReceiverMessage {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use iroh::SecretKey;
     use crate::transfer_flow::types::{TransferPlan, TransferPlanFile};
+    use iroh::SecretKey;
 
     #[test]
     fn sender_message_serializes_with_directional_tag() {

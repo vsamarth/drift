@@ -109,10 +109,7 @@ class ReceiveReceivingCard extends ConsumerWidget {
   }
 }
 
-SendingStripMode _receivingStripMode(
-  DriftAppState state,
-  dynamic snapshot,
-) {
+SendingStripMode _receivingStripMode(DriftAppState state, dynamic snapshot) {
   if (snapshot == null && !state.hasReceivePayloadProgress) {
     return SendingStripMode.waitingOnRecipient;
   }

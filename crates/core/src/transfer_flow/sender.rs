@@ -18,8 +18,8 @@ use crate::{
     protocol::{message as protocol_message, send as protocol_sender},
 };
 
-use super::progress::ProgressTracker;
 use super::path::ScratchDir;
+use super::progress::ProgressTracker;
 use super::types::{TransferOutcome, TransferPlan, TransferSnapshot, wait_for_cancel};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -337,8 +337,7 @@ async fn do_transfer(
     let registration = BlobService::new(endpoint.clone())
         .register(prepared)
         .await?;
-    let progress_task =
-        SenderProgressTask::spawn(connection, plan.clone(), events.clone());
+    let progress_task = SenderProgressTask::spawn(connection, plan.clone(), events.clone());
     let blob_task = BlobTransferTask::spawn(registration);
 
     let result = async {
@@ -443,7 +442,7 @@ impl SenderProgressTask {
                                 session_id: m.session_id,
                                 snapshot: tracker.snapshot(now),
                             });
-                            break Ok(())
+                            break Ok(());
                         }
                         _ => bail!("unexpected progress message from receiver"),
                     }

@@ -16,14 +16,20 @@ class MobileTransferView extends ConsumerWidget {
     final notifier = ref.read(driftAppNotifierProvider.notifier);
 
     final isSending = state.mode == TransferDirection.send;
-    final items = isSending ? state.sendDisplayItems : state.receiveDisplayItems;
+    final items = isSending
+        ? state.sendDisplayItems
+        : state.receiveDisplayItems;
     final summary = isSending ? state.sendSummary : state.receiveSummary;
     final snapshot = isSending
         ? state.sendTransferSnapshot
         : state.receiveTransferSnapshot;
 
     final progress = isSending
-        ? _snapshotProgress(snapshot, state.sendPayloadBytesSent, state.sendPayloadTotalBytes)
+        ? _snapshotProgress(
+            snapshot,
+            state.sendPayloadBytesSent,
+            state.sendPayloadTotalBytes,
+          )
         : _snapshotProgress(
             snapshot,
             state.receivePayloadBytesReceived,

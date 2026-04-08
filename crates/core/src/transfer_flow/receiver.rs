@@ -23,11 +23,13 @@ use crate::{
     rendezvous::OfferManifest,
 };
 
-use super::progress::ProgressTracker;
 use super::path::{
     ScratchDir, ensure_destination_available, resolve_output_dir, resolve_transfer_destination,
 };
-use super::types::{TransferOutcome, TransferPhase, TransferPlan, TransferSnapshot, wait_for_cancel};
+use super::progress::ProgressTracker;
+use super::types::{
+    TransferOutcome, TransferPhase, TransferPlan, TransferSnapshot, wait_for_cancel,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReceiverRequest {

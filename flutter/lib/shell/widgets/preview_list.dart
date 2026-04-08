@@ -303,7 +303,9 @@ class _PreviewTableRow extends StatelessWidget {
                 fontWeight: item.isActive || item.isCompleted
                     ? FontWeight.w700
                     : FontWeight.w500,
-                color: item.isActive || item.isCompleted ? emphasisColor : kMuted,
+                color: item.isActive || item.isCompleted
+                    ? emphasisColor
+                    : kMuted,
               ),
             ),
           ),
@@ -385,7 +387,9 @@ class PreviewRow extends StatelessWidget {
                 fontWeight: item.isActive || item.isCompleted
                     ? FontWeight.w700
                     : FontWeight.w500,
-                color: item.isActive || item.isCompleted ? emphasisColor : kMuted,
+                color: item.isActive || item.isCompleted
+                    ? emphasisColor
+                    : kMuted,
               ),
             ),
           ),

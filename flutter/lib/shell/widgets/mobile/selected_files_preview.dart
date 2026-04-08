@@ -11,10 +11,7 @@ class SelectedFilesPreview extends StatelessWidget {
   static const double _kPreviewFooterHeight = 28;
 
   final List<TransferItemViewData> items;
-  const SelectedFilesPreview({
-    super.key,
-    required this.items,
-  });
+  const SelectedFilesPreview({super.key, required this.items});
 
   String _selectionSummaryLabel(List<TransferItemViewData> items) {
     final count = items.length;

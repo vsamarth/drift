@@ -43,7 +43,10 @@ class TransferFlowLayout extends StatelessWidget {
                   mainAxisAlignment: MainAxisAlignment.start,
                   children: [
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 3,
+                      ),
                       decoration: BoxDecoration(
                         color: statusColor.withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(6),
@@ -135,7 +138,9 @@ class TransferFlowLayout extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
           decoration: BoxDecoration(
             color: kBg,
-            border: Border(top: BorderSide(color: kBorder.withValues(alpha: 0.5))),
+            border: Border(
+              top: BorderSide(color: kBorder.withValues(alpha: 0.5)),
+            ),
           ),
           child: footer,
         ),

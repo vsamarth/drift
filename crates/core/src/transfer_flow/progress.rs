@@ -49,7 +49,11 @@ impl SpeedCalculator {
             return None;
         }
 
-        Some((delta_bytes as f64 / elapsed.as_secs_f64()).round().max(1.0) as u64)
+        Some(
+            (delta_bytes as f64 / elapsed.as_secs_f64())
+                .round()
+                .max(1.0) as u64,
+        )
     }
 
     fn prune(&mut self, now: Instant) {

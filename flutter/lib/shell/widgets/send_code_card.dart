@@ -75,11 +75,11 @@ class SendCodeCard extends ConsumerWidget {
             const SizedBox(height: 14),
             ConstrainedBox(
               constraints: const BoxConstraints(maxHeight: 360),
-                child: SingleChildScrollView(
-                  physics: const BouncingScrollPhysics(),
-                  child: PreviewList(items: state.sendDisplayItems),
-                ),
+              child: SingleChildScrollView(
+                physics: const BouncingScrollPhysics(),
+                child: PreviewList(items: state.sendDisplayItems),
               ),
+            ),
             if (primaryLabel != null && onPrimary != null) ...[
               const SizedBox(height: 20),
               FilledButton(

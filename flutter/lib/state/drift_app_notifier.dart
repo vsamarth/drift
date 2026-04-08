@@ -580,7 +580,8 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
     final progress = _progressFromSnapshot(event.snapshot);
     final payloadBytesReceived =
         progress.bytesTransferred ?? _bigIntToInt(event.bytesReceived);
-    final payloadTotalBytes = progress.totalBytes ?? _bigIntToInt(event.totalSizeBytes);
+    final payloadTotalBytes =
+        progress.totalBytes ?? _bigIntToInt(event.totalSizeBytes);
     if (_receivePayloadStartedAt == null && payloadBytesReceived > 0) {
       _receivePayloadStartedAt = DateTime.now();
     }
@@ -614,8 +615,10 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
 
   void _applyIncomingCompleted(rust_receiver.ReceiverTransferEvent event) {
     final progress = _progressFromSnapshot(event.snapshot);
-    final bytesReceived = progress.bytesTransferred ?? _bigIntToInt(event.bytesReceived);
-    final totalBytes = progress.totalBytes ?? _bigIntToInt(event.totalSizeBytes);
+    final bytesReceived =
+        progress.bytesTransferred ?? _bigIntToInt(event.bytesReceived);
+    final totalBytes =
+        progress.totalBytes ?? _bigIntToInt(event.totalSizeBytes);
     if (_receivePayloadStartedAt == null && bytesReceived > 0) {
       _receivePayloadStartedAt = DateTime.now();
     }
@@ -657,8 +660,10 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
 
   void _applyIncomingCancelled(rust_receiver.ReceiverTransferEvent event) {
     final progress = _progressFromSnapshot(event.snapshot);
-    final bytesReceived = progress.bytesTransferred ?? _bigIntToInt(event.bytesReceived);
-    final totalBytes = progress.totalBytes ?? _bigIntToInt(event.totalSizeBytes);
+    final bytesReceived =
+        progress.bytesTransferred ?? _bigIntToInt(event.bytesReceived);
+    final totalBytes =
+        progress.totalBytes ?? _bigIntToInt(event.totalSizeBytes);
     if (_receivePayloadStartedAt == null && bytesReceived > 0) {
       _receivePayloadStartedAt = DateTime.now();
     }
@@ -1038,14 +1043,12 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
     return _TransferProgressMetrics(
       bytesTransferred: bytesTransferred,
       totalBytes: totalBytes,
-      speedLabel:
-          bytesPerSec != null && bytesPerSec >= 16
-              ? _formatBytesPerSecond(bytesPerSec.toDouble())
-              : null,
-      etaLabel:
-          etaSeconds != null && etaSeconds > 0
-              ? _formatEtaSeconds(etaSeconds.toDouble())
-              : null,
+      speedLabel: bytesPerSec != null && bytesPerSec >= 16
+          ? _formatBytesPerSecond(bytesPerSec.toDouble())
+          : null,
+      etaLabel: etaSeconds != null && etaSeconds > 0
+          ? _formatEtaSeconds(etaSeconds.toDouble())
+          : null,
     );
   }
 

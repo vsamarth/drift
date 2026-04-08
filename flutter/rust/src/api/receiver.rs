@@ -12,10 +12,10 @@ use iroh::SecretKey;
 use tokio::sync::Mutex as AsyncMutex;
 use tokio::task::JoinHandle;
 
-use super::RUNTIME;
 use super::transfer::{
     TransferPhaseData, TransferPlanData, TransferPlanFileData, TransferSnapshotData,
 };
+use super::RUNTIME;
 use crate::frb_generated::StreamSink;
 
 static RECEIVER_SECRET_KEY: LazyLock<SecretKey> =

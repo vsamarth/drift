@@ -9,8 +9,8 @@ use drift_core::protocol::DeviceType;
 use drift_core::rendezvous::{RendezvousClient, resolve_server_url};
 use drift_core::transfer_flow::{
     ReceiverDecision, ReceiverEvent, ReceiverOffer, ReceiverRequest, ReceiverSession,
-    ReceiverStart, SendRequest, Sender, SenderEvent, TransferOutcome,
-    TransferPlan, TransferSnapshot,
+    ReceiverStart, SendRequest, Sender, SenderEvent, TransferOutcome, TransferPlan,
+    TransferSnapshot,
 };
 use drift_core::util::{confirm_accept, human_size, make_ticket, process_display_device_name};
 use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};

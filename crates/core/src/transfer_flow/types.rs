@@ -24,7 +24,8 @@ impl TransferPlan {
     pub fn try_new(session_id: impl Into<String>, files: Vec<TransferPlanFile>) -> Result<Self> {
         let session_id = session_id.into();
         for (expected_id, file) in files.iter().enumerate() {
-            let expected_id = u32::try_from(expected_id).map_err(|_| anyhow::anyhow!("too many files"))?;
+            let expected_id =
+                u32::try_from(expected_id).map_err(|_| anyhow::anyhow!("too many files"))?;
             if file.id != expected_id {
                 bail!(
                     "transfer file ids must be contiguous and ordered from 0..n-1 (expected {}, got {})",
@@ -33,7 +34,8 @@ impl TransferPlan {
                 );
             }
         }
-        let total_files = u32::try_from(files.len()).map_err(|_| anyhow::anyhow!("too many files"))?;
+        let total_files =
+            u32::try_from(files.len()).map_err(|_| anyhow::anyhow!("too many files"))?;
         let total_bytes = files.iter().try_fold(0_u64, |acc, file| {
             acc.checked_add(file.size)
                 .ok_or_else(|| anyhow::anyhow!("total transfer size exceeds u64"))
@@ -46,19 +48,20 @@ impl TransferPlan {
         })
     }
 
-    pub fn from_manifest(session_id: impl Into<String>, manifest: &TransferManifest) -> Result<Self> {
+    pub fn from_manifest(
+        session_id: impl Into<String>,
+        manifest: &TransferManifest,
+    ) -> Result<Self> {
         let files = manifest
             .items
             .iter()
             .enumerate()
             .map(|(index, item)| match item {
-                ManifestItem::File { path, size } => {
-                    Ok(TransferPlanFile {
-                        id: u32::try_from(index).map_err(|_| anyhow::anyhow!("too many files"))?,
-                        path: path.clone(),
-                        size: *size,
-                    })
-                }
+                ManifestItem::File { path, size } => Ok(TransferPlanFile {
+                    id: u32::try_from(index).map_err(|_| anyhow::anyhow!("too many files"))?,
+                    path: path.clone(),
+                    size: *size,
+                }),
             })
             .collect::<Result<Vec<_>>>()?;
         Self::try_new(session_id, files)

@@ -218,7 +218,10 @@ impl ReceiverSession {
         let mut last_progress_bytes = 0_u64;
         while let Some(event) = events.next().await {
             match event {
-                Ok(CoreReceiverEvent::TransferStarted { session_id: _, plan }) => {
+                Ok(CoreReceiverEvent::TransferStarted {
+                    session_id: _,
+                    plan,
+                }) => {
                     let _ = progress_cmd_tx.try_send(ReceiverCommand::OfferProgress {
                         offer_id,
                         event: build_offer_event(
@@ -237,11 +240,16 @@ impl ReceiverSession {
                         ),
                     });
                 }
-                Ok(CoreReceiverEvent::TransferProgress { session_id: _, snapshot }) => {
+                Ok(CoreReceiverEvent::TransferProgress {
+                    session_id: _,
+                    snapshot,
+                }) => {
                     let now = std::time::Instant::now();
                     let interval_elapsed =
                         now.duration_since(last_progress_emit_at) >= PROGRESS_EVENT_MIN_INTERVAL;
-                    let bytes_advanced = snapshot.bytes_transferred.saturating_sub(last_progress_bytes)
+                    let bytes_advanced = snapshot
+                        .bytes_transferred
+                        .saturating_sub(last_progress_bytes)
                         >= PROGRESS_EVENT_MIN_BYTES;
                     let phase_changed = matches!(snapshot.phase, TransferPhase::Finalizing)
                         || matches!(snapshot.phase, TransferPhase::Completed);

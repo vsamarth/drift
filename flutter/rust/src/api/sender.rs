@@ -2,17 +2,17 @@ use std::path::PathBuf;
 use std::sync::{LazyLock, Mutex};
 
 use drift_app::{
-    SendConfig, SendDestination, SendDraft, SendEvent as AppSendEvent,
-    SendPhase as AppSendPhase, SendSession, SendSessionOutcome,
+    SendConfig, SendDestination, SendDraft, SendEvent as AppSendEvent, SendPhase as AppSendPhase,
+    SendSession, SendSessionOutcome,
 };
 use drift_core::transfer_flow::{TransferPhase, TransferPlan, TransferPlanFile, TransferSnapshot};
-use tokio::sync::watch;
 use futures_lite::StreamExt;
+use tokio::sync::watch;
 
-use super::RUNTIME;
 use super::transfer::{
     TransferPhaseData, TransferPlanData, TransferPlanFileData, TransferSnapshotData,
 };
+use super::RUNTIME;
 use crate::frb_generated::StreamSink;
 
 const LOCAL_RENDEZVOUS_URL: &str = "http://127.0.0.1:8787";
@@ -61,7 +61,7 @@ pub fn start_send_transfer(
     updates: StreamSink<SendTransferEvent>,
 ) -> Result<(), String> {
     let fallback_destination = fallback_destination_label(&request);
-    
+
     let draft = SendDraft::new(
         SendConfig {
             device_name: request.device_name,
