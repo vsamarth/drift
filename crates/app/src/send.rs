@@ -8,7 +8,7 @@ use drift_core::fs_plan::preview::{
 };
 use drift_core::protocol::DeviceType;
 use drift_core::rendezvous::{RendezvousClient, resolve_server_url, validate_code};
-use drift_core::transfer_flow::{
+use drift_core::transfer::{
     SendRequest, Sender, SenderEvent as CoreSenderEvent, TransferOutcome as CoreTransferOutcome,
     TransferPlan,
 };

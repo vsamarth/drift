@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 pub use drift_core::fs_plan::ConflictPolicy;
-pub use drift_core::transfer_flow::{TransferPlan, TransferSnapshot};
+pub use drift_core::transfer::{TransferPlan, TransferSnapshot};
 use iroh::SecretKey;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

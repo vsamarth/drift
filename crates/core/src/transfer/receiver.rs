@@ -5,7 +5,7 @@ use futures_lite::StreamExt;
 use iroh::{Endpoint, endpoint::Connection};
 use iroh_blobs::{
     ALPN as BLOBS_ALPN,
-    api::{blobs::ExportMode, blobs::ExportOptions, remote::GetProgressItem},
+    api::{blobs::ExportMode, blobs::ExportOptions},
     format::collection::Collection,
     store::fs::FsStore,
     ticket::BlobTicket,
@@ -19,13 +19,14 @@ use tokio_stream::wrappers::UnboundedReceiverStream;
 use tracing::{info, instrument};
 
 use crate::{
-    protocol::ALPN, protocol::message as protocol_message, protocol::wire as protocol_wire,
+    blobs::receive::{BlobDownloadSession, BlobDownloadUpdate, BlobReceiver},
+    protocol::ALPN,
+    protocol::message as protocol_message,
+    protocol::wire as protocol_wire,
     rendezvous::OfferManifest,
 };
 
-use super::path::{
-    ScratchDir, ensure_destination_available, resolve_output_dir, resolve_transfer_destination,
-};
+use super::path::{ensure_destination_available, resolve_output_dir, resolve_transfer_destination};
 use super::progress::ProgressTracker;
 use super::types::{
     TransferOutcome, TransferPhase, TransferPlan, TransferSnapshot, wait_for_cancel,
@@ -282,86 +283,134 @@ async fn run_session(
         .ticket
         .parse()
         .context("parsing blob ticket")?;
-    let scratch = ScratchDir::new("drift-recv", &session_id).await?;
-    let store = FsStore::load(&scratch.path).await?;
+    let blob_receiver = BlobReceiver::new(endpoint.clone());
+    let mut blob_download = blob_receiver
+        .start(&session_id, blob_ticket.clone())
+        .await
+        .context("starting blob download")?;
+    let mut progress_send = connection.open_uni().await?;
 
-    let outcome = async {
-        let blob_conn = endpoint.connect(blob_ticket.addr().clone(), BLOBS_ALPN).await?;
-        let mut progress_send = connection.open_uni().await?;
-
-        let (transfer_outcome, mut tracker) = do_transfer(
-            &session_id,
-            &plan,
-            store.remote().fetch(blob_conn, blob_ticket.clone()).stream(),
-            &mut progress_send,
-            &mut control_recv,
-            &mut cancel_rx,
-            &event_tx,
-        ).await?;
-
-        if let TransferOutcome::Cancelled(c) = &transfer_outcome {
-            let _ = send_receiver_cancel(&mut control_send, &session_id, c.by, c.phase, c.reason.clone()).await;
-            return Ok::<_, anyhow::Error>(transfer_outcome);
+    let (transfer_outcome, mut tracker) = match do_transfer(
+        &session_id,
+        &plan,
+        &mut blob_download,
+        &mut progress_send,
+        &mut control_recv,
+        &mut cancel_rx,
+        &event_tx,
+    )
+    .await
+    {
+        Ok(v) => v,
+        Err(error) => {
+            blob_download.abort();
+            let _ = blob_download.shutdown().await;
+            emit_receiver_event(
+                &event_tx,
+                ReceiverEvent::Failed {
+                    session_id: session_id.clone(),
+                    message: format!("{error:#}"),
+                },
+            );
+            return Err(error);
         }
+    };
 
-        // --- Phase 5: Export & Acknowledgement ---
-        info!(%session_id, "exporting files to {}", request.out_dir.display());
-        tracker.mark_finalizing(std::time::Instant::now());
-        let finalizing_snapshot = tracker.snapshot(std::time::Instant::now());
-        emit_receiver_event(&event_tx, ReceiverEvent::TransferProgress {
+    if let TransferOutcome::Cancelled(c) = &transfer_outcome {
+        let _ = send_receiver_cancel(
+            &mut control_send,
+            &session_id,
+            c.by,
+            c.phase,
+            c.reason.clone(),
+        )
+        .await;
+        blob_download.abort();
+        let _ = blob_download.shutdown().await;
+        return Ok(transfer_outcome);
+    }
+
+    // --- Phase 5: Export & Acknowledgement ---
+    info!(%session_id, "exporting files to {}", request.out_dir.display());
+    tracker.mark_finalizing(std::time::Instant::now());
+    let finalizing_snapshot = tracker.snapshot(std::time::Instant::now());
+    emit_receiver_event(
+        &event_tx,
+        ReceiverEvent::TransferProgress {
             session_id: session_id.clone(),
             snapshot: finalizing_snapshot.clone(),
-        });
-        let _ = protocol_wire::write_receiver_message(
-            &mut progress_send,
-            &protocol_message::ReceiverMessage::TransferProgress(protocol_message::TransferProgress {
-                session_id: session_id.clone(),
-                snapshot: to_wire_snapshot(&finalizing_snapshot),
-            }),
-        ).await;
-        let final_snapshot = tokio::select! {
-            res = export_downloaded_collection(&store, blob_ticket.hash(), &expected_transfer_files) => {
-                res?;
-                tracker.mark_completed(std::time::Instant::now());
-                tracker.snapshot(std::time::Instant::now())
-            },
-            _ = wait_for_cancel(&mut cancel_rx) => return abort_session(&mut control_send, &session_id, protocol_message::CancelPhase::Transferring).await,
-        };
+        },
+    );
+    let _ = protocol_wire::write_receiver_message(
+        &mut progress_send,
+        &protocol_message::ReceiverMessage::TransferProgress(protocol_message::TransferProgress {
+            session_id: session_id.clone(),
+            snapshot: to_wire_snapshot(&finalizing_snapshot),
+        }),
+    )
+    .await;
+    let final_snapshot = tokio::select! {
+        res = export_downloaded_collection(blob_download.store(), blob_ticket.hash(), &expected_transfer_files) => {
+            res?;
+            tracker.mark_completed(std::time::Instant::now());
+            tracker.snapshot(std::time::Instant::now())
+        },
+        _ = wait_for_cancel(&mut cancel_rx) => {
+            blob_download.abort();
+            let _ = blob_download.shutdown().await;
+            return abort_session(&mut control_send, &session_id, protocol_message::CancelPhase::Transferring).await;
+        },
+    };
 
-        let _ = protocol_wire::write_receiver_message(
-            &mut progress_send,
-            &protocol_message::ReceiverMessage::TransferCompleted(protocol_message::TransferCompleted {
+    let _ = protocol_wire::write_receiver_message(
+        &mut progress_send,
+        &protocol_message::ReceiverMessage::TransferCompleted(
+            protocol_message::TransferCompleted {
                 session_id: session_id.clone(),
                 snapshot: to_wire_snapshot(&final_snapshot),
-            }),
-        ).await;
-        let _ = send_transfer_result(&mut control_send, &session_id, protocol_message::TransferStatus::Ok).await;
+            },
+        ),
+    )
+    .await;
+    let _ = send_transfer_result(
+        &mut control_send,
+        &session_id,
+        protocol_message::TransferStatus::Ok,
+    )
+    .await;
 
-        // Final wait for Sender to acknowledge our result
-        match protocol_wire::read_sender_message(&mut control_recv).await? {
-            protocol_message::SenderMessage::TransferAck(_) => {
-                let _ = control_send.finish();
-                emit_receiver_event(&event_tx, ReceiverEvent::TransferCompleted {
+    // Final wait for Sender to acknowledge our result
+    let outcome = match protocol_wire::read_sender_message(&mut control_recv).await {
+        Ok(protocol_message::SenderMessage::TransferAck(_)) => {
+            let _ = control_send.finish();
+            emit_receiver_event(
+                &event_tx,
+                ReceiverEvent::TransferCompleted {
                     session_id: session_id.clone(),
                     snapshot: final_snapshot,
-                });
-                emit_receiver_event(&event_tx, ReceiverEvent::Completed { session_id: session_id.clone() });
-                Ok(TransferOutcome::Completed)
-            },
-            _ => bail!("missing final transfer ack from sender"),
+                },
+            );
+            emit_receiver_event(
+                &event_tx,
+                ReceiverEvent::Completed {
+                    session_id: session_id.clone(),
+                },
+            );
+            Ok(TransferOutcome::Completed)
         }
-    }.await;
+        Ok(_) => {
+            blob_download.abort();
+            let _ = blob_download.shutdown().await;
+            bail!("missing final transfer ack from sender");
+        }
+        Err(error) => {
+            blob_download.abort();
+            let _ = blob_download.shutdown().await;
+            return Err(error);
+        }
+    };
 
-    if let Err(error) = &outcome {
-        emit_receiver_event(
-            &event_tx,
-            ReceiverEvent::Failed {
-                session_id: session_id.clone(),
-                message: format!("{error:#}"),
-            },
-        );
-    }
-    let _ = store.shutdown().await;
+    let _ = blob_download.shutdown().await;
     outcome
 }
 
@@ -418,7 +467,7 @@ async fn do_handshake(
 async fn do_transfer(
     session_id: &str,
     plan: &TransferPlan,
-    mut stream: impl futures_lite::Stream<Item = GetProgressItem> + Unpin,
+    download: &mut BlobDownloadSession,
     progress_send: &mut iroh::endpoint::SendStream,
     control_recv: &mut iroh::endpoint::RecvStream,
     cancel_rx: &mut watch::Receiver<bool>,
@@ -436,8 +485,8 @@ async fn do_transfer(
 
     loop {
         tokio::select! {
-            item = stream.next() => match item {
-                Some(GetProgressItem::Progress(offset)) => {
+            item = download.events_mut().next() => match item {
+                Some(BlobDownloadUpdate::Progress { bytes_received: offset }) => {
                     let now = std::time::Instant::now();
                     tracker.set_bytes_transferred(offset, now);
                     let snapshot = tracker.snapshot(now);
@@ -453,19 +502,28 @@ async fn do_transfer(
                         }),
                     ).await;
                 }
-                Some(GetProgressItem::Done(_)) | None => {
+                Some(BlobDownloadUpdate::Done) => {
                     return Ok((TransferOutcome::Completed, tracker));
-                },
-                Some(GetProgressItem::Error(e)) => bail!("blob fetch error: {e}"),
+                }
+                None => {
+                    download.abort();
+                    bail!("blob download stream closed unexpectedly");
+                }
+                Some(BlobDownloadUpdate::Failed { message }) => {
+                    download.abort();
+                    bail!("blob fetch error: {message}");
+                }
             },
             msg = protocol_wire::read_sender_message(control_recv) => match msg? {
                 protocol_message::SenderMessage::Cancel(c) => {
+                    download.abort();
                     return TransferOutcome::from_remote_cancel(c, session_id)
                         .map(|outcome| (outcome, tracker));
                 }
                 _ => bail!("unexpected control message during transfer"),
             },
             _ = wait_for_cancel(cancel_rx) => {
+                download.abort();
                 return Ok((
                     TransferOutcome::local_cancel(
                         protocol_message::TransferRole::Receiver,

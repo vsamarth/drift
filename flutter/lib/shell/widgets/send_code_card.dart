@@ -8,7 +8,7 @@ import '../../state/drift_providers.dart';
 import 'live_transfer_stats.dart';
 import 'preview_list.dart';
 import 'sending_connection_strip.dart';
-import 'transfer_flow_layout.dart';
+import 'transfer_layout.dart';
 
 class SendCodeCard extends ConsumerWidget {
   const SendCodeCard({

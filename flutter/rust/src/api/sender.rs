@@ -5,7 +5,7 @@ use drift_app::{
     SendConfig, SendDestination, SendDraft, SendEvent as AppSendEvent, SendPhase as AppSendPhase,
     SendSession, SendSessionOutcome,
 };
-use drift_core::transfer_flow::{TransferPhase, TransferPlan, TransferPlanFile, TransferSnapshot};
+use drift_core::transfer::{TransferPhase, TransferPlan, TransferPlanFile, TransferSnapshot};
 use futures_lite::StreamExt;
 use tokio::sync::watch;
 

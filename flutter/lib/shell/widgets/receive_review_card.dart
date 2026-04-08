@@ -6,7 +6,7 @@ import '../../core/theme/drift_theme.dart';
 import '../../state/drift_providers.dart';
 import 'preview_list.dart';
 import 'sending_connection_strip.dart';
-import 'transfer_flow_layout.dart';
+import 'transfer_layout.dart';
 
 class ReceiveReviewCard extends ConsumerWidget {
   const ReceiveReviewCard({super.key});

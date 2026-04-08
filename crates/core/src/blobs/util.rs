@@ -13,7 +13,7 @@ use tokio::fs;
 use tracing::{instrument, trace};
 use walkdir::WalkDir;
 
-use crate::transfer_flow::path::normalize_transfer_path;
+use crate::transfer::path::normalize_transfer_path;
 
 /// Temporary directory under the process temp dir; deleted on drop.
 #[derive(Debug)]

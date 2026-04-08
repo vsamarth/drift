@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/models/transfer_models.dart';
 import '../../core/theme/drift_theme.dart';
-import 'transfer_flow_layout.dart';
+import 'transfer_layout.dart';
 
 enum TransferResultTone { success, error }
 

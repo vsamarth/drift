@@ -7,7 +7,7 @@ use drift_core::discovery::{resolve_nearby, resolve_pairing_code};
 use drift_core::lan::LanReceiveAdvertisement;
 use drift_core::protocol::DeviceType;
 use drift_core::rendezvous::{RendezvousClient, resolve_server_url};
-use drift_core::transfer_flow::{
+use drift_core::transfer::{
     ReceiverDecision, ReceiverEvent, ReceiverOffer, ReceiverRequest, ReceiverSession,
     ReceiverStart, SendRequest, Sender, SenderEvent, TransferOutcome, TransferPlan,
     TransferSnapshot,
@@ -207,7 +207,7 @@ pub async fn send_nearby(
 }
 
 async fn consume_sender_run(
-    run: drift_core::transfer_flow::sender::SenderRun,
+    run: drift_core::transfer::sender::SenderRun,
     progress_bar: &mut Option<ProgressBar>,
 ) -> Result<TransferOutcome> {
     let (mut events, cancel_tx, outcome_rx) = run.into_parts();
@@ -317,7 +317,7 @@ pub async fn receive(out_dir: PathBuf, server_url: Option<String>) -> Result<()>
         "receive.started"
     );
 
-    let endpoint = drift_core::transfer_flow::receiver::bind_endpoint().await?;
+    let endpoint = drift_core::transfer::receiver::bind_endpoint().await?;
     let ticket = make_ticket(&endpoint).await?;
 
     // 1. Start mDNS Advertising

@@ -7,7 +7,7 @@ use drift_app::{
     ReceiverOfferFile as AppReceiverOfferFile, ReceiverOfferPhase as AppReceiverOfferPhase,
     ReceiverRegistration as AppReceiverRegistration, ReceiverService,
 };
-use drift_core::transfer_flow::{TransferPhase, TransferPlan, TransferPlanFile, TransferSnapshot};
+use drift_core::transfer::{TransferPhase, TransferPlan, TransferPlanFile, TransferSnapshot};
 use iroh::SecretKey;
 use tokio::sync::Mutex as AsyncMutex;
 use tokio::task::JoinHandle;

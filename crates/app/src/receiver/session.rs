@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use drift_core::protocol::DeviceType;
-use drift_core::transfer_flow::{
+use drift_core::transfer::{
     ReceiverDecision as CoreReceiverDecision, ReceiverEvent as CoreReceiverEvent,
     ReceiverRequest as CoreReceiverRequest, ReceiverSession as CoreReceiverSession,
     ReceiverStart as CoreReceiverStart, TransferOutcome as CoreTransferOutcome, TransferPhase,

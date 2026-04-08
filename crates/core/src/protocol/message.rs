@@ -4,7 +4,7 @@ use iroh::EndpointId;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::transfer_flow::types::{TransferFileId, TransferPhase, TransferPlan};
+use crate::transfer::types::{TransferFileId, TransferPhase, TransferPlan};
 
 pub const PROTOCOL_VERSION: u32 = 2;
 
@@ -249,7 +249,7 @@ impl ReceiverMessage {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::transfer_flow::types::{TransferPlan, TransferPlanFile};
+    use crate::transfer::types::{TransferPlan, TransferPlanFile};
     use iroh::SecretKey;
 
     #[test]
@@ -285,7 +285,7 @@ mod tests {
     }
 
     #[test]
-    fn message_enums_cover_current_transfer_flow() {
+    fn message_enums_cover_current_transfer() {
         let manifest = TransferManifest {
             items: vec![ManifestItem::File {
                 path: "a.txt".to_owned(),
