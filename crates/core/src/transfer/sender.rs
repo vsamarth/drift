@@ -291,7 +291,11 @@ async fn do_handshake(
 
             let peer_hello = match protocol_wire::read_receiver_message(&mut recv).await? {
                 protocol_message::ReceiverMessage::Hello(h) => h,
-                protocol_message::ReceiverMessage::Cancel(c) => return Ok(HandshakeResult::Cancelled(TransferOutcome::from_remote_cancel(c, session_id)?)),
+                protocol_message::ReceiverMessage::Cancel(c) => {
+                    return Ok(HandshakeResult::Cancelled(
+                        TransferOutcome::from_remote_cancel(c, session_id)?,
+                    ))
+                }
                 _ => bail!("expected hello from receiver"),
             };
 
@@ -359,7 +363,9 @@ async fn do_transfer(
             tokio::select! {
                 _ = wait_for_cancel(cancel_rx) => return abort_session(control_send, session_id, protocol_message::CancelPhase::Transferring).await,
                 msg = protocol_wire::read_receiver_message(control_recv) => match msg? {
-                    protocol_message::ReceiverMessage::Cancel(c) => return TransferOutcome::from_remote_cancel(c, session_id),
+                    protocol_message::ReceiverMessage::Cancel(c) => {
+                        return Ok(TransferOutcome::from_remote_cancel(c, session_id)?)
+                    }
                     protocol_message::ReceiverMessage::TransferResult(r) => {
                         if !matches!(r.status, protocol_message::TransferStatus::Ok) { bail!("receiver reported error: {:?}", r.status); }
                         break;

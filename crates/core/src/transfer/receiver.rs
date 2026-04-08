@@ -273,7 +273,9 @@ async fn run_session(
     let ticket_message = tokio::select! {
         res = protocol_wire::read_sender_message(&mut control_recv) => match res.context("waiting for ticket")? {
             protocol_message::SenderMessage::BlobTicket(msg) => msg,
-            protocol_message::SenderMessage::Cancel(c) => return TransferOutcome::from_remote_cancel(c, &session_id),
+            protocol_message::SenderMessage::Cancel(c) => {
+                return Ok(TransferOutcome::from_remote_cancel(c, &session_id)?)
+            }
             _ => bail!("unexpected message while waiting for ticket"),
         },
         _ = wait_for_cancel(&mut cancel_rx) => return abort_session(&mut control_send, &session_id, protocol_message::CancelPhase::Transferring).await,
@@ -527,8 +529,7 @@ async fn do_transfer(
             msg = protocol_wire::read_sender_message(control_recv) => match msg? {
                 protocol_message::SenderMessage::Cancel(c) => {
                     download.abort();
-                    return TransferOutcome::from_remote_cancel(c, session_id)
-                        .map(|outcome| (outcome, tracker));
+                    return Ok(TransferOutcome::from_remote_cancel(c, session_id).map(|outcome| (outcome, tracker))?);
                 }
                 _ => bail!("unexpected control message during transfer"),
             },

@@ -153,7 +153,7 @@ impl ReceiverSession {
                             &save_root_label,
                             sender_device_type,
                             "Transfer failed.".to_owned(),
-                            format_error_chain(&error),
+                            format_error_chain(&anyhow::Error::new(error)),
                         ),
                     })
                     .await;

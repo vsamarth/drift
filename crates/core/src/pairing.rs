@@ -1,4 +1,6 @@
-use anyhow::{Result, bail};
+use std::error::Error as StdError;
+use std::fmt;
+
 use time::OffsetDateTime;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -10,9 +12,25 @@ pub enum DiscoveryState {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DiscoveryError {
+    EmptyTicket,
+    InvalidExpiry,
     Claimed,
     Expired,
 }
+
+impl fmt::Display for DiscoveryError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let message = match self {
+            Self::EmptyTicket => "ticket must not be empty",
+            Self::InvalidExpiry => "expiry must be after creation time",
+            Self::Claimed => "pairing code already claimed",
+            Self::Expired => "pairing code expired",
+        };
+        f.write_str(message)
+    }
+}
+
+impl StdError for DiscoveryError {}
 
 #[derive(Debug, Clone)]
 pub struct DiscoverySession {
@@ -26,13 +44,13 @@ impl DiscoverySession {
         ticket: String,
         created_at: OffsetDateTime,
         expires_at: OffsetDateTime,
-    ) -> Result<Self> {
+    ) -> Result<Self, DiscoveryError> {
         if ticket.trim().is_empty() {
-            bail!("ticket must not be empty");
+            return Err(DiscoveryError::EmptyTicket);
         }
 
         if expires_at <= created_at {
-            bail!("expiry must be after creation time");
+            return Err(DiscoveryError::InvalidExpiry);
         }
 
         Ok(Self {
@@ -71,6 +89,10 @@ impl DiscoverySession {
         }
     }
 }
+
+pub type PairingState = DiscoveryState;
+pub type PairingError = DiscoveryError;
+pub type PairingSession = DiscoverySession;
 
 #[cfg(test)]
 mod tests {
