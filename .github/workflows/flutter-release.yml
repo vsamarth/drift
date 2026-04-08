@@ -3,6 +3,7 @@ name: Flutter release (all platforms)
 on:
   push:
     branches: [main]
+    tags: ['v*']
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -20,7 +21,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           sparse-checkout: |
             flutter
@@ -51,21 +52,31 @@ jobs:
       - name: Build macOS app
         run: flutter build macos --release
 
+      - name: Package macOS zip
+        run: |
+          cd build/macos/Build/Products/Release
+          zip -r ../../../../drift-macos-${{ github.ref_name }}.zip Drift.app
+
       - name: Build iOS (no code signing)
         run: flutter build ios --release --no-codesign
+
+      - name: Package iOS zip
+        run: |
+          cd build/ios/Release-iphoneos
+          zip -r ../../../drift-ios-unsigned-${{ github.ref_name }}.zip Runner.app
 
       - name: Upload macOS artifact
         uses: actions/upload-artifact@v4
         with:
-          name: drift-macos-app
-          path: flutter/build/macos/Build/Products/Release/Drift.app
+          name: drift-macos
+          path: flutter/drift-macos-${{ github.ref_name }}.zip
           if-no-files-found: error
 
       - name: Upload iOS artifact
         uses: actions/upload-artifact@v4
         with:
-          name: drift-ios-app-unsigned
-          path: flutter/build/ios/Release-iphoneos/Runner.app
+          name: drift-ios-unsigned
+          path: flutter/drift-ios-unsigned-${{ github.ref_name }}.zip
           if-no-files-found: error
 
   linux:
@@ -76,7 +87,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           sparse-checkout: |
             flutter
@@ -114,11 +125,16 @@ jobs:
       - name: Build Linux app
         run: flutter build linux --release
 
+      - name: Package Linux zip
+        run: |
+          cd build/linux/x64/release
+          zip -r ../../../../drift-linux-${{ github.ref_name }}.zip bundle
+
       - name: Upload Linux artifact
         uses: actions/upload-artifact@v4
         with:
-          name: drift-linux-bundle
-          path: flutter/build/linux/x64/release/bundle
+          name: drift-linux
+          path: flutter/drift-linux-${{ github.ref_name }}.zip
           if-no-files-found: error
 
   windows:
@@ -129,7 +145,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           sparse-checkout: |
             flutter
@@ -167,10 +183,7 @@ jobs:
         shell: pwsh
         run: |
           $releaseDir = Join-Path $PWD "build/windows/x64/runner/Release"
-          $zipPath = Join-Path $releaseDir "drift-windows.zip"
-          if (Test-Path $zipPath) {
-            Remove-Item $zipPath -Force
-          }
+          $zipPath = Join-Path $PWD "drift-windows-portable-${{ github.ref_name }}.zip"
           Compress-Archive -Path (Join-Path $releaseDir '*') -DestinationPath $zipPath -Force
 
       - name: Upload Windows MSIX
@@ -184,7 +197,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: drift-windows-portable
-          path: flutter/build/windows/x64/runner/Release/drift-windows.zip
+          path: flutter/drift-windows-portable-${{ github.ref_name }}.zip
           if-no-files-found: error
 
   android:
@@ -195,7 +208,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           sparse-checkout: |
             flutter
@@ -235,9 +248,40 @@ jobs:
       - name: Build Android APK
         run: flutter build apk --release
 
+      - name: Package Android APK
+        run: mv build/app/outputs/flutter-apk/app-release.apk drift-android-${{ github.ref_name }}.apk
+
       - name: Upload Android artifact
         uses: actions/upload-artifact@v4
         with:
-          name: drift-android-apk
-          path: flutter/build/app/outputs/flutter-apk/app-release.apk
+          name: drift-android
+          path: flutter/drift-android-${{ github.ref_name }}.apk
           if-no-files-found: error
+
+  create_release:
+    name: Create GitHub Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [macos_ios, linux, windows, android]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Prepare release files
+        run: |
+          mkdir release-dist
+          find artifacts -name "*.zip" -exec mv {} release-dist/ \;
+          find artifacts -name "*.msix" -exec mv {} release-dist/ \;
+          find artifacts -name "*.apk" -exec mv {} release-dist/ \;
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release-dist/*
+          generate_release_notes: true
+          draft: false
+          prerelease: false
