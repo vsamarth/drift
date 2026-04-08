@@ -144,7 +144,7 @@ class LocalSendTransferSource implements SendTransferSource {
       plan: event.plan,
       snapshot: event.snapshot,
       remoteDeviceType: event.remoteDeviceType,
-      errorMessage: event.errorMessage,
+      errorMessage: event.error?.message,
     );
   }
 

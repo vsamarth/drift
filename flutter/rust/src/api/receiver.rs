@@ -16,6 +16,7 @@ use super::transfer::{
     TransferPhaseData, TransferPlanData, TransferPlanFileData, TransferSnapshotData,
 };
 use super::RUNTIME;
+use crate::api::error::{internal_user_facing_error, map_optional_user_facing_error};
 use crate::frb_generated::StreamSink;
 
 static RECEIVER_SECRET_KEY: LazyLock<SecretKey> =
@@ -85,20 +86,20 @@ pub struct ReceiverTransferEvent {
     pub snapshot: Option<TransferSnapshotData>,
     pub total_size_label: String,
     pub files: Vec<ReceiverTransferFile>,
-    pub error_message: Option<String>,
+    pub error: Option<crate::api::error::UserFacingErrorData>,
 }
 
 pub fn register_receiver(
     server_url: Option<String>,
     device_name: String,
-) -> Result<ReceiverRegistration, String> {
+) -> Result<ReceiverRegistration, crate::api::error::UserFacingErrorData> {
     ensure_receiver_registration(server_url, device_name)
 }
 
 pub fn ensure_receiver_registration(
     server_url: Option<String>,
     device_name: String,
-) -> Result<ReceiverRegistration, String> {
+) -> Result<ReceiverRegistration, crate::api::error::UserFacingErrorData> {
     RUNTIME.block_on(async move {
         let service = ensure_receiver_service(BridgeReceiverConfig {
             device_name,
@@ -107,13 +108,14 @@ pub fn ensure_receiver_registration(
             server_url: server_url.clone(),
             conflict_policy: ConflictPolicy::Rename,
         })
-        .await?;
+        .await
+        .map_err(|e| internal_user_facing_error("Receiver unavailable", e))?;
 
         service
             .ensure_registered(server_url)
             .await
             .map(map_registration)
-            .map_err(|e| e.to_string())
+            .map_err(|e| internal_user_facing_error("Receiver registration failed", e.to_string()))
     })
 }
 
@@ -129,7 +131,7 @@ pub fn watch_receiver_pairing(
     device_name: String,
     device_type: String,
     updates: StreamSink<ReceiverPairingState>,
-) -> Result<(), String> {
+) -> Result<(), crate::api::error::UserFacingErrorData> {
     RUNTIME.block_on(async move {
         let config = BridgeReceiverConfig {
             device_name,
@@ -138,7 +140,9 @@ pub fn watch_receiver_pairing(
             server_url: server_url.clone(),
             conflict_policy: ConflictPolicy::Rename,
         };
-        let service = ensure_receiver_service(config.clone()).await?;
+        let service = ensure_receiver_service(config.clone())
+            .await
+            .map_err(|e| internal_user_facing_error("Receiver unavailable", e))?;
         if let Some(server_url) = config.server_url.clone() {
             if let Err(error) = service.ensure_registered(Some(server_url)).await {
                 println!(
@@ -150,14 +154,16 @@ pub fn watch_receiver_pairing(
         service
             .set_discoverable(true)
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| internal_user_facing_error("Receiver unavailable", e.to_string()))?;
 
         replace_pairing_task(config, service, updates);
         Ok(())
     })
 }
 
-pub fn set_receiver_discoverable(enabled: bool) -> Result<(), String> {
+pub fn set_receiver_discoverable(
+    enabled: bool,
+) -> Result<(), crate::api::error::UserFacingErrorData> {
     set_discoverable(enabled)
 }
 
@@ -167,7 +173,7 @@ pub fn start_receiver_transfer_listener(
     device_name: String,
     device_type: String,
     updates: StreamSink<ReceiverTransferEvent>,
-) -> Result<(), String> {
+) -> Result<(), crate::api::error::UserFacingErrorData> {
     if ENABLE_DEMO_HELLO_PROTOCOL {
         std::env::set_var("DRIFT_DEMO_HELLO", "1");
         println!("[bridge/receive] demo hello protocol enabled");
@@ -181,7 +187,9 @@ pub fn start_receiver_transfer_listener(
             server_url: server_url.clone(),
             conflict_policy: ConflictPolicy::Rename,
         };
-        let service = ensure_receiver_service(config.clone()).await?;
+        let service = ensure_receiver_service(config.clone())
+            .await
+            .map_err(|e| internal_user_facing_error("Receiver unavailable", e))?;
         if let Some(server_url) = config.server_url.clone() {
             if let Err(error) = service.ensure_registered(Some(server_url)).await {
                 println!(
@@ -193,17 +201,22 @@ pub fn start_receiver_transfer_listener(
         service
             .set_discoverable(true)
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| internal_user_facing_error("Receiver unavailable", e.to_string()))?;
 
         replace_updates_task(config, service, updates);
         Ok(())
     })
 }
 
-pub fn respond_to_receiver_offer(accept: bool) -> Result<(), String> {
+pub fn respond_to_receiver_offer(
+    accept: bool,
+) -> Result<(), crate::api::error::UserFacingErrorData> {
     RUNTIME.block_on(async move {
         let Some(service) = current_service() else {
-            return Err("receiver is not running".to_owned());
+            return Err(internal_user_facing_error(
+                "Receiver unavailable",
+                "The receiver is not running.",
+            ));
         };
         service
             .respond_to_offer(if accept {
@@ -212,22 +225,28 @@ pub fn respond_to_receiver_offer(accept: bool) -> Result<(), String> {
                 OfferDecision::Decline
             })
             .await
-            .map_err(|e| e.to_string())
+            .map_err(|e| internal_user_facing_error("Receiver unavailable", e.to_string()))
     })
 }
 
-pub fn cancel_receiver_transfer() -> Result<(), String> {
+pub fn cancel_receiver_transfer() -> Result<(), crate::api::error::UserFacingErrorData> {
     RUNTIME.block_on(async move {
         let Some(service) = current_service() else {
-            return Err("receiver is not running".to_owned());
+            return Err(internal_user_facing_error(
+                "Receiver unavailable",
+                "The receiver is not running.",
+            ));
         };
-        service.cancel_transfer().await.map_err(|e| e.to_string())
+        service
+            .cancel_transfer()
+            .await
+            .map_err(|e| internal_user_facing_error("Receiver unavailable", e.to_string()))
     })
 }
 
 pub(crate) async fn scan_nearby_with_receiver(
     timeout_secs: u64,
-) -> Result<Vec<crate::api::lan::NearbyReceiverInfo>, String> {
+) -> Result<Vec<crate::api::lan::NearbyReceiverInfo>, crate::api::error::UserFacingErrorData> {
     println!(
         "[bridge] scanning nearby receivers (timeout={}s)",
         timeout_secs
@@ -244,11 +263,11 @@ pub(crate) async fn scan_nearby_with_receiver(
                 secret_key: RECEIVER_SECRET_KEY.clone(),
             })
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| internal_user_facing_error("Receiver unavailable", e.to_string()))?;
             let receivers = temp
                 .scan_nearby(timeout_secs)
                 .await
-                .map_err(|e| e.to_string())?;
+                .map_err(|e| internal_user_facing_error("Receiver unavailable", e.to_string()))?;
             println!("[bridge] scan found {} receivers", receivers.len());
             for r in &receivers {
                 println!(
@@ -267,7 +286,7 @@ pub(crate) async fn scan_nearby_with_receiver(
     let receivers = service
         .scan_nearby(timeout_secs)
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| internal_user_facing_error("Receiver unavailable", e.to_string()))?;
 
     println!("[bridge] scan found {} receivers", receivers.len());
     for r in &receivers {
@@ -413,7 +432,7 @@ fn current_service() -> Option<Arc<ReceiverService>> {
         .and_then(|guard| guard.as_ref().map(|state| state.service.clone()))
 }
 
-fn set_discoverable(enabled: bool) -> Result<(), String> {
+fn set_discoverable(enabled: bool) -> Result<(), crate::api::error::UserFacingErrorData> {
     println!("[bridge] setting discoverable: {}", enabled);
     RUNTIME.block_on(async move {
         let Some(service) = current_service() else {
@@ -423,7 +442,7 @@ fn set_discoverable(enabled: bool) -> Result<(), String> {
         service
             .set_discoverable(enabled)
             .await
-            .map_err(|e| e.to_string())
+            .map_err(|e| internal_user_facing_error("Receiver unavailable", e.to_string()))
     })
 }
 
@@ -477,7 +496,7 @@ fn map_event(event: AppReceiverOfferEvent) -> ReceiverTransferEvent {
         snapshot: event.snapshot.map(map_snapshot),
         total_size_label: event.total_size_label,
         files: event.files.into_iter().map(map_file_row).collect(),
-        error_message: event.error_message,
+        error: map_optional_user_facing_error(event.error),
     }
 }
 

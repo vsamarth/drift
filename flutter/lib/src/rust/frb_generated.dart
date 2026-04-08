@@ -4,6 +4,7 @@
 // ignore_for_file: unused_import, unused_element, unnecessary_import, duplicate_ignore, invalid_use_of_internal_member, annotate_overrides, non_constant_identifier_names, curly_braces_in_flow_control_structures, prefer_const_literals_to_create_immutables, unused_field
 
 import 'api/device.dart';
+import 'api/error.dart';
 import 'api/lan.dart';
 import 'api/preview.dart';
 import 'api/receiver.dart';
@@ -175,7 +176,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_selection_preview,
-          decodeErrorData: sse_decode_String,
+          decodeErrorData: sse_decode_user_facing_error_data,
         ),
         constMeta: kCrateApiPreviewAppendPathsConstMeta,
         argValues: [existingPaths, newPaths],
@@ -204,7 +205,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_unit,
-          decodeErrorData: sse_decode_String,
+          decodeErrorData: sse_decode_user_facing_error_data,
         ),
         constMeta: kCrateApiSenderCancelActiveSendTransferConstMeta,
         argValues: [],
@@ -234,7 +235,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_unit,
-          decodeErrorData: sse_decode_String,
+          decodeErrorData: sse_decode_user_facing_error_data,
         ),
         constMeta: kCrateApiReceiverCancelReceiverTransferConstMeta,
         argValues: [],
@@ -296,7 +297,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_receiver_registration,
-          decodeErrorData: sse_decode_String,
+          decodeErrorData: sse_decode_user_facing_error_data,
         ),
         constMeta: kCrateApiReceiverEnsureReceiverRegistrationConstMeta,
         argValues: [serverUrl, deviceName],
@@ -379,7 +380,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_selection_preview,
-          decodeErrorData: sse_decode_String,
+          decodeErrorData: sse_decode_user_facing_error_data,
         ),
         constMeta: kCrateApiPreviewInspectPathsConstMeta,
         argValues: [paths],
@@ -433,7 +434,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_receiver_registration,
-          decodeErrorData: sse_decode_String,
+          decodeErrorData: sse_decode_user_facing_error_data,
         ),
         constMeta: kCrateApiReceiverRegisterReceiverConstMeta,
         argValues: [serverUrl, deviceName],
@@ -468,7 +469,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_selection_preview,
-          decodeErrorData: sse_decode_String,
+          decodeErrorData: sse_decode_user_facing_error_data,
         ),
         constMeta: kCrateApiPreviewRemovePathConstMeta,
         argValues: [existingPaths, removedPath],
@@ -498,7 +499,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_unit,
-          decodeErrorData: sse_decode_String,
+          decodeErrorData: sse_decode_user_facing_error_data,
         ),
         constMeta: kCrateApiReceiverRespondToReceiverOfferConstMeta,
         argValues: [accept],
@@ -531,7 +532,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_list_nearby_receiver_info,
-          decodeErrorData: sse_decode_String,
+          decodeErrorData: sse_decode_user_facing_error_data,
         ),
         constMeta: kCrateApiLanScanNearbyReceiversConstMeta,
         argValues: [timeoutSecs],
@@ -564,7 +565,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_unit,
-          decodeErrorData: sse_decode_String,
+          decodeErrorData: sse_decode_user_facing_error_data,
         ),
         constMeta: kCrateApiReceiverSetReceiverDiscoverableConstMeta,
         argValues: [enabled],
@@ -609,7 +610,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           },
           codec: SseCodec(
             decodeSuccessData: sse_decode_unit,
-            decodeErrorData: sse_decode_String,
+            decodeErrorData: sse_decode_user_facing_error_data,
           ),
           constMeta: kCrateApiReceiverStartReceiverTransferListenerConstMeta,
           argValues: [serverUrl, downloadRoot, deviceName, deviceType, updates],
@@ -653,7 +654,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           },
           codec: SseCodec(
             decodeSuccessData: sse_decode_unit,
-            decodeErrorData: sse_decode_String,
+            decodeErrorData: sse_decode_user_facing_error_data,
           ),
           constMeta: kCrateApiSenderStartSendTransferConstMeta,
           argValues: [request, updates],
@@ -700,7 +701,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           },
           codec: SseCodec(
             decodeSuccessData: sse_decode_unit,
-            decodeErrorData: sse_decode_String,
+            decodeErrorData: sse_decode_user_facing_error_data,
           ),
           constMeta: kCrateApiReceiverWatchReceiverPairingConstMeta,
           argValues: [serverUrl, downloadRoot, deviceName, deviceType, updates],
@@ -802,6 +803,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   BigInt dco_decode_box_autoadd_u_64(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return dco_decode_u_64(raw);
+  }
+
+  @protected
+  UserFacingErrorData dco_decode_box_autoadd_user_facing_error_data(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_user_facing_error_data(raw);
   }
 
   @protected
@@ -913,6 +922,16 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  UserFacingErrorData? dco_decode_opt_box_autoadd_user_facing_error_data(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null
+        ? null
+        : dco_decode_box_autoadd_user_facing_error_data(raw);
+  }
+
+  @protected
   ReceiverPairingState dco_decode_receiver_pairing_state(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
@@ -956,7 +975,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       snapshot: dco_decode_opt_box_autoadd_transfer_snapshot_data(arr[10]),
       totalSizeLabel: dco_decode_String(arr[11]),
       files: dco_decode_list_receiver_transfer_file(arr[12]),
-      errorMessage: dco_decode_opt_String(arr[13]),
+      error: dco_decode_opt_box_autoadd_user_facing_error_data(arr[13]),
     );
   }
 
@@ -1022,7 +1041,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       plan: dco_decode_opt_box_autoadd_transfer_plan_data(arr[6]),
       snapshot: dco_decode_opt_box_autoadd_transfer_snapshot_data(arr[7]),
       remoteDeviceType: dco_decode_opt_String(arr[8]),
-      errorMessage: dco_decode_opt_String(arr[9]),
+      error: dco_decode_opt_box_autoadd_user_facing_error_data(arr[9]),
     );
   }
 
@@ -1127,6 +1146,27 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  UserFacingErrorData dco_decode_user_facing_error_data(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 5)
+      throw Exception('unexpected arr length: expect 5 but see ${arr.length}');
+    return UserFacingErrorData(
+      kind: dco_decode_user_facing_error_kind_data(arr[0]),
+      title: dco_decode_String(arr[1]),
+      message: dco_decode_String(arr[2]),
+      recovery: dco_decode_opt_String(arr[3]),
+      retryable: dco_decode_bool(arr[4]),
+    );
+  }
+
+  @protected
+  UserFacingErrorKindData dco_decode_user_facing_error_kind_data(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return UserFacingErrorKindData.values[raw as int];
+  }
+
+  @protected
   AnyhowException sse_decode_AnyhowException(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var inner = sse_decode_String(deserializer);
@@ -1213,6 +1253,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   BigInt sse_decode_box_autoadd_u_64(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return (sse_decode_u_64(deserializer));
+  }
+
+  @protected
+  UserFacingErrorData sse_decode_box_autoadd_user_facing_error_data(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_user_facing_error_data(deserializer));
   }
 
   @protected
@@ -1386,6 +1434,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  UserFacingErrorData? sse_decode_opt_box_autoadd_user_facing_error_data(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_box_autoadd_user_facing_error_data(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
   ReceiverPairingState sse_decode_receiver_pairing_state(
     SseDeserializer deserializer,
   ) {
@@ -1425,7 +1486,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     );
     var var_totalSizeLabel = sse_decode_String(deserializer);
     var var_files = sse_decode_list_receiver_transfer_file(deserializer);
-    var var_errorMessage = sse_decode_opt_String(deserializer);
+    var var_error = sse_decode_opt_box_autoadd_user_facing_error_data(
+      deserializer,
+    );
     return ReceiverTransferEvent(
       phase: var_phase,
       senderName: var_senderName,
@@ -1440,7 +1503,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       snapshot: var_snapshot,
       totalSizeLabel: var_totalSizeLabel,
       files: var_files,
-      errorMessage: var_errorMessage,
+      error: var_error,
     );
   }
 
@@ -1509,7 +1572,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       deserializer,
     );
     var var_remoteDeviceType = sse_decode_opt_String(deserializer);
-    var var_errorMessage = sse_decode_opt_String(deserializer);
+    var var_error = sse_decode_opt_box_autoadd_user_facing_error_data(
+      deserializer,
+    );
     return SendTransferEvent(
       phase: var_phase,
       destinationLabel: var_destinationLabel,
@@ -1520,7 +1585,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       plan: var_plan,
       snapshot: var_snapshot,
       remoteDeviceType: var_remoteDeviceType,
-      errorMessage: var_errorMessage,
+      error: var_error,
     );
   }
 
@@ -1644,6 +1709,34 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  UserFacingErrorData sse_decode_user_facing_error_data(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_kind = sse_decode_user_facing_error_kind_data(deserializer);
+    var var_title = sse_decode_String(deserializer);
+    var var_message = sse_decode_String(deserializer);
+    var var_recovery = sse_decode_opt_String(deserializer);
+    var var_retryable = sse_decode_bool(deserializer);
+    return UserFacingErrorData(
+      kind: var_kind,
+      title: var_title,
+      message: var_message,
+      recovery: var_recovery,
+      retryable: var_retryable,
+    );
+  }
+
+  @protected
+  UserFacingErrorKindData sse_decode_user_facing_error_kind_data(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var inner = sse_decode_i_32(deserializer);
+    return UserFacingErrorKindData.values[inner];
+  }
+
+  @protected
   void sse_encode_AnyhowException(
     AnyhowException self,
     SseSerializer serializer,
@@ -1761,6 +1854,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   void sse_encode_box_autoadd_u_64(BigInt self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_u_64(self, serializer);
+  }
+
+  @protected
+  void sse_encode_box_autoadd_user_facing_error_data(
+    UserFacingErrorData self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_user_facing_error_data(self, serializer);
   }
 
   @protected
@@ -1918,6 +2020,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_opt_box_autoadd_user_facing_error_data(
+    UserFacingErrorData? self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_box_autoadd_user_facing_error_data(self, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_receiver_pairing_state(
     ReceiverPairingState self,
     SseSerializer serializer,
@@ -1959,7 +2074,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     );
     sse_encode_String(self.totalSizeLabel, serializer);
     sse_encode_list_receiver_transfer_file(self.files, serializer);
-    sse_encode_opt_String(self.errorMessage, serializer);
+    sse_encode_opt_box_autoadd_user_facing_error_data(self.error, serializer);
   }
 
   @protected
@@ -2020,7 +2135,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       serializer,
     );
     sse_encode_opt_String(self.remoteDeviceType, serializer);
-    sse_encode_opt_String(self.errorMessage, serializer);
+    sse_encode_opt_box_autoadd_user_facing_error_data(self.error, serializer);
   }
 
   @protected
@@ -2118,5 +2233,27 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   @protected
   void sse_encode_unit(void self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
+  }
+
+  @protected
+  void sse_encode_user_facing_error_data(
+    UserFacingErrorData self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_user_facing_error_kind_data(self.kind, serializer);
+    sse_encode_String(self.title, serializer);
+    sse_encode_String(self.message, serializer);
+    sse_encode_opt_String(self.recovery, serializer);
+    sse_encode_bool(self.retryable, serializer);
+  }
+
+  @protected
+  void sse_encode_user_facing_error_kind_data(
+    UserFacingErrorKindData self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.index, serializer);
   }
 }

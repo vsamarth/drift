@@ -536,7 +536,7 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
       case rust_receiver.ReceiverTransferPhase.failed:
         debugPrint(
           '[drift/notifier] incoming receive failed: '
-          '${event.errorMessage ?? event.statusMessage}',
+          '${event.error?.message ?? event.statusMessage}',
         );
         resetShell();
         return;
@@ -675,7 +675,7 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
           code: state.idleReceiveCode,
           expiresAt: '',
           destinationLabel: event.saveRootLabel,
-          statusMessage: event.errorMessage ?? event.statusMessage,
+          statusMessage: event.error?.message ?? event.statusMessage,
           senderName: event.senderName,
         );
     _setSession(
@@ -684,7 +684,7 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
         items: state.receiveItems,
         summary: summary.copyWith(
           destinationLabel: event.saveRootLabel,
-          statusMessage: event.errorMessage ?? event.statusMessage,
+          statusMessage: event.error?.message ?? event.statusMessage,
         ),
         plan: event.plan ?? state.receiveTransferPlan,
         snapshot: event.snapshot,

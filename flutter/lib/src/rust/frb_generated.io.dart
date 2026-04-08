@@ -4,6 +4,7 @@
 // ignore_for_file: unused_import, unused_element, unnecessary_import, duplicate_ignore, invalid_use_of_internal_member, annotate_overrides, non_constant_identifier_names, curly_braces_in_flow_control_structures, prefer_const_literals_to_create_immutables, unused_field
 
 import 'api/device.dart';
+import 'api/error.dart';
 import 'api/lan.dart';
 import 'api/preview.dart';
 import 'api/receiver.dart';
@@ -68,6 +69,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   BigInt dco_decode_box_autoadd_u_64(dynamic raw);
 
   @protected
+  UserFacingErrorData dco_decode_box_autoadd_user_facing_error_data(
+    dynamic raw,
+  );
+
+  @protected
   int dco_decode_i_32(dynamic raw);
 
   @protected
@@ -116,6 +122,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   BigInt? dco_decode_opt_box_autoadd_u_64(dynamic raw);
+
+  @protected
+  UserFacingErrorData? dco_decode_opt_box_autoadd_user_facing_error_data(
+    dynamic raw,
+  );
 
   @protected
   ReceiverPairingState dco_decode_receiver_pairing_state(dynamic raw);
@@ -172,6 +183,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void dco_decode_unit(dynamic raw);
 
   @protected
+  UserFacingErrorData dco_decode_user_facing_error_data(dynamic raw);
+
+  @protected
+  UserFacingErrorKindData dco_decode_user_facing_error_kind_data(dynamic raw);
+
+  @protected
   AnyhowException sse_decode_AnyhowException(SseDeserializer deserializer);
 
   @protected
@@ -221,6 +238,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   BigInt sse_decode_box_autoadd_u_64(SseDeserializer deserializer);
+
+  @protected
+  UserFacingErrorData sse_decode_box_autoadd_user_facing_error_data(
+    SseDeserializer deserializer,
+  );
 
   @protected
   int sse_decode_i_32(SseDeserializer deserializer);
@@ -279,6 +301,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   BigInt? sse_decode_opt_box_autoadd_u_64(SseDeserializer deserializer);
+
+  @protected
+  UserFacingErrorData? sse_decode_opt_box_autoadd_user_facing_error_data(
+    SseDeserializer deserializer,
+  );
 
   @protected
   ReceiverPairingState sse_decode_receiver_pairing_state(
@@ -357,6 +384,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_decode_unit(SseDeserializer deserializer);
 
   @protected
+  UserFacingErrorData sse_decode_user_facing_error_data(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  UserFacingErrorKindData sse_decode_user_facing_error_kind_data(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   void sse_encode_AnyhowException(
     AnyhowException self,
     SseSerializer serializer,
@@ -415,6 +452,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_box_autoadd_u_64(BigInt self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_box_autoadd_user_facing_error_data(
+    UserFacingErrorData self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_i_32(int self, SseSerializer serializer);
@@ -484,6 +527,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_opt_box_autoadd_u_64(BigInt? self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_opt_box_autoadd_user_facing_error_data(
+    UserFacingErrorData? self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_receiver_pairing_state(
@@ -577,6 +626,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_unit(void self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_user_facing_error_data(
+    UserFacingErrorData self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_user_facing_error_kind_data(
+    UserFacingErrorKindData self,
+    SseSerializer serializer,
+  );
 }
 
 // Section: wire_class

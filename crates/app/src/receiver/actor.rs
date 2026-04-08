@@ -7,7 +7,7 @@ use tokio::sync::{broadcast, mpsc, oneshot, watch};
 use tokio::task::JoinHandle;
 use tokio::time::{MissedTickBehavior, interval};
 
-use crate::error::{AppError, AppResult};
+use crate::error::{AppError, AppResult, UserFacingError};
 use crate::types::{
     ConflictPolicy, NearbyReceiver, PairingCodeState, ReceiverOfferEvent, ReceiverOfferPhase,
     ReceiverRegistration,
@@ -240,7 +240,10 @@ async fn run_listener_loop(
                     connection_path: None,
                     total_size_label: String::new(),
                     files: Vec::new(),
-                    error_message: Some(err.to_string()),
+                    error: Some(UserFacingError::internal(
+                        "Receiver unavailable",
+                        err.to_string(),
+                    )),
                 },
             })
             .await;

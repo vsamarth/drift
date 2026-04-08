@@ -4,6 +4,7 @@
 // ignore_for_file: invalid_use_of_internal_member, unused_import, unnecessary_import
 
 import '../frb_generated.dart';
+import 'error.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'transfer.dart';
 
@@ -27,7 +28,7 @@ class SendTransferEvent {
   final TransferPlanData? plan;
   final TransferSnapshotData? snapshot;
   final String? remoteDeviceType;
-  final String? errorMessage;
+  final UserFacingErrorData? error;
 
   const SendTransferEvent({
     required this.phase,
@@ -39,7 +40,7 @@ class SendTransferEvent {
     this.plan,
     this.snapshot,
     this.remoteDeviceType,
-    this.errorMessage,
+    this.error,
   });
 
   @override
@@ -53,7 +54,7 @@ class SendTransferEvent {
       plan.hashCode ^
       snapshot.hashCode ^
       remoteDeviceType.hashCode ^
-      errorMessage.hashCode;
+      error.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -69,7 +70,7 @@ class SendTransferEvent {
           plan == other.plan &&
           snapshot == other.snapshot &&
           remoteDeviceType == other.remoteDeviceType &&
-          errorMessage == other.errorMessage;
+          error == other.error;
 }
 
 enum SendTransferPhase {

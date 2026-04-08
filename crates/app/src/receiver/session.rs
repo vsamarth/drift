@@ -13,7 +13,7 @@ use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 use tokio_stream::StreamExt;
 
-use crate::error::format_error_chain;
+use crate::error::{UserFacingError, UserFacingErrorKind, format_error_chain};
 use crate::types::{ReceiverOfferEvent, ReceiverOfferFile, ReceiverOfferPhase};
 
 use super::actor::ReceiverCommand;
@@ -107,7 +107,10 @@ impl ReceiverSession {
                             &save_root_label,
                             device_type,
                             "Transfer failed.".to_owned(),
-                            format_error_chain(&error),
+                            UserFacingError::internal(
+                                "Transfer failed",
+                                format_error_chain(&error),
+                            ),
                         ),
                     })
                     .await;
@@ -121,7 +124,7 @@ impl ReceiverSession {
                             &save_root_label,
                             device_type,
                             "Transfer failed.".to_owned(),
-                            format!("{error}"),
+                            UserFacingError::internal("Transfer failed", format!("{error}")),
                         ),
                     })
                     .await;
@@ -153,7 +156,10 @@ impl ReceiverSession {
                             &save_root_label,
                             sender_device_type,
                             "Transfer failed.".to_owned(),
-                            format_error_chain(&anyhow::Error::new(error)),
+                            UserFacingError::internal(
+                                "Transfer failed",
+                                format_error_chain(&anyhow::Error::new(error)),
+                            ),
                         ),
                     })
                     .await;
@@ -198,7 +204,7 @@ impl ReceiverSession {
             connection_path: Some(connection_path_label(connection_path_kind)),
             total_size_label: human_size(offer.total_size),
             files,
-            error_message: None,
+            error: None,
         };
         if cmd_tx
             .send(ReceiverCommand::OfferPrepared {
@@ -291,7 +297,7 @@ impl ReceiverSession {
                             &save_root_label,
                             sender_device_type,
                             "Transfer failed.".to_owned(),
-                            message,
+                            UserFacingError::internal("Transfer failed", message),
                         ),
                     });
                     return;
@@ -304,7 +310,7 @@ impl ReceiverSession {
                             &save_root_label,
                             sender_device_type,
                             "Transfer failed.".to_owned(),
-                            format!("{error}"),
+                            UserFacingError::internal("Transfer failed", format!("{error}")),
                         ),
                     });
                     return;
@@ -340,7 +346,7 @@ impl ReceiverSession {
                     connection_path: Some(connection_path_label(connection_path_kind)),
                     total_size_label: human_size(offer.total_size),
                     files: Vec::new(),
-                    error_message: None,
+                    error: None,
                 },
                 CoreTransferOutcome::Declined { .. } => ReceiverOfferEvent {
                     phase: ReceiverOfferPhase::Declined,
@@ -357,7 +363,7 @@ impl ReceiverSession {
                     connection_path: Some(connection_path_label(connection_path_kind)),
                     total_size_label: human_size(offer.total_size),
                     files: Vec::new(),
-                    error_message: None,
+                    error: None,
                 },
                 CoreTransferOutcome::Cancelled(cancellation) => ReceiverOfferEvent {
                     phase: ReceiverOfferPhase::Cancelled,
@@ -374,20 +380,24 @@ impl ReceiverSession {
                     connection_path: Some(connection_path_label(connection_path_kind)),
                     total_size_label: human_size(offer.total_size),
                     files: Vec::new(),
-                    error_message: Some(cancellation.reason),
+                    error: Some(UserFacingError::new(
+                        UserFacingErrorKind::Cancelled,
+                        "Transfer cancelled",
+                        cancellation.reason,
+                    )),
                 },
             },
             Ok(Err(error)) => failed_offer_event(
                 &save_root_label,
                 sender_device_type,
                 "Transfer failed.".to_owned(),
-                error.to_string(),
+                UserFacingError::internal("Transfer failed", error.to_string()),
             ),
             Err(error) => failed_offer_event(
                 &save_root_label,
                 sender_device_type,
                 "Transfer failed.".to_owned(),
-                format!("{error}"),
+                UserFacingError::internal("Transfer failed", format!("{error}")),
             ),
         };
 
@@ -412,7 +422,7 @@ fn build_offer_event(
     plan: Option<TransferPlan>,
     snapshot: Option<TransferSnapshot>,
     files: Vec<ReceiverOfferFile>,
-    error_message: Option<String>,
+    error: Option<UserFacingError>,
 ) -> ReceiverOfferEvent {
     ReceiverOfferEvent {
         phase,
@@ -437,7 +447,7 @@ fn build_offer_event(
         connection_path: Some(connection_path_label(connection_path_kind)),
         total_size_label: human_size(total_bytes),
         files,
-        error_message,
+        error,
     }
 }
 
@@ -445,7 +455,7 @@ fn failed_offer_event(
     save_root_label: &str,
     sender_device_type: DeviceType,
     status_message: String,
-    error_message: String,
+    error: UserFacingError,
 ) -> ReceiverOfferEvent {
     ReceiverOfferEvent {
         phase: ReceiverOfferPhase::Failed,
@@ -462,7 +472,51 @@ fn failed_offer_event(
         connection_path: None,
         total_size_label: String::new(),
         files: Vec::new(),
-        error_message: Some(error_message),
+        error: Some(error),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{failed_offer_event, build_offer_event, connection_path_label};
+    use crate::error::UserFacingErrorKind;
+    use drift_core::protocol::DeviceType;
+    use drift_core::util::ConnectionPathKind;
+
+    #[test]
+    fn failed_offer_event_uses_structured_error() {
+        let event = failed_offer_event(
+            "Downloads",
+            DeviceType::Laptop,
+            "Transfer failed.".to_owned(),
+            crate::error::UserFacingError::internal("Transfer failed", "boom"),
+        );
+
+        let error = event.error.expect("structured error");
+        assert_eq!(error.kind(), UserFacingErrorKind::Internal);
+        assert_eq!(error.title(), "Transfer failed");
+        assert_eq!(error.message(), "boom");
+    }
+
+    #[test]
+    fn build_offer_event_can_carry_structured_error() {
+        let event = build_offer_event(
+            super::ReceiverOfferPhase::Failed,
+            "Sender".to_owned(),
+            "Downloads".to_owned(),
+            DeviceType::Laptop,
+            ConnectionPathKind::Direct,
+            0,
+            0,
+            0,
+            None,
+            None,
+            Vec::new(),
+            Some(crate::error::UserFacingError::internal("Transfer failed", "boom")),
+        );
+
+        assert_eq!(event.connection_path.as_deref(), Some(connection_path_label(ConnectionPathKind::Direct).as_str()));
+        assert_eq!(event.error.as_ref().map(|error| error.kind()), Some(UserFacingErrorKind::Internal));
     }
 }
 

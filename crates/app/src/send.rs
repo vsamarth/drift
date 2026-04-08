@@ -17,7 +17,7 @@ use iroh::{EndpointAddr, EndpointId};
 use tokio::sync::{mpsc, oneshot};
 use tokio_stream::{StreamExt, wrappers::UnboundedReceiverStream};
 
-use crate::error::format_error_chain;
+use crate::error::{UserFacingError, UserFacingErrorKind, format_error_chain};
 use crate::types::{
     NearbyReceiver, SelectionChange, SelectionItem, SelectionPreview, SendConfig, SendEvent,
     SendPhase,
@@ -266,7 +266,7 @@ impl SendSession {
                 snapshot: None,
                 remote_device_type: None,
                 connection_path: None,
-                error_message: None,
+                error: None,
             },
         );
 
@@ -357,7 +357,10 @@ fn failed_event(destination_label: &str, error: &anyhow::Error) -> SendEvent {
         snapshot: None,
         remote_device_type: None,
         connection_path: None,
-        error_message: Some(format_error_chain(error)),
+        error: Some(UserFacingError::internal(
+            "Transfer failed",
+            format_error_chain(error),
+        )),
     }
 }
 
@@ -379,7 +382,7 @@ fn map_sender_event(
             snapshot: None,
             remote_device_type: None,
             connection_path: None,
-            error_message: None,
+            error: None,
         },
         CoreSenderEvent::WaitingForDecision {
             receiver_device_name,
@@ -398,7 +401,7 @@ fn map_sender_event(
                 snapshot: None,
                 remote_device_type: None,
                 connection_path: None,
-                error_message: None,
+                error: None,
             }
         }
         CoreSenderEvent::Accepted {
@@ -418,7 +421,7 @@ fn map_sender_event(
                 snapshot: None,
                 remote_device_type: None,
                 connection_path: None,
-                error_message: None,
+                error: None,
             }
         }
         CoreSenderEvent::Declined { reason, .. } => SendEvent {
@@ -432,7 +435,11 @@ fn map_sender_event(
             snapshot: None,
             remote_device_type: None,
             connection_path: None,
-            error_message: Some(reason),
+            error: Some(UserFacingError::new(
+                UserFacingErrorKind::PeerDeclined,
+                "Transfer declined",
+                reason,
+            )),
         },
         CoreSenderEvent::Failed { message, .. } => SendEvent {
             phase: SendPhase::Failed,
@@ -445,7 +452,7 @@ fn map_sender_event(
             snapshot: None,
             remote_device_type: None,
             connection_path: None,
-            error_message: Some(message),
+            error: Some(UserFacingError::internal("Transfer failed", message)),
         },
         CoreSenderEvent::TransferStarted { plan, .. } => {
             *current_plan = Some(plan.clone());
@@ -460,7 +467,7 @@ fn map_sender_event(
                 snapshot: None,
                 remote_device_type: None,
                 connection_path: None,
-                error_message: None,
+                error: None,
             }
         }
         CoreSenderEvent::TransferProgress { snapshot, .. } => SendEvent {
@@ -480,7 +487,7 @@ fn map_sender_event(
             snapshot: Some(snapshot.clone()),
             remote_device_type: None,
             connection_path: None,
-            error_message: None,
+            error: None,
         },
         CoreSenderEvent::TransferCompleted { snapshot, .. } => SendEvent {
             phase: SendPhase::Completed,
@@ -499,7 +506,7 @@ fn map_sender_event(
             snapshot: Some(snapshot.clone()),
             remote_device_type: None,
             connection_path: None,
-            error_message: None,
+            error: None,
         },
     }
 }
@@ -564,7 +571,9 @@ fn selection_path_key(path: &Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::{SendDraft, display_destination_label};
+    use crate::error::UserFacingErrorKind;
     use crate::types::SendConfig;
+    use anyhow::anyhow;
     use std::path::{Path, PathBuf};
 
     #[test]
@@ -657,5 +666,15 @@ mod tests {
 
         assert!(draft.is_empty());
         assert!(draft.paths().is_empty());
+    }
+
+    #[test]
+    fn failed_event_uses_structured_error() {
+        let event = super::failed_event("Remote", &anyhow!("boom"));
+
+        let error = event.error.expect("structured error");
+        assert_eq!(error.kind(), UserFacingErrorKind::Internal);
+        assert_eq!(error.title(), "Transfer failed");
+        assert!(error.message().contains("boom"));
     }
 }

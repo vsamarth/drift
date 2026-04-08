@@ -4,6 +4,7 @@
 // ignore_for_file: invalid_use_of_internal_member, unused_import, unnecessary_import
 
 import '../frb_generated.dart';
+import 'error.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'transfer.dart';
 
@@ -115,7 +116,7 @@ class ReceiverTransferEvent {
   final TransferSnapshotData? snapshot;
   final String totalSizeLabel;
   final List<ReceiverTransferFile> files;
-  final String? errorMessage;
+  final UserFacingErrorData? error;
 
   const ReceiverTransferEvent({
     required this.phase,
@@ -131,7 +132,7 @@ class ReceiverTransferEvent {
     this.snapshot,
     required this.totalSizeLabel,
     required this.files,
-    this.errorMessage,
+    this.error,
   });
 
   @override
@@ -149,7 +150,7 @@ class ReceiverTransferEvent {
       snapshot.hashCode ^
       totalSizeLabel.hashCode ^
       files.hashCode ^
-      errorMessage.hashCode;
+      error.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -169,7 +170,7 @@ class ReceiverTransferEvent {
           snapshot == other.snapshot &&
           totalSizeLabel == other.totalSizeLabel &&
           files == other.files &&
-          errorMessage == other.errorMessage;
+          error == other.error;
 }
 
 class ReceiverTransferFile {

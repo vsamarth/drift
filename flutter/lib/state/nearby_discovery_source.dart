@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 import '../core/models/transfer_models.dart';
+import '../src/rust/api/error_bridge.dart';
 import '../src/rust/api/lan.dart' as rust_lan;
 
 abstract class NearbyDiscoverySource {
@@ -41,6 +42,12 @@ class LocalNearbyDiscoverySource implements NearbyDiscoverySource {
       );
       return List<SendDestinationViewData>.unmodifiable(items);
     } catch (e, stack) {
+      final structured = tryParseUserFacingBridgeError(e);
+      if (structured != null) {
+        debugPrint('[NearbyDiscoverySource] scan failed: $structured');
+        debugPrintStack(stackTrace: stack);
+        rethrow;
+      }
       debugPrint('[NearbyDiscoverySource] scan failed: $e');
       debugPrintStack(stackTrace: stack);
       rethrow;
