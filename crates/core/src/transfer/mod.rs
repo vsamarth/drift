@@ -4,6 +4,7 @@ pub mod error;
 pub mod path;
 pub mod progress;
 pub mod receiver;
+pub mod record;
 pub mod sender;
 pub mod types;
 
