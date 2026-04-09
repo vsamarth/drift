@@ -167,6 +167,7 @@ jobs:
 
       - name: Set Safe Version Name
         run: echo "SAFE_VERSION=$(echo ${{ github.ref_name }} | tr '/' '-')" >> $GITHUB_ENV
+        shell: bash
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -196,13 +197,13 @@ jobs:
         run: |
           $version = (Get-Content pubspec.yaml | Select-String "^version: ").ToString().Split(" ")[1].Split("+")[0]
           & "C:\Program Files (x86)\Inno Setup 6\iscc.exe" /DAppVersion=$version windows/inno_setup.iss
-          Move-Item windows/drift-windows-setup.exe "drift-windows-setup-${env:SAFE_VERSION}.exe"
+          Move-Item windows/drift-windows-setup.exe "drift-windows-setup-${{ env.SAFE_VERSION }}.exe"
 
       - name: Package portable Windows zip
         shell: pwsh
         run: |
           $releaseDir = Join-Path $PWD "build/windows/x64/runner/Release"
-          $zipPath = Join-Path $PWD "drift-windows-portable-${env:SAFE_VERSION}.zip"
+          $zipPath = Join-Path $PWD "drift-windows-portable-${{ env.SAFE_VERSION }}.zip"
           Compress-Archive -Path (Join-Path $releaseDir '*') -DestinationPath $zipPath -Force
 
       - name: Upload Windows Setup EXE
