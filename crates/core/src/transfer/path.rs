@@ -49,20 +49,14 @@ pub enum TransferPathError {
     },
 }
 
-pub fn transfers_dir() -> std::result::Result<PathBuf, TransferPathError> {
-    if let Ok(overridden) = std::env::var("DRIFT_TRANSFERS_DIR") {
-        return Ok(PathBuf::from(overridden));
-    }
-    let home = dirs::home_dir().ok_or_else(|| TransferPathError::CurrentDirectory {
-        source: std::io::Error::new(std::io::ErrorKind::NotFound, "home directory not found"),
-    })?;
-    Ok(home.join(".drift").join("transfers"))
-}
-
-pub fn record_dir(
+pub fn local_record_dir(
+    out_dir: &Path,
     collection_hash: iroh_blobs::Hash,
 ) -> std::result::Result<PathBuf, TransferPathError> {
-    Ok(transfers_dir()?.join(collection_hash.to_hex()))
+    Ok(out_dir
+        .join(".drift")
+        .join("transfers")
+        .join(collection_hash.to_hex()))
 }
 
 pub fn validate_transfer_path(path: &str) -> std::result::Result<Vec<&str>, TransferPathError> {

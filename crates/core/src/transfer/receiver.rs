@@ -28,7 +28,7 @@ use crate::{
 
 use super::error::{Result as TransferResult, TransferError};
 use super::path::{
-    ensure_destination_available, record_dir, resolve_output_dir, resolve_transfer_destination,
+    ensure_destination_available, local_record_dir, resolve_output_dir, resolve_transfer_destination,
 };
 use super::progress::ProgressTracker;
 use super::record::{TransferRecord, TransferStatus};
@@ -276,7 +276,8 @@ async fn run_session(
     }
 
     // --- Phase 4: Data Transfer ---
-    let record_dir = record_dir(receiver_offer.collection_hash).map_err(TransferError::from)?;
+    let record_dir = local_record_dir(&request.out_dir, receiver_offer.collection_hash)
+        .map_err(TransferError::from)?;
     fs::create_dir_all(&record_dir)
         .await
         .map_err(|e| TransferError::other("creating record directory", e))?;
