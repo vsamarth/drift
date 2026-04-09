@@ -3,6 +3,7 @@ name: Flutter release (all platforms)
 on:
   push:
     branches: [main]
+    tags: ['v*']
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -20,13 +21,21 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           sparse-checkout: |
             flutter
             crates
             Cargo.toml
             Cargo.lock
+
+      - name: Set Safe Version Name
+        run: echo "SAFE_VERSION=$(echo ${{ github.ref_name }} | tr '/' '-')" >> $GITHUB_ENV
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -51,21 +60,32 @@ jobs:
       - name: Build macOS app
         run: flutter build macos --release
 
+      - name: Create macOS DMG
+        run: |
+          npm install --global create-dmg
+          create-dmg build/macos/Build/Products/Release/Drift.app --no-code-sign || true
+          mv Drift\ *.dmg "drift-macos-${{ env.SAFE_VERSION }}.dmg"
+
       - name: Build iOS (no code signing)
         run: flutter build ios --release --no-codesign
+
+      - name: Package iOS zip
+        run: |
+          cd build/ios/Release-iphoneos
+          zip -r "../../../drift-ios-unsigned-${{ env.SAFE_VERSION }}.zip" Runner.app
 
       - name: Upload macOS artifact
         uses: actions/upload-artifact@v4
         with:
-          name: drift-macos-app
-          path: flutter/build/macos/Build/Products/Release/Drift.app
+          name: drift-macos
+          path: flutter/drift-macos-${{ env.SAFE_VERSION }}.dmg
           if-no-files-found: error
 
       - name: Upload iOS artifact
         uses: actions/upload-artifact@v4
         with:
-          name: drift-ios-app-unsigned
-          path: flutter/build/ios/Release-iphoneos/Runner.app
+          name: drift-ios-unsigned
+          path: flutter/drift-ios-unsigned-${{ env.SAFE_VERSION }}.zip
           if-no-files-found: error
 
   linux:
@@ -76,13 +96,16 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           sparse-checkout: |
             flutter
             crates
             Cargo.toml
             Cargo.lock
+
+      - name: Set Safe Version Name
+        run: echo "SAFE_VERSION=$(echo ${{ github.ref_name }} | tr '/' '-')" >> $GITHUB_ENV
 
       - name: Install Linux desktop build dependencies
         run: |
@@ -114,11 +137,16 @@ jobs:
       - name: Build Linux app
         run: flutter build linux --release
 
+      - name: Package Linux zip
+        run: |
+          cd build/linux/x64/release
+          zip -r "../../../../drift-linux-${{ env.SAFE_VERSION }}.zip" bundle
+
       - name: Upload Linux artifact
         uses: actions/upload-artifact@v4
         with:
-          name: drift-linux-bundle
-          path: flutter/build/linux/x64/release/bundle
+          name: drift-linux
+          path: flutter/drift-linux-${{ env.SAFE_VERSION }}.zip
           if-no-files-found: error
 
   windows:
@@ -129,13 +157,16 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           sparse-checkout: |
             flutter
             crates
             Cargo.toml
             Cargo.lock
+
+      - name: Set Safe Version Name
+        run: echo "SAFE_VERSION=$(echo ${{ github.ref_name }} | tr '/' '-')" >> $GITHUB_ENV
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -160,31 +191,32 @@ jobs:
       - name: Build Windows app
         run: flutter build windows --release
 
-      - name: Create MSIX package
-        run: dart run msix:create
+      - name: Build Windows Installer (Inno Setup)
+        shell: pwsh
+        run: |
+          $version = (Get-Content pubspec.yaml | Select-String "^version: ").ToString().Split(" ")[1].Split("+")[0]
+          & "C:\Program Files (x86)\Inno Setup 6\iscc.exe" /DAppVersion=$version windows/inno_setup.iss
+          Move-Item windows/drift-windows-setup.exe "drift-windows-setup-${env:SAFE_VERSION}.exe"
 
       - name: Package portable Windows zip
         shell: pwsh
         run: |
           $releaseDir = Join-Path $PWD "build/windows/x64/runner/Release"
-          $zipPath = Join-Path $releaseDir "drift-windows.zip"
-          if (Test-Path $zipPath) {
-            Remove-Item $zipPath -Force
-          }
+          $zipPath = Join-Path $PWD "drift-windows-portable-${env:SAFE_VERSION}.zip"
           Compress-Archive -Path (Join-Path $releaseDir '*') -DestinationPath $zipPath -Force
 
-      - name: Upload Windows MSIX
+      - name: Upload Windows Setup EXE
         uses: actions/upload-artifact@v4
         with:
-          name: drift-windows-msix
-          path: flutter/build/windows/x64/runner/Release/*.msix
+          name: drift-windows-setup
+          path: flutter/drift-windows-setup-${{ env.SAFE_VERSION }}.exe
           if-no-files-found: error
 
       - name: Upload Windows portable zip
         uses: actions/upload-artifact@v4
         with:
           name: drift-windows-portable
-          path: flutter/build/windows/x64/runner/Release/drift-windows.zip
+          path: flutter/drift-windows-portable-${{ env.SAFE_VERSION }}.zip
           if-no-files-found: error
 
   android:
@@ -195,13 +227,16 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           sparse-checkout: |
             flutter
             crates
             Cargo.toml
             Cargo.lock
+
+      - name: Set Safe Version Name
+        run: echo "SAFE_VERSION=$(echo ${{ github.ref_name }} | tr '/' '-')" >> $GITHUB_ENV
 
       - name: Set up Java
         uses: actions/setup-java@v4
@@ -235,9 +270,41 @@ jobs:
       - name: Build Android APK
         run: flutter build apk --release
 
+      - name: Package Android APK
+        run: mv build/app/outputs/flutter-apk/app-release.apk "drift-android-${{ env.SAFE_VERSION }}.apk"
+
       - name: Upload Android artifact
         uses: actions/upload-artifact@v4
         with:
-          name: drift-android-apk
-          path: flutter/build/app/outputs/flutter-apk/app-release.apk
+          name: drift-android
+          path: flutter/drift-android-${{ env.SAFE_VERSION }}.apk
           if-no-files-found: error
+
+  create_release:
+    name: Create GitHub Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [macos_ios, linux, windows, android]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Prepare release files
+        run: |
+          mkdir release-dist
+          find artifacts -name "*.zip" -exec mv {} release-dist/ \;
+          find artifacts -name "*.exe" -exec mv {} release-dist/ \;
+          find artifacts -name "*.apk" -exec mv {} release-dist/ \;
+          find artifacts -name "*.dmg" -exec mv {} release-dist/ \;
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release-dist/*
+          generate_release_notes: true
+          draft: false
+          prerelease: false
