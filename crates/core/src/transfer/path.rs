@@ -50,6 +50,9 @@ pub enum TransferPathError {
 }
 
 pub fn transfers_dir() -> std::result::Result<PathBuf, TransferPathError> {
+    if let Ok(overridden) = std::env::var("DRIFT_TRANSFERS_DIR") {
+        return Ok(PathBuf::from(overridden));
+    }
     let home = dirs::home_dir().ok_or_else(|| {
         TransferPathError::CurrentDirectory {
             source: std::io::Error::new(std::io::ErrorKind::NotFound, "home directory not found"),

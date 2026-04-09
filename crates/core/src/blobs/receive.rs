@@ -36,10 +36,6 @@ impl BlobDownloadSession {
         &mut self.events
     }
 
-    pub(crate) fn store(&self) -> &FsStore {
-        self.store.as_ref()
-    }
-
     pub(crate) fn abort(&self) {
         self.task.abort();
     }

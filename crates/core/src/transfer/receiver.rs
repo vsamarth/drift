@@ -29,7 +29,6 @@ use crate::{
 use super::error::{Result as TransferResult, TransferError};
 use super::path::{
     ensure_destination_available, record_dir, resolve_output_dir, resolve_transfer_destination,
-    transfers_dir,
 };
 use super::progress::ProgressTracker;
 use super::record::{TransferRecord, TransferStatus};

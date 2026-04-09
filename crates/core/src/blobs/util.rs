@@ -1,5 +1,4 @@
 use std::path::PathBuf;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use iroh_blobs::{
     BlobFormat,
@@ -8,44 +7,11 @@ use iroh_blobs::{
         blobs::{AddPathOptions, ImportMode},
     },
 };
-use tokio::fs;
 use tracing::{instrument, trace};
 use walkdir::WalkDir;
 
 use super::error::{BlobError, BlobTextError, Result as BlobResult};
 use crate::transfer::path::normalize_transfer_path;
-
-/// Temporary directory under the process temp dir; deleted on drop.
-#[derive(Debug)]
-pub(super) struct ScratchDir {
-    pub(super) path: PathBuf,
-}
-
-impl ScratchDir {
-    pub(super) async fn new(prefix: &str, session_id: &str) -> BlobResult<Self> {
-        let id_digest = blake3::hash(session_id.as_bytes()).to_hex();
-        let clock = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map_err(|source| {
-                BlobError::scratch_dir_create(
-                    std::env::temp_dir(),
-                    BlobTextError::new(source.to_string()),
-                )
-            })?;
-        let unique = format!("{prefix}-{id_digest}-{}", clock.as_nanos());
-        let path = std::env::temp_dir().join(unique);
-        fs::create_dir_all(&path).await.map_err(|source| {
-            BlobError::scratch_dir_create(path.clone(), BlobTextError::new(source.to_string()))
-        })?;
-        Ok(Self { path })
-    }
-}
-
-impl Drop for ScratchDir {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.path);
-    }
-}
 
 #[derive(Debug)]
 pub(super) struct ImportedFile {

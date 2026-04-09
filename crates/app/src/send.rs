@@ -297,9 +297,25 @@ impl SendSession {
         destination_label = resolved.destination_label;
 
         let device_type = parse_device_type(&self.draft.config.device_type)?;
+        let endpoint = iroh::Endpoint::builder(iroh::endpoint::presets::N0)
+            .alpns(vec![drift_core::protocol::ALPN.to_vec()])
+            .bind()
+            .await
+            .map_err(|e| AppError::Internal { message: format!("failed to bind sender endpoint: {e}") })?;
+
+        let identity = drift_core::protocol::Identity {
+            role: drift_core::protocol::TransferRole::Sender,
+            endpoint_id: endpoint.addr().id,
+            device_name: self.draft.config.device_name.clone(),
+            device_type: match device_type {
+                DeviceType::Phone => drift_core::protocol::DeviceType::Phone,
+                DeviceType::Laptop => drift_core::protocol::DeviceType::Laptop,
+            },
+        };
+
         let sender = Sender::new(
-            self.draft.config.device_name.clone(),
-            device_type,
+            endpoint,
+            identity,
             SendRequest {
                 peer_endpoint_addr: resolved.peer_endpoint_addr.clone(),
                 peer_endpoint_id: resolved.peer_endpoint_id,
