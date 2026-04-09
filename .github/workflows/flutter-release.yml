@@ -29,6 +29,9 @@ jobs:
             Cargo.toml
             Cargo.lock
 
+      - name: Set Safe Version Name
+        run: echo "SAFE_VERSION=$(echo ${{ github.ref_name }} | tr '/' '-')" >> $GITHUB_ENV
+
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
@@ -61,7 +64,7 @@ jobs:
         run: |
           npm install --global create-dmg
           create-dmg build/macos/Build/Products/Release/Drift.app --no-code-sign || true
-          mv Drift\ *.dmg ../drift-macos-${{ github.ref_name }}.dmg
+          mv Drift\ *.dmg "drift-macos-${{ env.SAFE_VERSION }}.dmg"
 
       - name: Build iOS (no code signing)
         run: flutter build ios --release --no-codesign
@@ -69,20 +72,20 @@ jobs:
       - name: Package iOS zip
         run: |
           cd build/ios/Release-iphoneos
-          zip -r ../../../drift-ios-unsigned-${{ github.ref_name }}.zip Runner.app
+          zip -r "../../../drift-ios-unsigned-${{ env.SAFE_VERSION }}.zip" Runner.app
 
       - name: Upload macOS artifact
         uses: actions/upload-artifact@v4
         with:
           name: drift-macos
-          path: drift-macos-${{ github.ref_name }}.dmg
+          path: flutter/drift-macos-${{ env.SAFE_VERSION }}.dmg
           if-no-files-found: error
 
       - name: Upload iOS artifact
         uses: actions/upload-artifact@v4
         with:
           name: drift-ios-unsigned
-          path: flutter/drift-ios-unsigned-${{ github.ref_name }}.zip
+          path: flutter/drift-ios-unsigned-${{ env.SAFE_VERSION }}.zip
           if-no-files-found: error
 
   linux:
@@ -100,6 +103,9 @@ jobs:
             crates
             Cargo.toml
             Cargo.lock
+
+      - name: Set Safe Version Name
+        run: echo "SAFE_VERSION=$(echo ${{ github.ref_name }} | tr '/' '-')" >> $GITHUB_ENV
 
       - name: Install Linux desktop build dependencies
         run: |
@@ -134,13 +140,13 @@ jobs:
       - name: Package Linux zip
         run: |
           cd build/linux/x64/release
-          zip -r ../../../../drift-linux-${{ github.ref_name }}.zip bundle
+          zip -r "../../../../drift-linux-${{ env.SAFE_VERSION }}.zip" bundle
 
       - name: Upload Linux artifact
         uses: actions/upload-artifact@v4
         with:
           name: drift-linux
-          path: flutter/drift-linux-${{ github.ref_name }}.zip
+          path: drift-linux-${{ env.SAFE_VERSION }}.zip
           if-no-files-found: error
 
   windows:
@@ -158,6 +164,9 @@ jobs:
             crates
             Cargo.toml
             Cargo.lock
+
+      - name: Set Safe Version Name
+        run: echo "SAFE_VERSION=$(echo ${{ github.ref_name }} | tr '/' '-')" >> $GITHUB_ENV
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -189,7 +198,7 @@ jobs:
         shell: pwsh
         run: |
           $releaseDir = Join-Path $PWD "build/windows/x64/runner/Release"
-          $zipPath = Join-Path $PWD "drift-windows-portable-${{ github.ref_name }}.zip"
+          $zipPath = Join-Path $PWD "drift-windows-portable-${env:SAFE_VERSION}.zip"
           Compress-Archive -Path (Join-Path $releaseDir '*') -DestinationPath $zipPath -Force
 
       - name: Upload Windows MSIX
@@ -203,7 +212,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: drift-windows-portable
-          path: flutter/drift-windows-portable-${{ github.ref_name }}.zip
+          path: flutter/drift-windows-portable-${{ env.SAFE_VERSION }}.zip
           if-no-files-found: error
 
   android:
@@ -221,6 +230,9 @@ jobs:
             crates
             Cargo.toml
             Cargo.lock
+
+      - name: Set Safe Version Name
+        run: echo "SAFE_VERSION=$(echo ${{ github.ref_name }} | tr '/' '-')" >> $GITHUB_ENV
 
       - name: Set up Java
         uses: actions/setup-java@v4
@@ -255,13 +267,13 @@ jobs:
         run: flutter build apk --release
 
       - name: Package Android APK
-        run: mv build/app/outputs/flutter-apk/app-release.apk drift-android-${{ github.ref_name }}.apk
+        run: mv build/app/outputs/flutter-apk/app-release.apk "drift-android-${{ env.SAFE_VERSION }}.apk"
 
       - name: Upload Android artifact
         uses: actions/upload-artifact@v4
         with:
           name: drift-android
-          path: flutter/drift-android-${{ github.ref_name }}.apk
+          path: flutter/drift-android-${{ env.SAFE_VERSION }}.apk
           if-no-files-found: error
 
   create_release:
