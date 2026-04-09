@@ -306,6 +306,7 @@ async fn do_handshake(
             protocol_wire::write_sender_message(&mut send, &protocol_message::SenderMessage::Offer(protocol_message::Offer {
                 session_id: session_id.to_owned(),
                 manifest: prepared.manifest(),
+                collection_hash: prepared.collection_hash(),
             })).await?;
 
             events.emit(SenderEvent::WaitingForDecision {

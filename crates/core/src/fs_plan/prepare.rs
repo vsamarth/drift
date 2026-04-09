@@ -118,6 +118,7 @@ pub async fn prepare_files(paths: Vec<PathBuf>) -> Result<PreparedFiles> {
             file_count: manifest_files.len() as u64,
             total_size,
             files: manifest_files,
+            collection_hash: None,
         },
     })
 }

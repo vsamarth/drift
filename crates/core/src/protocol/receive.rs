@@ -355,6 +355,7 @@ mod tests {
                             size: 1,
                         }],
                     },
+                    collection_hash: [0u8; 32].into(),
                 }),
             )
             .await
