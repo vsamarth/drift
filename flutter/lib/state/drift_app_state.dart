@@ -6,23 +6,41 @@ import '../src/rust/api/transfer.dart' as rust_transfer;
 import 'app_identity.dart';
 import 'receiver_service_source.dart';
 
-enum TransferResultToneData { success, error }
+enum TransferResultOutcomeData { success, cancelled, declined, failed }
+
+enum TransferResultPrimaryActionData {
+  done,
+  tryAgain,
+  chooseAnotherDevice,
+  sendAgain,
+}
 
 @immutable
 class TransferResultViewData {
   const TransferResultViewData({
-    required this.tone,
+    required this.outcome,
     required this.title,
     required this.message,
     this.metrics,
-    this.primaryLabel,
+    this.primaryAction,
+    this.secondaryLabel,
   });
 
-  final TransferResultToneData tone;
+  final TransferResultOutcomeData outcome;
   final String title;
   final String message;
   final List<TransferMetricRow>? metrics;
-  final String? primaryLabel;
+  final TransferResultPrimaryActionData? primaryAction;
+  final String? secondaryLabel;
+
+  String? get primaryLabel => switch (primaryAction) {
+    TransferResultPrimaryActionData.done => 'Done',
+    TransferResultPrimaryActionData.tryAgain => 'Try again',
+    TransferResultPrimaryActionData.chooseAnotherDevice =>
+      'Choose another device',
+    TransferResultPrimaryActionData.sendAgain => 'Send again',
+    null => null,
+  };
 }
 
 @immutable
@@ -32,18 +50,22 @@ class DriftAppState {
     required this.receiverBadge,
     required this.session,
     required this.animateSendingConnection,
+    this.sendSetupErrorMessage,
   });
 
   final DriftAppIdentity identity;
   final ReceiverBadgeState receiverBadge;
   final ShellSessionState session;
   final bool animateSendingConnection;
+  final String? sendSetupErrorMessage;
 
   DriftAppState copyWith({
     DriftAppIdentity? identity,
     ReceiverBadgeState? receiverBadge,
     ShellSessionState? session,
     bool? animateSendingConnection,
+    String? sendSetupErrorMessage,
+    bool clearSendSetupErrorMessage = false,
   }) {
     return DriftAppState(
       identity: identity ?? this.identity,
@@ -51,6 +73,9 @@ class DriftAppState {
       session: session ?? this.session,
       animateSendingConnection:
           animateSendingConnection ?? this.animateSendingConnection,
+      sendSetupErrorMessage: clearSendSetupErrorMessage
+          ? null
+          : (sendSetupErrorMessage ?? this.sendSetupErrorMessage),
     );
   }
 
@@ -290,29 +315,17 @@ class DriftAppState {
   };
 
   TransferResultViewData? get transferResult => switch (session) {
-    SendResultSession(:final success, :final summary, :final metrics) =>
-      TransferResultViewData(
-        tone: success
-            ? TransferResultToneData.success
-            : TransferResultToneData.error,
-        title: success
-            ? 'Transfer complete'
-            : _isCancelledMessage(summary.statusMessage)
-            ? 'Transfer cancelled'
-            : 'Transfer failed',
-        message: summary.statusMessage,
-        metrics: success ? metrics : null,
-        primaryLabel: success ? 'Done' : null,
+    SendResultSession(:final outcome, :final summary, :final metrics) =>
+      _buildSendTransferResultViewData(
+        outcome: outcome,
+        summary: summary,
+        metrics: metrics,
       ),
-    ReceiveResultSession(:final success, :final summary, :final metrics) =>
-      TransferResultViewData(
-        tone: success
-            ? TransferResultToneData.success
-            : TransferResultToneData.error,
-        title: success ? 'Files saved' : 'Transfer cancelled',
-        message: summary.statusMessage,
-        metrics: success ? metrics : null,
-        primaryLabel: 'Done',
+    ReceiveResultSession(:final outcome, :final summary, :final metrics) =>
+      _buildReceiveTransferResultViewData(
+        outcome: outcome,
+        summary: summary,
+        metrics: metrics,
       ),
     _ => null,
   };
@@ -422,8 +435,111 @@ String _formatBytes(int bytes) {
   return '$formatted ${units[unitIndex]}';
 }
 
-bool _isCancelledMessage(String message) =>
-    message.toLowerCase().contains('cancel');
+TransferResultViewData _buildSendTransferResultViewData({
+  required TransferResultOutcomeData outcome,
+  required TransferSummaryViewData summary,
+  required List<TransferMetricRow>? metrics,
+}) {
+  return switch (outcome) {
+    TransferResultOutcomeData.success => TransferResultViewData(
+      outcome: outcome,
+      title: 'Transfer complete',
+      message: summary.statusMessage,
+      metrics: metrics,
+      primaryAction: TransferResultPrimaryActionData.done,
+    ),
+    TransferResultOutcomeData.cancelled => const TransferResultViewData(
+      outcome: TransferResultOutcomeData.cancelled,
+      title: 'Transfer cancelled',
+      message: 'The transfer was stopped before all files were sent.',
+      primaryAction: TransferResultPrimaryActionData.sendAgain,
+    ),
+    TransferResultOutcomeData.declined => const TransferResultViewData(
+      outcome: TransferResultOutcomeData.declined,
+      title: 'Transfer declined',
+      message: 'The receiving device chose not to accept this transfer.',
+      primaryAction: TransferResultPrimaryActionData.chooseAnotherDevice,
+    ),
+    TransferResultOutcomeData.failed => TransferResultViewData(
+      outcome: outcome,
+      title: 'Transfer failed',
+      message: _sendFailureMessage(summary.statusMessage),
+      primaryAction: TransferResultPrimaryActionData.tryAgain,
+    ),
+  };
+}
+
+TransferResultViewData _buildReceiveTransferResultViewData({
+  required TransferResultOutcomeData outcome,
+  required TransferSummaryViewData summary,
+  required List<TransferMetricRow>? metrics,
+}) {
+  return switch (outcome) {
+    TransferResultOutcomeData.success => TransferResultViewData(
+      outcome: outcome,
+      title: 'Files saved',
+      message: summary.statusMessage,
+      metrics: metrics,
+      primaryAction: TransferResultPrimaryActionData.done,
+    ),
+    TransferResultOutcomeData.cancelled => const TransferResultViewData(
+      outcome: TransferResultOutcomeData.cancelled,
+      title: 'Receive cancelled',
+      message: 'Drift stopped receiving before all files were saved.',
+      primaryAction: TransferResultPrimaryActionData.done,
+    ),
+    TransferResultOutcomeData.declined => const TransferResultViewData(
+      outcome: TransferResultOutcomeData.declined,
+      title: 'Transfer declined',
+      message: 'The transfer was declined before any files were received.',
+      primaryAction: TransferResultPrimaryActionData.done,
+    ),
+    TransferResultOutcomeData.failed => TransferResultViewData(
+      outcome: outcome,
+      title: 'Couldn\'t finish receiving files',
+      message: _receiveFailureMessage(summary.statusMessage),
+      primaryAction: TransferResultPrimaryActionData.done,
+    ),
+  };
+}
+
+String _sendFailureMessage(String rawMessage) {
+  if (_isHumanReadableTransferMessage(rawMessage)) {
+    return rawMessage;
+  }
+  return 'Drift couldn\'t finish sending the files. Try again.';
+}
+
+String _receiveFailureMessage(String rawMessage) {
+  if (_isHumanReadableTransferMessage(rawMessage)) {
+    return rawMessage;
+  }
+  return 'Drift couldn\'t save all incoming files successfully.';
+}
+
+bool _isHumanReadableTransferMessage(String message) {
+  final trimmed = message.trim();
+  if (trimmed.isEmpty) {
+    return false;
+  }
+  if (trimmed.contains('\n')) {
+    return false;
+  }
+  if (trimmed.length > 140) {
+    return false;
+  }
+
+  const noisyFragments = <String>[
+    'Exception',
+    'StackTrace',
+    'socketexception',
+    'typeerror',
+  ];
+  final lower = trimmed.toLowerCase();
+  return !noisyFragments.any(
+    (fragment) => lower.contains(fragment.toLowerCase()),
+  );
+}
 
 sealed class ShellSessionState {
   const ShellSessionState();
@@ -557,6 +673,7 @@ class SendTransferSession extends ShellSessionState {
 class SendResultSession extends TransferResultSession {
   const SendResultSession({
     required this.success,
+    required this.outcome,
     required super.items,
     required super.summary,
     super.metrics,
@@ -566,6 +683,7 @@ class SendResultSession extends TransferResultSession {
   }) : super();
 
   final bool success;
+  final TransferResultOutcomeData outcome;
   final String? remoteDeviceType;
 }
 
@@ -640,6 +758,7 @@ class ReceiveTransferSession extends ShellSessionState {
 class ReceiveResultSession extends TransferResultSession {
   const ReceiveResultSession({
     required this.success,
+    required this.outcome,
     required super.items,
     required super.summary,
     super.metrics,
@@ -651,6 +770,7 @@ class ReceiveResultSession extends TransferResultSession {
   }) : super();
 
   final bool success;
+  final TransferResultOutcomeData outcome;
   final int? payloadBytesReceived;
   final int? payloadTotalBytes;
   final String? senderDeviceType;

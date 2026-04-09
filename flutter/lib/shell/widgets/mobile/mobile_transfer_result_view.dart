@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../state/drift_app_state.dart';
 import '../../../state/drift_providers.dart';
 import '../transfer_result_card.dart';
 
@@ -21,15 +20,14 @@ class MobileTransferResultView extends ConsumerWidget {
 
     return TransferResultCard(
       fillBody: true,
-      tone: switch (result.tone) {
-        TransferResultToneData.success => TransferResultTone.success,
-        TransferResultToneData.error => TransferResultTone.error,
-      },
+      outcome: result.outcome,
       title: result.title,
       message: result.message,
       metrics: result.metrics,
       primaryLabel: result.primaryLabel,
-      onPrimary: result.primaryLabel == null ? null : notifier.resetShell,
+      onPrimary: result.primaryLabel == null
+          ? null
+          : notifier.handleTransferResultPrimaryAction,
     );
   }
 }

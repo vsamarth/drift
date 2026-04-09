@@ -74,6 +74,7 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
       receiverBadge: const ReceiverBadgeState.registering(),
       session: const IdleSession(),
       animateSendingConnection: _animateSendingConnection,
+      sendSetupErrorMessage: null,
     );
   }
 
@@ -194,6 +195,7 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
       _setSession(
         ReceiveResultSession(
           success: true,
+          outcome: TransferResultOutcomeData.success,
           items: session.items,
           summary: session.summary.copyWith(
             statusMessage: 'Saved to ${session.summary.destinationLabel}',
@@ -219,6 +221,7 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
     final session = state.session;
     if (session is ReceiveOfferSession && session.decisionPending) {
       unawaited(_respondToIncomingOffer(accept: false));
+      return;
     }
     resetShell();
   }
@@ -259,7 +262,26 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
     _cancelActiveSendTransfer();
     _clearSendMetricState();
     _clearReceiveMetricState();
+    state = state.copyWith(clearSendSetupErrorMessage: true);
     _setSession(const IdleSession());
+  }
+
+  void handleTransferResultPrimaryAction() {
+    final result = state.transferResult;
+    if (result == null) {
+      return;
+    }
+
+    switch (result.primaryAction) {
+      case TransferResultPrimaryActionData.done:
+      case null:
+        resetShell();
+      case TransferResultPrimaryActionData.tryAgain:
+      case TransferResultPrimaryActionData.sendAgain:
+        _restoreSendDraft(destinationCode: state.sendDestinationCode);
+      case TransferResultPrimaryActionData.chooseAnotherDevice:
+        _returnToSendSelection();
+    }
   }
 
   void goBack() {
@@ -307,11 +329,16 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
       if (items.isEmpty) {
         return;
       }
+      _clearSendSetupError();
       _beginSendInspection(clearExistingItems: true);
       _applySelectedSendItems(items);
     } catch (error, stackTrace) {
       clearSendFlow();
-      _reportSendSelectionError(error, stackTrace);
+      _reportSendSelectionError(
+        'Drift couldn\'t prepare the selected files.',
+        error,
+        stackTrace,
+      );
     }
   }
 
@@ -326,10 +353,15 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
         clearSendFlow();
         return;
       }
+      _clearSendSetupError();
       _applySelectedSendItems(items);
     } catch (error, stackTrace) {
       clearSendFlow();
-      _reportSendSelectionError(error, stackTrace);
+      _reportSendSelectionError(
+        'Drift couldn\'t prepare the dropped files.',
+        error,
+        stackTrace,
+      );
     }
   }
 
@@ -348,10 +380,15 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
         _finishSendInspection();
         return;
       }
+      _clearSendSetupError();
       _applySelectedSendItems(items);
     } catch (error, stackTrace) {
       _finishSendInspection();
-      _reportSendSelectionError(error, stackTrace);
+      _reportSendSelectionError(
+        'Drift couldn\'t add those files right now.',
+        error,
+        stackTrace,
+      );
     }
   }
 
@@ -371,10 +408,15 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
         _finishSendInspection();
         return;
       }
+      _clearSendSetupError();
       _applySelectedSendItems(items);
     } catch (error, stackTrace) {
       _finishSendInspection();
-      _reportSendSelectionError(error, stackTrace);
+      _reportSendSelectionError(
+        'Drift couldn\'t add those files right now.',
+        error,
+        stackTrace,
+      );
     }
   }
 
@@ -393,15 +435,21 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
         clearSendFlow();
         return;
       }
+      _clearSendSetupError();
       _applySelectedSendItems(items);
     } catch (error, stackTrace) {
       _finishSendInspection();
-      _reportSendSelectionError(error, stackTrace);
+      _reportSendSelectionError(
+        'Drift couldn\'t update the selected files.',
+        error,
+        stackTrace,
+      );
     }
   }
 
   void _applySelectedSendItems(List<TransferItemViewData> items) {
     _cancelActiveSendTransfer();
+    state = state.copyWith(clearSendSetupErrorMessage: true);
     _setSession(
       SendDraftSession(
         items: List<TransferItemViewData>.unmodifiable(items),
@@ -512,7 +560,9 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
           onError: (Object error, StackTrace stackTrace) {
             debugPrint('watchIncomingTransfers failed: $error');
             debugPrintStack(stackTrace: stackTrace);
-            resetShell();
+            _applyIncomingFailure(
+              errorMessage: 'Drift lost the connection while receiving files.',
+            );
           },
         );
   }
@@ -538,10 +588,10 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
           '[drift/notifier] incoming receive failed: '
           '${event.error?.message ?? event.statusMessage}',
         );
-        resetShell();
+        _applyIncomingFailed(event);
         return;
       case rust_receiver.ReceiverTransferPhase.declined:
-        resetShell();
+        _applyIncomingDeclined(event);
         return;
     }
   }
@@ -642,6 +692,7 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
     _setSession(
       ReceiveResultSession(
         success: true,
+        outcome: TransferResultOutcomeData.success,
         items: state.receiveItems,
         summary: completedSummary,
         metrics: _buildReceiveCompletionMetrics(
@@ -681,6 +732,7 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
     _setSession(
       ReceiveResultSession(
         success: false,
+        outcome: TransferResultOutcomeData.cancelled,
         items: state.receiveItems,
         summary: summary.copyWith(
           destinationLabel: event.saveRootLabel,
@@ -691,6 +743,117 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
         payloadBytesReceived: bytesReceived,
         payloadTotalBytes: totalBytes,
         senderDeviceType: event.senderDeviceType,
+      ),
+    );
+    _clearReceiveMetricState();
+  }
+
+  void _applyIncomingFailed(rust_receiver.ReceiverTransferEvent event) {
+    _applyIncomingFailure(
+      errorMessage: event.error?.message ?? event.statusMessage,
+      event: event,
+    );
+  }
+
+  void _applyIncomingDeclined(rust_receiver.ReceiverTransferEvent event) {
+    final summary =
+        state.receiveSummary ??
+        TransferSummaryViewData(
+          itemCount: _bigIntToInt(event.itemCount),
+          totalSize: event.totalSizeLabel,
+          code: state.idleReceiveCode,
+          expiresAt: '',
+          destinationLabel: event.saveRootLabel.isNotEmpty
+              ? event.saveRootLabel
+              : 'Downloads',
+          statusMessage: event.error?.message ?? event.statusMessage,
+          senderName: event.senderName,
+        );
+
+    _setSession(
+      ReceiveResultSession(
+        success: false,
+        outcome: TransferResultOutcomeData.declined,
+        items: state.receiveItems,
+        summary: summary.copyWith(
+          destinationLabel: event.saveRootLabel.isNotEmpty
+              ? event.saveRootLabel
+              : summary.destinationLabel,
+          statusMessage: event.error?.message ?? event.statusMessage,
+          senderName: event.senderName.isNotEmpty
+              ? event.senderName
+              : summary.senderName,
+        ),
+        plan: event.plan ?? state.receiveTransferPlan,
+        snapshot: event.snapshot ?? state.receiveTransferSnapshot,
+        payloadBytesReceived: state.receivePayloadBytesReceived,
+        payloadTotalBytes:
+            state.receivePayloadTotalBytes ??
+            _bigIntToInt(event.totalSizeBytes),
+        senderDeviceType: event.senderDeviceType,
+      ),
+    );
+    _clearReceiveMetricState();
+  }
+
+  void _applyIncomingFailure({
+    required String errorMessage,
+    rust_receiver.ReceiverTransferEvent? event,
+  }) {
+    final progress = _progressFromSnapshot(
+      event?.snapshot ?? state.receiveTransferSnapshot,
+    );
+    final bytesReceived =
+        progress.bytesTransferred ??
+        (event == null
+            ? state.receivePayloadBytesReceived
+            : _bigIntToInt(event.bytesReceived)) ??
+        0;
+    final totalBytes =
+        progress.totalBytes ??
+        (event == null
+            ? state.receivePayloadTotalBytes
+            : _bigIntToInt(event.totalSizeBytes));
+    if (_receivePayloadStartedAt == null && bytesReceived > 0) {
+      _receivePayloadStartedAt = DateTime.now();
+    }
+
+    final summary =
+        state.receiveSummary ??
+        TransferSummaryViewData(
+          itemCount: event == null
+              ? state.receiveItems.length
+              : _bigIntToInt(event.itemCount),
+          totalSize: event?.totalSizeLabel ?? '',
+          code: state.idleReceiveCode,
+          expiresAt: '',
+          destinationLabel: event?.saveRootLabel ?? state.downloadRoot,
+          statusMessage: errorMessage,
+          senderName: event?.senderName ?? '',
+        );
+
+    _setSession(
+      ReceiveResultSession(
+        success: false,
+        outcome: TransferResultOutcomeData.failed,
+        items: state.receiveItems,
+        summary: summary.copyWith(
+          itemCount: event == null
+              ? summary.itemCount
+              : _bigIntToInt(event.itemCount),
+          totalSize: event?.totalSizeLabel ?? summary.totalSize,
+          destinationLabel: event?.saveRootLabel.isNotEmpty == true
+              ? event!.saveRootLabel
+              : summary.destinationLabel,
+          statusMessage: errorMessage,
+          senderName: event?.senderName ?? summary.senderName,
+        ),
+        plan: event?.plan ?? state.receiveTransferPlan,
+        snapshot: event?.snapshot ?? state.receiveTransferSnapshot,
+        payloadBytesReceived: bytesReceived,
+        payloadTotalBytes: totalBytes,
+        senderDeviceType:
+            event?.senderDeviceType ?? state.receiveSenderDeviceType,
       ),
     );
     _clearReceiveMetricState();
@@ -718,7 +881,11 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
     } catch (error, stackTrace) {
       debugPrint('respondToOffer failed: $error');
       debugPrintStack(stackTrace: stackTrace);
-      resetShell();
+      _applyIncomingFailure(
+        errorMessage: accept
+            ? 'Drift couldn\'t accept the transfer.'
+            : 'Drift couldn\'t decline the transfer.',
+      );
     }
   }
 
@@ -728,7 +895,21 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
     } catch (error, stackTrace) {
       debugPrint('cancelTransfer failed: $error');
       debugPrintStack(stackTrace: stackTrace);
-      _returnToSendSelection();
+      _applySendUpdate(
+        SendTransferUpdate(
+          phase: SendTransferUpdatePhase.failed,
+          destinationLabel:
+              state.sendDestinationLabel ??
+              _formatCodeAsDestination(state.sendDestinationCode),
+          statusMessage: 'Cancelling transfer...',
+          itemCount: state.sendItems.length,
+          totalSize:
+              state.sendSummary?.totalSize ?? sampleSendSummary.totalSize,
+          bytesSent: state.sendPayloadBytesSent ?? 0,
+          totalBytes: state.sendPayloadTotalBytes ?? 0,
+          errorMessage: 'Drift couldn\'t cancel the transfer.',
+        ),
+      );
     }
   }
 
@@ -738,11 +919,17 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
     } catch (error, stackTrace) {
       debugPrint('cancelReceiveTransfer failed: $error');
       debugPrintStack(stackTrace: stackTrace);
-      resetShell();
+      _applyIncomingFailure(
+        errorMessage: 'Drift couldn\'t cancel the transfer.',
+      );
     }
   }
 
   void _returnToSendSelection() {
+    _restoreSendDraft();
+  }
+
+  void _restoreSendDraft({String destinationCode = ''}) {
     _cancelActiveSendTransfer();
     _clearSendMetricState();
     _setSession(
@@ -752,7 +939,7 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
         nearbyDestinations: const [],
         nearbyScanInFlight: false,
         nearbyScanCompletedOnce: false,
-        destinationCode: '',
+        destinationCode: destinationCode,
       ),
     );
     _scheduleNearbyScanning();
@@ -802,6 +989,7 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
     } catch (error, stackTrace) {
       debugPrint('[drift/notifier] nearby scan failed: $error');
       debugPrintStack(stackTrace: stackTrace);
+      _setSendSetupError('Drift couldn\'t scan for nearby devices right now.');
       final current = _draftSession;
       if (current != null) {
         _setSession(
@@ -961,6 +1149,7 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
         _setSession(
           SendResultSession(
             success: false,
+            outcome: TransferResultOutcomeData.declined,
             items: items,
             summary: summary.copyWith(
               statusMessage: update.errorMessage ?? 'Transfer declined.',
@@ -993,6 +1182,7 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
         _setSession(
           SendResultSession(
             success: true,
+            outcome: TransferResultOutcomeData.success,
             items: items,
             summary: summary,
             metrics: _buildSendCompletionMetrics(
@@ -1008,6 +1198,7 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
         _setSession(
           SendResultSession(
             success: false,
+            outcome: TransferResultOutcomeData.cancelled,
             items: items,
             summary: summary.copyWith(
               statusMessage: update.errorMessage ?? 'Transfer cancelled.',
@@ -1021,6 +1212,7 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
         _setSession(
           SendResultSession(
             success: false,
+            outcome: TransferResultOutcomeData.failed,
             items: items,
             summary: summary,
             plan: update.plan ?? state.sendTransferPlan,
@@ -1179,9 +1371,22 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
   List<String> get _currentSendSelectionPaths =>
       state.sendItems.map((item) => item.path).toList(growable: false);
 
-  void _reportSendSelectionError(Object error, StackTrace stackTrace) {
+  void _reportSendSelectionError(
+    String userMessage,
+    Object error,
+    StackTrace stackTrace,
+  ) {
+    _setSendSetupError(userMessage);
     debugPrint('Failed to inspect selected send items: $error');
     debugPrintStack(stackTrace: stackTrace);
+  }
+
+  void _setSendSetupError(String message) {
+    state = state.copyWith(sendSetupErrorMessage: message);
+  }
+
+  void _clearSendSetupError() {
+    state = state.copyWith(clearSendSetupErrorMessage: true);
   }
 
   void _clearSendMetricState() {
