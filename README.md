@@ -23,10 +23,10 @@
 
 | Platform | Download |
 | --- | --- |
-| macOS | [Drift-0.1.0.dmg](https://github.com/vsamarth/drift/releases/download/v0.1.0/Drift-0.1.0.dmg) |
-| Windows | [Drift-0.1.0.msix](https://github.com/vsamarth/drift/releases/download/v0.1.0/Drift-0.1.0.msix) |
-| Linux | *Coming soon* |
-| Android | [Drift-0.1.0.apk](https://github.com/vsamarth/drift/releases/download/v0.1.0/Drift-0.1.0.apk) |
+| macOS | [drift-macos-v0.2.0.dmg](https://github.com/vsamarth/drift/releases/download/v0.2.0/drift-macos-v0.2.0.dmg) |
+| Windows | [drift-windows-setup-v0.2.0.exe](https://github.com/vsamarth/drift/releases/download/v0.2.0/drift-windows-setup-v0.2.0.exe) |
+| Linux | [drift-linux-v0.2.0.zip](https://github.com/vsamarth/drift/releases/download/v0.2.0/drift-linux-v0.2.0.zip) |
+| Android | [drift-android-v0.2.0.apk](https://github.com/vsamarth/drift/releases/download/v0.2.0/drift-android-v0.2.0.apk) |
 | iOS | *Coming soon* |
 
 **From source:** Build the app in [`flutter/`](flutter/); see [`flutter/README.md`](flutter/README.md). A concise guide here is coming soon.
