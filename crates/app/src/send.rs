@@ -5,11 +5,11 @@ use drift_core::fs_plan::preview::{
     SelectedPathKind, SelectedPathPreview, SelectionPreview as CoreSelectionPreview,
     inspect_selected_paths,
 };
-use drift_core::protocol::DeviceType;
+use drift_core::protocol::{CancelPhase, DeviceType, TransferRole};
 use drift_core::rendezvous::{RendezvousClient, resolve_server_url, validate_code};
 use drift_core::transfer::{
-    SendRequest, Sender, SenderEvent as CoreSenderEvent, TransferOutcome as CoreTransferOutcome,
-    TransferPlan,
+    SendRequest, Sender, SenderEvent as CoreSenderEvent, TransferCancellation,
+    TransferOutcome as CoreTransferOutcome, TransferPlan,
 };
 use drift_core::util::{decode_ticket, format_code_label};
 use iroh::{EndpointAddr, EndpointId};
@@ -330,9 +330,17 @@ impl SendSession {
             Ok(CoreTransferOutcome::Declined { reason }) => {
                 Ok(SendSessionOutcome::Declined { reason })
             }
-            Ok(CoreTransferOutcome::Cancelled(cancellation)) => Err(AppError::Cancelled {
-                reason: cancellation.reason,
-            }),
+            Ok(CoreTransferOutcome::Cancelled(cancellation)) => {
+                if is_receiver_decline_cancel(&cancellation) {
+                    Ok(SendSessionOutcome::Declined {
+                        reason: cancellation.reason,
+                    })
+                } else {
+                    Err(AppError::Cancelled {
+                        reason: cancellation.reason,
+                    })
+                }
+            }
             Err(error) => {
                 emit_send_event(
                     &event_tx,
@@ -344,6 +352,11 @@ impl SendSession {
             }
         }
     }
+}
+
+fn is_receiver_decline_cancel(cancellation: &TransferCancellation) -> bool {
+    matches!(cancellation.by, TransferRole::Receiver)
+        && matches!(cancellation.phase, CancelPhase::WaitingForDecision)
 }
 
 fn emit_send_event(event_tx: &mpsc::UnboundedSender<SendEvent>, event: SendEvent) {
@@ -574,9 +587,13 @@ fn selection_path_key(path: &Path) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{SendDraft, display_destination_label, failed_event_from_error};
+    use super::{
+        SendDraft, display_destination_label, failed_event_from_error, is_receiver_decline_cancel,
+    };
     use crate::error::{AppError, UserFacingErrorKind};
     use crate::types::SendConfig;
+    use drift_core::protocol::{CancelPhase, TransferRole};
+    use drift_core::transfer::TransferCancellation;
     use std::path::{Path, PathBuf};
 
     #[test]
@@ -682,5 +699,22 @@ mod tests {
         assert_eq!(error.kind(), UserFacingErrorKind::Internal);
         assert_eq!(error.title(), "Something went wrong");
         assert!(error.message().contains("boom"));
+    }
+
+    #[test]
+    fn receiver_waiting_for_decision_cancel_is_treated_as_decline() {
+        let cancellation = TransferCancellation {
+            by: TransferRole::Receiver,
+            phase: CancelPhase::WaitingForDecision,
+            reason: "receiver cancelled before approval".to_owned(),
+        };
+
+        assert!(is_receiver_decline_cancel(&cancellation));
+        let sender_cancel = TransferCancellation {
+            by: TransferRole::Sender,
+            phase: CancelPhase::WaitingForDecision,
+            reason: "sender cancelled before approval".to_owned(),
+        };
+        assert!(!is_receiver_decline_cancel(&sender_cancel));
     }
 }

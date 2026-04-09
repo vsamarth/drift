@@ -151,7 +151,10 @@ pub(super) async fn run_receiver_actor(
                     }
                     ReceiverCommand::OfferFinished { offer_id, final_event } => {
                         if runtime.handle_offer_finished(offer_id)
-                            || matches!(final_event.phase, ReceiverOfferPhase::Failed)
+                            || matches!(
+                                final_event.phase,
+                                ReceiverOfferPhase::Failed | ReceiverOfferPhase::Declined
+                            )
                         {
                             let _ = event_tx.send(ReceiverEvent::OfferUpdated(final_event));
                         }
