@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use futures_lite::StreamExt;
@@ -11,7 +12,6 @@ use tokio_stream::wrappers::UnboundedReceiverStream;
 use tracing::trace;
 
 use super::error::{BlobError, BlobTextError, Result};
-use super::util::ScratchDir;
 
 #[derive(Debug)]
 pub enum BlobDownloadUpdate {
@@ -26,7 +26,8 @@ pub type BlobDownloadUpdateStream = UnboundedReceiverStream<BlobDownloadUpdate>;
 pub struct BlobDownloadSession {
     events: BlobDownloadUpdateStream,
     store: Arc<FsStore>,
-    root: ScratchDir,
+    root_dir: PathBuf,
+    is_temp: bool,
     task: JoinHandle<Result<()>>,
 }
 
@@ -47,7 +48,8 @@ impl BlobDownloadSession {
         let BlobDownloadSession {
             events: _,
             store,
-            root,
+            root_dir,
+            is_temp,
             task,
         } = self;
         let task_result = match task.await {
@@ -60,7 +62,9 @@ impl BlobDownloadSession {
             .shutdown()
             .await
             .map_err(|source| BlobError::store_shutdown("blob download session", source))?;
-        drop(root);
+        if is_temp {
+            let _ = tokio::fs::remove_dir_all(&root_dir).await;
+        }
         task_result?;
         Ok(())
     }
@@ -149,24 +153,27 @@ where
         Self { endpoint, strategy }
     }
 
-    pub async fn start(&self, session_id: &str, ticket: BlobTicket) -> Result<BlobDownloadSession> {
-        let root = ScratchDir::new("drift-blob", session_id).await?;
+    pub async fn start(&self, root_dir: PathBuf, ticket: BlobTicket, is_temp: bool) -> Result<BlobDownloadSession> {
+        if is_temp {
+            tokio::fs::create_dir_all(&root_dir).await.map_err(|source| BlobError::scratch_dir_create(root_dir.clone(), BlobTextError::new(source.to_string())))?;
+        }
         let store = Arc::new(
-            FsStore::load(&root.path)
+            FsStore::load(&root_dir)
                 .await
-                .map_err(|source| BlobError::store_load(root.path.clone(), source))?,
+                .map_err(|source| BlobError::store_load(root_dir.clone(), source))?,
         );
         let (update_tx, update_rx) = mpsc::unbounded_channel();
         let task = self
             .strategy
             .spawn(self.endpoint.clone(), store.clone(), ticket, update_tx);
 
-        trace!(session_id = %session_id, "started blob download session");
+        trace!(root_dir = %root_dir.display(), "started blob download session");
 
         Ok(BlobDownloadSession {
             events: UnboundedReceiverStream::new(update_rx),
             store,
-            root,
+            root_dir,
+            is_temp,
             task,
         })
     }
