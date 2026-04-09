@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 
+import '../shared/formatting/byte_format.dart';
 import '../src/rust/api/sender.dart' as rust_sender;
 import '../src/rust/api/transfer.dart' as rust_transfer;
 
@@ -138,7 +139,7 @@ class LocalSendTransferSource implements SendTransferSource {
       destinationLabel: event.destinationLabel,
       statusMessage: event.statusMessage,
       itemCount: event.itemCount.toInt(),
-      totalSize: _formatBytes(event.totalSize.toInt()),
+      totalSize: formatBytes(event.totalSize.toInt()),
       bytesSent: _asDartInt(event.bytesSent),
       totalBytes: _asDartInt(event.totalSize),
       plan: event.plan,
@@ -153,21 +154,6 @@ class LocalSendTransferSource implements SendTransferSource {
       return 0x7fffffffffffffff;
     }
     return v.toInt();
-  }
-
-  static String _formatBytes(int bytes) {
-    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-    var value = bytes.toDouble();
-    var unitIndex = 0;
-
-    while (value >= 1024 && unitIndex < units.length - 1) {
-      value /= 1024;
-      unitIndex += 1;
-    }
-
-    final decimals = value >= 10 || unitIndex == 0 ? 0 : 1;
-    final formatted = value.toStringAsFixed(decimals);
-    return '$formatted ${units[unitIndex]}';
   }
 
   static String _phaseLabel(SendTransferUpdatePhase phase) {

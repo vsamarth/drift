@@ -1,6 +1,8 @@
 import 'package:flutter/foundation.dart';
 
 import '../core/models/transfer_models.dart';
+import '../shared/formatting/byte_format.dart';
+import '../shared/formatting/transfer_message_format.dart';
 import '../shell/shell_routing.dart';
 import '../src/rust/api/transfer.dart' as rust_transfer;
 import 'app_identity.dart';
@@ -362,7 +364,7 @@ List<TransferDisplayItemViewData> _displayItemsFor(
       final item = TransferItemViewData(
         name: _fileNameFromPath(file.path),
         path: file.path,
-        size: _formatBytes(_bigIntToInt(file.size)),
+        size: formatBytes(_bigIntToInt(file.size)),
         kind: TransferItemKind.file,
         sizeBytes: _bigIntToInt(file.size),
       );
@@ -396,7 +398,7 @@ List<TransferDisplayItemViewData> _displayItemsFor(
           progress: total <= 0 ? 1.0 : (transferred / total).clamp(0.0, 1.0),
           statusLabel: total <= 0
               ? 'Preparing'
-              : '${_formatBytes(transferred)} / ${_formatBytes(total)}',
+              : '${formatBytes(transferred)} / ${formatBytes(total)}',
         );
       }
 
@@ -418,21 +420,6 @@ int _bigIntToInt(BigInt value) {
     return 0x7fffffffffffffff;
   }
   return value.toInt();
-}
-
-String _formatBytes(int bytes) {
-  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-  var value = bytes.toDouble();
-  var unitIndex = 0;
-
-  while (value >= 1024 && unitIndex < units.length - 1) {
-    value /= 1024;
-    unitIndex += 1;
-  }
-
-  final decimals = value >= 10 || unitIndex == 0 ? 0 : 1;
-  final formatted = value.toStringAsFixed(decimals);
-  return '$formatted ${units[unitIndex]}';
 }
 
 TransferResultViewData _buildSendTransferResultViewData({
@@ -463,7 +450,7 @@ TransferResultViewData _buildSendTransferResultViewData({
     TransferResultOutcomeData.failed => TransferResultViewData(
       outcome: outcome,
       title: 'Transfer failed',
-      message: _sendFailureMessage(summary.statusMessage),
+      message: sendFailureMessage(summary.statusMessage),
       primaryAction: TransferResultPrimaryActionData.tryAgain,
     ),
   };
@@ -497,48 +484,10 @@ TransferResultViewData _buildReceiveTransferResultViewData({
     TransferResultOutcomeData.failed => TransferResultViewData(
       outcome: outcome,
       title: 'Couldn\'t finish receiving files',
-      message: _receiveFailureMessage(summary.statusMessage),
+      message: receiveFailureMessage(summary.statusMessage),
       primaryAction: TransferResultPrimaryActionData.done,
     ),
   };
-}
-
-String _sendFailureMessage(String rawMessage) {
-  if (_isHumanReadableTransferMessage(rawMessage)) {
-    return rawMessage;
-  }
-  return 'Drift couldn\'t finish sending the files. Try again.';
-}
-
-String _receiveFailureMessage(String rawMessage) {
-  if (_isHumanReadableTransferMessage(rawMessage)) {
-    return rawMessage;
-  }
-  return 'Drift couldn\'t save all incoming files successfully.';
-}
-
-bool _isHumanReadableTransferMessage(String message) {
-  final trimmed = message.trim();
-  if (trimmed.isEmpty) {
-    return false;
-  }
-  if (trimmed.contains('\n')) {
-    return false;
-  }
-  if (trimmed.length > 140) {
-    return false;
-  }
-
-  const noisyFragments = <String>[
-    'Exception',
-    'StackTrace',
-    'socketexception',
-    'typeerror',
-  ];
-  final lower = trimmed.toLowerCase();
-  return !noisyFragments.any(
-    (fragment) => lower.contains(fragment.toLowerCase()),
-  );
 }
 
 sealed class ShellSessionState {

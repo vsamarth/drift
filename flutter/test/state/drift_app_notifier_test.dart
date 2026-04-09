@@ -675,6 +675,7 @@ void main() {
     await _flushAsyncWork(tester);
   });
 
+  // Send-flow coverage will peel into feature-specific tests as the rewrite progresses.
   testWidgets('starting send requires explicit action before transfer state', (
     tester,
   ) async {
@@ -906,6 +907,7 @@ void main() {
     );
   });
 
+  // Receive-flow coverage will peel into feature-specific tests as the rewrite progresses.
   testWidgets(
     'incoming offers move to review and accept/decline use receiver service',
     (tester) async {

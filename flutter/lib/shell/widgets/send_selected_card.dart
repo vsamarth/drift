@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/models/transfer_models.dart';
 import '../../core/theme/drift_theme.dart';
+import '../../shared/formatting/byte_format.dart';
 import '../../state/drift_providers.dart';
 import 'receive_code_field.dart';
 
@@ -328,18 +329,7 @@ class _SelectedItemsSectionState extends ConsumerState<SelectedItemsSection> {
   String _selectionSummaryLabel({required int count, required int totalBytes}) {
     final fileLabel = count == 1 ? '1 file' : '$count files';
     if (count == 0 || totalBytes <= 0) return fileLabel;
-    return '$fileLabel, ${_formatBytes(totalBytes)}';
-  }
-
-  String _formatBytes(int bytes) {
-    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-    var value = bytes.toDouble();
-    var unitIndex = 0;
-    while (value >= 1024 && unitIndex < units.length - 1) {
-      value /= 1024;
-      unitIndex += 1;
-    }
-    return '${value.toStringAsFixed(value >= 10 ? 0 : 1)} ${units[unitIndex]}';
+    return '$fileLabel, ${formatBytes(totalBytes)}';
   }
 }
 

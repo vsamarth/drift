@@ -9,6 +9,8 @@ import '../platform/send_item_source.dart';
 import '../platform/send_transfer_source.dart';
 import '../src/rust/api/receiver.dart' as rust_receiver;
 import '../src/rust/api/transfer.dart' as rust_transfer;
+import '../features/settings/settings_state.dart';
+import '../features/settings/settings_providers.dart';
 import '../state/drift_sample_data.dart';
 import 'app_identity.dart';
 import 'drift_dependencies.dart';
@@ -68,6 +70,7 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
 
     _startReceiverSubscriptions();
     Future<void>.microtask(_syncDiscoverabilityPolicy);
+    ref.listen(settingsControllerProvider, _onSettingsStateChanged);
 
     return DriftAppState(
       identity: _identity,
@@ -76,6 +79,20 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
       animateSendingConnection: _animateSendingConnection,
       sendSetupErrorMessage: null,
     );
+  }
+
+  void _onSettingsStateChanged(SettingsState? previous, SettingsState next) {
+    if (previous?.identity == next.identity) {
+      return;
+    }
+
+    _identity = next.identity;
+    state = state.copyWith(
+      identity: next.identity,
+      receiverBadge: const ReceiverBadgeState.registering(),
+    );
+    _startReceiverSubscriptions();
+    _syncSessionPolicies();
   }
 
   Future<void> saveSettings({

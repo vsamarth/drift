@@ -6,6 +6,8 @@ Drift is a cross-platform file transfer application that leverages **Flutter** f
 
 Drift is built with a clear separation between the UI and the core logic:
 
+> Migration note: the Flutter app is currently being rewritten toward feature-owned controllers and states. The existing global coordinator is still the live path today, but it is treated as a transitional layer while the send, receive, and settings features are extracted.
+
 -   **Frontend (Flutter):** Uses **Riverpod** for state management. The UI is a state-driven "Shell" that adapts based on whether the app is idle, preparing a transfer, or actively sending/receiving.
 -   **Backend (Rust):** Handles the heavy lifting, including LAN discovery (mDNS and UDP), secure networking, and high-performance file I/O. This ensures consistent behavior and speed across all supported platforms.
 -   **Bridge (`flutter_rust_bridge`):** Facilitates communication between Dart and Rust. It allows the Flutter UI to trigger Rust functions and receive asynchronous updates (like transfer progress) via Dart streams.

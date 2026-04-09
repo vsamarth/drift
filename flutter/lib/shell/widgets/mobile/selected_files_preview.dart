@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../core/models/transfer_models.dart';
 import '../../../core/theme/drift_theme.dart';
+import '../../../shared/formatting/byte_format.dart';
 import '../preview_list.dart';
 
 class SelectedFilesPreview extends StatelessWidget {
@@ -24,22 +25,7 @@ class SelectedFilesPreview extends StatelessWidget {
       return count == 1 ? '1 file ready' : '$count files ready';
     }
 
-    return '$fileLabel, ${_formatBytes(totalBytes)}';
-  }
-
-  String _formatBytes(int bytes) {
-    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-    var value = bytes.toDouble();
-    var unitIndex = 0;
-
-    while (value >= 1024 && unitIndex < units.length - 1) {
-      value /= 1024;
-      unitIndex += 1;
-    }
-
-    final decimals = value >= 10 || unitIndex == 0 ? 0 : 1;
-    final formatted = value.toStringAsFixed(decimals);
-    return '$formatted ${units[unitIndex]}';
+    return '$fileLabel, ${formatBytes(totalBytes)}';
   }
 
   double _previewHeightFor(BuildContext context) {
