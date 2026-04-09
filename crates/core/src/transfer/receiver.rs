@@ -33,7 +33,7 @@ use super::path::{
 use super::progress::ProgressTracker;
 use super::record::{TransferRecord, TransferStatus};
 use super::types::{
-    wait_for_cancel, TransferOutcome, TransferPhase, TransferPlan, TransferSnapshot,
+    TransferOutcome, TransferPhase, TransferPlan, TransferSnapshot, wait_for_cancel,
 };
 
 type Result<T> = TransferResult<T>;
@@ -283,7 +283,10 @@ async fn run_session(
 
     let mut record = match TransferRecord::load(&record_dir) {
         Ok(r) => {
-            info!("found existing transfer record for {}, resuming", receiver_offer.collection_hash);
+            info!(
+                "found existing transfer record for {}, resuming",
+                receiver_offer.collection_hash
+            );
             r
         }
         Err(_) => {
@@ -293,7 +296,8 @@ async fn run_session(
                 crate::fs_plan::ConflictPolicy::Rename, // Default
                 offer.manifest.clone(),
             );
-            r.save(&record_dir).map_err(|e| TransferError::other("saving initial record", e))?;
+            r.save(&record_dir)
+                .map_err(|e| TransferError::other("saving initial record", e))?;
             r
         }
     };
@@ -306,8 +310,14 @@ async fn run_session(
     )
     .await?;
 
-    let (transfer_outcome, mut tracker) = if matches!(record.status, TransferStatus::DataComplete | TransferStatus::Finalizing | TransferStatus::Completed) {
-        info!("data already complete for {}, skipping download", receiver_offer.collection_hash);
+    let (transfer_outcome, mut tracker) = if matches!(
+        record.status,
+        TransferStatus::DataComplete | TransferStatus::Finalizing | TransferStatus::Completed
+    ) {
+        info!(
+            "data already complete for {}, skipping download",
+            receiver_offer.collection_hash
+        );
         let tracker = ProgressTracker::new(plan.clone());
         (TransferOutcome::Completed, tracker)
     } else {
@@ -387,34 +397,37 @@ async fn run_session(
         }
 
         record.status = TransferStatus::DataComplete;
-        record.save(&record_dir).map_err(|e| TransferError::other("saving record after download", e))?;
+        record
+            .save(&record_dir)
+            .map_err(|e| TransferError::other("saving record after download", e))?;
         let _ = blob_download.shutdown().await;
         (outcome, tracker)
     };
 
     // --- Phase 5: Export & Acknowledgement ---
-    let mut progress_send = if !matches!(transfer_outcome, TransferOutcome::Completed) {
-        // If we didn't just finish a transfer, we might need to open a progress stream
-        // but wait, if it's resume, the sender might not even be expecting progress yet
-        // or they are waiting for our Accept.
-        // For simplicity in v1 resume: we assume we are in a fresh handshake.
-        connection
-            .open_uni()
-            .await
-            .map_err(|source| TransferError::other("opening progress stream for export", source))?
-    } else {
-        // In the normal flow, we'd already have progress_send.
-        // I need to refactor this slightly to make progress_send available.
-        // Actually, let's just re-open it or use an Option.
-        connection
-            .open_uni()
-            .await
-            .map_err(|source| TransferError::other("opening progress stream for export", source))?
-    };
+    let mut progress_send =
+        if !matches!(transfer_outcome, TransferOutcome::Completed) {
+            // If we didn't just finish a transfer, we might need to open a progress stream
+            // but wait, if it's resume, the sender might not even be expecting progress yet
+            // or they are waiting for our Accept.
+            // For simplicity in v1 resume: we assume we are in a fresh handshake.
+            connection.open_uni().await.map_err(|source| {
+                TransferError::other("opening progress stream for export", source)
+            })?
+        } else {
+            // In the normal flow, we'd already have progress_send.
+            // I need to refactor this slightly to make progress_send available.
+            // Actually, let's just re-open it or use an Option.
+            connection.open_uni().await.map_err(|source| {
+                TransferError::other("opening progress stream for export", source)
+            })?
+        };
 
     info!(%session_id, "exporting files to {}", request.out_dir.display());
     record.status = TransferStatus::Finalizing;
-    record.save(&record_dir).map_err(|e| TransferError::other("saving record before export", e))?;
+    record
+        .save(&record_dir)
+        .map_err(|e| TransferError::other("saving record before export", e))?;
 
     tracker.mark_finalizing(std::time::Instant::now());
     let finalizing_snapshot = tracker.snapshot(std::time::Instant::now());
@@ -434,7 +447,9 @@ async fn run_session(
     )
     .await;
 
-    let blob_store = FsStore::load(record_dir.join("store")).await.map_err(|e| TransferError::other("loading blob store for export", e))?;
+    let blob_store = FsStore::load(record_dir.join("store"))
+        .await
+        .map_err(|e| TransferError::other("loading blob store for export", e))?;
 
     let final_snapshot = tokio::select! {
         res = export_downloaded_collection(&blob_store, receiver_offer.collection_hash, &expected_transfer_files, &mut record, &record_dir) => {
@@ -448,7 +463,9 @@ async fn run_session(
     };
 
     record.status = TransferStatus::Completed;
-    record.save(&record_dir).map_err(|e| TransferError::other("saving final record", e))?;
+    record
+        .save(&record_dir)
+        .map_err(|e| TransferError::other("saving final record", e))?;
 
     let _ = protocol_wire::write_receiver_message(
         &mut progress_send,

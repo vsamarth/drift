@@ -53,15 +53,15 @@ pub fn transfers_dir() -> std::result::Result<PathBuf, TransferPathError> {
     if let Ok(overridden) = std::env::var("DRIFT_TRANSFERS_DIR") {
         return Ok(PathBuf::from(overridden));
     }
-    let home = dirs::home_dir().ok_or_else(|| {
-        TransferPathError::CurrentDirectory {
-            source: std::io::Error::new(std::io::ErrorKind::NotFound, "home directory not found"),
-        }
+    let home = dirs::home_dir().ok_or_else(|| TransferPathError::CurrentDirectory {
+        source: std::io::Error::new(std::io::ErrorKind::NotFound, "home directory not found"),
     })?;
     Ok(home.join(".drift").join("transfers"))
 }
 
-pub fn record_dir(collection_hash: iroh_blobs::Hash) -> std::result::Result<PathBuf, TransferPathError> {
+pub fn record_dir(
+    collection_hash: iroh_blobs::Hash,
+) -> std::result::Result<PathBuf, TransferPathError> {
     Ok(transfers_dir()?.join(collection_hash.to_hex()))
 }
 

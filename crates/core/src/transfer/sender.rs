@@ -2,10 +2,8 @@
 
 use iroh::{Endpoint, EndpointAddr, EndpointId, endpoint::Connection};
 use rand::random;
+use tokio::sync::{mpsc, oneshot, watch};
 use tokio::time::Duration;
-use tokio::{
-    sync::{mpsc, oneshot, watch},
-};
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tracing::instrument;
 
@@ -78,7 +76,13 @@ pub struct SenderRun {
 }
 
 impl SenderRun {
-    pub fn into_parts(self) -> (SenderEventStream, watch::Sender<bool>, oneshot::Receiver<TransferResult<TransferOutcome>>) {
+    pub fn into_parts(
+        self,
+    ) -> (
+        SenderEventStream,
+        watch::Sender<bool>,
+        oneshot::Receiver<TransferResult<TransferOutcome>>,
+    ) {
         (self.events, self.cancel_tx, self.outcome_rx)
     }
 }
@@ -91,10 +95,7 @@ struct SenderEventSink {
 
 impl SenderEventSink {
     fn new(session_id: String, tx: Option<mpsc::UnboundedSender<SenderEvent>>) -> Self {
-        Self {
-            session_id,
-            tx,
-        }
+        Self { session_id, tx }
     }
     fn emit(&self, e: SenderEvent) {
         if let Some(tx) = &self.tx {
@@ -184,7 +185,8 @@ impl SenderSession {
             session_id: self.session_id.clone(),
             peer_endpoint_id: self.request.peer_endpoint_id,
         });
-        let connection = self.endpoint
+        let connection = self
+            .endpoint
             .connect(self.request.peer_endpoint_addr.clone(), ALPN)
             .await
             .map_err(|source| TransferError::other("connecting to peer", source))?;

@@ -149,9 +149,21 @@ where
         Self { endpoint, strategy }
     }
 
-    pub async fn start(&self, root_dir: PathBuf, ticket: BlobTicket, is_temp: bool) -> Result<BlobDownloadSession> {
+    pub async fn start(
+        &self,
+        root_dir: PathBuf,
+        ticket: BlobTicket,
+        is_temp: bool,
+    ) -> Result<BlobDownloadSession> {
         if is_temp {
-            tokio::fs::create_dir_all(&root_dir).await.map_err(|source| BlobError::scratch_dir_create(root_dir.clone(), BlobTextError::new(source.to_string())))?;
+            tokio::fs::create_dir_all(&root_dir)
+                .await
+                .map_err(|source| {
+                    BlobError::scratch_dir_create(
+                        root_dir.clone(),
+                        BlobTextError::new(source.to_string()),
+                    )
+                })?;
         }
         let store = Arc::new(
             FsStore::load(&root_dir)

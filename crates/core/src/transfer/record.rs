@@ -1,9 +1,9 @@
+use crate::fs_plan::ConflictPolicy;
+use crate::protocol::message::TransferManifest;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
-use std::path::{Path, PathBuf};
-use crate::protocol::message::TransferManifest;
-use crate::fs_plan::ConflictPolicy;
 use std::fs;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum TransferStatus {
@@ -50,12 +50,14 @@ impl TransferRecord {
     pub fn load(dir: &Path) -> std::io::Result<Self> {
         let path = dir.join("record.json");
         let content = fs::read_to_string(path)?;
-        serde_json::from_str(&content).map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
+        serde_json::from_str(&content)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
     }
 
     pub fn save(&self, dir: &Path) -> std::io::Result<()> {
         let path = dir.join("record.json");
-        let content = serde_json::to_string_pretty(self).map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+        let content = serde_json::to_string_pretty(self)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
         fs::write(path, content)
     }
 }

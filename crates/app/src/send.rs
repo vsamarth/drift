@@ -301,7 +301,9 @@ impl SendSession {
             .alpns(vec![drift_core::protocol::ALPN.to_vec()])
             .bind()
             .await
-            .map_err(|e| AppError::Internal { message: format!("failed to bind sender endpoint: {e}") })?;
+            .map_err(|e| AppError::Internal {
+                message: format!("failed to bind sender endpoint: {e}"),
+            })?;
 
         let identity = drift_core::protocol::Identity {
             role: drift_core::protocol::TransferRole::Sender,
