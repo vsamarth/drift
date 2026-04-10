@@ -12,7 +12,6 @@ import '../features/send/send_nearby_coordinator.dart';
 import '../features/send/send_selection_coordinator.dart';
 import '../features/send/send_flow_actions.dart' as send_flow_actions;
 import '../features/send/send_session_reducer.dart';
-import '../features/send/send_shell_actions.dart' as send_shell_actions;
 import '../features/send/send_transfer_coordinator.dart';
 import '../features/send/send_mapper.dart';
 import '../src/rust/api/receiver.dart' as rust_receiver;
@@ -148,47 +147,6 @@ class DriftAppNotifier extends Notifier<DriftAppState>
     _setSession(send_flow_actions.clearSendFlowSession());
   }
 
-  void updateSendDestinationCode(String value) {
-    final next = send_shell_actions.updateSendDestinationCode(
-      _draftSession,
-      value,
-    );
-    if (next == null) {
-      return;
-    }
-    _setSession(next);
-  }
-
-  void clearSendDestinationCode() {
-    final next = send_shell_actions.clearSendDestinationCode(_draftSession);
-    if (next == null) {
-      return;
-    }
-    _setSession(next);
-  }
-
-  void startSend() {
-    final intent = send_flow_actions.buildSendStartIntent(state);
-    if (intent == null) {
-      return;
-    }
-
-    if (intent.ticket != null && intent.destination != null) {
-      _sendTransferCoordinator.startSendTransferWithTicket(
-        host: this,
-        destination: intent.destination!,
-        ticket: intent.ticket!,
-        onUpdate: _applySendUpdate,
-      );
-    } else if (intent.normalizedCode != null) {
-      _sendTransferCoordinator.startSendTransfer(
-        host: this,
-        normalizedCode: intent.normalizedCode!,
-        onUpdate: _applySendUpdate,
-      );
-    }
-  }
-
   void acceptReceiveOffer() {
     final session = state.session;
     if (session is! ReceiveOfferSession) {
@@ -261,60 +219,6 @@ class DriftAppNotifier extends Notifier<DriftAppState>
     _clearReceiveMetricState();
     state = state.copyWith(clearSendSetupErrorMessage: true);
     _setSession(const IdleSession());
-  }
-
-  void handleTransferResultPrimaryAction() {
-    switch (send_flow_actions.sendPrimaryActionRoute(state.transferResult)) {
-      case send_flow_actions.SendFlowRoute.resetShell:
-        resetShell();
-      case send_flow_actions.SendFlowRoute.restoreDraft:
-        _restoreSendDraft(destinationCode: state.sendDestinationCode);
-      case send_flow_actions.SendFlowRoute.returnToSelection:
-        _returnToSendSelection();
-      case send_flow_actions.SendFlowRoute.none:
-        return;
-    }
-  }
-
-  void goBack() {
-    final session = state.session;
-    switch (session) {
-      case ReceiveOfferSession(:final decisionPending):
-        if (decisionPending) {
-          unawaited(_respondToIncomingOffer(accept: false));
-        }
-        _setSession(const IdleSession());
-      case ReceiveResultSession():
-        _setSession(const IdleSession());
-      case SendDraftSession():
-      case SendTransferSession():
-      case SendResultSession():
-        switch (send_flow_actions.sendGoBackRoute(session)) {
-          case send_flow_actions.SendFlowRoute.resetShell:
-            _setSession(const IdleSession());
-            return;
-          case send_flow_actions.SendFlowRoute.returnToSelection:
-            _returnToSendSelection();
-            return;
-          case send_flow_actions.SendFlowRoute.restoreDraft:
-          case send_flow_actions.SendFlowRoute.none:
-            return;
-        }
-      case ReceiveTransferSession():
-      case IdleSession():
-        return;
-    }
-  }
-
-  void selectNearbyDestination(SendDestinationViewData destination) {
-    final next = send_shell_actions.selectNearbyDestination(
-      _draftSession,
-      destination,
-    );
-    if (next == null) {
-      return;
-    }
-    _setSession(next);
   }
 
   @override
@@ -451,9 +355,7 @@ class DriftAppNotifier extends Notifier<DriftAppState>
       return;
     }
     _setSession(
-      draft.copyWith(
-        items: List<TransferItemViewData>.unmodifiable(items),
-      ),
+      draft.copyWith(items: List<TransferItemViewData>.unmodifiable(items)),
     );
   }
 
@@ -860,22 +762,6 @@ class DriftAppNotifier extends Notifier<DriftAppState>
         errorMessage: 'Drift couldn\'t cancel the transfer.',
       );
     }
-  }
-
-  void _returnToSendSelection() {
-    _restoreSendDraft();
-  }
-
-  void _restoreSendDraft({String destinationCode = ''}) {
-    _cancelActiveSendTransfer();
-    _clearSendMetricState();
-    _setSession(
-      send_shell_actions.restoreSendDraft(
-        state,
-        destinationCode: destinationCode,
-      ),
-    );
-    _scheduleNearbyScanning();
   }
 
   void _scheduleNearbyScanning() {

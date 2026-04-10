@@ -100,8 +100,6 @@ void main() {
     expect(transferSource.lastRequest?.paths, ['sample.txt', 'notes.pdf']);
 
     call((controller) => controller.cancelSendInProgress());
-    call((controller) => controller.handleTransferResultPrimaryAction());
     expect(notifier.cancelSendInProgressCalls, 1);
-    expect(notifier.handleTransferResultPrimaryActionCalls, 1);
   });
 }

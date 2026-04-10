@@ -96,12 +96,10 @@ class FakeSendAppNotifier extends DriftAppNotifier {
     removeSendItemCalls += 1;
   }
 
-  @override
   void updateSendDestinationCode(String value) {
     updateSendDestinationCodeCalls += 1;
   }
 
-  @override
   void clearSendDestinationCode() {
     clearSendDestinationCodeCalls += 1;
   }
@@ -207,7 +205,6 @@ class FakeSendAppNotifier extends DriftAppNotifier {
     setState(_state.copyWith(sendSetupErrorMessage: userMessage));
   }
 
-  @override
   void startSend() {
     startSendCalls += 1;
   }
@@ -217,12 +214,10 @@ class FakeSendAppNotifier extends DriftAppNotifier {
     cancelSendInProgressCalls += 1;
   }
 
-  @override
   void handleTransferResultPrimaryAction() {
     handleTransferResultPrimaryActionCalls += 1;
   }
 
-  @override
   void selectNearbyDestination(SendDestinationViewData destination) {
     selectNearbyDestinationCalls += 1;
     final current = _state.session;

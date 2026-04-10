@@ -133,9 +133,50 @@ class SendController extends Notifier<SendState> {
   }
 
   void handleTransferResultPrimaryAction() {
-    ref
-        .read(driftAppNotifierProvider.notifier)
-        .handleTransferResultPrimaryAction();
+    final state = ref.read(driftAppNotifierProvider);
+    if (state.session is SendResultSession) {
+      switch (send_flow_actions.sendPrimaryActionRoute(state.transferResult)) {
+        case send_flow_actions.SendFlowRoute.resetShell:
+          ref.read(driftAppNotifierProvider.notifier).resetShell();
+          return;
+        case send_flow_actions.SendFlowRoute.restoreDraft:
+          _restoreSendDraft(destinationCode: state.sendDestinationCode);
+          return;
+        case send_flow_actions.SendFlowRoute.returnToSelection:
+          _restoreSendDraft();
+          return;
+        case send_flow_actions.SendFlowRoute.none:
+          return;
+      }
+    }
+
+    if (state.transferResult != null) {
+      ref.read(driftAppNotifierProvider.notifier).resetShell();
+    }
+  }
+
+  void goBack() {
+    final state = ref.read(driftAppNotifierProvider);
+    switch (state.session) {
+      case SendDraftSession():
+        ref.read(driftAppNotifierProvider.notifier).resetShell();
+        return;
+      case SendTransferSession() || SendResultSession():
+        _restoreSendDraft();
+        return;
+      case ReceiveOfferSession(:final decisionPending):
+        if (decisionPending) {
+          ref.read(driftAppNotifierProvider.notifier).declineReceiveOffer();
+        }
+        ref.read(driftAppNotifierProvider.notifier).resetShell();
+        return;
+      case ReceiveResultSession():
+        ref.read(driftAppNotifierProvider.notifier).resetShell();
+        return;
+      case ReceiveTransferSession():
+      case IdleSession():
+        return;
+    }
   }
 
   void selectNearbyDestination(SendDestinationViewData destination) {
@@ -150,5 +191,13 @@ class SendController extends Notifier<SendState> {
   SendDraftSession? _currentDraft() {
     final session = ref.read(driftAppNotifierProvider).session;
     return session is SendDraftSession ? session : null;
+  }
+
+  void _restoreSendDraft({String destinationCode = ''}) {
+    final next = send_shell_actions.restoreSendDraft(
+      ref.read(driftAppNotifierProvider),
+      destinationCode: destinationCode,
+    );
+    ref.read(driftAppNotifierProvider.notifier).applySendDraftSession(next);
   }
 }
