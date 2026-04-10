@@ -11,6 +11,7 @@ import '../features/send/send_selection_builder.dart';
 import '../features/send/send_nearby_coordinator.dart';
 import '../features/send/send_selection_coordinator.dart';
 import '../features/send/send_session_reducer.dart';
+import '../features/send/send_shell_actions.dart' as send_shell_actions;
 import '../features/send/send_transfer_coordinator.dart';
 import '../features/send/send_mapper.dart';
 import '../src/rust/api/receiver.dart' as rust_receiver;
@@ -147,28 +148,22 @@ class DriftAppNotifier extends Notifier<DriftAppState>
   }
 
   void updateSendDestinationCode(String value) {
-    final draft = _draftSession;
-    if (draft == null) {
-      return;
-    }
-    final normalized = value.toUpperCase().replaceAll(RegExp(r'[^A-Z0-9]'), '');
-    if (normalized == draft.destinationCode) {
-      return;
-    }
-    _setSession(
-      draft.copyWith(
-        destinationCode: normalized,
-        clearSelectedDestination: true,
-      ),
+    final next = send_shell_actions.updateSendDestinationCode(
+      _draftSession,
+      value,
     );
+    if (next == null) {
+      return;
+    }
+    _setSession(next);
   }
 
   void clearSendDestinationCode() {
-    final draft = _draftSession;
-    if (draft == null) {
+    final next = send_shell_actions.clearSendDestinationCode(_draftSession);
+    if (next == null) {
       return;
     }
-    _setSession(draft.copyWith(destinationCode: ''));
+    _setSession(next);
   }
 
   void startSend() {
@@ -317,21 +312,14 @@ class DriftAppNotifier extends Notifier<DriftAppState>
   }
 
   void selectNearbyDestination(SendDestinationViewData destination) {
-    final draft = _draftSession;
-    if (draft == null) {
+    final next = send_shell_actions.selectNearbyDestination(
+      _draftSession,
+      destination,
+    );
+    if (next == null) {
       return;
     }
-    // Toggle selection
-    if (draft.selectedDestination == destination) {
-      _setSession(draft.copyWith(clearSelectedDestination: true));
-    } else {
-      _setSession(
-        draft.copyWith(
-          selectedDestination: destination,
-          destinationCode: '', // Clear code if nearby is selected
-        ),
-      );
-    }
+    _setSession(next);
   }
 
   @override
@@ -887,12 +875,8 @@ class DriftAppNotifier extends Notifier<DriftAppState>
     _cancelActiveSendTransfer();
     _clearSendMetricState();
     _setSession(
-      SendDraftSession(
-        items: state.sendItems,
-        isInspecting: false,
-        nearbyDestinations: const [],
-        nearbyScanInFlight: false,
-        nearbyScanCompletedOnce: false,
+      send_shell_actions.restoreSendDraft(
+        state,
         destinationCode: destinationCode,
       ),
     );
