@@ -8,6 +8,8 @@ import 'nearby_discovery_source.dart';
 import 'receiver_service_source.dart';
 import 'settings_store.dart';
 
+// Temporary low-level registry. New UI wiring should prefer feature provider
+// surfaces in flutter/lib/features/ as the rewrite progresses.
 final driftSettingsStoreProvider = Provider<DriftSettingsStore>(
   (ref) => DriftSettingsStore.inMemory(),
 );

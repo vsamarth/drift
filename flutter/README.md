@@ -6,7 +6,9 @@ Drift is a cross-platform file transfer application that leverages **Flutter** f
 
 Drift is built with a clear separation between the UI and the core logic:
 
--   **Frontend (Flutter):** Uses **Riverpod** for state management. The UI is a state-driven "Shell" that adapts based on whether the app is idle, preparing a transfer, or actively sending/receiving.
+> Architecture note: the Flutter app now uses feature-owned controllers and state slices for send, receive, and settings, with a small shell composition layer tying them together. The legacy notifier still exists as a compatibility bridge for a few behaviors, but it is no longer the primary architecture.
+
+-   **Frontend (Flutter):** Uses **Riverpod** for state management. The UI is a state-driven shell that composes send, receive, and settings feature state into the active screen.
 -   **Backend (Rust):** Handles the heavy lifting, including LAN discovery (mDNS and UDP), secure networking, and high-performance file I/O. This ensures consistent behavior and speed across all supported platforms.
 -   **Bridge (`flutter_rust_bridge`):** Facilitates communication between Dart and Rust. It allows the Flutter UI to trigger Rust functions and receive asynchronous updates (like transfer progress) via Dart streams.
 
@@ -14,7 +16,7 @@ Drift is built with a clear separation between the UI and the core logic:
 
 1.  **Initialization:** On startup, the Flutter app initializes the Rust library (`RustLib.init()` in `lib/main.dart`).
 2.  **Discovery:** The app automatically scans the local network using mDNS (`_drift._udp`) and UDP pings (on port 47474) to find other Drift-enabled devices.
-3.  **State Management:** The `DriftAppNotifier` manages the application's lifecycle, transitioning between session states (e.g., `Idle`, `SendDraft`, `Transferring`) based on user actions and network events.
+3.  **State Management:** Feature controllers own send, receive, and settings behavior, while the shell composition layer derives the active screen from those feature states. `DriftAppNotifier` still handles some compatibility-side effects and transfer orchestration.
 4.  **Transfer:** When a transfer starts, the Rust backend manages the data stream, providing real-time progress updates back to the Flutter UI for display.
 
 ## Project structure

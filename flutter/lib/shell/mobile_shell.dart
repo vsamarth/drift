@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/theme/drift_theme.dart';
+import 'app_shell_providers.dart';
+import 'shell_routing.dart';
 import '../state/drift_app_state.dart';
 import '../state/drift_providers.dart';
+import '../features/settings/widgets/mobile_settings_page.dart';
 import 'widgets/mobile/mobile_identity_card.dart';
-import 'widgets/settings_panel.dart';
 import 'widgets/mobile/select_files_card.dart';
 import 'widgets/shell_header.dart';
 import 'widgets/shell_state_content.dart';
@@ -22,16 +24,17 @@ class _MobileShellState extends ConsumerState<MobileShell> {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         fullscreenDialog: true,
-        builder: (context) => const _MobileSettingsPage(),
+        builder: (context) => const MobileSettingsPage(),
       ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    final shellState = ref.watch(appShellStateProvider);
     final state = ref.watch(driftAppNotifierProvider);
     final notifier = ref.read(driftAppNotifierProvider.notifier);
-    final isIdle = state.session is IdleSession;
+    final isIdle = shellState.view == ShellView.sendIdle;
 
     return Scaffold(
       backgroundColor: kBg,
@@ -108,7 +111,7 @@ class _MobileShellState extends ConsumerState<MobileShell> {
                         ),
                         Expanded(
                           child: ShellStateContent(
-                            view: state.shellView,
+                            view: shellState.view,
                             availableHeight: constraints.maxHeight,
                           ),
                         ),
@@ -119,52 +122,6 @@ class _MobileShellState extends ConsumerState<MobileShell> {
               ),
             ),
         ],
-      ),
-    );
-  }
-}
-
-class _MobileSettingsPage extends StatelessWidget {
-  const _MobileSettingsPage();
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: kBg,
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                children: [
-                  IconButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    icon: const Icon(Icons.close_rounded),
-                    tooltip: 'Close',
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    'Settings',
-                    style: driftSans(
-                      fontSize: 22,
-                      fontWeight: FontWeight.w700,
-                      color: kInk,
-                      letterSpacing: -0.35,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Expanded(
-                child: SettingsPanel(
-                  availableHeight: MediaQuery.of(context).size.height,
-                ),
-              ),
-            ],
-          ),
-        ),
       ),
     );
   }

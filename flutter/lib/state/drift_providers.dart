@@ -1,6 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../shell/shell_routing.dart';
 import 'drift_app_notifier.dart';
 import 'drift_app_state.dart';
 import 'receiver_service_source.dart';
@@ -9,22 +8,6 @@ export 'drift_dependencies.dart';
 
 final driftAppNotifierProvider =
     NotifierProvider<DriftAppNotifier, DriftAppState>(DriftAppNotifier.new);
-
-final shellViewProvider = Provider<ShellView>(
-  (ref) =>
-      ref.watch(driftAppNotifierProvider.select((state) => state.shellView)),
-);
-
-final showShellBackButtonProvider = Provider<bool>(
-  (ref) => ref.watch(
-    driftAppNotifierProvider.select((state) => state.showShellBackButton),
-  ),
-);
-
-final canGoBackProvider = Provider<bool>(
-  (ref) =>
-      ref.watch(driftAppNotifierProvider.select((state) => state.canGoBack)),
-);
 
 final idleBadgeProvider = Provider<ReceiverBadgeState>(
   (ref) => ref.watch(

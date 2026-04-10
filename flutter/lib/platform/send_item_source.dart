@@ -1,6 +1,7 @@
 import 'package:file_selector/file_selector.dart';
 
 import '../core/models/transfer_models.dart';
+import '../shared/formatting/byte_format.dart';
 import '../src/rust/api/error_bridge.dart';
 import '../src/rust/api/preview.dart' as rust_preview;
 
@@ -144,7 +145,7 @@ class LocalSendItemSource implements SendItemSource {
       path: item.path,
       size: item.isDirectory
           ? _formatDirectorySummary(fileCount, totalSize)
-          : _formatBytes(totalSize),
+          : formatBytes(totalSize),
       kind: item.isDirectory ? TransferItemKind.folder : TransferItemKind.file,
       sizeBytes: totalSize,
     );
@@ -155,21 +156,6 @@ class LocalSendItemSource implements SendItemSource {
     if (fileCount == 0) {
       return 'Empty folder';
     }
-    return '$fileLabel • ${_formatBytes(totalSize)}';
-  }
-
-  static String _formatBytes(int bytes) {
-    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-    var value = bytes.toDouble();
-    var unitIndex = 0;
-
-    while (value >= 1024 && unitIndex < units.length - 1) {
-      value /= 1024;
-      unitIndex += 1;
-    }
-
-    final decimals = value >= 10 || unitIndex == 0 ? 0 : 1;
-    final formatted = value.toStringAsFixed(decimals);
-    return '$formatted ${units[unitIndex]}';
+    return '$fileLabel • ${formatBytes(totalSize)}';
   }
 }
