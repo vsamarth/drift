@@ -45,7 +45,7 @@ class TransfersServiceController extends Notifier<TransferSessionState> {
           );
           return;
         case rust_receiver.ReceiverTransferPhase.completed:
-          final offer = _incomingOffer ?? _mapIncomingOffer(event);
+          final offer = _mapIncomingOffer(event);
           state = TransferSessionState.completed(
             offer: offer,
             result: _mapResult(event),
@@ -53,7 +53,7 @@ class TransfersServiceController extends Notifier<TransferSessionState> {
           _incomingOffer = null;
           return;
         case rust_receiver.ReceiverTransferPhase.failed:
-          final offer = _incomingOffer ?? _mapIncomingOffer(event);
+          final offer = _mapIncomingOffer(event);
           state = TransferSessionState.failed(
             offer: offer,
             errorMessage: event.error?.message ?? event.statusMessage,
@@ -100,6 +100,11 @@ class TransfersServiceController extends Notifier<TransferSessionState> {
     state = const TransferSessionState.idle();
     _incomingOffer = null;
     return source.cancelTransfer();
+  }
+
+  void dismissTransferResult() {
+    state = const TransferSessionState.idle();
+    _incomingOffer = null;
   }
 
   TransferIncomingOffer _mapIncomingOffer(

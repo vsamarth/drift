@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../application/controller.dart';
 import '../application/service.dart';
 import '../application/state.dart';
+import 'widgets/completed_card.dart';
 import 'widgets/receiving_card.dart';
 import 'widgets/offer_card.dart';
 import 'widgets/empty_card.dart';
@@ -31,6 +32,12 @@ class TransfersFeature extends ConsumerWidget {
           animate: animateReview,
           onCancel: () =>
               ref.read(transfersServiceProvider.notifier).cancelTransfer(),
+        ),
+        TransferSessionPhase.completed => CompletedCard(
+          offer: state.incomingOffer!,
+          result: state.result!,
+          onDone: () =>
+              ref.read(transfersServiceProvider.notifier).dismissTransferResult(),
         ),
         _ => const EmptyTransfersCard(),
       },

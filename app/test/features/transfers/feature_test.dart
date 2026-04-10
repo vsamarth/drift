@@ -176,4 +176,82 @@ void main() {
     expect(find.text('No offers yet'), findsOneWidget);
     expect(find.text('Receiving'), findsNothing);
   });
+
+  testWidgets('completing a receiving transfer shows the completed state', (
+    tester,
+  ) async {
+    final source = FakeReceiverServiceSource();
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          transferReviewAnimationProvider.overrideWithValue(false),
+          receiverServiceSourceProvider.overrideWithValue(source),
+          transfersServiceSourceProvider.overrideWithValue(source),
+        ],
+        child: const MaterialApp(
+          home: Scaffold(
+            body: SizedBox(width: 440, height: 560, child: ReceiveFeature()),
+          ),
+        ),
+      ),
+    );
+
+    source.emitIncomingOffer(senderName: 'Maya');
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Save to Downloads'));
+    await tester.pumpAndSettle();
+
+    source.emitCompletedTransfer(
+      senderName: 'Maya',
+      destinationLabel: 'Pictures',
+      saveRootLabel: 'Downloads',
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Complete'), findsOneWidget);
+    expect(find.text('Transfer complete'), findsOneWidget);
+    expect(find.text('Pictures'), findsOneWidget);
+    expect(find.text('Done'), findsOneWidget);
+    expect(find.text('Receiving'), findsNothing);
+  });
+
+  testWidgets('done on a completed transfer returns to idle', (tester) async {
+    final source = FakeReceiverServiceSource();
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          transferReviewAnimationProvider.overrideWithValue(false),
+          receiverServiceSourceProvider.overrideWithValue(source),
+          transfersServiceSourceProvider.overrideWithValue(source),
+        ],
+        child: const MaterialApp(
+          home: Scaffold(
+            body: SizedBox(width: 440, height: 560, child: ReceiveFeature()),
+          ),
+        ),
+      ),
+    );
+
+    source.emitIncomingOffer(senderName: 'Maya');
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Save to Downloads'));
+    await tester.pumpAndSettle();
+
+    source.emitCompletedTransfer(
+      senderName: 'Maya',
+      destinationLabel: 'Pictures',
+      saveRootLabel: 'Downloads',
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Done'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('No offers yet'), findsOneWidget);
+    expect(find.text('Complete'), findsNothing);
+  });
 }

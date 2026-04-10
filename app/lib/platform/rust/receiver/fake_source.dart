@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import '../../../features/receive/application/state.dart';
+import '../../../src/rust/api/transfer.dart' as rust_transfer;
 import '../../../src/rust/api/receiver.dart' as rust_receiver;
 import 'source.dart';
 
@@ -95,6 +96,69 @@ class FakeReceiverServiceSource implements ReceiverServiceSource {
         bytesReceived: BigInt.zero,
         totalSizeLabel: '0 B',
         files: incomingFiles,
+        error: null,
+      ),
+    );
+  }
+
+  void emitCompletedTransfer({
+    required String senderName,
+    String senderDeviceType = 'laptop',
+    String destinationLabel = 'Downloads',
+    String saveRootLabel = 'Downloads',
+    String statusMessage = 'Transfer complete',
+  }) {
+    if (_incomingController.isClosed) {
+      return;
+    }
+    final completedFiles = lastIncomingFiles ??
+        [
+          rust_receiver.ReceiverTransferFile(
+            path: 'report.pdf',
+            size: BigInt.from(1024),
+          ),
+          rust_receiver.ReceiverTransferFile(
+            path: 'photo.jpg',
+            size: BigInt.from(2048),
+          ),
+        ];
+    lastIncomingSenderName = senderName;
+    lastIncomingFiles = completedFiles;
+    _incomingController.add(
+      rust_receiver.ReceiverTransferEvent(
+        phase: rust_receiver.ReceiverTransferPhase.completed,
+        senderName: senderName,
+        senderDeviceType: senderDeviceType,
+        destinationLabel: destinationLabel,
+        saveRootLabel: saveRootLabel,
+        statusMessage: statusMessage,
+        itemCount: BigInt.from(completedFiles.length),
+        totalSizeBytes: completedFiles.fold<BigInt>(
+          BigInt.zero,
+          (sum, file) => sum + file.size,
+        ),
+        bytesReceived: completedFiles.fold<BigInt>(
+          BigInt.zero,
+          (sum, file) => sum + file.size,
+        ),
+        snapshot: rust_transfer.TransferSnapshotData(
+          sessionId: 'completed-session',
+          phase: rust_transfer.TransferPhaseData.completed,
+          totalFiles: completedFiles.length,
+          completedFiles: completedFiles.length,
+          totalBytes: completedFiles.fold<BigInt>(
+            BigInt.zero,
+            (sum, file) => sum + file.size,
+          ),
+          bytesTransferred: completedFiles.fold<BigInt>(
+            BigInt.zero,
+            (sum, file) => sum + file.size,
+          ),
+          bytesPerSec: null,
+          etaSeconds: null,
+        ),
+        totalSizeLabel: '${completedFiles.fold<BigInt>(BigInt.zero, (sum, file) => sum + file.size)} B',
+        files: completedFiles,
         error: null,
       ),
     );
