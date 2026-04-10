@@ -2,47 +2,16 @@ import 'package:flutter/foundation.dart';
 
 import '../core/models/transfer_models.dart';
 import '../shared/formatting/byte_format.dart';
-import '../shared/formatting/transfer_message_format.dart';
 import '../src/rust/api/transfer.dart' as rust_transfer;
 import 'app_identity.dart';
 import 'receiver_service_source.dart';
+import '../features/send/send_flow_state.dart';
+import 'shell_session_state.dart';
+import 'transfer_result_state.dart';
 
-enum TransferResultOutcomeData { success, cancelled, declined, failed }
-
-enum TransferResultPrimaryActionData {
-  done,
-  tryAgain,
-  chooseAnotherDevice,
-  sendAgain,
-}
-
-@immutable
-class TransferResultViewData {
-  const TransferResultViewData({
-    required this.outcome,
-    required this.title,
-    required this.message,
-    this.metrics,
-    this.primaryAction,
-    this.secondaryLabel,
-  });
-
-  final TransferResultOutcomeData outcome;
-  final String title;
-  final String message;
-  final List<TransferMetricRow>? metrics;
-  final TransferResultPrimaryActionData? primaryAction;
-  final String? secondaryLabel;
-
-  String? get primaryLabel => switch (primaryAction) {
-    TransferResultPrimaryActionData.done => 'Done',
-    TransferResultPrimaryActionData.tryAgain => 'Try again',
-    TransferResultPrimaryActionData.chooseAnotherDevice =>
-      'Choose another device',
-    TransferResultPrimaryActionData.sendAgain => 'Send again',
-    null => null,
-  };
-}
+export 'shell_session_state.dart';
+export 'transfer_result_state.dart';
+export '../features/send/send_flow_state.dart';
 
 @immutable
 class DriftAppState {
@@ -317,13 +286,13 @@ class DriftAppState {
 
   TransferResultViewData? get transferResult => switch (session) {
     SendResultSession(:final outcome, :final summary, :final metrics) =>
-      _buildSendTransferResultViewData(
+      buildSendTransferResultViewData(
         outcome: outcome,
         summary: summary,
         metrics: metrics,
       ),
     ReceiveResultSession(:final outcome, :final summary, :final metrics) =>
-      _buildReceiveTransferResultViewData(
+      buildReceiveTransferResultViewData(
         outcome: outcome,
         summary: summary,
         metrics: metrics,
@@ -407,220 +376,6 @@ int _bigIntToInt(BigInt value) {
     return 0x7fffffffffffffff;
   }
   return value.toInt();
-}
-
-TransferResultViewData _buildSendTransferResultViewData({
-  required TransferResultOutcomeData outcome,
-  required TransferSummaryViewData summary,
-  required List<TransferMetricRow>? metrics,
-}) {
-  return switch (outcome) {
-    TransferResultOutcomeData.success => TransferResultViewData(
-      outcome: outcome,
-      title: 'Transfer complete',
-      message: summary.statusMessage,
-      metrics: metrics,
-      primaryAction: TransferResultPrimaryActionData.done,
-    ),
-    TransferResultOutcomeData.cancelled => const TransferResultViewData(
-      outcome: TransferResultOutcomeData.cancelled,
-      title: 'Transfer cancelled',
-      message: 'The transfer was stopped before all files were sent.',
-      primaryAction: TransferResultPrimaryActionData.sendAgain,
-    ),
-    TransferResultOutcomeData.declined => const TransferResultViewData(
-      outcome: TransferResultOutcomeData.declined,
-      title: 'Transfer declined',
-      message: 'The receiving device chose not to accept this transfer.',
-      primaryAction: TransferResultPrimaryActionData.chooseAnotherDevice,
-    ),
-    TransferResultOutcomeData.failed => TransferResultViewData(
-      outcome: outcome,
-      title: 'Transfer failed',
-      message: sendFailureMessage(summary.statusMessage),
-      primaryAction: TransferResultPrimaryActionData.tryAgain,
-    ),
-  };
-}
-
-TransferResultViewData _buildReceiveTransferResultViewData({
-  required TransferResultOutcomeData outcome,
-  required TransferSummaryViewData summary,
-  required List<TransferMetricRow>? metrics,
-}) {
-  return switch (outcome) {
-    TransferResultOutcomeData.success => TransferResultViewData(
-      outcome: outcome,
-      title: 'Files saved',
-      message: summary.statusMessage,
-      metrics: metrics,
-      primaryAction: TransferResultPrimaryActionData.done,
-    ),
-    TransferResultOutcomeData.cancelled => const TransferResultViewData(
-      outcome: TransferResultOutcomeData.cancelled,
-      title: 'Receive cancelled',
-      message: 'Drift stopped receiving before all files were saved.',
-      primaryAction: TransferResultPrimaryActionData.done,
-    ),
-    TransferResultOutcomeData.declined => const TransferResultViewData(
-      outcome: TransferResultOutcomeData.declined,
-      title: 'Transfer declined',
-      message: 'The transfer was declined before any files were received.',
-      primaryAction: TransferResultPrimaryActionData.done,
-    ),
-    TransferResultOutcomeData.failed => TransferResultViewData(
-      outcome: outcome,
-      title: 'Couldn\'t finish receiving files',
-      message: receiveFailureMessage(summary.statusMessage),
-      primaryAction: TransferResultPrimaryActionData.done,
-    ),
-  };
-}
-
-sealed class ShellSessionState {
-  const ShellSessionState();
-}
-
-sealed class TransferResultSession extends ShellSessionState {
-  const TransferResultSession({
-    required this.items,
-    required this.summary,
-    this.metrics,
-    this.plan,
-    this.snapshot,
-  });
-
-  final List<TransferItemViewData> items;
-  final TransferSummaryViewData summary;
-  final List<TransferMetricRow>? metrics;
-  final rust_transfer.TransferPlanData? plan;
-  final rust_transfer.TransferSnapshotData? snapshot;
-}
-
-class IdleSession extends ShellSessionState {
-  const IdleSession();
-}
-
-class SendDraftSession extends ShellSessionState {
-  const SendDraftSession({
-    required this.items,
-    required this.isInspecting,
-    required this.nearbyDestinations,
-    required this.nearbyScanInFlight,
-    required this.nearbyScanCompletedOnce,
-    required this.destinationCode,
-    this.selectedDestination,
-  });
-
-  final List<TransferItemViewData> items;
-  final bool isInspecting;
-  final List<SendDestinationViewData> nearbyDestinations;
-  final bool nearbyScanInFlight;
-  final bool nearbyScanCompletedOnce;
-  final String destinationCode;
-  final SendDestinationViewData? selectedDestination;
-
-  SendDraftSession copyWith({
-    List<TransferItemViewData>? items,
-    bool? isInspecting,
-    List<SendDestinationViewData>? nearbyDestinations,
-    bool? nearbyScanInFlight,
-    bool? nearbyScanCompletedOnce,
-    String? destinationCode,
-    SendDestinationViewData? selectedDestination,
-    bool clearSelectedDestination = false,
-  }) {
-    return SendDraftSession(
-      items: items ?? this.items,
-      isInspecting: isInspecting ?? this.isInspecting,
-      nearbyDestinations: nearbyDestinations ?? this.nearbyDestinations,
-      nearbyScanInFlight: nearbyScanInFlight ?? this.nearbyScanInFlight,
-      nearbyScanCompletedOnce:
-          nearbyScanCompletedOnce ?? this.nearbyScanCompletedOnce,
-      destinationCode: destinationCode ?? this.destinationCode,
-      selectedDestination: clearSelectedDestination
-          ? null
-          : (selectedDestination ?? this.selectedDestination),
-    );
-  }
-}
-
-enum SendTransferSessionPhase {
-  connecting,
-  waitingForDecision,
-  accepted,
-  declined,
-  sending,
-  cancelling,
-}
-
-class SendTransferSession extends ShellSessionState {
-  const SendTransferSession({
-    required this.phase,
-    required this.items,
-    required this.summary,
-    this.plan,
-    this.snapshot,
-    this.remoteDeviceType,
-    this.payloadBytesSent,
-    this.payloadTotalBytes,
-    this.payloadSpeedLabel,
-    this.payloadEtaLabel,
-  });
-
-  final SendTransferSessionPhase phase;
-  final List<TransferItemViewData> items;
-  final TransferSummaryViewData summary;
-  final rust_transfer.TransferPlanData? plan;
-  final rust_transfer.TransferSnapshotData? snapshot;
-  final String? remoteDeviceType;
-  final int? payloadBytesSent;
-  final int? payloadTotalBytes;
-  final String? payloadSpeedLabel;
-  final String? payloadEtaLabel;
-
-  SendTransferSession copyWith({
-    SendTransferSessionPhase? phase,
-    List<TransferItemViewData>? items,
-    TransferSummaryViewData? summary,
-    rust_transfer.TransferPlanData? plan,
-    rust_transfer.TransferSnapshotData? snapshot,
-    String? remoteDeviceType,
-    int? payloadBytesSent,
-    int? payloadTotalBytes,
-    String? payloadSpeedLabel,
-    String? payloadEtaLabel,
-  }) {
-    return SendTransferSession(
-      phase: phase ?? this.phase,
-      items: items ?? this.items,
-      summary: summary ?? this.summary,
-      plan: plan ?? this.plan,
-      snapshot: snapshot ?? this.snapshot,
-      remoteDeviceType: remoteDeviceType ?? this.remoteDeviceType,
-      payloadBytesSent: payloadBytesSent ?? this.payloadBytesSent,
-      payloadTotalBytes: payloadTotalBytes ?? this.payloadTotalBytes,
-      payloadSpeedLabel: payloadSpeedLabel ?? this.payloadSpeedLabel,
-      payloadEtaLabel: payloadEtaLabel ?? this.payloadEtaLabel,
-    );
-  }
-}
-
-class SendResultSession extends TransferResultSession {
-  const SendResultSession({
-    required this.success,
-    required this.outcome,
-    required super.items,
-    required super.summary,
-    super.metrics,
-    super.plan,
-    super.snapshot,
-    this.remoteDeviceType,
-  }) : super();
-
-  final bool success;
-  final TransferResultOutcomeData outcome;
-  final String? remoteDeviceType;
 }
 
 class ReceiveOfferSession extends ShellSessionState {

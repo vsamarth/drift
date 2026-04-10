@@ -4,8 +4,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../platform/send_transfer_source.dart';
-import '../../state/drift_app_state.dart';
 import '../receive/receive_mapper.dart';
+import '../../state/drift_app_state.dart';
 import 'send_dependencies.dart';
 import '../../state/drift_sample_data.dart';
 import 'send_flow_actions.dart' as send_flow_actions;
