@@ -32,10 +32,10 @@ dependencies:
     sdk: flutter
 
   cupertino_icons: ^1.0.8
-  bitsdojo_window: ^0.1.6
   flutter_riverpod: ^3.3.1
   flutter_rust_bridge: 2.12.0
   riverpod_annotation: ^4.0.2
+  window_manager: ^0.5.1
   drift_bridge:
     path: ../flutter/rust_builder
 
