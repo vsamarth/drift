@@ -1,27 +1,35 @@
 import '../../core/models/transfer_models.dart';
 import '../../shared/formatting/byte_format.dart';
 import '../../state/app_identity.dart';
-import '../../state/drift_app_state.dart';
+import '../../state/shell_session_state.dart';
+import '../../state/transfer_result_state.dart';
 import 'send_flow_state.dart';
 import '../../src/rust/api/transfer.dart' as rust_transfer;
 
 class SendState {
-  const SendState(this.appState, this.sendSetupErrorMessage);
+  const SendState({
+    required this.identity,
+    required this.animateSendingConnection,
+    required this.discoverableByDefault,
+    required this.session,
+    this.sendSetupErrorMessage,
+  });
 
-  factory SendState.fromAppState(
-    DriftAppState state, {
-    String? sendSetupErrorMessage,
-  }) {
-    return SendState(state, sendSetupErrorMessage);
-  }
-
-  final DriftAppState appState;
+  final DriftAppIdentity identity;
+  final bool animateSendingConnection;
+  final bool discoverableByDefault;
+  final ShellSessionState session;
   final String? sendSetupErrorMessage;
 
-  DriftAppIdentity get identity => appState.identity;
-  bool get animateSendingConnection => appState.animateSendingConnection;
-  TransferDirection get mode => appState.mode;
-  ShellSessionState get session => appState.session;
+  DriftAppIdentity get appIdentity => identity;
+  TransferDirection get mode => switch (session) {
+    SendDraftSession() || SendTransferSession() || SendResultSession() =>
+      TransferDirection.send,
+    _ => TransferDirection.receive,
+  };
+
+  String get deviceName => identity.deviceName;
+  String get deviceType => identity.deviceType;
   TransferStage get sendStage => switch (session) {
     SendDraftSession() => TransferStage.collecting,
     SendTransferSession(:final phase) => switch (phase) {
@@ -36,8 +44,6 @@ class SendState {
       success ? TransferStage.completed : TransferStage.error,
     _ => TransferStage.idle,
   };
-  String get deviceName => appState.deviceName;
-  String get deviceType => appState.deviceType;
   String get sendDestinationCode => switch (session) {
     SendDraftSession(:final destinationCode) => destinationCode,
     SendTransferSession(:final summary) => summary.code,
@@ -62,8 +68,6 @@ class SendState {
   };
   List<TransferDisplayItemViewData> get sendDisplayItems =>
       _displayItemsFor(sendItems, sendTransferPlan, sendTransferSnapshot);
-  List<TransferDisplayItemViewData> get receiveDisplayItems =>
-      appState.receiveDisplayItems;
   List<SendDestinationViewData> get nearbySendDestinations => switch (session) {
     SendDraftSession(:final nearbyDestinations) => nearbyDestinations,
     _ => const [],
@@ -134,7 +138,7 @@ class SendState {
     _ => null,
   };
   bool get discoverableEnabled =>
-      appState.discoverableByDefault && (session is IdleSession);
+      discoverableByDefault && session is IdleSession;
 }
 
 List<TransferDisplayItemViewData> _displayItemsFor(

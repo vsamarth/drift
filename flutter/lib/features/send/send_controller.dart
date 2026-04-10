@@ -66,10 +66,7 @@ class SendController extends _$SendController
 
     _syncNearbyScanTimer();
     ref.onDispose(_dispose);
-    return SendState.fromAppState(
-      _mergedState,
-      sendSetupErrorMessage: _sendSetupErrorMessage,
-    );
+    return _publishState();
   }
 
   void pickSendItems() {
@@ -127,7 +124,7 @@ class SendController extends _$SendController
   }
 
   void startSend() {
-    final intent = send_flow_actions.buildSendStartIntent(_mergedState);
+    final intent = send_flow_actions.buildSendStartIntent(_sendState);
     if (intent == null) {
       return;
     }
@@ -178,7 +175,7 @@ class SendController extends _$SendController
   }
 
   void goBack() {
-    final state = _mergedState;
+    final state = _sendState;
     switch (state.session) {
       case SendDraftSession():
         clearSendFlow();
@@ -220,7 +217,7 @@ class SendController extends _$SendController
   String get currentDeviceType => _sendState.deviceType;
 
   @override
-  String? get currentServerUrl => _mergedState.serverUrl;
+  String? get currentServerUrl => _appState?.serverUrl ?? ref.read(driftAppNotifierProvider).serverUrl;
 
   @override
   bool get isInspectingSendItems => _sendState.isInspectingSendItems;
@@ -398,21 +395,34 @@ class SendController extends _$SendController
     return session is SendDraftSession ? session : null;
   }
 
-  SendState get _sendState => SendState.fromAppState(
-    _mergedState,
-    sendSetupErrorMessage: _sendSetupErrorMessage,
-  );
-
-  DriftAppState get _mergedState {
-    final DriftAppState appState = _appState ?? ref.read(driftAppNotifierProvider);
-    return appState.copyWith(session: _sendSession ?? appState.session);
+  SendState get _sendState {
+    final DriftAppState appState =
+        _appState ?? ref.read(driftAppNotifierProvider);
+    return _buildSendState(
+      appState,
+      _sendSession ?? appState.session,
+    );
   }
 
-  void _publishState() {
-    state = SendState.fromAppState(
-      _mergedState,
+  SendState _buildSendState(DriftAppState appState, ShellSessionState session) {
+    return SendState(
+      identity: appState.identity,
+      animateSendingConnection: appState.animateSendingConnection,
+      discoverableByDefault: appState.discoverableByDefault,
+      session: session,
       sendSetupErrorMessage: _sendSetupErrorMessage,
     );
+  }
+
+  SendState _publishState() {
+    final DriftAppState appState =
+        _appState ?? ref.read(driftAppNotifierProvider);
+    final sendState = _buildSendState(
+      appState,
+      _sendSession ?? appState.session,
+    );
+    state = sendState;
+    return sendState;
   }
 
   void _syncNearbyScanTimer() {

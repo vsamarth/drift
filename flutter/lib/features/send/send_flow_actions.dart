@@ -1,6 +1,8 @@
 import '../../core/models/transfer_models.dart';
-import '../../state/drift_app_state.dart';
+import '../../state/shell_session_state.dart';
+import '../../state/transfer_result_state.dart';
 import 'send_flow_state.dart';
+import 'send_state.dart';
 
 enum SendFlowRoute {
   none,
@@ -29,7 +31,7 @@ class SendStartIntent {
   final String? normalizedCode;
 }
 
-SendStartIntent? buildSendStartIntent(DriftAppState state) {
+SendStartIntent? buildSendStartIntent(SendState state) {
   final draft = state.session;
   if (draft is! SendDraftSession || draft.items.isEmpty || draft.isInspecting) {
     return null;

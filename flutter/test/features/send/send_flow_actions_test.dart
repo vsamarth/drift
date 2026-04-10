@@ -20,7 +20,7 @@ void main() {
     );
 
     final intent = send_flow_actions.buildSendStartIntent(
-      buildSendDraftState().copyWith(session: draft),
+      buildSendState(buildSendDraftState().copyWith(session: draft)),
     )!;
 
     expect(intent.ticket, 'ticket-123');
@@ -34,7 +34,7 @@ void main() {
     );
 
     final intent = send_flow_actions.buildSendStartIntent(
-      buildSendDraftState().copyWith(session: draft),
+      buildSendState(buildSendDraftState().copyWith(session: draft)),
     )!;
 
     expect(intent.normalizedCode, 'AB2CD3');

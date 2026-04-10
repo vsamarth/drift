@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:drift_app/core/models/transfer_models.dart';
 import 'package:drift_app/features/send/send_flow_state.dart';
+import 'package:drift_app/features/send/send_state.dart';
 import 'package:drift_app/platform/send_item_source.dart';
 import 'package:drift_app/platform/send_transfer_source.dart';
 import 'package:drift_app/state/app_identity.dart';
@@ -269,5 +270,18 @@ DriftAppState buildSendTransferState() {
       remoteDeviceType: 'phone',
     ),
     animateSendingConnection: false,
+  );
+}
+
+SendState buildSendState(
+  DriftAppState state, {
+  String? sendSetupErrorMessage,
+}) {
+  return SendState(
+    identity: state.identity,
+    animateSendingConnection: state.animateSendingConnection,
+    discoverableByDefault: state.discoverableByDefault,
+    session: state.session,
+    sendSetupErrorMessage: sendSetupErrorMessage,
   );
 }

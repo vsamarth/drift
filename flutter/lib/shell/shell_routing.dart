@@ -16,8 +16,13 @@ enum ShellView {
 }
 
 ShellView shellViewFor(DriftAppState state) {
-  final sendState = SendState.fromAppState(state);
-  if (state.mode == TransferDirection.receive) {
+  final sendState = SendState(
+    identity: state.identity,
+    animateSendingConnection: state.animateSendingConnection,
+    discoverableByDefault: state.discoverableByDefault,
+    session: state.session,
+  );
+  if (sendState.mode == TransferDirection.receive) {
     return switch (state.receiveStage) {
       TransferStage.review => ShellView.receiveReview,
       TransferStage.waiting => ShellView.receiveReceiving,
