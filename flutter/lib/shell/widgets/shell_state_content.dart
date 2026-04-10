@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../state/drift_app_state.dart';
 import '../../state/drift_providers.dart';
+import '../../features/send/send_providers.dart';
 import '../shell_routing.dart';
 import 'receive_receiving_card.dart';
 import 'receive_review_card.dart';
@@ -34,7 +35,7 @@ class ShellStateContent extends ConsumerWidget {
       );
     }
 
-    final notifier = ref.read(driftAppNotifierProvider.notifier);
+    final notifier = ref.read(sendControllerProvider.notifier);
     final state = ref.watch(driftAppNotifierProvider);
     final result = state.transferResult;
 

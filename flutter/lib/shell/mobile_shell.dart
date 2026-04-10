@@ -6,6 +6,7 @@ import 'app_shell_providers.dart';
 import 'shell_routing.dart';
 import '../state/drift_app_state.dart';
 import '../state/drift_providers.dart';
+import '../features/send/send_providers.dart';
 import '../features/settings/widgets/mobile_settings_page.dart';
 import 'widgets/mobile/mobile_identity_card.dart';
 import 'widgets/mobile/select_files_card.dart';
@@ -33,7 +34,8 @@ class _MobileShellState extends ConsumerState<MobileShell> {
   Widget build(BuildContext context) {
     final shellState = ref.watch(appShellStateProvider);
     final state = ref.watch(driftAppNotifierProvider);
-    final notifier = ref.read(driftAppNotifierProvider.notifier);
+    final appNotifier = ref.read(driftAppNotifierProvider.notifier);
+    final notifier = ref.read(sendControllerProvider.notifier);
     final isIdle = shellState.view == ShellView.sendIdle;
 
     return Scaffold(
@@ -102,7 +104,7 @@ class _MobileShellState extends ConsumerState<MobileShell> {
                               if (state.session is SendDraftSession ||
                                   state.session is ReceiveOfferSession)
                                 IconButton(
-                                  onPressed: notifier.resetShell,
+                                  onPressed: appNotifier.resetShell,
                                   icon: const Icon(Icons.close_rounded),
                                   tooltip: 'Close',
                                 ),
