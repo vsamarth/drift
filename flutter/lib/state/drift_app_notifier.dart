@@ -46,7 +46,6 @@ class DriftAppNotifier extends Notifier<DriftAppState>
       receiverBadge: const ReceiverBadgeState.registering(),
       session: const IdleSession(),
       animateSendingConnection: _animateSendingConnection,
-      sendSetupErrorMessage: null,
     );
   }
 

@@ -56,19 +56,19 @@ class SendController extends _$SendController
 
     if (_sendSession == null || appSessionChanged) {
       _sendSession = appState.session;
-      _sendSetupErrorMessage = appState.sendSetupErrorMessage;
       _sendTransferCoordinator.cancelActiveTransfer();
       _sendSessionController.clearSendMetricState();
       if (appState.session is! SendDraftSession) {
         _cancelNearbyScanTimer();
       }
-    } else {
-      _sendSetupErrorMessage ??= appState.sendSetupErrorMessage;
     }
 
     _syncNearbyScanTimer();
     ref.onDispose(_dispose);
-    return SendState.fromAppState(_mergedState);
+    return SendState.fromAppState(
+      _mergedState,
+      sendSetupErrorMessage: _sendSetupErrorMessage,
+    );
   }
 
   void pickSendItems() {
@@ -397,18 +397,21 @@ class SendController extends _$SendController
     return session is SendDraftSession ? session : null;
   }
 
-  SendState get _sendState => SendState.fromAppState(_mergedState);
+  SendState get _sendState => SendState.fromAppState(
+    _mergedState,
+    sendSetupErrorMessage: _sendSetupErrorMessage,
+  );
 
   DriftAppState get _mergedState {
     final DriftAppState appState = _appState ?? ref.read(driftAppNotifierProvider);
-    return appState.copyWith(
-      session: _sendSession ?? appState.session,
-      sendSetupErrorMessage: _sendSetupErrorMessage,
-    );
+    return appState.copyWith(session: _sendSession ?? appState.session);
   }
 
   void _publishState() {
-    state = SendState.fromAppState(_mergedState);
+    state = SendState.fromAppState(
+      _mergedState,
+      sendSetupErrorMessage: _sendSetupErrorMessage,
+    );
   }
 
   void _syncNearbyScanTimer() {

@@ -19,22 +19,18 @@ class DriftAppState {
     required this.receiverBadge,
     required this.session,
     required this.animateSendingConnection,
-    this.sendSetupErrorMessage,
   });
 
   final DriftAppIdentity identity;
   final ReceiverBadgeState receiverBadge;
   final ShellSessionState session;
   final bool animateSendingConnection;
-  final String? sendSetupErrorMessage;
 
   DriftAppState copyWith({
     DriftAppIdentity? identity,
     ReceiverBadgeState? receiverBadge,
     ShellSessionState? session,
     bool? animateSendingConnection,
-    String? sendSetupErrorMessage,
-    bool clearSendSetupErrorMessage = false,
   }) {
     return DriftAppState(
       identity: identity ?? this.identity,
@@ -42,9 +38,6 @@ class DriftAppState {
       session: session ?? this.session,
       animateSendingConnection:
           animateSendingConnection ?? this.animateSendingConnection,
-      sendSetupErrorMessage: clearSendSetupErrorMessage
-          ? null
-          : (sendSetupErrorMessage ?? this.sendSetupErrorMessage),
     );
   }
 

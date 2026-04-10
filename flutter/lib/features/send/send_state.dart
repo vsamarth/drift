@@ -5,17 +5,20 @@ import '../../state/drift_app_state.dart';
 import '../../src/rust/api/transfer.dart' as rust_transfer;
 
 class SendState {
-  const SendState(this.appState);
+  const SendState(this.appState, this.sendSetupErrorMessage);
 
-  factory SendState.fromAppState(DriftAppState state) {
-    return SendState(state);
+  factory SendState.fromAppState(
+    DriftAppState state, {
+    String? sendSetupErrorMessage,
+  }) {
+    return SendState(state, sendSetupErrorMessage);
   }
 
   final DriftAppState appState;
+  final String? sendSetupErrorMessage;
 
   DriftAppIdentity get identity => appState.identity;
   bool get animateSendingConnection => appState.animateSendingConnection;
-  String? get sendSetupErrorMessage => appState.sendSetupErrorMessage;
   TransferDirection get mode => appState.mode;
   ShellSessionState get session => appState.session;
   TransferStage get sendStage => switch (session) {
