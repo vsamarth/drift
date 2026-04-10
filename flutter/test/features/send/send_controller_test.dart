@@ -1,6 +1,8 @@
 import 'package:drift_app/core/models/transfer_models.dart';
 import 'package:drift_app/features/send/send_controller.dart';
 import 'package:drift_app/features/send/send_providers.dart' as send_deps;
+import 'package:drift_app/platform/send_transfer_source.dart';
+import 'package:drift_app/state/drift_app_state.dart';
 import 'package:drift_app/state/drift_providers.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -82,7 +84,7 @@ void main() {
 
     call((controller) => controller.updateSendDestinationCode('ab2cd3'));
     call((controller) => controller.clearSendDestinationCode());
-    expect(notifier.applySendDraftSessionCalls, 2);
+    expect(notifier.setSendSessionCalls, 2);
     expect(notifier.build().sendDestinationCode, '');
 
     call(
@@ -90,7 +92,7 @@ void main() {
         notifier.build().nearbySendDestinations.first,
       ),
     );
-    expect(notifier.applySendDraftSessionCalls, 3);
+    expect(notifier.setSendSessionCalls, 3);
     expect(notifier.build().selectedSendDestination?.name, 'Lab Mac');
 
     call((controller) => controller.startSend());
@@ -99,7 +101,24 @@ void main() {
     expect(transferSource.lastRequest?.lanDestinationLabel, 'Lab Mac');
     expect(transferSource.lastRequest?.paths, ['sample.txt', 'notes.pdf']);
 
+    transferSource.controller.add(
+      const SendTransferUpdate(
+        phase: SendTransferUpdatePhase.connecting,
+        destinationLabel: 'Lab Mac',
+        statusMessage: 'Connecting...',
+        itemCount: 2,
+        totalSize: '30 KB',
+        bytesSent: 0,
+        totalBytes: 30 * 1024,
+      ),
+    );
+    await _settle();
+    expect(notifier.build().session, isA<SendTransferSession>());
+    expect(notifier.setSendSessionCalls, 4);
+
     call((controller) => controller.cancelSendInProgress());
-    expect(notifier.cancelSendInProgressCalls, 1);
+    await _settle();
+    expect(transferSource.cancelTransferCalls, 1);
+    expect(notifier.setSendSessionCalls, 5);
   });
 }

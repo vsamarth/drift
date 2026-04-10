@@ -10,14 +10,11 @@ import '../features/receive/receive_mapper.dart';
 import '../features/send/send_selection_builder.dart';
 import '../features/send/send_nearby_coordinator.dart';
 import '../features/send/send_selection_coordinator.dart';
-import '../features/send/send_flow_actions.dart' as send_flow_actions;
-import '../features/send/send_session_reducer.dart';
+import '../features/send/send_session_controller.dart';
 import '../features/send/send_transfer_coordinator.dart';
-import '../features/send/send_mapper.dart';
 import '../src/rust/api/receiver.dart' as rust_receiver;
 import '../features/settings/settings_state.dart';
 import '../features/settings/settings_providers.dart';
-import '../state/drift_sample_data.dart';
 import 'app_identity.dart';
 import 'drift_dependencies.dart';
 import 'drift_app_state.dart';
@@ -40,11 +37,16 @@ const List<TransferItemViewData> _defaultDroppedSendItems = [
 ];
 
 class DriftAppNotifier extends Notifier<DriftAppState>
-    implements SendSelectionHost, SendNearbyScanHost, SendTransferHost {
+    implements
+        SendSelectionHost,
+        SendNearbyScanHost,
+        SendTransferHost,
+        SendSessionHost {
   late DriftAppIdentity _identity;
   late final SendSelectionCoordinator _sendSelectionCoordinator;
   late final SendNearbyCoordinator _sendNearbyCoordinator;
   late final SendTransferCoordinator _sendTransferCoordinator;
+  SendSessionController? _sendSessionController;
   late final SendTransferSource _sendTransferSource;
   late final NearbyDiscoverySource _nearbyDiscoverySource;
   late final ReceiverServiceSource _receiverServiceSource;
@@ -57,7 +59,6 @@ class DriftAppNotifier extends Notifier<DriftAppState>
   _incomingSubscription;
   bool? _appliedDiscoverable;
 
-  DateTime? _sendPayloadStartedAt;
   DateTime? _receivePayloadStartedAt;
 
   @override
@@ -75,6 +76,7 @@ class DriftAppNotifier extends Notifier<DriftAppState>
     _sendTransferCoordinator = SendTransferCoordinator(
       transferSource: _sendTransferSource,
     );
+    _sendSessionController = ref.watch(sendSessionControllerProvider);
     _receiverServiceSource = ref.watch(receiverServiceSourceProvider);
     _animateSendingConnection = ref.watch(animateSendingConnectionProvider);
     _enableIdleIncomingListener = ref.watch(enableIdleIncomingListenerProvider);
@@ -142,9 +144,7 @@ class DriftAppNotifier extends Notifier<DriftAppState>
 
   @override
   void clearSendFlow() {
-    _cancelNearbyScanTimer();
-    _cancelActiveSendTransfer();
-    _setSession(send_flow_actions.clearSendFlowSession());
+    _sendSessionControllerInstance.clearSendFlow(this);
   }
 
   void acceptReceiveOffer() {
@@ -189,12 +189,7 @@ class DriftAppNotifier extends Notifier<DriftAppState>
   }
 
   void cancelSendInProgress() {
-    final next = send_flow_actions.markSendTransferCancelling(state.session);
-    if (next == null) {
-      return;
-    }
-    _setSession(next);
-    unawaited(_cancelNativeSendTransfer());
+    _sendSessionControllerInstance.cancelSendInProgress(this);
   }
 
   void cancelReceiveInProgress() {
@@ -215,7 +210,7 @@ class DriftAppNotifier extends Notifier<DriftAppState>
   void resetShell() {
     _cancelNearbyScanTimer();
     _cancelActiveSendTransfer();
-    _clearSendMetricState();
+    _sendSessionControllerInstance.clearSendMetricState();
     _clearReceiveMetricState();
     state = state.copyWith(clearSendSetupErrorMessage: true);
     _setSession(const IdleSession());
@@ -275,7 +270,7 @@ class DriftAppNotifier extends Notifier<DriftAppState>
 
   @override
   void clearSendMetricState() {
-    _clearSendMetricState();
+    _sendSessionControllerInstance.clearSendMetricState();
   }
 
   @override
@@ -325,6 +320,11 @@ class DriftAppNotifier extends Notifier<DriftAppState>
   @override
   void clearNearbyScanTimer() {
     _cancelNearbyScanTimer();
+  }
+
+  @override
+  void cancelActiveSendTransfer() {
+    _cancelActiveSendTransfer();
   }
 
   @override
@@ -728,30 +728,6 @@ class DriftAppNotifier extends Notifier<DriftAppState>
     }
   }
 
-  Future<void> _cancelNativeSendTransfer() async {
-    try {
-      await _sendTransferSource.cancelTransfer();
-    } catch (error, stackTrace) {
-      debugPrint('cancelTransfer failed: $error');
-      debugPrintStack(stackTrace: stackTrace);
-      _applySendUpdate(
-        SendTransferUpdate(
-          phase: SendTransferUpdatePhase.failed,
-          destinationLabel:
-              state.sendDestinationLabel ??
-              formatCodeAsDestination(state.sendDestinationCode),
-          statusMessage: 'Cancelling transfer...',
-          itemCount: state.sendItems.length,
-          totalSize:
-              state.sendSummary?.totalSize ?? sampleSendSummary.totalSize,
-          bytesSent: state.sendPayloadBytesSent ?? 0,
-          totalBytes: state.sendPayloadTotalBytes ?? 0,
-          errorMessage: 'Drift couldn\'t cancel the transfer.',
-        ),
-      );
-    }
-  }
-
   Future<void> _cancelNativeReceiveTransfer() async {
     try {
       await _receiverServiceSource.cancelTransfer();
@@ -787,29 +763,19 @@ class DriftAppNotifier extends Notifier<DriftAppState>
     );
   }
 
-  void _applySendUpdate(SendTransferUpdate update) {
-    final progress = progressFromSnapshot(update.snapshot);
-    final bytesTransferred =
-        progress.bytesTransferred ??
-        (update.bytesSent > 0 ? update.bytesSent : null);
-    if (_sendPayloadStartedAt == null && (bytesTransferred ?? 0) > 0) {
-      _sendPayloadStartedAt = DateTime.now();
-    }
-
-    _setSession(
-      reduceSendTransferUpdate(
-        state: state,
-        update: update,
-        payloadStartedAt: _sendPayloadStartedAt,
-      ),
-    );
-  }
-
   void applySendTransferUpdate(SendTransferUpdate update) {
-    _applySendUpdate(update);
+    _sendSessionControllerInstance.applySendTransferUpdate(this, update);
   }
 
   void applySendDraftSession(SendDraftSession session) {
+    _sendSessionControllerInstance.applySendDraftSession(this, session);
+  }
+
+  @override
+  DriftAppState get sendAppState => state;
+
+  @override
+  void setSendSession(ShellSessionState session) {
     _setSession(session);
   }
 
@@ -867,12 +833,18 @@ class DriftAppNotifier extends Notifier<DriftAppState>
     state = state.copyWith(clearSendSetupErrorMessage: true);
   }
 
-  void _clearSendMetricState() {
-    _sendPayloadStartedAt = null;
-  }
-
   void _cancelActiveSendTransfer() {
     _sendTransferCoordinator.cancelActiveTransfer();
+  }
+
+  SendSessionController get _sendSessionControllerInstance {
+    final controller = _sendSessionController;
+    if (controller != null) {
+      return controller;
+    }
+    final next = ref.read(sendSessionControllerProvider);
+    _sendSessionController = next;
+    return next;
   }
 
   void _clearReceiveMetricState() {

@@ -41,6 +41,8 @@ class FakeSendAppNotifier extends DriftAppNotifier {
   int clearSendDestinationCodeCalls = 0;
   int applySendDraftSessionCalls = 0;
   int clearSendFlowCalls = 0;
+  int setSendSessionCalls = 0;
+  int cancelActiveSendTransferCalls = 0;
   int beginSendInspectionCalls = 0;
   int applyPendingSendItemsCalls = 0;
   int applySelectedSendItemsCalls = 0;
@@ -121,6 +123,12 @@ class FakeSendAppNotifier extends DriftAppNotifier {
         clearSendSetupErrorMessage: true,
       ),
     );
+  }
+
+  @override
+  void setSendSession(ShellSessionState session) {
+    setSendSessionCalls += 1;
+    setState(_state.copyWith(session: session));
   }
 
   @override
@@ -212,6 +220,11 @@ class FakeSendAppNotifier extends DriftAppNotifier {
   @override
   void cancelSendInProgress() {
     cancelSendInProgressCalls += 1;
+  }
+
+  @override
+  void cancelActiveSendTransfer() {
+    cancelActiveSendTransferCalls += 1;
   }
 
   void handleTransferResultPrimaryAction() {

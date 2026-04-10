@@ -11,6 +11,7 @@ import 'send_nearby_coordinator.dart';
 import 'send_selection_builder.dart';
 import 'send_selection_coordinator.dart';
 import 'send_shell_actions.dart' as send_shell_actions;
+import 'send_session_controller.dart';
 import 'send_transfer_coordinator.dart';
 import 'send_state.dart';
 
@@ -21,6 +22,7 @@ class SendController extends _$SendController {
   late SendSelectionCoordinator _sendSelectionCoordinator;
   late SendNearbyCoordinator _sendNearbyCoordinator;
   late SendTransferCoordinator _sendTransferCoordinator;
+  late SendSessionController _sendSessionController;
 
   @override
   SendState build() {
@@ -35,6 +37,7 @@ class SendController extends _$SendController {
     _sendTransferCoordinator = SendTransferCoordinator(
       transferSource: ref.watch(send_deps.sendTransferSourceProvider),
     );
+    _sendSessionController = ref.watch(sendSessionControllerProvider);
     return SendState.fromAppState(appState);
   }
 
@@ -95,7 +98,10 @@ class SendController extends _$SendController {
     if (next == null) {
       return;
     }
-    ref.read(driftAppNotifierProvider.notifier).applySendDraftSession(next);
+    _sendSessionController.applySendDraftSession(
+      ref.read(driftAppNotifierProvider.notifier),
+      next,
+    );
   }
 
   void clearSendDestinationCode() {
@@ -104,7 +110,10 @@ class SendController extends _$SendController {
     if (next == null) {
       return;
     }
-    ref.read(driftAppNotifierProvider.notifier).applySendDraftSession(next);
+    _sendSessionController.applySendDraftSession(
+      ref.read(driftAppNotifierProvider.notifier),
+      next,
+    );
   }
 
   void startSend() {
@@ -120,19 +129,23 @@ class SendController extends _$SendController {
         host: host,
         destination: intent.destination!,
         ticket: intent.ticket!,
-        onUpdate: host.applySendTransferUpdate,
+        onUpdate: (update) =>
+            _sendSessionController.applySendTransferUpdate(host, update),
       );
     } else if (intent.normalizedCode != null) {
       _sendTransferCoordinator.startSendTransfer(
         host: host,
         normalizedCode: intent.normalizedCode!,
-        onUpdate: host.applySendTransferUpdate,
+        onUpdate: (update) =>
+            _sendSessionController.applySendTransferUpdate(host, update),
       );
     }
   }
 
   void cancelSendInProgress() {
-    ref.read(driftAppNotifierProvider.notifier).cancelSendInProgress();
+    _sendSessionController.cancelSendInProgress(
+      ref.read(driftAppNotifierProvider.notifier),
+    );
   }
 
   void handleTransferResultPrimaryAction() {
@@ -188,7 +201,10 @@ class SendController extends _$SendController {
     if (next == null) {
       return;
     }
-    ref.read(driftAppNotifierProvider.notifier).applySendDraftSession(next);
+    _sendSessionController.applySendDraftSession(
+      ref.read(driftAppNotifierProvider.notifier),
+      next,
+    );
   }
 
   SendDraftSession? _currentDraft() {
@@ -201,6 +217,9 @@ class SendController extends _$SendController {
       ref.read(driftAppNotifierProvider),
       destinationCode: destinationCode,
     );
-    ref.read(driftAppNotifierProvider.notifier).applySendDraftSession(next);
+    _sendSessionController.applySendDraftSession(
+      ref.read(driftAppNotifierProvider.notifier),
+      next,
+    );
   }
 }
