@@ -1,4 +1,5 @@
 import 'package:drift_app/shell/shell_routing.dart';
+import 'package:drift_app/shell/app_shell_providers.dart';
 import 'package:drift_app/state/app_identity.dart';
 import 'package:drift_app/state/drift_app_state.dart';
 import 'package:drift_app/state/drift_dependencies.dart';
@@ -37,7 +38,9 @@ void main() {
 
     expect(state.session, isA<IdleSession>());
     expect(state.receiverBadge.phase, ReceiverBadgePhase.registering);
-    expect(container.read(shellViewProvider), ShellView.sendIdle);
+    expect(container.read(appShellStateProvider).view, ShellView.sendIdle);
+    expect(container.read(appShellStateProvider).canGoBack, isFalse);
+    expect(container.read(appShellStateProvider).showBackButton, isFalse);
   });
 }
 

@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/theme/drift_theme.dart';
+import 'app_shell_providers.dart';
+import 'shell_routing.dart';
 import '../state/drift_app_state.dart';
 import '../state/drift_providers.dart';
 import '../features/settings/widgets/mobile_settings_page.dart';
@@ -29,9 +31,10 @@ class _MobileShellState extends ConsumerState<MobileShell> {
 
   @override
   Widget build(BuildContext context) {
+    final shellState = ref.watch(appShellStateProvider);
     final state = ref.watch(driftAppNotifierProvider);
     final notifier = ref.read(driftAppNotifierProvider.notifier);
-    final isIdle = state.session is IdleSession;
+    final isIdle = shellState.view == ShellView.sendIdle;
 
     return Scaffold(
       backgroundColor: kBg,

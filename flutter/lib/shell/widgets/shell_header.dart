@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/theme/drift_theme.dart';
+import '../app_shell_providers.dart';
 import '../../state/drift_providers.dart';
 
 class ShellHeader extends ConsumerWidget {

@@ -3,7 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/theme/drift_theme.dart';
 import '../features/settings/widgets/settings_panel.dart';
-import '../state/drift_providers.dart';
+import 'app_shell_providers.dart';
+import 'shell_routing.dart';
 import 'widgets/idle_identity_zone.dart';
 import 'widgets/shell_header.dart';
 import 'widgets/shell_state_content.dart';
@@ -21,8 +22,8 @@ class _UtilityShellState extends ConsumerState<UtilityShell> {
 
   @override
   Widget build(BuildContext context) {
-    final view = ref.watch(shellViewProvider);
-    final isIdle = view.name == 'sendIdle';
+    final view = ref.watch(appShellStateProvider).view;
+    final isIdle = view == ShellView.sendIdle;
     final showSettings = isIdle && _showSettings;
 
     return Scaffold(
