@@ -24,5 +24,6 @@ void main() {
     expect(find.text('Ready'), findsOneWidget);
     expect(find.text('Receive code'), findsOneWidget);
     expect(find.text('ABC 123'), findsOneWidget);
+    expect(find.text('No offers yet'), findsOneWidget);
   });
 }

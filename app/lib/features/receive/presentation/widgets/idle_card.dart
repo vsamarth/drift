@@ -234,55 +234,38 @@ class _ReceiveIdleCardState extends State<ReceiveIdleCard> {
                     color: kFill,
                     borderRadius: BorderRadius.circular(22),
                   ),
-                  child: Padding(
-                    padding: const EdgeInsets.all(14),
+                  child: Center(
                     child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        _SkeletonLine(
-                          widthFactor: 0.36,
-                          height: 10,
-                          color: badgeColor.withValues(alpha: 0.2),
-                        ),
-                        const SizedBox(height: 10),
-                        Row(
-                          children: [
-                            Container(
-                              width: 36,
-                              height: 36,
-                              decoration: BoxDecoration(
-                                color: badgeColor.withValues(alpha: 0.16),
-                                borderRadius: BorderRadius.circular(14),
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  _SkeletonLine(
-                                    widthFactor: 0.54,
-                                    height: 12,
-                                    color: badgeColor.withValues(alpha: 0.26),
-                                  ),
-                                  const SizedBox(height: 6),
-                                  _SkeletonLine(
-                                    widthFactor: 0.88,
-                                    height: 8,
-                                    color: badgeColor.withValues(alpha: 0.14),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                        const Spacer(),
-                        DecoratedBox(
+                        Container(
+                          width: 54,
+                          height: 54,
                           decoration: BoxDecoration(
-                            color: kSurface2,
+                            color: badgeColor.withValues(alpha: 0.14),
                             borderRadius: BorderRadius.circular(18),
                           ),
-                          child: const SizedBox(height: 44),
+                        ),
+                        const SizedBox(height: 14),
+                        Text(
+                          'No offers yet',
+                          style: driftSans(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: kInk,
+                            letterSpacing: -0.15,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          'Incoming offers will appear here.',
+                          textAlign: TextAlign.center,
+                          style: driftSans(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w400,
+                            color: kMuted,
+                            height: 1.3,
+                          ),
                         ),
                       ],
                     ),
@@ -291,33 +274,6 @@ class _ReceiveIdleCardState extends State<ReceiveIdleCard> {
               ),
             ],
           ),
-        ),
-      ),
-    );
-  }
-}
-
-class _SkeletonLine extends StatelessWidget {
-  const _SkeletonLine({
-    required this.widthFactor,
-    required this.height,
-    required this.color,
-  });
-
-  final double widthFactor;
-  final double height;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return FractionallySizedBox(
-      widthFactor: widthFactor,
-      alignment: Alignment.centerLeft,
-      child: Container(
-        height: height,
-        decoration: BoxDecoration(
-          color: color,
-          borderRadius: BorderRadius.circular(height / 2),
         ),
       ),
     );
