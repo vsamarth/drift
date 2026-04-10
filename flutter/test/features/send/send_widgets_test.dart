@@ -58,7 +58,18 @@ void main() {
 
     expect(itemSource.pickAdditionalPathsCalls, 1);
     expect(itemSource.appendPathsCalls, 1);
-    expect(notifier.applySelectedSendItemsCalls, 1);
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(SendSelectedCard)),
+    );
+    expect(
+      container
+          .read(send_deps.sendStateProvider)
+          .sendItems
+          .map((item) => item.path)
+          .toList(),
+      ['sample.txt', 'notes.pdf'],
+    );
   });
 
   testWidgets('send code card renders transfer state and cancels', (
@@ -96,6 +107,6 @@ void main() {
     await tester.tap(find.text('Yes, cancel'));
     await tester.pump();
 
-    expect(notifier.cancelSendInProgressCalls, 1);
+    expect(transferSource.cancelTransferCalls, 1);
   });
 }

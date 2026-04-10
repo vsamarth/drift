@@ -5,55 +5,22 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/models/transfer_models.dart';
 import '../platform/app_focus.dart';
-import '../platform/send_transfer_source.dart';
 import '../features/receive/receive_mapper.dart';
-import '../features/send/send_selection_builder.dart';
-import '../features/send/send_nearby_coordinator.dart';
-import '../features/send/send_selection_coordinator.dart';
-import '../features/send/send_session_controller.dart';
-import '../features/send/send_transfer_coordinator.dart';
 import '../src/rust/api/receiver.dart' as rust_receiver;
 import '../features/settings/settings_state.dart';
 import '../features/settings/settings_providers.dart';
 import 'app_identity.dart';
 import 'drift_dependencies.dart';
 import 'drift_app_state.dart';
-import 'nearby_discovery_source.dart';
 import 'receiver_service_source.dart';
 
-const List<TransferItemViewData> _defaultDroppedSendItems = [
-  TransferItemViewData(
-    name: 'sample.txt',
-    path: 'sample.txt',
-    size: '18 KB',
-    kind: TransferItemKind.file,
-  ),
-  TransferItemViewData(
-    name: 'photos',
-    path: 'photos/',
-    size: '12 items',
-    kind: TransferItemKind.folder,
-  ),
-];
-
 class DriftAppNotifier extends Notifier<DriftAppState>
-    implements
-        SendSelectionHost,
-        SendNearbyScanHost,
-        SendTransferHost,
-        SendSessionHost {
+{
   late DriftAppIdentity _identity;
-  late final SendSelectionCoordinator _sendSelectionCoordinator;
-  late final SendNearbyCoordinator _sendNearbyCoordinator;
-  late final SendTransferCoordinator _sendTransferCoordinator;
-  SendSessionController? _sendSessionController;
-  late final SendTransferSource _sendTransferSource;
-  late final NearbyDiscoverySource _nearbyDiscoverySource;
   late final ReceiverServiceSource _receiverServiceSource;
   late final bool _animateSendingConnection;
   late final bool _enableIdleIncomingListener;
 
-  Timer? _nearbyScanTimer;
   StreamSubscription<ReceiverBadgeState>? _badgeSubscription;
   StreamSubscription<rust_receiver.ReceiverTransferEvent>?
   _incomingSubscription;
@@ -64,19 +31,6 @@ class DriftAppNotifier extends Notifier<DriftAppState>
   @override
   DriftAppState build() {
     _identity = ref.watch(initialDriftAppIdentityProvider);
-    _sendSelectionCoordinator = SendSelectionCoordinator(
-      itemSource: ref.watch(sendItemSourceProvider),
-      selectionBuilder: const SendSelectionBuilder(),
-    );
-    _nearbyDiscoverySource = ref.watch(nearbyDiscoverySourceProvider);
-    _sendNearbyCoordinator = SendNearbyCoordinator(
-      nearbyDiscoverySource: _nearbyDiscoverySource,
-    );
-    _sendTransferSource = ref.watch(sendTransferSourceProvider);
-    _sendTransferCoordinator = SendTransferCoordinator(
-      transferSource: _sendTransferSource,
-    );
-    _sendSessionController = ref.watch(sendSessionControllerProvider);
     _receiverServiceSource = ref.watch(receiverServiceSourceProvider);
     _animateSendingConnection = ref.watch(animateSendingConnectionProvider);
     _enableIdleIncomingListener = ref.watch(enableIdleIncomingListenerProvider);
@@ -112,39 +66,6 @@ class DriftAppNotifier extends Notifier<DriftAppState>
 
   void setMode(TransferDirection mode) {
     resetShell();
-  }
-
-  void activateSendDropTarget() {
-    _applySelectedSendItems(_defaultDroppedSendItems);
-  }
-
-  void pickSendItems() {
-    unawaited(_sendSelectionCoordinator.pickSendItems(this));
-  }
-
-  void appendSendItemsFromPicker() {
-    unawaited(_sendSelectionCoordinator.appendSendItemsFromPicker(this));
-  }
-
-  void rescanNearbySendDestinations() {
-    unawaited(_sendNearbyCoordinator.runScanOnce(this));
-  }
-
-  void acceptDroppedSendItems(List<String> paths) {
-    unawaited(_sendSelectionCoordinator.acceptDroppedSendItems(this, paths));
-  }
-
-  void appendDroppedSendItems(List<String> paths) {
-    unawaited(_sendSelectionCoordinator.appendDroppedSendItems(this, paths));
-  }
-
-  void removeSendItem(String path) {
-    unawaited(_sendSelectionCoordinator.removeSendItem(this, path));
-  }
-
-  @override
-  void clearSendFlow() {
-    _sendSessionControllerInstance.clearSendFlow(this);
   }
 
   void acceptReceiveOffer() {
@@ -188,10 +109,6 @@ class DriftAppNotifier extends Notifier<DriftAppState>
     resetShell();
   }
 
-  void cancelSendInProgress() {
-    _sendSessionControllerInstance.cancelSendInProgress(this);
-  }
-
   void cancelReceiveInProgress() {
     final session = state.session;
     if (session is! ReceiveTransferSession) {
@@ -208,181 +125,8 @@ class DriftAppNotifier extends Notifier<DriftAppState>
   }
 
   void resetShell() {
-    _cancelNearbyScanTimer();
-    _cancelActiveSendTransfer();
-    _sendSessionControllerInstance.clearSendMetricState();
     _clearReceiveMetricState();
-    state = state.copyWith(clearSendSetupErrorMessage: true);
     _setSession(const IdleSession());
-  }
-
-  @override
-  void applySelectedSendItems(List<TransferItemViewData> items) {
-    _applySelectedSendItems(items);
-  }
-
-  @override
-  void applyPendingSendItems(List<TransferItemViewData> items) {
-    _applyPendingSendItems(items);
-  }
-
-  @override
-  void beginSendInspection({required bool clearExistingItems}) {
-    _beginSendInspection(clearExistingItems: clearExistingItems);
-  }
-
-  @override
-  void finishSendInspection() {
-    _finishSendInspection();
-  }
-
-  @override
-  void clearSendSetupError() {
-    _clearSendSetupError();
-  }
-
-  @override
-  void reportSendSelectionError(
-    String userMessage,
-    Object error,
-    StackTrace stackTrace,
-  ) {
-    _reportSendSelectionError(userMessage, error, stackTrace);
-  }
-
-  @override
-  List<TransferItemViewData> get currentSendItems => state.sendItems;
-
-  @override
-  String get currentDeviceName => state.deviceName;
-
-  @override
-  String get currentDeviceType => state.deviceType;
-
-  @override
-  String? get currentServerUrl => state.serverUrl;
-
-  @override
-  void logSendTransferFailure(Object error, StackTrace stackTrace) {
-    debugPrint('[drift/notifier] failed to send files: $error');
-    debugPrintStack(stackTrace: stackTrace);
-  }
-
-  @override
-  void clearSendMetricState() {
-    _sendSessionControllerInstance.clearSendMetricState();
-  }
-
-  @override
-  bool get isInspectingSendItems => state.isInspectingSendItems;
-
-  @override
-  bool get nearbyScanInFlight => state.nearbyScanInProgress;
-
-  @override
-  void setNearbyScanInFlight(bool value) {
-    final draft = _draftSession;
-    if (draft == null) {
-      return;
-    }
-    _setSession(draft.copyWith(nearbyScanInFlight: value));
-  }
-
-  @override
-  void setNearbyScanCompletedOnce(bool value) {
-    final draft = _draftSession;
-    if (draft == null) {
-      return;
-    }
-    _setSession(draft.copyWith(nearbyScanCompletedOnce: value));
-  }
-
-  @override
-  void setNearbyDestinations(List<SendDestinationViewData> destinations) {
-    final draft = _draftSession;
-    if (draft == null) {
-      return;
-    }
-    _setSession(
-      draft.copyWith(
-        nearbyDestinations: List<SendDestinationViewData>.unmodifiable(
-          destinations,
-        ),
-      ),
-    );
-  }
-
-  @override
-  void setSendSetupError(String message) {
-    _setSendSetupError(message);
-  }
-
-  @override
-  void clearNearbyScanTimer() {
-    _cancelNearbyScanTimer();
-  }
-
-  @override
-  void cancelActiveSendTransfer() {
-    _cancelActiveSendTransfer();
-  }
-
-  @override
-  void logNearbyScanFailure(Object error, StackTrace stackTrace) {
-    debugPrint('[drift/notifier] nearby scan failed: $error');
-    debugPrintStack(stackTrace: stackTrace);
-  }
-
-  void _applySelectedSendItems(List<TransferItemViewData> items) {
-    _cancelActiveSendTransfer();
-    state = state.copyWith(clearSendSetupErrorMessage: true);
-    _setSession(
-      SendDraftSession(
-        items: List<TransferItemViewData>.unmodifiable(items),
-        isInspecting: false,
-        nearbyDestinations: const [],
-        nearbyScanInFlight: false,
-        nearbyScanCompletedOnce: false,
-        destinationCode: '',
-      ),
-    );
-    _scheduleNearbyScanning();
-  }
-
-  void _applyPendingSendItems(List<TransferItemViewData> items) {
-    final draft = _draftSession;
-    if (draft == null || items.isEmpty) {
-      return;
-    }
-    _setSession(
-      draft.copyWith(items: List<TransferItemViewData>.unmodifiable(items)),
-    );
-  }
-
-  void _beginSendInspection({required bool clearExistingItems}) {
-    _cancelNearbyScanTimer();
-    _cancelActiveSendTransfer();
-    _setSession(
-      SendDraftSession(
-        items: clearExistingItems ? const [] : state.sendItems,
-        isInspecting: true,
-        nearbyDestinations: const [],
-        nearbyScanInFlight: false,
-        nearbyScanCompletedOnce: false,
-        destinationCode: '',
-      ),
-    );
-  }
-
-  void _finishSendInspection() {
-    final draft = _draftSession;
-    if (draft == null) {
-      return;
-    }
-    _setSession(draft.copyWith(isInspecting: false));
-    if (draft.items.isNotEmpty) {
-      _scheduleNearbyScanning();
-    }
   }
 
   void _startReceiverSubscriptions() {
@@ -454,7 +198,6 @@ class DriftAppNotifier extends Notifier<DriftAppState>
     final items = List<TransferItemViewData>.unmodifiable(
       event.files.map(incomingFileToViewData),
     );
-    _cancelActiveSendTransfer();
     _clearReceiveMetricState();
     _setSession(
       ReceiveOfferSession(
@@ -740,45 +483,6 @@ class DriftAppNotifier extends Notifier<DriftAppState>
     }
   }
 
-  void _scheduleNearbyScanning() {
-    _cancelNearbyScanTimer();
-    final draft = _draftSession;
-    if (draft == null || draft.items.isEmpty || draft.isInspecting) {
-      return;
-    }
-    _setSession(
-      draft.copyWith(nearbyScanCompletedOnce: false, nearbyScanInFlight: false),
-    );
-    unawaited(_sendNearbyCoordinator.runScanOnce(this));
-    _nearbyScanTimer = Timer.periodic(
-      _sendNearbyCoordinator.refreshIntervalForDeviceType(_identity.deviceType),
-      (_) {
-        final current = _draftSession;
-        if (current == null || current.items.isEmpty || current.isInspecting) {
-          _cancelNearbyScanTimer();
-          return;
-        }
-        unawaited(_sendNearbyCoordinator.runScanOnce(this));
-      },
-    );
-  }
-
-  void applySendTransferUpdate(SendTransferUpdate update) {
-    _sendSessionControllerInstance.applySendTransferUpdate(this, update);
-  }
-
-  void applySendDraftSession(SendDraftSession session) {
-    _sendSessionControllerInstance.applySendDraftSession(this, session);
-  }
-
-  @override
-  DriftAppState get sendAppState => state;
-
-  @override
-  void setSendSession(ShellSessionState session) {
-    _setSession(session);
-  }
-
   void _setSession(ShellSessionState session) {
     state = state.copyWith(session: session);
     _syncSessionPolicies();
@@ -786,9 +490,6 @@ class DriftAppNotifier extends Notifier<DriftAppState>
 
   void _syncSessionPolicies() {
     unawaited(_syncDiscoverabilityPolicy());
-    if (state.session is! SendDraftSession) {
-      _cancelNearbyScanTimer();
-    }
   }
 
   Future<void> _syncDiscoverabilityPolicy() async {
@@ -805,55 +506,11 @@ class DriftAppNotifier extends Notifier<DriftAppState>
     }
   }
 
-  void _cancelNearbyScanTimer() {
-    _nearbyScanTimer?.cancel();
-    _nearbyScanTimer = null;
-  }
-
-  SendDraftSession? get _draftSession {
-    final session = state.session;
-    return session is SendDraftSession ? session : null;
-  }
-
-  void _reportSendSelectionError(
-    String userMessage,
-    Object error,
-    StackTrace stackTrace,
-  ) {
-    _setSendSetupError(userMessage);
-    debugPrint('Failed to inspect selected send items: $error');
-    debugPrintStack(stackTrace: stackTrace);
-  }
-
-  void _setSendSetupError(String message) {
-    state = state.copyWith(sendSetupErrorMessage: message);
-  }
-
-  void _clearSendSetupError() {
-    state = state.copyWith(clearSendSetupErrorMessage: true);
-  }
-
-  void _cancelActiveSendTransfer() {
-    _sendTransferCoordinator.cancelActiveTransfer();
-  }
-
-  SendSessionController get _sendSessionControllerInstance {
-    final controller = _sendSessionController;
-    if (controller != null) {
-      return controller;
-    }
-    final next = ref.read(sendSessionControllerProvider);
-    _sendSessionController = next;
-    return next;
-  }
-
   void _clearReceiveMetricState() {
     _receivePayloadStartedAt = null;
   }
 
   void _dispose() {
-    _cancelNearbyScanTimer();
-    _sendTransferCoordinator.cancelActiveTransfer();
     _badgeSubscription?.cancel();
     _incomingSubscription?.cancel();
   }

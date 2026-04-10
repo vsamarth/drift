@@ -1,6 +1,7 @@
 import 'package:drift_app/core/models/transfer_models.dart';
 import 'package:drift_app/features/send/send_controller.dart';
 import 'package:drift_app/features/send/send_providers.dart' as send_deps;
+import 'package:drift_app/features/send/send_state.dart';
 import 'package:drift_app/platform/send_transfer_source.dart';
 import 'package:drift_app/state/drift_app_state.dart';
 import 'package:drift_app/state/drift_providers.dart';
@@ -60,6 +61,8 @@ void main() {
       container.dispose();
     });
 
+    SendState readState() => container.read(send_deps.sendStateProvider);
+
     void call(void Function(SendController controller) action) {
       action(container.read(send_deps.sendControllerProvider.notifier));
     }
@@ -67,33 +70,35 @@ void main() {
     call((controller) => controller.pickSendItems());
     await _settle();
     expect(itemSource.pickFilesCalls, 1);
-    expect(notifier.applySelectedSendItemsCalls, 1);
+    expect(readState().sendItems, hasLength(1));
+    expect(readState().sendItems.single.path, 'sample.txt');
 
     call((controller) => controller.appendSendItemsFromPicker());
     await _settle();
     expect(itemSource.pickAdditionalPathsCalls, 1);
     expect(itemSource.appendPathsCalls, 1);
-    expect(notifier.applyPendingSendItemsCalls, 1);
-    expect(notifier.applySelectedSendItemsCalls, 2);
+    expect(
+      readState().sendItems.map((item) => item.path).toList(),
+      ['sample.txt', 'notes.pdf'],
+    );
 
     call((controller) => controller.rescanNearbySendDestinations());
     await _settle();
-    expect(nearbySource.scanCount, 1);
-    expect(notifier.setNearbyScanInFlightCalls, 2);
-    expect(notifier.setNearbyDestinationsCalls, 1);
+    expect(nearbySource.scanCount, greaterThanOrEqualTo(1));
+    expect(readState().nearbySendDestinations, hasLength(1));
+    expect(readState().nearbyScanInProgress, isFalse);
 
     call((controller) => controller.updateSendDestinationCode('ab2cd3'));
+    expect(readState().sendDestinationCode, 'AB2CD3');
     call((controller) => controller.clearSendDestinationCode());
-    expect(notifier.setSendSessionCalls, 2);
-    expect(notifier.build().sendDestinationCode, '');
+    expect(readState().sendDestinationCode, '');
 
     call(
       (controller) => controller.selectNearbyDestination(
-        notifier.build().nearbySendDestinations.first,
+        readState().nearbySendDestinations.first,
       ),
     );
-    expect(notifier.setSendSessionCalls, 3);
-    expect(notifier.build().selectedSendDestination?.name, 'Lab Mac');
+    expect(readState().selectedSendDestination?.name, 'Lab Mac');
 
     call((controller) => controller.startSend());
     expect(transferSource.startTransferCalls, 1);
@@ -113,12 +118,15 @@ void main() {
       ),
     );
     await _settle();
-    expect(notifier.build().session, isA<SendTransferSession>());
-    expect(notifier.setSendSessionCalls, 4);
+    expect(readState().appState.session, isA<SendTransferSession>());
 
     call((controller) => controller.cancelSendInProgress());
     await _settle();
     expect(transferSource.cancelTransferCalls, 1);
-    expect(notifier.setSendSessionCalls, 5);
+    expect(readState().appState.session, isA<SendTransferSession>());
+    expect(
+      (readState().appState.session as SendTransferSession).phase,
+      SendTransferSessionPhase.cancelling,
+    );
   });
 }
