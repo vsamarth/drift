@@ -111,7 +111,7 @@ class _MobileShellState extends ConsumerState<MobileShell> {
                         ),
                         Expanded(
                           child: ShellStateContent(
-                            view: state.shellView,
+                            view: shellState.view,
                             availableHeight: constraints.maxHeight,
                           ),
                         ),
