@@ -2,10 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:app/features/receive/receive_feature.dart';
+import 'package:app/features/receive/feature.dart';
 
 void main() {
-  testWidgets('renders the receive placeholder', (WidgetTester tester) async {
+  testWidgets('shows the receiver idle state', (WidgetTester tester) async {
     await tester.pumpWidget(
       const ProviderScope(
         child: MaterialApp(
@@ -13,7 +13,7 @@ void main() {
             body: SizedBox(
               width: 440,
               height: 260,
-              child: ReceiveFeaturePlaceholder(),
+              child: ReceiveFeature(),
             ),
           ),
         ),
@@ -21,5 +21,8 @@ void main() {
     );
 
     expect(find.text('Receiver'), findsOneWidget);
+    expect(find.text('Ready'), findsOneWidget);
+    expect(find.text('Receive code'), findsOneWidget);
+    expect(find.text('ABC 123'), findsOneWidget);
   });
 }

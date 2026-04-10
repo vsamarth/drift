@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../features/receive/receive_feature.dart';
+import '../features/receive/feature.dart';
 import '../features/send/send_feature.dart';
 
 class DriftShell extends StatelessWidget {
@@ -30,7 +30,7 @@ class DriftShell extends StatelessWidget {
               children: const [
                 Expanded(
                   flex: 5,
-                  child: ReceiveFeaturePlaceholder(),
+                  child: ReceiveFeature(),
                 ),
                 SizedBox(height: 14),
                 Expanded(
