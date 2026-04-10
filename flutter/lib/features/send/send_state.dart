@@ -1,5 +1,4 @@
 import '../../core/models/transfer_models.dart';
-import '../../shell/shell_routing.dart';
 import '../../state/app_identity.dart';
 import '../../state/drift_app_state.dart';
 import '../../src/rust/api/transfer.dart' as rust_transfer;
@@ -47,8 +46,5 @@ class SendState {
   bool get nearbyScanHasCompletedOnce => appState.nearbyScanHasCompletedOnce;
   bool get isInspectingSendItems => appState.isInspectingSendItems;
   TransferResultViewData? get transferResult => appState.transferResult;
-  ShellView get shellView => appState.shellView;
-  bool get canGoBack => appState.canGoBack;
-  bool get showShellBackButton => appState.showShellBackButton;
   bool get discoverableEnabled => appState.discoverableEnabled;
 }

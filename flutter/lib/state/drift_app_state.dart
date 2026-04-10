@@ -3,7 +3,6 @@ import 'package:flutter/foundation.dart';
 import '../core/models/transfer_models.dart';
 import '../shared/formatting/byte_format.dart';
 import '../shared/formatting/transfer_message_format.dart';
-import '../shell/shell_routing.dart';
 import '../src/rust/api/transfer.dart' as rust_transfer;
 import 'app_identity.dart';
 import 'receiver_service_source.dart';
@@ -334,20 +333,8 @@ class DriftAppState {
 
   bool get hasActiveTransfer => session is! IdleSession;
 
-  bool get canGoBack => session is! IdleSession;
-
-  bool get showShellBackButton => switch (session) {
-    IdleSession() => false,
-    SendResultSession(:final success) => !success,
-    ReceiveResultSession() => false,
-    ReceiveTransferSession() => false,
-    _ => true,
-  };
-
   bool get discoverableEnabled =>
       discoverableByDefault && (session is IdleSession);
-
-  ShellView get shellView => shellViewFor(this);
 }
 
 List<TransferDisplayItemViewData> _displayItemsFor(
