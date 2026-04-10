@@ -10,6 +10,7 @@ import '../features/receive/receive_mapper.dart';
 import '../features/send/send_selection_builder.dart';
 import '../features/send/send_nearby_coordinator.dart';
 import '../features/send/send_selection_coordinator.dart';
+import '../features/send/send_flow_actions.dart' as send_flow_actions;
 import '../features/send/send_session_reducer.dart';
 import '../features/send/send_shell_actions.dart' as send_shell_actions;
 import '../features/send/send_transfer_coordinator.dart';
@@ -144,7 +145,7 @@ class DriftAppNotifier extends Notifier<DriftAppState>
   void clearSendFlow() {
     _cancelNearbyScanTimer();
     _cancelActiveSendTransfer();
-    _setSession(const IdleSession());
+    _setSession(send_flow_actions.clearSendFlowSession());
   }
 
   void updateSendDestinationCode(String value) {
@@ -167,25 +168,22 @@ class DriftAppNotifier extends Notifier<DriftAppState>
   }
 
   void startSend() {
-    final draft = _draftSession;
-    if (draft == null || draft.items.isEmpty || draft.isInspecting) {
+    final intent = send_flow_actions.buildSendStartIntent(state);
+    if (intent == null) {
       return;
     }
 
-    final selected = draft.selectedDestination;
-    final ticket = selected?.lanTicket?.trim();
-
-    if (selected != null && ticket != null && ticket.isNotEmpty) {
+    if (intent.ticket != null && intent.destination != null) {
       _sendTransferCoordinator.startSendTransferWithTicket(
         host: this,
-        destination: selected,
-        ticket: ticket,
+        destination: intent.destination!,
+        ticket: intent.ticket!,
         onUpdate: _applySendUpdate,
       );
-    } else if (draft.destinationCode.length == 6) {
+    } else if (intent.normalizedCode != null) {
       _sendTransferCoordinator.startSendTransfer(
         host: this,
-        normalizedCode: draft.destinationCode,
+        normalizedCode: intent.normalizedCode!,
         onUpdate: _applySendUpdate,
       );
     }
@@ -233,18 +231,11 @@ class DriftAppNotifier extends Notifier<DriftAppState>
   }
 
   void cancelSendInProgress() {
-    final session = state.session;
-    if (session is! SendTransferSession) {
+    final next = send_flow_actions.markSendTransferCancelling(state.session);
+    if (next == null) {
       return;
     }
-    _setSession(
-      session.copyWith(
-        phase: SendTransferSessionPhase.cancelling,
-        summary: session.summary.copyWith(
-          statusMessage: 'Cancelling transfer...',
-        ),
-      ),
-    );
+    _setSession(next);
     unawaited(_cancelNativeSendTransfer());
   }
 
@@ -273,25 +264,21 @@ class DriftAppNotifier extends Notifier<DriftAppState>
   }
 
   void handleTransferResultPrimaryAction() {
-    final result = state.transferResult;
-    if (result == null) {
-      return;
-    }
-
-    switch (result.primaryAction) {
-      case TransferResultPrimaryActionData.done:
-      case null:
+    switch (send_flow_actions.sendPrimaryActionRoute(state.transferResult)) {
+      case send_flow_actions.SendFlowRoute.resetShell:
         resetShell();
-      case TransferResultPrimaryActionData.tryAgain:
-      case TransferResultPrimaryActionData.sendAgain:
+      case send_flow_actions.SendFlowRoute.restoreDraft:
         _restoreSendDraft(destinationCode: state.sendDestinationCode);
-      case TransferResultPrimaryActionData.chooseAnotherDevice:
+      case send_flow_actions.SendFlowRoute.returnToSelection:
         _returnToSendSelection();
+      case send_flow_actions.SendFlowRoute.none:
+        return;
     }
   }
 
   void goBack() {
-    switch (state.session) {
+    final session = state.session;
+    switch (session) {
       case ReceiveOfferSession(:final decisionPending):
         if (decisionPending) {
           unawaited(_respondToIncomingOffer(accept: false));
@@ -300,11 +287,19 @@ class DriftAppNotifier extends Notifier<DriftAppState>
       case ReceiveResultSession():
         _setSession(const IdleSession());
       case SendDraftSession():
-        _setSession(const IdleSession());
       case SendTransferSession():
-        _returnToSendSelection();
       case SendResultSession():
-        _returnToSendSelection();
+        switch (send_flow_actions.sendGoBackRoute(session)) {
+          case send_flow_actions.SendFlowRoute.resetShell:
+            _setSession(const IdleSession());
+            return;
+          case send_flow_actions.SendFlowRoute.returnToSelection:
+            _returnToSendSelection();
+            return;
+          case send_flow_actions.SendFlowRoute.restoreDraft:
+          case send_flow_actions.SendFlowRoute.none:
+            return;
+        }
       case ReceiveTransferSession():
       case IdleSession():
         return;
