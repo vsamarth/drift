@@ -5,15 +5,17 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../platform/send_transfer_source.dart';
 import '../receive/receive_mapper.dart';
-import '../../state/drift_app_state.dart';
+import '../../state/shell_session_state.dart';
 import 'send_dependencies.dart';
 import '../../state/drift_sample_data.dart';
+import 'send_flow_state.dart';
 import 'send_flow_actions.dart' as send_flow_actions;
 import 'send_mapper.dart' as send_mapper;
 import 'send_session_reducer.dart';
+import 'send_state.dart';
 
 abstract interface class SendSessionHost {
-  DriftAppState get sendAppState;
+  SendState get sendState;
 
   void setSendSession(ShellSessionState session);
 
@@ -50,7 +52,7 @@ class SendSessionController {
 
   void cancelSendInProgress(SendSessionHost host) {
     final next = send_flow_actions.markSendTransferCancelling(
-      host.sendAppState.session,
+      host.sendState.session,
     );
     if (next == null) {
       return;
@@ -77,7 +79,7 @@ class SendSessionController {
 
     host.setSendSession(
       reduceSendTransferUpdate(
-        state: host.sendAppState,
+        state: host.sendState,
         update: update,
         payloadStartedAt: _sendPayloadStartedAt,
       ),
@@ -96,17 +98,17 @@ class SendSessionController {
         SendTransferUpdate(
           phase: SendTransferUpdatePhase.failed,
           destinationLabel:
-              host.sendAppState.sendDestinationLabel ??
+              host.sendState.sendDestinationLabel ??
               send_mapper.formatCodeAsDestination(
-                host.sendAppState.sendDestinationCode,
+                host.sendState.sendDestinationCode,
               ),
           statusMessage: 'Cancelling transfer...',
-          itemCount: host.sendAppState.sendItems.length,
+          itemCount: host.sendState.sendItems.length,
           totalSize:
-              host.sendAppState.sendSummary?.totalSize ??
+              host.sendState.sendSummary?.totalSize ??
               sampleSendSummary.totalSize,
-          bytesSent: host.sendAppState.sendPayloadBytesSent ?? 0,
-          totalBytes: host.sendAppState.sendPayloadTotalBytes ?? 0,
+          bytesSent: host.sendState.sendPayloadBytesSent ?? 0,
+          totalBytes: host.sendState.sendPayloadTotalBytes ?? 0,
           errorMessage: 'Drift couldn\'t cancel the transfer.',
         ),
       );

@@ -707,8 +707,8 @@ void main() {
     await pumpUiSettled(tester);
 
     expect(
-      container.read(send_deps.sendStateProvider).appState.session,
-      isA<IdleSession>(),
+      container.read(send_deps.sendStateProvider).session,
+      isA<ReceiveResultSession>(),
     );
     expectNoFlutterError(tester);
   });
@@ -744,8 +744,8 @@ void main() {
     await pumpUiSettled(tester);
 
     expect(
-      container.read(send_deps.sendStateProvider).appState.session,
-      isA<IdleSession>(),
+      container.read(send_deps.sendStateProvider).session,
+      isA<ReceiveResultSession>(),
     );
     expectNoFlutterError(tester);
   });
@@ -810,11 +810,11 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(
-      container.read(send_deps.sendStateProvider).appState.sendStage,
+      container.read(send_deps.sendStateProvider).sendStage,
       TransferStage.ready,
     );
     expect(
-      container.read(send_deps.sendStateProvider).appState.sendSummary?.statusMessage,
+      container.read(send_deps.sendStateProvider).sendSummary?.statusMessage,
       'Request sent',
     );
 
@@ -828,11 +828,11 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(
-      container.read(send_deps.sendStateProvider).appState.sendStage,
+      container.read(send_deps.sendStateProvider).sendStage,
       TransferStage.waiting,
     );
     expect(
-      container.read(send_deps.sendStateProvider).appState.sendSummary?.statusMessage,
+      container.read(send_deps.sendStateProvider).sendSummary?.statusMessage,
       'Waiting for confirmation.',
     );
 
@@ -846,7 +846,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(
-      container.read(send_deps.sendStateProvider).appState.sendSummary?.statusMessage,
+      container.read(send_deps.sendStateProvider).sendSummary?.statusMessage,
       'Sending to Maya’s iPhone.',
     );
 
@@ -861,11 +861,11 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(
-      container.read(send_deps.sendStateProvider).appState.transferResult?.title,
+      container.read(send_deps.sendStateProvider).transferResult?.title,
       'Transfer complete',
     );
     expect(
-      container.read(send_deps.sendStateProvider).appState.transferResult?.message,
+      container.read(send_deps.sendStateProvider).transferResult?.message,
       'Files sent successfully',
     );
 
@@ -875,7 +875,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(
-      container.read(send_deps.sendStateProvider).appState.session,
+      container.read(send_deps.sendStateProvider).session,
       isA<IdleSession>(),
     );
     expectNoFlutterError(tester);
@@ -985,11 +985,11 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(
-      container.read(send_deps.sendStateProvider).appState.transferResult?.title,
+      container.read(send_deps.sendStateProvider).transferResult?.title,
       'Transfer cancelled',
     );
     expect(
-      container.read(send_deps.sendStateProvider).appState.transferResult?.message,
+      container.read(send_deps.sendStateProvider).transferResult?.message,
       'The transfer was stopped before all files were sent.',
     );
     container.read(driftAppNotifierProvider.notifier).resetShell();
@@ -1031,11 +1031,11 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(
-      container.read(send_deps.sendStateProvider).appState.transferResult?.title,
+      container.read(send_deps.sendStateProvider).transferResult?.title,
       'Transfer failed',
     );
     expect(
-      container.read(send_deps.sendStateProvider).appState.transferResult?.message,
+      container.read(send_deps.sendStateProvider).transferResult?.message,
       'Drift couldn\'t cancel the transfer.',
     );
     container.read(driftAppNotifierProvider.notifier).resetShell();
@@ -1150,11 +1150,11 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(
-      container.read(send_deps.sendStateProvider).appState.transferResult?.title,
+      container.read(send_deps.sendStateProvider).transferResult?.title,
       'Transfer failed',
     );
     expect(
-      container.read(send_deps.sendStateProvider).appState.transferResult?.message,
+      container.read(send_deps.sendStateProvider).transferResult?.message,
       'receiver declined the offer: receiver declined the offer',
     );
     container.read(driftAppNotifierProvider.notifier).resetShell();

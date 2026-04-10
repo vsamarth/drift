@@ -1,5 +1,6 @@
 import '../../core/models/transfer_models.dart';
-import '../../state/drift_app_state.dart';
+import 'send_flow_state.dart';
+import 'send_state.dart';
 
 String normalizeSendDestinationCode(String value) {
   return value.toUpperCase().replaceAll(RegExp(r'[^A-Z0-9]'), '');
@@ -46,7 +47,7 @@ SendDraftSession? selectNearbyDestination(
 }
 
 SendDraftSession restoreSendDraft(
-  DriftAppState state, {
+  SendState state, {
   String destinationCode = '',
 }) {
   return SendDraftSession(

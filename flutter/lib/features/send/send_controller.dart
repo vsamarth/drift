@@ -154,7 +154,7 @@ class SendController extends _$SendController
   }
 
   void handleTransferResultPrimaryAction() {
-    final state = _mergedState;
+    final state = _sendState;
     if (state.session is SendResultSession) {
       switch (send_flow_actions.sendPrimaryActionRoute(state.transferResult)) {
         case send_flow_actions.SendFlowRoute.resetShell:
@@ -210,22 +210,22 @@ class SendController extends _$SendController
   }
 
   @override
-  List<TransferItemViewData> get currentSendItems => _mergedState.sendItems;
+  List<TransferItemViewData> get currentSendItems => _sendState.sendItems;
 
   @override
-  String get currentDeviceName => _mergedState.deviceName;
+  String get currentDeviceName => _sendState.deviceName;
 
   @override
-  String get currentDeviceType => _mergedState.deviceType;
+  String get currentDeviceType => _sendState.deviceType;
 
   @override
   String? get currentServerUrl => _mergedState.serverUrl;
 
   @override
-  bool get isInspectingSendItems => _mergedState.isInspectingSendItems;
+  bool get isInspectingSendItems => _sendState.isInspectingSendItems;
 
   @override
-  bool get nearbyScanInFlight => _mergedState.nearbyScanInProgress;
+  bool get nearbyScanInFlight => _sendState.nearbyScanInProgress;
 
   @override
   void clearSendFlow() {
@@ -237,7 +237,7 @@ class SendController extends _$SendController
     _cancelNearbyScanTimer();
     _sendTransferCoordinator.cancelActiveTransfer();
     _sendSession = SendDraftSession(
-      items: clearExistingItems ? const [] : _mergedState.sendItems,
+      items: clearExistingItems ? const [] : _sendState.sendItems,
       isInspecting: true,
       nearbyDestinations: const [],
       nearbyScanInFlight: false,
@@ -368,9 +368,6 @@ class SendController extends _$SendController
   }
 
   @override
-  DriftAppState get sendAppState => _mergedState;
-
-  @override
   void setSendSession(ShellSessionState session) {
     _sendSession = session;
     _publishState();
@@ -384,21 +381,23 @@ class SendController extends _$SendController
 
   void _restoreSendDraft({String destinationCode = ''}) {
     final next = send_shell_actions.restoreSendDraft(
-      _mergedState,
+      _sendState,
       destinationCode: destinationCode,
     );
     _sendSessionController.applySendDraftSession(this, next);
   }
 
   SendDraftSession? _currentDraft() {
-    final session = _mergedState.session;
+    final session = _sendState.session;
     return session is SendDraftSession ? session : null;
   }
 
   SendDraftSession? get _draftSession {
-    final session = _mergedState.session;
+    final session = _sendState.session;
     return session is SendDraftSession ? session : null;
   }
+
+  SendState get _sendState => SendState.fromAppState(_mergedState);
 
   DriftAppState get _mergedState {
     final DriftAppState appState = _appState ?? ref.read(driftAppNotifierProvider);
@@ -436,4 +435,7 @@ class SendController extends _$SendController
     _cancelNearbyScanTimer();
     _sendTransferCoordinator.cancelActiveTransfer();
   }
+
+  @override
+  SendState get sendState => _sendState;
 }

@@ -33,6 +33,7 @@ class _MobileShellState extends ConsumerState<MobileShell> {
   Widget build(BuildContext context) {
     final shellState = ref.watch(appShellStateProvider);
     final state = ref.watch(driftAppNotifierProvider);
+    final sendState = ref.watch(sendStateProvider);
     final notifier = ref.read(sendControllerProvider.notifier);
     final isIdle = shellState.view == ShellView.sendIdle;
 
@@ -76,7 +77,7 @@ class _MobileShellState extends ConsumerState<MobileShell> {
                     if (isIdle) ...[
                       SelectFilesCard(
                         onTap: notifier.pickSendItems,
-                        isPicking: state.isInspectingSendItems,
+                        isPicking: sendState.isInspectingSendItems,
                       ),
                       const SizedBox(height: 24),
                     ],

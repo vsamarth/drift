@@ -1,4 +1,5 @@
 import 'package:drift_app/features/send/send_session_reducer.dart';
+import 'package:drift_app/features/send/send_state.dart';
 import 'package:drift_app/platform/send_transfer_source.dart';
 import 'package:drift_app/state/drift_app_state.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -8,7 +9,7 @@ import 'send_test_support.dart';
 void main() {
   test('connecting update becomes a send transfer session', () {
     final session = reduceSendTransferUpdate(
-      state: buildSendDraftState(),
+      state: SendState.fromAppState(buildSendDraftState()),
       update: const SendTransferUpdate(
         phase: SendTransferUpdatePhase.connecting,
         destinationLabel: 'Maya\'s iPhone',
@@ -30,7 +31,7 @@ void main() {
 
   test('completed update includes send completion metrics', () {
     final session = reduceSendTransferUpdate(
-      state: buildSendDraftState(),
+      state: SendState.fromAppState(buildSendDraftState()),
       update: const SendTransferUpdate(
         phase: SendTransferUpdatePhase.completed,
         destinationLabel: 'Maya\'s iPhone',

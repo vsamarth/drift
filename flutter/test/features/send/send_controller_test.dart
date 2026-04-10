@@ -118,14 +118,14 @@ void main() {
       ),
     );
     await _settle();
-    expect(readState().appState.session, isA<SendTransferSession>());
+    expect(readState().session, isA<SendTransferSession>());
 
     call((controller) => controller.cancelSendInProgress());
     await _settle();
     expect(transferSource.cancelTransferCalls, 1);
-    expect(readState().appState.session, isA<SendTransferSession>());
+    expect(readState().session, isA<SendTransferSession>());
     expect(
-      (readState().appState.session as SendTransferSession).phase,
+      (readState().session as SendTransferSession).phase,
       SendTransferSessionPhase.cancelling,
     );
   });

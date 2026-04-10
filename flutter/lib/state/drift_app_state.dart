@@ -5,7 +5,6 @@ import '../shared/formatting/byte_format.dart';
 import '../src/rust/api/transfer.dart' as rust_transfer;
 import 'app_identity.dart';
 import 'receiver_service_source.dart';
-import '../features/send/send_flow_state.dart';
 import 'shell_session_state.dart';
 import 'transfer_result_state.dart';
 
@@ -64,61 +63,11 @@ class DriftAppState {
     _ => TransferDirection.send,
   };
 
-  TransferStage get sendStage => switch (session) {
-    SendDraftSession() => TransferStage.collecting,
-    SendTransferSession(:final phase) => switch (phase) {
-      SendTransferSessionPhase.connecting => TransferStage.ready,
-      SendTransferSessionPhase.waitingForDecision ||
-      SendTransferSessionPhase.accepted ||
-      SendTransferSessionPhase.declined ||
-      SendTransferSessionPhase.sending => TransferStage.waiting,
-      SendTransferSessionPhase.cancelling => TransferStage.waiting,
-    },
-    SendResultSession(:final success) =>
-      success ? TransferStage.completed : TransferStage.error,
-    _ => TransferStage.idle,
-  };
-
   TransferStage get receiveStage => switch (session) {
     ReceiveOfferSession() => TransferStage.review,
     ReceiveTransferSession() => TransferStage.waiting,
     ReceiveResultSession() => TransferStage.completed,
     _ => TransferStage.idle,
-  };
-
-  bool get canBrowseNearbyReceivers =>
-      session is SendDraftSession &&
-      sendItems.isNotEmpty &&
-      !isInspectingSendItems;
-
-  bool get nearbyScanInProgress =>
-      session is SendDraftSession &&
-      (session as SendDraftSession).nearbyScanInFlight;
-
-  bool get nearbyScanHasCompletedOnce =>
-      session is SendDraftSession &&
-      (session as SendDraftSession).nearbyScanCompletedOnce;
-
-  bool get isInspectingSendItems =>
-      session is SendDraftSession && (session as SendDraftSession).isInspecting;
-
-  String get sendDestinationCode => switch (session) {
-    SendDraftSession(:final destinationCode) => destinationCode,
-    SendTransferSession(:final summary) => summary.code,
-    SendResultSession(:final summary) => summary.code,
-    _ => '',
-  };
-
-  String? get sendDestinationLabel => switch (session) {
-    SendTransferSession(:final summary) => summary.destinationLabel,
-    SendResultSession(:final summary) => summary.destinationLabel,
-    _ => null,
-  };
-
-  String? get sendRemoteDeviceType => switch (session) {
-    SendTransferSession(:final remoteDeviceType) => remoteDeviceType,
-    SendResultSession(:final remoteDeviceType) => remoteDeviceType,
-    _ => null,
   };
 
   String? get receiveSenderDeviceType => switch (session) {
@@ -141,13 +90,6 @@ class DriftAppState {
     _ => '',
   };
 
-  List<TransferItemViewData> get sendItems => switch (session) {
-    SendDraftSession(:final items) => items,
-    SendTransferSession(:final items) => items,
-    SendResultSession(:final items) => items,
-    _ => const [],
-  };
-
   List<TransferItemViewData> get receiveItems => switch (session) {
     ReceiveOfferSession(:final items) => items,
     ReceiveTransferSession(:final items) => items,
@@ -155,30 +97,11 @@ class DriftAppState {
     _ => const [],
   };
 
-  List<TransferDisplayItemViewData> get sendDisplayItems =>
-      _displayItemsFor(sendItems, sendTransferPlan, sendTransferSnapshot);
-
   List<TransferDisplayItemViewData> get receiveDisplayItems => _displayItemsFor(
     receiveItems,
     receiveTransferPlan,
     receiveTransferSnapshot,
   );
-
-  List<SendDestinationViewData> get nearbySendDestinations => switch (session) {
-    SendDraftSession(:final nearbyDestinations) => nearbyDestinations,
-    _ => const [],
-  };
-
-  SendDestinationViewData? get selectedSendDestination => switch (session) {
-    SendDraftSession(:final selectedDestination) => selectedDestination,
-    _ => null,
-  };
-
-  TransferSummaryViewData? get sendSummary => switch (session) {
-    SendTransferSession(:final summary) => summary,
-    SendResultSession(:final summary) => summary,
-    _ => null,
-  };
 
   TransferSummaryViewData? get receiveSummary => switch (session) {
     ReceiveOfferSession(:final summary) => summary,
@@ -186,49 +109,6 @@ class DriftAppState {
     ReceiveResultSession(:final summary) => summary,
     _ => null,
   };
-
-  int? get sendPayloadBytesSent => switch (session) {
-    SendTransferSession(:final payloadBytesSent) => payloadBytesSent,
-    _ => null,
-  };
-
-  int? get sendPayloadTotalBytes => switch (session) {
-    SendTransferSession(:final payloadTotalBytes) => payloadTotalBytes,
-    _ => null,
-  };
-
-  String? get sendTransferSpeedLabel => switch (session) {
-    SendTransferSession(:final payloadSpeedLabel) => payloadSpeedLabel,
-    _ => null,
-  };
-
-  String? get sendTransferEtaLabel => switch (session) {
-    SendTransferSession(:final payloadEtaLabel) => payloadEtaLabel,
-    _ => null,
-  };
-
-  bool get hasSendPayloadProgress =>
-      sendPayloadBytesSent != null &&
-      sendPayloadTotalBytes != null &&
-      sendPayloadTotalBytes! > 0;
-
-  List<TransferMetricRow>? get sendCompletionMetrics => switch (session) {
-    SendResultSession(:final metrics) => metrics,
-    _ => null,
-  };
-
-  rust_transfer.TransferPlanData? get sendTransferPlan => switch (session) {
-    SendTransferSession(:final plan) => plan,
-    SendResultSession(:final plan) => plan,
-    _ => null,
-  };
-
-  rust_transfer.TransferSnapshotData? get sendTransferSnapshot =>
-      switch (session) {
-        SendTransferSession(:final snapshot) => snapshot,
-        SendResultSession(:final snapshot) => snapshot,
-        _ => null,
-      };
 
   int? get receivePayloadBytesReceived => switch (session) {
     ReceiveTransferSession(:final payloadBytesReceived) => payloadBytesReceived,
@@ -273,24 +153,12 @@ class DriftAppState {
   rust_transfer.TransferSnapshotData? get receiveTransferSnapshot =>
       switch (session) {
         ReceiveOfferSession(:final snapshot) => snapshot,
-        ReceiveTransferSession(:final snapshot) => snapshot,
-        ReceiveResultSession(:final snapshot) => snapshot,
-        _ => null,
-      };
-
-  TransferResultSession? get transferResultSession => switch (session) {
-    SendResultSession() => session as SendResultSession,
-    ReceiveResultSession() => session as ReceiveResultSession,
+    ReceiveTransferSession(:final snapshot) => snapshot,
+    ReceiveResultSession(:final snapshot) => snapshot,
     _ => null,
   };
 
   TransferResultViewData? get transferResult => switch (session) {
-    SendResultSession(:final outcome, :final summary, :final metrics) =>
-      buildSendTransferResultViewData(
-        outcome: outcome,
-        summary: summary,
-        metrics: metrics,
-      ),
     ReceiveResultSession(:final outcome, :final summary, :final metrics) =>
       buildReceiveTransferResultViewData(
         outcome: outcome,

@@ -1,11 +1,14 @@
 import '../../features/receive/receive_mapper.dart';
 import '../../platform/send_transfer_source.dart';
-import '../../state/drift_app_state.dart';
 import '../../state/drift_sample_data.dart';
+import '../../state/shell_session_state.dart';
+import '../../state/transfer_result_state.dart';
+import 'send_flow_state.dart';
+import 'send_state.dart';
 import 'send_mapper.dart' as send_mapper;
 
 ShellSessionState reduceSendTransferUpdate({
-  required DriftAppState state,
+  required SendState state,
   required SendTransferUpdate update,
   required DateTime? payloadStartedAt,
 }) {
