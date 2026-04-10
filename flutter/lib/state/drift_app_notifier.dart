@@ -8,6 +8,7 @@ import '../platform/app_focus.dart';
 import '../platform/send_item_source.dart';
 import '../platform/send_transfer_source.dart';
 import '../features/receive/receive_mapper.dart';
+import '../features/send/send_selection_builder.dart';
 import '../features/send/send_mapper.dart';
 import '../src/rust/api/receiver.dart' as rust_receiver;
 import '../features/settings/settings_state.dart';
@@ -33,6 +34,8 @@ const List<TransferItemViewData> _defaultDroppedSendItems = [
     kind: TransferItemKind.folder,
   ),
 ];
+
+const SendSelectionBuilder _sendSelectionBuilder = SendSelectionBuilder();
 
 class DriftAppNotifier extends Notifier<DriftAppState> {
   late DriftAppIdentity _identity;
@@ -455,40 +458,13 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
     if (draft == null || incomingPaths.isEmpty) {
       return;
     }
-
-    final seen = draft.items.map((item) => item.path.trim()).toSet();
-    final mergedItems = List<TransferItemViewData>.of(draft.items);
-
-    for (final rawPath in incomingPaths) {
-      final path = rawPath.trim();
-      if (path.isEmpty || !seen.add(path)) {
-        continue;
-      }
-      mergedItems.add(_pendingSendItemForPath(path));
-    }
-
     _setSession(
       draft.copyWith(
-        items: List<TransferItemViewData>.unmodifiable(mergedItems),
+        items: _sendSelectionBuilder.appendPendingItems(
+          existingItems: draft.items,
+          incomingPaths: incomingPaths,
+        ),
       ),
-    );
-  }
-
-  TransferItemViewData _pendingSendItemForPath(String path) {
-    final normalized = path.replaceAll('\\', '/');
-    final trimmed = normalized.endsWith('/')
-        ? normalized.substring(0, normalized.length - 1)
-        : normalized;
-    final segments = trimmed.split('/')
-      ..removeWhere((segment) => segment.isEmpty);
-    final name = segments.isEmpty ? trimmed : segments.last;
-    final isFolder = normalized.endsWith('/');
-
-    return TransferItemViewData(
-      name: name.isEmpty ? path : name,
-      path: path,
-      size: 'Adding...',
-      kind: isFolder ? TransferItemKind.folder : TransferItemKind.file,
     );
   }
 
