@@ -1,6 +1,10 @@
+import 'package:drift_app/core/models/transfer_models.dart';
+import 'package:drift_app/core/theme/drift_theme.dart';
 import 'package:drift_app/features/send/widgets/send_code_card.dart';
 import 'package:drift_app/features/send/widgets/send_selected_card.dart';
 import 'package:drift_app/features/send/send_providers.dart' as send_deps;
+import 'package:drift_app/shell/widgets/transfer_result_card.dart';
+import 'package:drift_app/state/transfer_result_state.dart';
 import 'package:drift_app/state/drift_providers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -108,5 +112,41 @@ void main() {
     await tester.pump();
 
     expect(transferSource.cancelTransferCalls, 1);
+  });
+
+  testWidgets('transfer result card shows a completion explainer on success', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: TransferResultCard(
+            fillBody: true,
+            outcome: TransferResultOutcomeData.success,
+            title: 'Transfer complete',
+            message: 'Files sent successfully',
+            metrics: const [
+              TransferMetricRow(label: 'Sent to', value: 'Maya’s iPhone'),
+              TransferMetricRow(label: 'Files', value: '4'),
+              TransferMetricRow(label: 'Size', value: '14.7 MB'),
+            ],
+            primaryLabel: 'Done',
+            onPrimary: () {},
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Transfer complete'), findsOneWidget);
+    expect(find.text('Success'), findsOneWidget);
+    expect(find.text('Files sent successfully'), findsOneWidget);
+    expect(find.text('4 files finished in 14.7 MB.'), findsOneWidget);
+    expect(find.text('Done'), findsOneWidget);
+
+    final button = tester.widget<FilledButton>(find.byType(FilledButton));
+    expect(
+      button.style?.backgroundColor?.resolve(<MaterialState>{}),
+      kAccentCyanStrong,
+    );
   });
 }

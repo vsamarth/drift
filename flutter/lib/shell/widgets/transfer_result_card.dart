@@ -31,6 +31,7 @@ class TransferResultCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final visual = _visualForOutcome(outcome);
+    final explainer = _completionExplainer(metrics);
 
     if (fillBody) {
       return TransferFlowLayout(
@@ -38,6 +39,12 @@ class TransferResultCard extends StatelessWidget {
         statusColor: visual.accentColor,
         title: title,
         subtitle: message,
+        explainer: explainer == null
+            ? null
+            : Text(
+                explainer,
+                style: driftSans(fontSize: 12, color: kMuted, height: 1.4),
+              ),
         illustration: DecoratedBox(
           decoration: BoxDecoration(
             color: visual.accentColor.withValues(alpha: 0.1),
@@ -99,6 +106,13 @@ class TransferResultCard extends StatelessWidget {
           Text(title, style: titleStyle),
           const SizedBox(height: 4),
           Text(message, style: messageStyle),
+          if (explainer != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              explainer,
+              style: driftSans(fontSize: 12, color: kMuted, height: 1.4),
+            ),
+          ],
           if (metrics != null && metrics!.isNotEmpty) ...[
             const SizedBox(height: 18),
             DecoratedBox(
@@ -137,6 +151,34 @@ class TransferResultCard extends StatelessWidget {
   }
 }
 
+String? _completionExplainer(List<TransferMetricRow>? metrics) {
+  if (metrics == null || metrics.isEmpty) {
+    return null;
+  }
+
+  final files = _metricValue(metrics, 'Files');
+  final size = _metricValue(metrics, 'Size');
+  if (files == null || size == null) {
+    return null;
+  }
+
+  final count = int.tryParse(files.trim());
+  if (count == null || count <= 0) {
+    return null;
+  }
+
+  return '$count file${count == 1 ? '' : 's'} finished in $size.';
+}
+
+String? _metricValue(List<TransferMetricRow> metrics, String label) {
+  for (final metric in metrics) {
+    if (metric.label == label) {
+      return metric.value;
+    }
+  }
+  return null;
+}
+
 class _TransferResultVisualData {
   const _TransferResultVisualData({
     required this.statusLabel,
@@ -154,9 +196,9 @@ class _TransferResultVisualData {
 _TransferResultVisualData _visualForOutcome(TransferResultOutcomeData outcome) {
   return switch (outcome) {
     TransferResultOutcomeData.success => const _TransferResultVisualData(
-      statusLabel: 'Complete',
+      statusLabel: 'Success',
       accentColor: Color(0xFF49B36C),
-      buttonColor: Color(0xFF4A8E9E),
+      buttonColor: Color(0xFF5FA7B7),
       icon: Icons.check_circle_rounded,
     ),
     TransferResultOutcomeData.cancelled => const _TransferResultVisualData(
