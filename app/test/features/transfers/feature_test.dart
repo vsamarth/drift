@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:animated_tree_view/animated_tree_view.dart';
 
 import 'package:app/features/receive/feature.dart';
 import 'package:app/features/transfers/feature.dart';
@@ -124,13 +125,15 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('core / src'), findsOneWidget);
+    expect(find.text('crates'), findsOneWidget);
+    expect(find.text('core'), findsOneWidget);
+    expect(find.text('src'), findsOneWidget);
     expect(find.text('Cargo.toml'), findsOneWidget);
     expect(find.text('actor.rs'), findsOneWidget);
     expect(find.text('nearby.rs'), findsOneWidget);
   });
 
-  testWidgets('renders connector lines in the manifest tree', (
+  testWidgets('uses a package tree with connector lines', (
     WidgetTester tester,
   ) async {
     final source = FakeReceiverServiceSource();
@@ -168,10 +171,10 @@ void main() {
     expect(
       find.byWidgetPredicate(
         (widget) =>
-            widget is CustomPaint &&
-            widget.painter is ManifestTreeConnectorPainter,
+            widget is TreeView &&
+            widget.indentation.style == IndentStyle.squareJoint,
       ),
-      findsWidgets,
+      findsOneWidget,
     );
   });
 

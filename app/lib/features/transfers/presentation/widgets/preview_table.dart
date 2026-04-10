@@ -60,15 +60,18 @@ class PreviewTable extends StatelessWidget {
           ),
         ),
         _divider,
-        const SizedBox(height: 10),
-        ManifestTree(items: items),
+        const SizedBox(height: 12),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          child: ManifestTree(items: items),
+        ),
         if (items.length > 1) ...[
           _divider,
           Padding(
             padding: const EdgeInsets.only(top: 10, bottom: 4),
             child: Row(
               children: [
-                const SizedBox(width: 28),
+                const SizedBox(width: 24),
                 Expanded(
                   child: Text(
                     footerSummary,

@@ -1,5 +1,6 @@
-import 'dart:collection';
+import 'dart:convert';
 
+import 'package:animated_tree_view/animated_tree_view.dart';
 import 'package:flutter/material.dart';
 
 import '../../../../theme/drift_theme.dart';
@@ -24,94 +25,62 @@ class ManifestTree extends StatelessWidget {
       );
     }
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        for (final child in _orderedChildren(tree)) ...[
-          _ManifestTreeNodeView(
-            node: child,
-            depth: 0,
-            ancestorHasFollowingSiblings: const [],
-          ),
-        ],
-      ],
-    );
-  }
-}
-
-class _ManifestTreeNodeView extends StatelessWidget {
-  const _ManifestTreeNodeView({
-    required this.node,
-    required this.depth,
-    required this.ancestorHasFollowingSiblings,
-  });
-
-  final _ManifestTreeNode node;
-  final int depth;
-  final List<bool> ancestorHasFollowingSiblings;
-
-  @override
-  Widget build(BuildContext context) {
-    final compressed = _compressNode(node);
-    final renderedNode = compressed.node;
-    final isFolder = renderedNode is _ManifestTreeFolderNode;
-    final labelStyle = driftSans(
-      fontSize: isFolder ? 13.5 : 13,
-      fontWeight: isFolder ? FontWeight.w600 : FontWeight.w500,
-      color: isFolder ? kInk : kInk,
-    );
-    final sizeLabel = formatBytes(renderedNode.totalSizeBytes);
-    final rowHeight = isFolder ? 28.0 : 26.0;
-    final gutterWidth = depth == 0 ? 14.0 : depth * 12.0 + 14.0;
-    final children = renderedNode is _ManifestTreeFolderNode
-        ? _orderedChildren(renderedNode)
-        : const <_ManifestTreeNode>[];
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Padding(
-          padding: EdgeInsets.symmetric(horizontal: 8, vertical: isFolder ? 2 : 1),
+    return TreeView.simpleTyped<_ManifestNodeData, TreeNode<_ManifestNodeData>>(
+      tree: tree,
+      showRootNode: false,
+      shrinkWrap: true,
+      primary: false,
+      physics: const NeverScrollableScrollPhysics(),
+      focusToNewNode: false,
+      expansionBehavior: ExpansionBehavior.none,
+      expansionIndicatorBuilder: noExpansionIndicatorBuilder,
+      padding: const EdgeInsets.only(top: 2, bottom: 6),
+      indentation: Indentation(
+        width: 10,
+        style: IndentStyle.squareJoint,
+        thickness: 1,
+        color: kBorder.withValues(alpha: 0.75),
+      ),
+      onTreeReady: (controller) {
+        controller.expandAllChildren(controller.tree, recursive: true);
+      },
+      builder: (context, node) {
+        final data = node.data!;
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
           child: Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               SizedBox(
-                width: gutterWidth,
-                height: rowHeight,
-                child: CustomPaint(
-                  painter: ManifestTreeConnectorPainter(
-                    depth: depth,
-                    ancestorHasFollowingSiblings: ancestorHasFollowingSiblings,
-                    color: kBorder.withValues(alpha: 0.95),
-                  ),
-                ),
-              ),
-              SizedBox(
-                width: 28,
+                width: 26,
                 child: Icon(
-                  isFolder
+                  data.isFolder
                       ? Icons.folder_outlined
                       : Icons.insert_drive_file_outlined,
                   size: 18,
-                  color: isFolder ? const Color(0xFF6C8590) : kMuted,
+                  color: data.isFolder ? const Color(0xFF6C8590) : kMuted,
                 ),
               ),
               Expanded(
                 child: Tooltip(
-                  message: compressed.fullPath,
+                  message: data.fullPath,
                   child: Text(
-                    compressed.label,
+                    data.label,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: labelStyle,
+                    style: driftSans(
+                      fontSize: data.isFolder ? 13.5 : 13,
+                      fontWeight:
+                          data.isFolder ? FontWeight.w600 : FontWeight.w500,
+                      color: kInk,
+                    ),
                   ),
                 ),
               ),
               const SizedBox(width: 12),
               SizedBox(
-                width: 116,
+                width: 108,
                 child: Text(
-                  sizeLabel,
+                  formatBytes(data.sizeBytes),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   textAlign: TextAlign.right,
@@ -124,216 +93,134 @@ class _ManifestTreeNodeView extends StatelessWidget {
               ),
             ],
           ),
-        ),
-        for (var i = 0; i < children.length; i++)
-          _ManifestTreeNodeView(
-            node: children[i],
-            depth: depth + 1,
-            ancestorHasFollowingSiblings: [
-              ...ancestorHasFollowingSiblings,
-              i != children.length - 1,
-            ],
-          ),
-      ],
+        );
+      },
     );
   }
 }
 
-class _CompressedNode {
-  const _CompressedNode({
-    required this.node,
+class _ManifestNodeData {
+  _ManifestNodeData.folder({
     required this.label,
     required this.fullPath,
-  });
+    required this.sizeBytes,
+  }) : isFolder = true;
 
-  final _ManifestTreeNode node;
+  _ManifestNodeData.file({
+    required this.label,
+    required this.fullPath,
+    required this.sizeBytes,
+  }) : isFolder = false;
+
   final String label;
   final String fullPath;
+  final bool isFolder;
+  BigInt sizeBytes;
 }
 
-sealed class _ManifestTreeNode {
-  _ManifestTreeNode({
-    required this.name,
+class _PathEntry {
+  const _PathEntry({
+    required this.segments,
+    required this.sizeBytes,
     required this.fullPath,
   });
 
-  final String name;
-  final String fullPath;
-
-  BigInt get totalSizeBytes;
-}
-
-class _ManifestTreeFolderNode extends _ManifestTreeNode {
-  _ManifestTreeFolderNode({
-    required super.name,
-    required super.fullPath,
-  });
-
-  final LinkedHashMap<String, _ManifestTreeNode> children = LinkedHashMap();
-  BigInt _totalSizeBytes = BigInt.zero;
-
-  @override
-  BigInt get totalSizeBytes => _totalSizeBytes;
-
-  void addSize(BigInt sizeBytes) {
-    _totalSizeBytes += sizeBytes;
-  }
-}
-
-class _ManifestTreeFileNode extends _ManifestTreeNode {
-  _ManifestTreeFileNode({
-    required super.name,
-    required super.fullPath,
-    required this.sizeBytes,
-  });
-
+  final List<String> segments;
   final BigInt sizeBytes;
-
-  @override
-  BigInt get totalSizeBytes => sizeBytes;
+  final String fullPath;
 }
 
-_ManifestTreeFolderNode _buildTree(List<TransferManifestItem> items) {
-  final root = _ManifestTreeFolderNode(name: '', fullPath: '');
+TreeNode<_ManifestNodeData> _buildTree(List<TransferManifestItem> items) {
+  final root = TreeNode<_ManifestNodeData>.root(
+    data: _ManifestNodeData.folder(
+      label: '',
+      fullPath: '',
+      sizeBytes: BigInt.zero,
+    ),
+  );
 
-  for (final item in items) {
-    final segments = item.path
-        .split('/')
-        .where((segment) => segment.isNotEmpty)
-        .toList(growable: false);
-    if (segments.isEmpty) {
-      continue;
-    }
-
-    var folder = root;
-    var currentPath = <String>[];
-    final visitedFolders = <_ManifestTreeFolderNode>[root];
-
-    for (var index = 0; index < segments.length; index++) {
-      final segment = segments[index];
-      currentPath = [...currentPath, segment];
-      final isLeaf = index == segments.length - 1;
-      if (isLeaf) {
-        final file = _ManifestTreeFileNode(
-          name: segment,
-          fullPath: currentPath.join('/'),
+  final entries = items
+      .map(
+        (item) => _PathEntry(
+          segments: item.path
+              .split('/')
+              .where((segment) => segment.isNotEmpty)
+              .toList(growable: false),
           sizeBytes: item.sizeBytes,
-        );
-        folder.children[segment] = file;
-      } else {
-        final nextFolder = folder.children.putIfAbsent(
-          segment,
-          () => _ManifestTreeFolderNode(
-            name: segment,
-            fullPath: currentPath.join('/'),
-          ),
-        );
-        folder = nextFolder as _ManifestTreeFolderNode;
-        visitedFolders.add(folder);
-      }
-    }
+          fullPath: item.path,
+        ),
+      )
+      .where((entry) => entry.segments.isNotEmpty)
+      .toList(growable: false);
 
-    for (final ancestor in visitedFolders) {
-      ancestor.addSize(item.sizeBytes);
-    }
-  }
-
+  root.addAll(_buildChildren(entries, prefix: const []));
+  final rootChildren = root.children.values.cast<TreeNode<_ManifestNodeData>>();
+  root.data!.sizeBytes = rootChildren.fold<BigInt>(
+    BigInt.zero,
+    (sum, node) => sum + node.data!.sizeBytes,
+  );
   return root;
 }
 
-List<_ManifestTreeNode> _orderedChildren(_ManifestTreeFolderNode node) {
-  final folders = <_ManifestTreeNode>[];
-  final files = <_ManifestTreeNode>[];
+List<TreeNode<_ManifestNodeData>> _buildChildren(
+  List<_PathEntry> entries, {
+  required List<String> prefix,
+}) {
+  final folderGroups = <String, List<_PathEntry>>{};
+  final fileEntries = <_PathEntry>[];
 
-  for (final child in node.children.values) {
-    if (child is _ManifestTreeFolderNode) {
-      folders.add(child);
+  for (final entry in entries) {
+    final remaining = entry.segments.skip(prefix.length).toList(growable: false);
+    if (remaining.isEmpty) {
+      continue;
+    }
+
+    if (remaining.length == 1) {
+      fileEntries.add(entry);
     } else {
-      files.add(child);
+      folderGroups.putIfAbsent(remaining.first, () => []).add(entry);
     }
   }
 
-  folders.sort((left, right) => left.name.compareTo(right.name));
-  files.sort((left, right) => left.name.compareTo(right.name));
-  return [...folders, ...files];
-}
+  final children = <TreeNode<_ManifestNodeData>>[];
 
-class ManifestTreeConnectorPainter extends CustomPainter {
-  ManifestTreeConnectorPainter({
-    required this.depth,
-    required this.ancestorHasFollowingSiblings,
-    required this.color,
-  });
-
-  final int depth;
-  final List<bool> ancestorHasFollowingSiblings;
-  final Color color;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = color
-      ..strokeWidth = 1
-      ..style = PaintingStyle.stroke
-      ..strokeCap = StrokeCap.round;
-    final centerY = size.height / 2;
-
-    for (var i = 0; i < ancestorHasFollowingSiblings.length; i++) {
-      if (!ancestorHasFollowingSiblings[i]) {
-        continue;
-      }
-      final x = i * 12.0 + 6.0;
-      canvas.drawLine(Offset(x, 0), Offset(x, size.height), paint);
-    }
-
-    if (depth > 0) {
-      final branchX = (depth - 1) * 12.0 + 6.0;
-      canvas.drawLine(Offset(branchX, centerY), Offset(size.width, centerY), paint);
-      canvas.drawCircle(Offset(branchX, centerY), 1.4, paint..style = PaintingStyle.fill);
-    } else {
-      canvas.drawLine(Offset(0, centerY), Offset(size.width, centerY), paint);
-      canvas.drawCircle(Offset(0, centerY), 1.4, paint..style = PaintingStyle.fill);
-    }
+  final folderNames = folderGroups.keys.toList()..sort();
+  for (final folderName in folderNames) {
+    final childPrefix = [...prefix, folderName];
+    final childEntries = folderGroups[folderName]!;
+    final childNode = TreeNode<_ManifestNodeData>(
+      key: _safeKey(childPrefix.join('/')),
+      data: _ManifestNodeData.folder(
+        label: folderName,
+        fullPath: childPrefix.join('/'),
+        sizeBytes: BigInt.zero,
+      ),
+    );
+    final grandChildren = _buildChildren(childEntries, prefix: childPrefix);
+    childNode.addAll(grandChildren);
+    childNode.data!.sizeBytes = grandChildren.fold<BigInt>(
+      BigInt.zero,
+      (sum, node) => sum + node.data!.sizeBytes,
+    );
+    children.add(childNode);
   }
 
-  @override
-  bool shouldRepaint(covariant ManifestTreeConnectorPainter oldDelegate) {
-    return oldDelegate.depth != depth ||
-        oldDelegate.ancestorHasFollowingSiblings != ancestorHasFollowingSiblings ||
-        oldDelegate.color != color;
-  }
-}
-
-_CompressedNode _compressNode(_ManifestTreeNode node) {
-  if (node is! _ManifestTreeFolderNode || node.name.isEmpty) {
-    return _CompressedNode(
-      node: node,
-      label: node.name,
-      fullPath: node.fullPath,
+  fileEntries.sort((left, right) => left.fullPath.compareTo(right.fullPath));
+  for (final entry in fileEntries) {
+    final label = entry.segments.last;
+    children.add(
+      TreeNode<_ManifestNodeData>(
+        key: _safeKey(entry.fullPath),
+        data: _ManifestNodeData.file(
+          label: label,
+          fullPath: entry.fullPath,
+          sizeBytes: entry.sizeBytes,
+        ),
+      ),
     );
   }
 
-  final labels = <String>[node.name];
-  var current = node;
-
-  while (true) {
-    final children = _orderedChildren(current);
-    if (children.length != 1) {
-      break;
-    }
-
-    final onlyChild = children.single;
-    if (onlyChild is! _ManifestTreeFolderNode) {
-      break;
-    }
-
-    labels.add(onlyChild.name);
-    current = onlyChild;
-  }
-
-  return _CompressedNode(
-    node: current,
-    label: labels.join(' / '),
-    fullPath: labels.join('/'),
-  );
+  return children;
 }
+
+String _safeKey(String value) => base64Url.encode(utf8.encode(value));
