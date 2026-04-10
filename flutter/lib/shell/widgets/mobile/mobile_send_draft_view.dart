@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/drift_theme.dart';
 import '../../../features/send/send_providers.dart';
-import '../../../features/send/send_state.dart';
 import '../receive_code_field.dart';
 import 'nearby_devices_section.dart';
 import 'selected_files_preview.dart';

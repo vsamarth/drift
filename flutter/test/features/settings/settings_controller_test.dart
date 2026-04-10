@@ -48,7 +48,7 @@ void main() {
     expect(state.identity.downloadRoot, '/Users/me/Downloads/Drift');
     expect(state.identity.discoverableByDefault, isFalse);
     expect(state.identity.serverUrl, 'https://example.test');
-    expect(await store.load(), state.identity);
+    expect(store.load(), state.identity);
   });
 
   test('saveSettings short-circuits when nothing changed', () async {

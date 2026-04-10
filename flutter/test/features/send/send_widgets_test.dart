@@ -1,4 +1,3 @@
-import 'package:drift_app/features/send/send_providers.dart';
 import 'package:drift_app/features/send/widgets/send_code_card.dart';
 import 'package:drift_app/features/send/widgets/send_selected_card.dart';
 import 'package:drift_app/state/drift_providers.dart';

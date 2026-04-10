@@ -1,17 +1,14 @@
 import 'package:drift_app/core/models/transfer_models.dart';
-import 'package:drift_app/features/receive/receive_providers.dart';
 import 'package:drift_app/features/receive/widgets/receive_receiving_card.dart';
 import 'package:drift_app/features/receive/widgets/receive_review_card.dart';
 import 'package:drift_app/platform/storage_access_source.dart';
 import 'package:drift_app/state/app_identity.dart';
 import 'package:drift_app/state/drift_app_state.dart';
 import 'package:drift_app/state/drift_app_notifier.dart';
-import 'package:drift_app/state/drift_dependencies.dart';
 import 'package:drift_app/state/receiver_service_source.dart';
 import 'package:drift_app/state/settings_store.dart';
 import 'package:drift_app/state/drift_providers.dart';
 import 'package:drift_app/src/rust/api/receiver.dart' as rust_receiver;
-import 'package:drift_app/src/rust/api/transfer.dart' as rust_transfer;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -54,14 +51,17 @@ class _FakeAppNotifier extends DriftAppNotifier {
     return _state;
   }
 
+  @override
   void acceptReceiveOffer() {
     acceptCalls += 1;
   }
 
+  @override
   void declineReceiveOffer() {
     declineCalls += 1;
   }
 
+  @override
   void cancelReceiveInProgress() {
     cancelCalls += 1;
   }

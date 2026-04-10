@@ -5,7 +5,6 @@ import '../../../core/models/transfer_models.dart';
 import '../../../core/theme/drift_theme.dart';
 import '../../../state/drift_providers.dart';
 import '../receive_providers.dart';
-import '../receive_state.dart';
 import '../../../shell/widgets/preview_list.dart';
 import '../../../shell/widgets/sending_connection_strip.dart';
 import '../../../shell/widgets/transfer_layout.dart';

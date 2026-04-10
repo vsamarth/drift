@@ -10,7 +10,6 @@ import '../platform/send_transfer_source.dart';
 import '../features/receive/receive_mapper.dart';
 import '../features/send/send_mapper.dart';
 import '../src/rust/api/receiver.dart' as rust_receiver;
-import '../src/rust/api/transfer.dart' as rust_transfer;
 import '../features/settings/settings_state.dart';
 import '../features/settings/settings_providers.dart';
 import '../state/drift_sample_data.dart';

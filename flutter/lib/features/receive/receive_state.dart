@@ -1,5 +1,4 @@
 import '../../core/models/transfer_models.dart';
-import '../../shell/shell_routing.dart';
 import '../../state/app_identity.dart';
 import '../../state/drift_app_state.dart';
 import '../../state/receiver_service_source.dart';

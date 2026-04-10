@@ -3,8 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/models/transfer_models.dart';
 import '../../../core/theme/drift_theme.dart';
+import '../../../features/receive/receive_providers.dart';
 import '../../../features/send/send_providers.dart';
-import '../../../features/send/send_state.dart';
+import '../../../state/drift_providers.dart';
 import '../live_transfer_stats.dart';
 import '../preview_list.dart';
 
@@ -14,16 +15,18 @@ class MobileTransferView extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(sendStateProvider);
+    final receiveState = ref.watch(receiveStateProvider);
     final notifier = ref.read(sendControllerProvider.notifier);
+    final appNotifier = ref.read(driftAppNotifierProvider.notifier);
 
     final isSending = state.mode == TransferDirection.send;
     final items = isSending
         ? state.sendDisplayItems
-        : state.receiveDisplayItems;
-    final summary = isSending ? state.sendSummary : state.receiveSummary;
+        : receiveState.receiveDisplayItems;
+    final summary = isSending ? state.sendSummary : receiveState.receiveSummary;
     final snapshot = isSending
         ? state.sendTransferSnapshot
-        : state.receiveTransferSnapshot;
+        : receiveState.receiveTransferSnapshot;
 
     final progress = isSending
         ? _snapshotProgress(
@@ -33,8 +36,8 @@ class MobileTransferView extends ConsumerWidget {
           )
         : _snapshotProgress(
             snapshot,
-            state.receivePayloadBytesReceived,
-            state.receivePayloadTotalBytes,
+            receiveState.receivePayloadBytesReceived,
+            receiveState.receivePayloadTotalBytes,
           );
 
     final status =
@@ -112,10 +115,10 @@ class MobileTransferView extends ConsumerWidget {
           LiveTransferStats(
             speedLabel: isSending
                 ? state.sendTransferSpeedLabel
-                : state.receiveTransferSpeedLabel,
+                : receiveState.receiveTransferSpeedLabel,
             etaLabel: isSending
                 ? state.sendTransferEtaLabel
-                : state.receiveTransferEtaLabel,
+                : receiveState.receiveTransferEtaLabel,
             center: true,
           ),
           const SizedBox(height: 24),
@@ -124,11 +127,11 @@ class MobileTransferView extends ConsumerWidget {
           const SizedBox(height: 16),
           PreviewList(items: items),
           const SizedBox(height: 16),
-          if (isSending || state.receiveStage == TransferStage.waiting)
+          if (isSending || receiveState.receiveStage == TransferStage.waiting)
             FilledButton.tonal(
               onPressed: isSending
                   ? notifier.cancelSendInProgress
-                  : notifier.cancelReceiveInProgress,
+                  : appNotifier.cancelReceiveInProgress,
               style: FilledButton.styleFrom(
                 foregroundColor: const Color(0xFFCC3333),
                 backgroundColor: const Color(0xFFCC3333).withValues(alpha: 0.1),

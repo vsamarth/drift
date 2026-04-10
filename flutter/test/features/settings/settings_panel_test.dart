@@ -1,4 +1,3 @@
-import 'package:drift_app/features/settings/settings_providers.dart';
 import 'package:drift_app/features/settings/widgets/settings_panel.dart';
 import 'package:drift_app/platform/storage_access_source.dart';
 import 'package:drift_app/state/app_identity.dart';

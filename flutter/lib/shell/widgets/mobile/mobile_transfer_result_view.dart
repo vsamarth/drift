@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../features/send/send_providers.dart';
-import '../../../features/send/send_state.dart';
 import '../transfer_result_card.dart';
 
 class MobileTransferResultView extends ConsumerWidget {

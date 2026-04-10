@@ -6,7 +6,6 @@ import '../../core/models/transfer_models.dart';
 import '../../core/theme/drift_theme.dart';
 import '../../shared/formatting/byte_format.dart';
 import '../../features/send/send_providers.dart';
-import '../../features/send/send_state.dart';
 import 'receive_code_field.dart';
 
 class SendSelectedCard extends ConsumerStatefulWidget {
