@@ -21,3 +21,5 @@ SendTransferSource sendTransferSource(SendTransferSourceRef ref) {
 NearbyDiscoverySource nearbyDiscoverySource(NearbyDiscoverySourceRef ref) {
   return ref.watch(deps.nearbyDiscoverySourceProvider);
 }
+
+final sendNearbyScanRefreshEnabledProvider = Provider<bool>((ref) => true);

@@ -2,6 +2,7 @@ export 'send_controller.dart' show SendController, sendControllerProvider;
 export 'send_dependencies.dart'
     show
         nearbyDiscoverySourceProvider,
+        sendNearbyScanRefreshEnabledProvider,
         sendItemSourceProvider,
         sendTransferSourceProvider;
 export 'send_session_controller.dart' show sendSessionControllerProvider;

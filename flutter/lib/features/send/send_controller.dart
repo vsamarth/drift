@@ -31,6 +31,7 @@ class SendController extends _$SendController
   late SendSessionController _sendSessionController;
 
   DriftAppState? _appState;
+  ShellSessionState? _appSession;
   ShellSessionState? _sendSession;
   String? _sendSetupErrorMessage;
   Timer? _nearbyScanTimer;
@@ -38,7 +39,9 @@ class SendController extends _$SendController
   @override
   SendState build() {
     final appState = ref.watch(driftAppNotifierProvider);
+    final appSessionChanged = _appSession != appState.session;
     _appState = appState;
+    _appSession = appState.session;
     _sendSelectionCoordinator = SendSelectionCoordinator(
       itemSource: ref.watch(send_deps.sendItemSourceProvider),
       selectionBuilder: const SendSelectionBuilder(),
@@ -51,8 +54,17 @@ class SendController extends _$SendController
     );
     _sendSessionController = ref.watch(sendSessionControllerProvider);
 
-    _sendSession ??= appState.session;
-    _sendSetupErrorMessage ??= appState.sendSetupErrorMessage;
+    if (_sendSession == null || appSessionChanged) {
+      _sendSession = appState.session;
+      _sendSetupErrorMessage = appState.sendSetupErrorMessage;
+      _sendTransferCoordinator.cancelActiveTransfer();
+      _sendSessionController.clearSendMetricState();
+      if (appState.session is! SendDraftSession) {
+        _cancelNearbyScanTimer();
+      }
+    } else {
+      _sendSetupErrorMessage ??= appState.sendSetupErrorMessage;
+    }
 
     _syncNearbyScanTimer();
     ref.onDispose(_dispose);
@@ -413,19 +425,6 @@ class SendController extends _$SendController
     );
     _publishState();
     unawaited(_sendNearbyCoordinator.runScanOnce(this));
-    _nearbyScanTimer = Timer.periodic(
-      _sendNearbyCoordinator.refreshIntervalForDeviceType(
-        _mergedState.deviceType,
-      ),
-      (_) {
-        final current = _draftSession;
-        if (current == null || current.items.isEmpty || current.isInspecting) {
-          _cancelNearbyScanTimer();
-          return;
-        }
-        unawaited(_sendNearbyCoordinator.runScanOnce(this));
-      },
-    );
   }
 
   void _cancelNearbyScanTimer() {
