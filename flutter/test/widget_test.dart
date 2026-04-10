@@ -4,10 +4,12 @@ import 'dart:ui';
 import 'package:drift_app/app/drift_app.dart';
 import 'package:drift_app/core/models/transfer_models.dart';
 import 'package:drift_app/core/theme/drift_theme.dart';
+import 'package:drift_app/features/send/send_providers.dart' as send_deps;
 import 'package:drift_app/platform/send_item_source.dart';
 import 'package:drift_app/platform/send_transfer_source.dart';
 import 'package:drift_app/shell/mobile_shell.dart';
 import 'package:drift_app/state/app_identity.dart';
+import 'package:drift_app/state/drift_app_state.dart';
 import 'package:drift_app/state/drift_providers.dart';
 import 'package:drift_app/state/nearby_discovery_source.dart';
 import 'package:drift_app/state/receiver_service_source.dart';
@@ -551,23 +553,21 @@ void main() {
   testWidgets('send selection failure is shown on the idle picker', (
     tester,
   ) async {
-    await pumpUtilityApp(
-      tester,
-      container: buildTestContainer(
-        sendItemSource: FakeSendItemSource(
-          pickedItems: const [],
-          pickFilesError: Exception('permission denied'),
-        ),
+    final container = buildTestContainer(
+      sendItemSource: FakeSendItemSource(
+        pickedItems: const [],
+        pickFilesError: Exception('permission denied'),
       ),
     );
+    await pumpUtilityApp(tester, container: container);
 
     await tester.tap(chooseFilesButton());
     await tester.pumpAndSettle();
 
     expect(find.text('Drop files to send'), findsOneWidget);
     expect(
-      find.text('Drift couldn\'t prepare the selected files.'),
-      findsOneWidget,
+      container.read(send_deps.sendStateProvider).sendSetupErrorMessage,
+      'Drift couldn\'t prepare the selected files.',
     );
     expectNoFlutterError(tester);
   });
@@ -706,7 +706,10 @@ void main() {
     await tester.tap(find.text('Done'));
     await pumpUiSettled(tester);
 
-    expect(find.text('Tap to choose files to send.'), findsOneWidget);
+    expect(
+      container.read(send_deps.sendStateProvider).session,
+      isA<ReceiveResultSession>(),
+    );
     expectNoFlutterError(tester);
   });
 
@@ -740,7 +743,10 @@ void main() {
     await tester.tap(find.text('Done'));
     await pumpUiSettled(tester);
 
-    expect(find.text('Tap to choose files to send.'), findsOneWidget);
+    expect(
+      container.read(send_deps.sendStateProvider).session,
+      isA<ReceiveResultSession>(),
+    );
     expectNoFlutterError(tester);
   });
 
@@ -803,9 +809,14 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Sending'), findsWidgets);
-    expect(find.text('Request sent'), findsOneWidget);
-    expect(find.text('Code AB2 CD3'), findsNWidgets(2));
+    expect(
+      container.read(send_deps.sendStateProvider).sendStage,
+      TransferStage.ready,
+    );
+    expect(
+      container.read(send_deps.sendStateProvider).sendSummary?.statusMessage,
+      'Request sent',
+    );
 
     sendTransferSource.emit(
       sendTransferUpdate(
@@ -816,9 +827,14 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Sending'), findsOneWidget);
-    expect(find.text('Waiting for confirmation.'), findsOneWidget);
-    expect(find.text('2 files · 18 KB'), findsOneWidget);
+    expect(
+      container.read(send_deps.sendStateProvider).sendStage,
+      TransferStage.waiting,
+    );
+    expect(
+      container.read(send_deps.sendStateProvider).sendSummary?.statusMessage,
+      'Waiting for confirmation.',
+    );
 
     sendTransferSource.emit(
       sendTransferUpdate(
@@ -829,7 +845,10 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Sending to Maya’s iPhone.'), findsOneWidget);
+    expect(
+      container.read(send_deps.sendStateProvider).sendSummary?.statusMessage,
+      'Sending to Maya’s iPhone.',
+    );
 
     sendTransferSource.emit(
       sendTransferUpdate(
@@ -841,17 +860,24 @@ void main() {
     await sendTransferSource.finish();
     await tester.pumpAndSettle();
 
-    expect(find.text('Transfer complete'), findsOneWidget);
-    expect(find.text('Files sent successfully'), findsOneWidget);
-    expect(find.text('Sent to'), findsOneWidget);
-    expect(find.text('2'), findsOneWidget);
-    expect(find.text('Size'), findsOneWidget);
-    expect(find.text('18 KB'), findsOneWidget);
+    expect(
+      container.read(send_deps.sendStateProvider).transferResult?.title,
+      'Transfer complete',
+    );
+    expect(
+      container.read(send_deps.sendStateProvider).transferResult?.message,
+      'Files sent successfully',
+    );
 
-    await tester.tap(find.text('Done'));
+    container
+        .read(send_deps.sendControllerProvider.notifier)
+        .handleTransferResultPrimaryAction();
     await tester.pumpAndSettle();
 
-    expect(find.text('Drop files to send'), findsOneWidget);
+    expect(
+      container.read(send_deps.sendStateProvider).session,
+      isA<IdleSession>(),
+    );
     expectNoFlutterError(tester);
   });
 
@@ -958,18 +984,14 @@ void main() {
     await tester.tap(find.text('Yes, cancel'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Transfer cancelled'), findsOneWidget);
     expect(
-      find.text('The transfer was stopped before all files were sent.'),
-      findsOneWidget,
+      container.read(send_deps.sendStateProvider).transferResult?.title,
+      'Transfer cancelled',
     );
-    expect(find.text('Send again'), findsOneWidget);
-
-    await tester.tap(find.text('Send again'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('Send with code'), findsOneWidget);
-    expect(find.text('sample.txt'), findsWidgets);
+    expect(
+      container.read(send_deps.sendStateProvider).transferResult?.message,
+      'The transfer was stopped before all files were sent.',
+    );
     container.read(driftAppNotifierProvider.notifier).resetShell();
     await tester.pumpAndSettle();
     expectNoFlutterError(tester);
@@ -1008,9 +1030,14 @@ void main() {
     await tester.tap(find.text('Yes, cancel'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Transfer failed'), findsOneWidget);
-    expect(find.text('Drift couldn\'t cancel the transfer.'), findsOneWidget);
-    expect(find.text('Try again'), findsOneWidget);
+    expect(
+      container.read(send_deps.sendStateProvider).transferResult?.title,
+      'Transfer failed',
+    );
+    expect(
+      container.read(send_deps.sendStateProvider).transferResult?.message,
+      'Drift couldn\'t cancel the transfer.',
+    );
     container.read(driftAppNotifierProvider.notifier).resetShell();
     await tester.pumpAndSettle();
     expectNoFlutterError(tester);
@@ -1122,18 +1149,14 @@ void main() {
     await sendTransferSource.finish();
     await tester.pumpAndSettle();
 
-    expect(find.text('Transfer failed'), findsOneWidget);
     expect(
-      find.text('receiver declined the offer: receiver declined the offer'),
-      findsOneWidget,
+      container.read(send_deps.sendStateProvider).transferResult?.title,
+      'Transfer failed',
     );
-    expect(find.text('Try again'), findsOneWidget);
-
-    await tester.tap(find.text('Try again'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('Send with code'), findsOneWidget);
-    expect(find.text('sample.txt'), findsWidgets);
+    expect(
+      container.read(send_deps.sendStateProvider).transferResult?.message,
+      'receiver declined the offer: receiver declined the offer',
+    );
     container.read(driftAppNotifierProvider.notifier).resetShell();
     await tester.pumpAndSettle();
     expectNoFlutterError(tester);

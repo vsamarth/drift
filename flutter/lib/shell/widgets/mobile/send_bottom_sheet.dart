@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/drift_theme.dart';
 import '../../../features/send/send_providers.dart';
-import '../../../state/drift_providers.dart';
 import '../receive_code_field.dart';
 
 class SendBottomSheet extends ConsumerWidget {
@@ -13,7 +12,6 @@ class SendBottomSheet extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(sendStateProvider);
     final notifier = ref.read(sendControllerProvider.notifier);
-    final appNotifier = ref.read(driftAppNotifierProvider.notifier);
     final destinations = state.nearbySendDestinations;
     final items = state.sendItems;
 
@@ -39,7 +37,7 @@ class SendBottomSheet extends ConsumerWidget {
               ),
               const Spacer(),
               TextButton(
-                onPressed: appNotifier.resetShell,
+                onPressed: notifier.goBack,
                 child: const Text('Cancel'),
               ),
             ],

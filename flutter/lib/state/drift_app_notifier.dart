@@ -5,61 +5,32 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/models/transfer_models.dart';
 import '../platform/app_focus.dart';
-import '../platform/send_item_source.dart';
-import '../platform/send_transfer_source.dart';
 import '../features/receive/receive_mapper.dart';
-import '../features/send/send_mapper.dart';
 import '../src/rust/api/receiver.dart' as rust_receiver;
 import '../features/settings/settings_state.dart';
 import '../features/settings/settings_providers.dart';
-import '../state/drift_sample_data.dart';
 import 'app_identity.dart';
 import 'drift_dependencies.dart';
 import 'drift_app_state.dart';
-import 'nearby_discovery_source.dart';
 import 'receiver_service_source.dart';
 
-const List<TransferItemViewData> _defaultDroppedSendItems = [
-  TransferItemViewData(
-    name: 'sample.txt',
-    path: 'sample.txt',
-    size: '18 KB',
-    kind: TransferItemKind.file,
-  ),
-  TransferItemViewData(
-    name: 'photos',
-    path: 'photos/',
-    size: '12 items',
-    kind: TransferItemKind.folder,
-  ),
-];
-
-class DriftAppNotifier extends Notifier<DriftAppState> {
+class DriftAppNotifier extends Notifier<DriftAppState>
+{
   late DriftAppIdentity _identity;
-  late final SendItemSource _sendItemSource;
-  late final SendTransferSource _sendTransferSource;
-  late final NearbyDiscoverySource _nearbyDiscoverySource;
   late final ReceiverServiceSource _receiverServiceSource;
   late final bool _animateSendingConnection;
   late final bool _enableIdleIncomingListener;
 
-  Timer? _nearbyScanTimer;
   StreamSubscription<ReceiverBadgeState>? _badgeSubscription;
   StreamSubscription<rust_receiver.ReceiverTransferEvent>?
   _incomingSubscription;
-  StreamSubscription<SendTransferUpdate>? _sendTransferSubscription;
-  int _sendTransferGeneration = 0;
   bool? _appliedDiscoverable;
 
-  DateTime? _sendPayloadStartedAt;
   DateTime? _receivePayloadStartedAt;
 
   @override
   DriftAppState build() {
     _identity = ref.watch(initialDriftAppIdentityProvider);
-    _sendItemSource = ref.watch(sendItemSourceProvider);
-    _sendTransferSource = ref.watch(sendTransferSourceProvider);
-    _nearbyDiscoverySource = ref.watch(nearbyDiscoverySourceProvider);
     _receiverServiceSource = ref.watch(receiverServiceSourceProvider);
     _animateSendingConnection = ref.watch(animateSendingConnectionProvider);
     _enableIdleIncomingListener = ref.watch(enableIdleIncomingListenerProvider);
@@ -75,7 +46,6 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
       receiverBadge: const ReceiverBadgeState.registering(),
       session: const IdleSession(),
       animateSendingConnection: _animateSendingConnection,
-      sendSetupErrorMessage: null,
     );
   }
 
@@ -95,81 +65,6 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
 
   void setMode(TransferDirection mode) {
     resetShell();
-  }
-
-  void activateSendDropTarget() {
-    _applySelectedSendItems(_defaultDroppedSendItems);
-  }
-
-  void pickSendItems() {
-    unawaited(_pickSendItems());
-  }
-
-  void appendSendItemsFromPicker() {
-    unawaited(_appendSendItemsFromPicker());
-  }
-
-  void rescanNearbySendDestinations() {
-    unawaited(_runNearbyScanOnce());
-  }
-
-  void acceptDroppedSendItems(List<String> paths) {
-    unawaited(_acceptDroppedSendItems(paths));
-  }
-
-  void appendDroppedSendItems(List<String> paths) {
-    unawaited(_appendDroppedSendItems(paths));
-  }
-
-  void removeSendItem(String path) {
-    unawaited(_removeSendItem(path));
-  }
-
-  void clearSendFlow() {
-    _cancelNearbyScanTimer();
-    _cancelActiveSendTransfer();
-    _setSession(const IdleSession());
-  }
-
-  void updateSendDestinationCode(String value) {
-    final draft = _draftSession;
-    if (draft == null) {
-      return;
-    }
-    final normalized = value.toUpperCase().replaceAll(RegExp(r'[^A-Z0-9]'), '');
-    if (normalized == draft.destinationCode) {
-      return;
-    }
-    _setSession(
-      draft.copyWith(
-        destinationCode: normalized,
-        clearSelectedDestination: true,
-      ),
-    );
-  }
-
-  void clearSendDestinationCode() {
-    final draft = _draftSession;
-    if (draft == null) {
-      return;
-    }
-    _setSession(draft.copyWith(destinationCode: ''));
-  }
-
-  void startSend() {
-    final draft = _draftSession;
-    if (draft == null || draft.items.isEmpty || draft.isInspecting) {
-      return;
-    }
-
-    final selected = draft.selectedDestination;
-    final ticket = selected?.lanTicket?.trim();
-
-    if (selected != null && ticket != null && ticket.isNotEmpty) {
-      _startSendTransferWithTicket(selected, ticket);
-    } else if (draft.destinationCode.length == 6) {
-      _startSendTransfer(draft.destinationCode);
-    }
   }
 
   void acceptReceiveOffer() {
@@ -213,22 +108,6 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
     resetShell();
   }
 
-  void cancelSendInProgress() {
-    final session = state.session;
-    if (session is! SendTransferSession) {
-      return;
-    }
-    _setSession(
-      session.copyWith(
-        phase: SendTransferSessionPhase.cancelling,
-        summary: session.summary.copyWith(
-          statusMessage: 'Cancelling transfer...',
-        ),
-      ),
-    );
-    unawaited(_cancelNativeSendTransfer());
-  }
-
   void cancelReceiveInProgress() {
     final session = state.session;
     if (session is! ReceiveTransferSession) {
@@ -245,277 +124,8 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
   }
 
   void resetShell() {
-    _cancelNearbyScanTimer();
-    _cancelActiveSendTransfer();
-    _clearSendMetricState();
     _clearReceiveMetricState();
-    state = state.copyWith(clearSendSetupErrorMessage: true);
     _setSession(const IdleSession());
-  }
-
-  void handleTransferResultPrimaryAction() {
-    final result = state.transferResult;
-    if (result == null) {
-      return;
-    }
-
-    switch (result.primaryAction) {
-      case TransferResultPrimaryActionData.done:
-      case null:
-        resetShell();
-      case TransferResultPrimaryActionData.tryAgain:
-      case TransferResultPrimaryActionData.sendAgain:
-        _restoreSendDraft(destinationCode: state.sendDestinationCode);
-      case TransferResultPrimaryActionData.chooseAnotherDevice:
-        _returnToSendSelection();
-    }
-  }
-
-  void goBack() {
-    switch (state.session) {
-      case ReceiveOfferSession(:final decisionPending):
-        if (decisionPending) {
-          unawaited(_respondToIncomingOffer(accept: false));
-        }
-        _setSession(const IdleSession());
-      case ReceiveResultSession():
-        _setSession(const IdleSession());
-      case SendDraftSession():
-        _setSession(const IdleSession());
-      case SendTransferSession():
-        _returnToSendSelection();
-      case SendResultSession():
-        _returnToSendSelection();
-      case ReceiveTransferSession():
-      case IdleSession():
-        return;
-    }
-  }
-
-  void selectNearbyDestination(SendDestinationViewData destination) {
-    final draft = _draftSession;
-    if (draft == null) {
-      return;
-    }
-    // Toggle selection
-    if (draft.selectedDestination == destination) {
-      _setSession(draft.copyWith(clearSelectedDestination: true));
-    } else {
-      _setSession(
-        draft.copyWith(
-          selectedDestination: destination,
-          destinationCode: '', // Clear code if nearby is selected
-        ),
-      );
-    }
-  }
-
-  Future<void> _pickSendItems() async {
-    try {
-      final items = await _sendItemSource.pickFiles();
-      if (items.isEmpty) {
-        return;
-      }
-      _clearSendSetupError();
-      _beginSendInspection(clearExistingItems: true);
-      _applySelectedSendItems(items);
-    } catch (error, stackTrace) {
-      clearSendFlow();
-      _reportSendSelectionError(
-        'Drift couldn\'t prepare the selected files.',
-        error,
-        stackTrace,
-      );
-    }
-  }
-
-  Future<void> _acceptDroppedSendItems(List<String> paths) async {
-    if (paths.isEmpty) {
-      return;
-    }
-    _beginSendInspection(clearExistingItems: true);
-    try {
-      final items = await _sendItemSource.loadPaths(paths);
-      if (items.isEmpty) {
-        clearSendFlow();
-        return;
-      }
-      _clearSendSetupError();
-      _applySelectedSendItems(items);
-    } catch (error, stackTrace) {
-      clearSendFlow();
-      _reportSendSelectionError(
-        'Drift couldn\'t prepare the dropped files.',
-        error,
-        stackTrace,
-      );
-    }
-  }
-
-  Future<void> _appendDroppedSendItems(List<String> paths) async {
-    if (paths.isEmpty) {
-      return;
-    }
-    _beginSendInspection(clearExistingItems: false);
-    _optimisticallyAppendPendingSendItems(paths);
-    try {
-      final items = await _sendItemSource.appendPaths(
-        existingPaths: _currentSendSelectionPaths,
-        incomingPaths: paths,
-      );
-      if (items.isEmpty) {
-        _finishSendInspection();
-        return;
-      }
-      _clearSendSetupError();
-      _applySelectedSendItems(items);
-    } catch (error, stackTrace) {
-      _finishSendInspection();
-      _reportSendSelectionError(
-        'Drift couldn\'t add those files right now.',
-        error,
-        stackTrace,
-      );
-    }
-  }
-
-  Future<void> _appendSendItemsFromPicker() async {
-    final paths = await _sendItemSource.pickAdditionalPaths();
-    if (paths.isEmpty) {
-      return;
-    }
-    _beginSendInspection(clearExistingItems: false);
-    _optimisticallyAppendPendingSendItems(paths);
-    try {
-      final items = await _sendItemSource.appendPaths(
-        existingPaths: _currentSendSelectionPaths,
-        incomingPaths: paths,
-      );
-      if (items.isEmpty) {
-        _finishSendInspection();
-        return;
-      }
-      _clearSendSetupError();
-      _applySelectedSendItems(items);
-    } catch (error, stackTrace) {
-      _finishSendInspection();
-      _reportSendSelectionError(
-        'Drift couldn\'t add those files right now.',
-        error,
-        stackTrace,
-      );
-    }
-  }
-
-  Future<void> _removeSendItem(String path) async {
-    final draft = _draftSession;
-    if (draft == null || path.trim().isEmpty) {
-      return;
-    }
-    _beginSendInspection(clearExistingItems: false);
-    try {
-      final items = await _sendItemSource.removePath(
-        existingPaths: _currentSendSelectionPaths,
-        removedPath: path,
-      );
-      if (items.isEmpty) {
-        clearSendFlow();
-        return;
-      }
-      _clearSendSetupError();
-      _applySelectedSendItems(items);
-    } catch (error, stackTrace) {
-      _finishSendInspection();
-      _reportSendSelectionError(
-        'Drift couldn\'t update the selected files.',
-        error,
-        stackTrace,
-      );
-    }
-  }
-
-  void _applySelectedSendItems(List<TransferItemViewData> items) {
-    _cancelActiveSendTransfer();
-    state = state.copyWith(clearSendSetupErrorMessage: true);
-    _setSession(
-      SendDraftSession(
-        items: List<TransferItemViewData>.unmodifiable(items),
-        isInspecting: false,
-        nearbyDestinations: const [],
-        nearbyScanInFlight: false,
-        nearbyScanCompletedOnce: false,
-        destinationCode: '',
-      ),
-    );
-    _scheduleNearbyScanning();
-  }
-
-  void _optimisticallyAppendPendingSendItems(List<String> incomingPaths) {
-    final draft = _draftSession;
-    if (draft == null || incomingPaths.isEmpty) {
-      return;
-    }
-
-    final seen = draft.items.map((item) => item.path.trim()).toSet();
-    final mergedItems = List<TransferItemViewData>.of(draft.items);
-
-    for (final rawPath in incomingPaths) {
-      final path = rawPath.trim();
-      if (path.isEmpty || !seen.add(path)) {
-        continue;
-      }
-      mergedItems.add(_pendingSendItemForPath(path));
-    }
-
-    _setSession(
-      draft.copyWith(
-        items: List<TransferItemViewData>.unmodifiable(mergedItems),
-      ),
-    );
-  }
-
-  TransferItemViewData _pendingSendItemForPath(String path) {
-    final normalized = path.replaceAll('\\', '/');
-    final trimmed = normalized.endsWith('/')
-        ? normalized.substring(0, normalized.length - 1)
-        : normalized;
-    final segments = trimmed.split('/')
-      ..removeWhere((segment) => segment.isEmpty);
-    final name = segments.isEmpty ? trimmed : segments.last;
-    final isFolder = normalized.endsWith('/');
-
-    return TransferItemViewData(
-      name: name.isEmpty ? path : name,
-      path: path,
-      size: 'Adding...',
-      kind: isFolder ? TransferItemKind.folder : TransferItemKind.file,
-    );
-  }
-
-  void _beginSendInspection({required bool clearExistingItems}) {
-    _cancelNearbyScanTimer();
-    _cancelActiveSendTransfer();
-    _setSession(
-      SendDraftSession(
-        items: clearExistingItems ? const [] : state.sendItems,
-        isInspecting: true,
-        nearbyDestinations: const [],
-        nearbyScanInFlight: false,
-        nearbyScanCompletedOnce: false,
-        destinationCode: '',
-      ),
-    );
-  }
-
-  void _finishSendInspection() {
-    final draft = _draftSession;
-    if (draft == null) {
-      return;
-    }
-    _setSession(draft.copyWith(isInspecting: false));
-    if (draft.items.isNotEmpty) {
-      _scheduleNearbyScanning();
-    }
   }
 
   void _startReceiverSubscriptions() {
@@ -587,7 +197,6 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
     final items = List<TransferItemViewData>.unmodifiable(
       event.files.map(incomingFileToViewData),
     );
-    _cancelActiveSendTransfer();
     _clearReceiveMetricState();
     _setSession(
       ReceiveOfferSession(
@@ -861,30 +470,6 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
     }
   }
 
-  Future<void> _cancelNativeSendTransfer() async {
-    try {
-      await _sendTransferSource.cancelTransfer();
-    } catch (error, stackTrace) {
-      debugPrint('cancelTransfer failed: $error');
-      debugPrintStack(stackTrace: stackTrace);
-      _applySendUpdate(
-        SendTransferUpdate(
-          phase: SendTransferUpdatePhase.failed,
-          destinationLabel:
-              state.sendDestinationLabel ??
-              formatCodeAsDestination(state.sendDestinationCode),
-          statusMessage: 'Cancelling transfer...',
-          itemCount: state.sendItems.length,
-          totalSize:
-              state.sendSummary?.totalSize ?? sampleSendSummary.totalSize,
-          bytesSent: state.sendPayloadBytesSent ?? 0,
-          totalBytes: state.sendPayloadTotalBytes ?? 0,
-          errorMessage: 'Drift couldn\'t cancel the transfer.',
-        ),
-      );
-    }
-  }
-
   Future<void> _cancelNativeReceiveTransfer() async {
     try {
       await _receiverServiceSource.cancelTransfer();
@@ -897,304 +482,6 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
     }
   }
 
-  void _returnToSendSelection() {
-    _restoreSendDraft();
-  }
-
-  void _restoreSendDraft({String destinationCode = ''}) {
-    _cancelActiveSendTransfer();
-    _clearSendMetricState();
-    _setSession(
-      SendDraftSession(
-        items: state.sendItems,
-        isInspecting: false,
-        nearbyDestinations: const [],
-        nearbyScanInFlight: false,
-        nearbyScanCompletedOnce: false,
-        destinationCode: destinationCode,
-      ),
-    );
-    _scheduleNearbyScanning();
-  }
-
-  void _scheduleNearbyScanning() {
-    _cancelNearbyScanTimer();
-    final draft = _draftSession;
-    if (draft == null || draft.items.isEmpty || draft.isInspecting) {
-      return;
-    }
-    _setSession(
-      draft.copyWith(nearbyScanCompletedOnce: false, nearbyScanInFlight: false),
-    );
-    unawaited(_runNearbyScanOnce());
-    _nearbyScanTimer = Timer.periodic(_nearbyRefreshInterval, (_) {
-      final current = _draftSession;
-      if (current == null || current.items.isEmpty || current.isInspecting) {
-        _cancelNearbyScanTimer();
-        return;
-      }
-      unawaited(_runNearbyScanOnce());
-    });
-  }
-
-  Future<void> _runNearbyScanOnce() async {
-    final draft = _draftSession;
-    if (draft == null || draft.isInspecting || draft.nearbyScanInFlight) {
-      return;
-    }
-    _setSession(draft.copyWith(nearbyScanInFlight: true));
-    try {
-      final next = await _nearbyDiscoverySource.scan(
-        timeout: _nearbyScanTimeout,
-      );
-      final current = _draftSession;
-      if (current == null || current.isInspecting) {
-        return;
-      }
-      _setSession(
-        current.copyWith(
-          nearbyDestinations: List<SendDestinationViewData>.unmodifiable(next),
-          nearbyScanInFlight: false,
-          nearbyScanCompletedOnce: true,
-        ),
-      );
-    } catch (error, stackTrace) {
-      debugPrint('[drift/notifier] nearby scan failed: $error');
-      debugPrintStack(stackTrace: stackTrace);
-      _setSendSetupError('Drift couldn\'t scan for nearby devices right now.');
-      final current = _draftSession;
-      if (current != null) {
-        _setSession(
-          current.copyWith(
-            nearbyScanInFlight: false,
-            nearbyScanCompletedOnce: true,
-          ),
-        );
-      }
-    }
-  }
-
-  Duration get _nearbyScanTimeout => _identity.deviceType == 'phone'
-      ? const Duration(seconds: 4)
-      : const Duration(seconds: 8);
-
-  Duration get _nearbyRefreshInterval => _identity.deviceType == 'phone'
-      ? const Duration(seconds: 8)
-      : const Duration(seconds: 12);
-
-  void _startSendTransferWithTicket(
-    SendDestinationViewData destination,
-    String ticket,
-  ) {
-    _cancelNearbyScanTimer();
-    _cancelActiveSendTransfer();
-    _clearSendMetricState();
-    final generation = ++_sendTransferGeneration;
-    final request = SendTransferRequestData(
-      code: '',
-      ticket: ticket,
-      lanDestinationLabel: destination.name,
-      paths: state.sendItems.map((item) => item.path).toList(growable: false),
-      deviceName: state.deviceName,
-      deviceType: state.deviceType,
-    );
-    _listenToSendTransfer(
-      generation: generation,
-      request: request,
-      fallbackDestination: destination.name,
-    );
-  }
-
-  void _startSendTransfer(String normalizedCode) {
-    _cancelNearbyScanTimer();
-    _cancelActiveSendTransfer();
-    _clearSendMetricState();
-    final generation = ++_sendTransferGeneration;
-    final request = SendTransferRequestData(
-      code: normalizedCode,
-      paths: state.sendItems.map((item) => item.path).toList(growable: false),
-      deviceName: state.deviceName,
-      deviceType: state.deviceType,
-      serverUrl: state.serverUrl,
-    );
-    _listenToSendTransfer(
-      generation: generation,
-      request: request,
-      fallbackDestination: formatCodeAsDestination(normalizedCode),
-    );
-  }
-
-  void _listenToSendTransfer({
-    required int generation,
-    required SendTransferRequestData request,
-    required String fallbackDestination,
-  }) {
-    _sendTransferSubscription = _sendTransferSource
-        .startTransfer(request)
-        .listen(
-          (update) {
-            if (generation != _sendTransferGeneration) {
-              debugPrint(
-                '[drift/notifier] ignoring stale send update '
-                'generation=$generation current=$_sendTransferGeneration',
-              );
-              return;
-            }
-            _applySendUpdate(update);
-          },
-          onError: (Object error, StackTrace stackTrace) {
-            if (generation != _sendTransferGeneration) {
-              return;
-            }
-            debugPrint('[drift/notifier] failed to send files: $error');
-            debugPrintStack(stackTrace: stackTrace);
-            _applySendUpdate(
-              SendTransferUpdate(
-                phase: SendTransferUpdatePhase.failed,
-                destinationLabel:
-                    state.sendDestinationLabel ?? fallbackDestination,
-                statusMessage: 'Request sent',
-                itemCount: state.sendItems.length,
-                totalSize: sampleSendSummary.totalSize,
-                bytesSent: 0,
-                totalBytes: 0,
-                errorMessage: error.toString(),
-              ),
-            );
-          },
-        );
-  }
-
-  void _applySendUpdate(SendTransferUpdate update) {
-    final items = state.sendItems.isEmpty ? sampleSendItems : state.sendItems;
-    final existingSummary = state.sendSummary ?? sampleSendSummary;
-    final summary = existingSummary.copyWith(
-      itemCount: update.itemCount,
-      totalSize: update.totalSize,
-      code: state.sendDestinationCode,
-      destinationLabel: update.destinationLabel,
-      statusMessage: update.errorMessage ?? update.statusMessage,
-    );
-    final progress = progressFromSnapshot(update.snapshot);
-    final bytesTransferred =
-        progress.bytesTransferred ??
-        (update.bytesSent > 0 ? update.bytesSent : null);
-    if (_sendPayloadStartedAt == null && (bytesTransferred ?? 0) > 0) {
-      _sendPayloadStartedAt = DateTime.now();
-    }
-
-    switch (update.phase) {
-      case SendTransferUpdatePhase.connecting:
-        _setSession(
-          SendTransferSession(
-            phase: SendTransferSessionPhase.connecting,
-            items: items,
-            summary: summary,
-            plan: update.plan ?? state.sendTransferPlan,
-            snapshot: update.snapshot,
-            remoteDeviceType: update.remoteDeviceType,
-          ),
-        );
-      case SendTransferUpdatePhase.waitingForDecision:
-        _setSession(
-          SendTransferSession(
-            phase: SendTransferSessionPhase.waitingForDecision,
-            items: items,
-            summary: summary,
-            plan: update.plan ?? state.sendTransferPlan,
-            snapshot: update.snapshot,
-            remoteDeviceType: update.remoteDeviceType,
-          ),
-        );
-      case SendTransferUpdatePhase.accepted:
-        _setSession(
-          SendTransferSession(
-            phase: SendTransferSessionPhase.accepted,
-            items: items,
-            summary: summary,
-            plan: update.plan ?? state.sendTransferPlan,
-            snapshot: update.snapshot,
-            remoteDeviceType: update.remoteDeviceType,
-          ),
-        );
-      case SendTransferUpdatePhase.declined:
-        _setSession(
-          SendResultSession(
-            success: false,
-            outcome: TransferResultOutcomeData.declined,
-            items: items,
-            summary: summary.copyWith(
-              statusMessage: update.errorMessage ?? 'Transfer declined.',
-            ),
-            plan: update.plan ?? state.sendTransferPlan,
-            snapshot: update.snapshot,
-            remoteDeviceType: update.remoteDeviceType,
-          ),
-        );
-      case SendTransferUpdatePhase.sending:
-        final payloadBytesSent = bytesTransferred;
-        final payloadTotalBytes =
-            progress.totalBytes ??
-            (update.totalBytes > 0 ? update.totalBytes : null);
-        _setSession(
-          SendTransferSession(
-            phase: SendTransferSessionPhase.sending,
-            items: items,
-            summary: summary,
-            plan: update.plan ?? state.sendTransferPlan,
-            snapshot: update.snapshot,
-            remoteDeviceType: update.remoteDeviceType,
-            payloadBytesSent: payloadBytesSent,
-            payloadTotalBytes: payloadTotalBytes,
-            payloadSpeedLabel: progress.speedLabel,
-            payloadEtaLabel: progress.etaLabel,
-          ),
-        );
-      case SendTransferUpdatePhase.completed:
-        _setSession(
-          SendResultSession(
-            success: true,
-            outcome: TransferResultOutcomeData.success,
-            items: items,
-            summary: summary,
-            metrics: buildSendCompletionMetrics(
-              update,
-              payloadStartedAt: _sendPayloadStartedAt,
-            ),
-            plan: update.plan ?? state.sendTransferPlan,
-            snapshot: update.snapshot,
-            remoteDeviceType: update.remoteDeviceType,
-          ),
-        );
-      case SendTransferUpdatePhase.cancelled:
-        _setSession(
-          SendResultSession(
-            success: false,
-            outcome: TransferResultOutcomeData.cancelled,
-            items: items,
-            summary: summary.copyWith(
-              statusMessage: update.errorMessage ?? 'Transfer cancelled.',
-            ),
-            plan: update.plan ?? state.sendTransferPlan,
-            snapshot: update.snapshot,
-            remoteDeviceType: update.remoteDeviceType,
-          ),
-        );
-      case SendTransferUpdatePhase.failed:
-        _setSession(
-          SendResultSession(
-            success: false,
-            outcome: TransferResultOutcomeData.failed,
-            items: items,
-            summary: summary,
-            plan: update.plan ?? state.sendTransferPlan,
-            snapshot: update.snapshot,
-            remoteDeviceType: update.remoteDeviceType,
-          ),
-        );
-    }
-  }
-
   void _setSession(ShellSessionState session) {
     state = state.copyWith(session: session);
     _syncSessionPolicies();
@@ -1202,9 +489,6 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
 
   void _syncSessionPolicies() {
     unawaited(_syncDiscoverabilityPolicy());
-    if (state.session is! SendDraftSession) {
-      _cancelNearbyScanTimer();
-    }
   }
 
   Future<void> _syncDiscoverabilityPolicy() async {
@@ -1221,54 +505,11 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
     }
   }
 
-  void _cancelActiveSendTransfer() {
-    _sendTransferGeneration += 1;
-    unawaited(_sendTransferSubscription?.cancel());
-    _sendTransferSubscription = null;
-  }
-
-  void _cancelNearbyScanTimer() {
-    _nearbyScanTimer?.cancel();
-    _nearbyScanTimer = null;
-  }
-
-  SendDraftSession? get _draftSession {
-    final session = state.session;
-    return session is SendDraftSession ? session : null;
-  }
-
-  List<String> get _currentSendSelectionPaths =>
-      state.sendItems.map((item) => item.path).toList(growable: false);
-
-  void _reportSendSelectionError(
-    String userMessage,
-    Object error,
-    StackTrace stackTrace,
-  ) {
-    _setSendSetupError(userMessage);
-    debugPrint('Failed to inspect selected send items: $error');
-    debugPrintStack(stackTrace: stackTrace);
-  }
-
-  void _setSendSetupError(String message) {
-    state = state.copyWith(sendSetupErrorMessage: message);
-  }
-
-  void _clearSendSetupError() {
-    state = state.copyWith(clearSendSetupErrorMessage: true);
-  }
-
-  void _clearSendMetricState() {
-    _sendPayloadStartedAt = null;
-  }
-
   void _clearReceiveMetricState() {
     _receivePayloadStartedAt = null;
   }
 
   void _dispose() {
-    _cancelNearbyScanTimer();
-    _sendTransferSubscription?.cancel();
     _badgeSubscription?.cancel();
     _incomingSubscription?.cancel();
   }

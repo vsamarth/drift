@@ -1,25 +1,36 @@
+import 'dart:async';
+
 import 'package:drift_app/core/models/transfer_models.dart';
+import 'package:drift_app/features/send/send_flow_state.dart';
+import 'package:drift_app/features/send/send_state.dart';
+import 'package:drift_app/platform/send_item_source.dart';
+import 'package:drift_app/platform/send_transfer_source.dart';
 import 'package:drift_app/state/app_identity.dart';
 import 'package:drift_app/state/drift_app_notifier.dart';
 import 'package:drift_app/state/drift_app_state.dart';
+import 'package:drift_app/state/nearby_discovery_source.dart';
 import 'package:drift_app/state/receiver_service_source.dart';
+
+const List<TransferItemViewData> _sampleSendItems = [
+  TransferItemViewData(
+    name: 'sample.txt',
+    path: 'sample.txt',
+    size: '18 KB',
+    kind: TransferItemKind.file,
+  ),
+];
+
+const TransferItemViewData _extraSendItem = TransferItemViewData(
+  name: 'notes.pdf',
+  path: 'notes.pdf',
+  size: '12 KB',
+  kind: TransferItemKind.file,
+);
 
 class FakeSendAppNotifier extends DriftAppNotifier {
   FakeSendAppNotifier(this._state);
 
   DriftAppState _state;
-  int pickSendItemsCalls = 0;
-  int appendSendItemsFromPickerCalls = 0;
-  int rescanNearbySendDestinationsCalls = 0;
-  int acceptDroppedSendItemsCalls = 0;
-  int appendDroppedSendItemsCalls = 0;
-  int removeSendItemCalls = 0;
-  int updateSendDestinationCodeCalls = 0;
-  int clearSendDestinationCodeCalls = 0;
-  int startSendCalls = 0;
-  int cancelSendInProgressCalls = 0;
-  int handleTransferResultPrimaryActionCalls = 0;
-  int selectNearbyDestinationCalls = 0;
 
   @override
   DriftAppState build() => _state;
@@ -28,65 +39,155 @@ class FakeSendAppNotifier extends DriftAppNotifier {
     _state = nextState;
     state = nextState;
   }
+}
+
+class FakeSendItemSource implements SendItemSource {
+  FakeSendItemSource({
+    List<List<String>>? pickResponses,
+    Map<String, TransferItemViewData>? itemCatalog,
+    this.pickFilesError,
+  }) : _pickResponses =
+           pickResponses ??
+           const [
+             ['sample.txt'],
+           ],
+       _itemCatalog =
+           itemCatalog ??
+           {'sample.txt': _sampleSendItems[0], 'notes.pdf': _extraSendItem};
+
+  final List<List<String>> _pickResponses;
+  final Map<String, TransferItemViewData> _itemCatalog;
+  final Object? pickFilesError;
+  int _pickIndex = 0;
+  int pickFilesCalls = 0;
+  int pickAdditionalPathsCalls = 0;
+  int pickAdditionalFilesCalls = 0;
+  int loadPathsCalls = 0;
+  int appendPathsCalls = 0;
+  int removePathCalls = 0;
 
   @override
-  void pickSendItems() {
-    pickSendItemsCalls += 1;
+  Future<List<TransferItemViewData>> pickFiles() async {
+    pickFilesCalls += 1;
+    return pickFilesError == null
+        ? _mapPaths(_nextPickResponse())
+        : Future<List<TransferItemViewData>>.error(pickFilesError!);
   }
 
   @override
-  void appendSendItemsFromPicker() {
-    appendSendItemsFromPickerCalls += 1;
+  Future<List<String>> pickAdditionalPaths() async {
+    pickAdditionalPathsCalls += 1;
+    return _nextPickResponse();
   }
 
   @override
-  void rescanNearbySendDestinations() {
-    rescanNearbySendDestinationsCalls += 1;
+  Future<List<TransferItemViewData>> pickAdditionalFiles({
+    required List<String> existingPaths,
+  }) async {
+    pickAdditionalFilesCalls += 1;
+    return appendPaths(
+      existingPaths: existingPaths,
+      incomingPaths: _nextPickResponse(),
+    );
   }
 
   @override
-  void acceptDroppedSendItems(List<String> paths) {
-    acceptDroppedSendItemsCalls += 1;
+  Future<List<TransferItemViewData>> loadPaths(List<String> paths) async {
+    loadPathsCalls += 1;
+    return _mapPaths(paths);
   }
 
   @override
-  void appendDroppedSendItems(List<String> paths) {
-    appendDroppedSendItemsCalls += 1;
+  Future<List<TransferItemViewData>> appendPaths({
+    required List<String> existingPaths,
+    required List<String> incomingPaths,
+  }) async {
+    appendPathsCalls += 1;
+    final merged = <String>[];
+    final seen = <String>{};
+    for (final path in [...existingPaths, ...incomingPaths]) {
+      if (seen.add(path)) {
+        merged.add(path);
+      }
+    }
+    return _mapPaths(merged);
   }
 
   @override
-  void removeSendItem(String path) {
-    removeSendItemCalls += 1;
+  Future<List<TransferItemViewData>> removePath({
+    required List<String> existingPaths,
+    required String removedPath,
+  }) async {
+    removePathCalls += 1;
+    return _mapPaths(
+      existingPaths
+          .where((path) => path != removedPath)
+          .toList(growable: false),
+    );
+  }
+
+  List<String> _nextPickResponse() {
+    final index = _pickIndex < _pickResponses.length
+        ? _pickIndex
+        : _pickResponses.length - 1;
+    _pickIndex += 1;
+    return _pickResponses[index];
+  }
+
+  List<TransferItemViewData> _mapPaths(List<String> paths) {
+    final seen = <String>{};
+    return List<TransferItemViewData>.unmodifiable(
+      paths.where(seen.add).map((path) => _itemCatalog[path]!).toList(),
+    );
+  }
+}
+
+class FakeSendTransferSource implements SendTransferSource {
+  FakeSendTransferSource({this.cancelError});
+
+  SendTransferRequestData? lastRequest;
+  int startTransferCalls = 0;
+  int cancelTransferCalls = 0;
+  final StreamController<SendTransferUpdate> controller =
+      StreamController<SendTransferUpdate>.broadcast();
+  final Object? cancelError;
+
+  @override
+  Stream<SendTransferUpdate> startTransfer(SendTransferRequestData request) {
+    startTransferCalls += 1;
+    lastRequest = request;
+    return controller.stream;
   }
 
   @override
-  void updateSendDestinationCode(String value) {
-    updateSendDestinationCodeCalls += 1;
+  Future<void> cancelTransfer() async {
+    cancelTransferCalls += 1;
+    if (cancelError != null) {
+      throw cancelError!;
+    }
   }
 
-  @override
-  void clearSendDestinationCode() {
-    clearSendDestinationCodeCalls += 1;
+  Future<void> dispose() async {
+    await controller.close();
   }
+}
+
+class FakeNearbyDiscoverySource implements NearbyDiscoverySource {
+  FakeNearbyDiscoverySource({this.scanHandler, this.destinations = const []});
+
+  int scanCount = 0;
+  final List<SendDestinationViewData> destinations;
+  Future<List<SendDestinationViewData>> Function()? scanHandler;
 
   @override
-  void startSend() {
-    startSendCalls += 1;
-  }
-
-  @override
-  void cancelSendInProgress() {
-    cancelSendInProgressCalls += 1;
-  }
-
-  @override
-  void handleTransferResultPrimaryAction() {
-    handleTransferResultPrimaryActionCalls += 1;
-  }
-
-  @override
-  void selectNearbyDestination(SendDestinationViewData destination) {
-    selectNearbyDestinationCalls += 1;
+  Future<List<SendDestinationViewData>> scan({
+    Duration timeout = const Duration(seconds: 12),
+  }) async {
+    scanCount += 1;
+    if (scanHandler != null) {
+      return await scanHandler!();
+    }
+    return destinations;
   }
 }
 
@@ -169,5 +270,18 @@ DriftAppState buildSendTransferState() {
       remoteDeviceType: 'phone',
     ),
     animateSendingConnection: false,
+  );
+}
+
+SendState buildSendState(
+  DriftAppState state, {
+  String? sendSetupErrorMessage,
+}) {
+  return SendState(
+    identity: state.identity,
+    animateSendingConnection: state.animateSendingConnection,
+    discoverableByDefault: state.discoverableByDefault,
+    session: state.session,
+    sendSetupErrorMessage: sendSetupErrorMessage,
   );
 }

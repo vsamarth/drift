@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/theme/drift_theme.dart';
+import '../../features/send/send_providers.dart';
 import '../app_shell_providers.dart';
-import '../../state/drift_providers.dart';
 
 class ShellHeader extends ConsumerWidget {
   const ShellHeader({
@@ -27,7 +27,7 @@ class ShellHeader extends ConsumerWidget {
 
     final backAction =
         onBackPressed ??
-        (canGoBack ? ref.read(driftAppNotifierProvider.notifier).goBack : null);
+        (canGoBack ? ref.read(sendControllerProvider.notifier).goBack : null);
 
     return Row(
       children: [

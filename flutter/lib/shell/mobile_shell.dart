@@ -4,8 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/theme/drift_theme.dart';
 import 'app_shell_providers.dart';
 import 'shell_routing.dart';
-import '../state/drift_app_state.dart';
 import '../state/drift_providers.dart';
+import '../features/send/send_providers.dart';
 import '../features/settings/widgets/mobile_settings_page.dart';
 import 'widgets/mobile/mobile_identity_card.dart';
 import 'widgets/mobile/select_files_card.dart';
@@ -33,7 +33,8 @@ class _MobileShellState extends ConsumerState<MobileShell> {
   Widget build(BuildContext context) {
     final shellState = ref.watch(appShellStateProvider);
     final state = ref.watch(driftAppNotifierProvider);
-    final notifier = ref.read(driftAppNotifierProvider.notifier);
+    final sendState = ref.watch(sendStateProvider);
+    final notifier = ref.read(sendControllerProvider.notifier);
     final isIdle = shellState.view == ShellView.sendIdle;
 
     return Scaffold(
@@ -76,7 +77,7 @@ class _MobileShellState extends ConsumerState<MobileShell> {
                     if (isIdle) ...[
                       SelectFilesCard(
                         onTap: notifier.pickSendItems,
-                        isPicking: state.isInspectingSendItems,
+                        isPicking: sendState.isInspectingSendItems,
                       ),
                       const SizedBox(height: 24),
                     ],
@@ -99,10 +100,9 @@ class _MobileShellState extends ConsumerState<MobileShell> {
                             children: [
                               const ShellHeader(),
                               const Spacer(),
-                              if (state.session is SendDraftSession ||
-                                  state.session is ReceiveOfferSession)
+                              if (shellState.showBackButton)
                                 IconButton(
-                                  onPressed: notifier.resetShell,
+                                  onPressed: notifier.goBack,
                                   icon: const Icon(Icons.close_rounded),
                                   tooltip: 'Close',
                                 ),

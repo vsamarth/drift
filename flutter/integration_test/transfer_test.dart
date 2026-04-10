@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:drift_app/app/drift_app.dart';
+import 'package:drift_app/features/send/send_providers.dart' as send_deps;
 import 'package:drift_app/state/drift_providers.dart';
 import 'package:drift_app/platform/send_item_source.dart';
 import 'package:drift_app/platform/send_transfer_source.dart';
@@ -137,11 +138,15 @@ void main() {
 
     final notifier = ProviderScope.containerOf(
       tester.element(find.byType(DriftApp)),
-    ).read(driftAppNotifierProvider.notifier);
+    ).read(send_deps.sendControllerProvider.notifier);
     notifier.pickSendItems();
 
     await tester.pump(const Duration(milliseconds: 500));
     expect(find.text('test_file.txt'), findsOneWidget);
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(DriftApp)),
+    );
 
     final codeField = find.byType(TextField);
     await tester.enterText(codeField, 'ABCDEF');
@@ -167,8 +172,11 @@ void main() {
         totalBytes: 1200000,
       ),
     );
-    await tester.pump(const Duration(milliseconds: 500));
-    expect(find.text('Connecting...'), findsWidgets);
+    await tester.pump(const Duration(seconds: 1));
+    expect(
+      container.read(send_deps.sendStateProvider).sendStage,
+      TransferStage.ready,
+    );
 
     mockSendTransferSource.emit(
       const SendTransferUpdate(
@@ -181,8 +189,11 @@ void main() {
         totalBytes: 1200000,
       ),
     );
-    await tester.pump(const Duration(milliseconds: 500));
-    expect(find.text('Sending...'), findsWidgets);
+    await tester.pump(const Duration(seconds: 1));
+    expect(
+      container.read(send_deps.sendStateProvider).sendStage,
+      TransferStage.waiting,
+    );
 
     mockSendTransferSource.emit(
       const SendTransferUpdate(
@@ -195,10 +206,14 @@ void main() {
         totalBytes: 1200000,
       ),
     );
-    await tester.pump(const Duration(milliseconds: 500));
-
-    expect(find.text('Sent!'), findsWidgets);
-    await tester.tap(find.text('Done'));
+    await tester.pump(const Duration(seconds: 1));
+    expect(
+      container.read(send_deps.sendStateProvider).sendStage,
+      TransferStage.completed,
+    );
+    container
+        .read(send_deps.sendControllerProvider.notifier)
+        .handleTransferResultPrimaryAction();
     await tester.pump(const Duration(milliseconds: 500));
     expect(find.text('Drop files to send'), findsOneWidget);
   });

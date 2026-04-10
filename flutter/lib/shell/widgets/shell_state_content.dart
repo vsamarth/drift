@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../state/drift_app_state.dart';
 import '../../state/drift_providers.dart';
+import '../../features/send/send_providers.dart';
 import '../shell_routing.dart';
 import 'receive_receiving_card.dart';
 import 'receive_review_card.dart';
@@ -34,16 +35,17 @@ class ShellStateContent extends ConsumerWidget {
       );
     }
 
-    final notifier = ref.read(driftAppNotifierProvider.notifier);
+    final notifier = ref.read(sendControllerProvider.notifier);
+    final sendState = ref.watch(sendStateProvider);
     final state = ref.watch(driftAppNotifierProvider);
-    final result = state.transferResult;
+    final receiveResult = state.transferResult;
 
     return switch (view) {
       ShellView.sendIdle => SendDropPanel(
         onChooseFiles: notifier.pickSendItems,
         onDropPaths: notifier.acceptDroppedSendItems,
         height: availableHeight,
-        errorMessage: state.sendSetupErrorMessage,
+        errorMessage: sendState.sendSetupErrorMessage,
       ),
       ShellView.sendSelected => SizedBox(
         height: availableHeight,
@@ -56,7 +58,7 @@ class ShellStateContent extends ConsumerWidget {
         child: SendCodeCard(
           fillBody: true,
           title: 'Sending',
-          status: state.sendSummary?.statusMessage ?? 'Request sent',
+          status: sendState.sendSummary?.statusMessage ?? 'Request sent',
         ),
       ),
       ShellView.sendWaiting => SizedBox(
@@ -66,7 +68,8 @@ class ShellStateContent extends ConsumerWidget {
           fillBody: true,
           title: 'Sending',
           status:
-              state.sendSummary?.statusMessage ?? 'Waiting for confirmation.',
+              sendState.sendSummary?.statusMessage ??
+              'Waiting for confirmation.',
         ),
       ),
       ShellView.sendCompleted => SizedBox(
@@ -74,7 +77,7 @@ class ShellStateContent extends ConsumerWidget {
         width: double.infinity,
         child: _buildTransferResultCard(
           onPrimary: notifier.handleTransferResultPrimaryAction,
-          result: result,
+          result: sendState.transferResult,
         ),
       ),
       ShellView.sendError => SizedBox(
@@ -82,7 +85,7 @@ class ShellStateContent extends ConsumerWidget {
         width: double.infinity,
         child: _buildTransferResultCard(
           onPrimary: notifier.handleTransferResultPrimaryAction,
-          result: result,
+          result: sendState.transferResult,
         ),
       ),
       ShellView.receiveReview => SizedBox(
@@ -100,7 +103,7 @@ class ShellStateContent extends ConsumerWidget {
         width: double.infinity,
         child: _buildTransferResultCard(
           onPrimary: notifier.handleTransferResultPrimaryAction,
-          result: result,
+          result: receiveResult,
         ),
       ),
     };
