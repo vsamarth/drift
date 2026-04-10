@@ -1,52 +1,131 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/models/transfer_models.dart';
+import '../../state/drift_app_state.dart';
 import '../../state/drift_providers.dart';
+import 'send_flow_actions.dart' as send_flow_actions;
+import 'send_nearby_coordinator.dart';
+import 'send_selection_builder.dart';
+import 'send_selection_coordinator.dart';
+import 'send_shell_actions.dart' as send_shell_actions;
+import 'send_transfer_coordinator.dart';
+import 'send_providers.dart' as send_deps;
 import 'send_state.dart';
 
 class SendController extends Notifier<SendState> {
+  late SendSelectionCoordinator _sendSelectionCoordinator;
+  late SendNearbyCoordinator _sendNearbyCoordinator;
+  late SendTransferCoordinator _sendTransferCoordinator;
+
   @override
   SendState build() {
     final appState = ref.watch(driftAppNotifierProvider);
+    _sendSelectionCoordinator = SendSelectionCoordinator(
+      itemSource: ref.watch(send_deps.sendItemSourceProvider),
+      selectionBuilder: const SendSelectionBuilder(),
+    );
+    _sendNearbyCoordinator = SendNearbyCoordinator(
+      nearbyDiscoverySource: ref.watch(send_deps.nearbyDiscoverySourceProvider),
+    );
+    _sendTransferCoordinator = SendTransferCoordinator(
+      transferSource: ref.watch(send_deps.sendTransferSourceProvider),
+    );
     return SendState.fromAppState(appState);
   }
 
   void pickSendItems() {
-    ref.read(driftAppNotifierProvider.notifier).pickSendItems();
+    unawaited(
+      _sendSelectionCoordinator.pickSendItems(
+        ref.read(driftAppNotifierProvider.notifier),
+      ),
+    );
   }
 
   void appendSendItemsFromPicker() {
-    ref.read(driftAppNotifierProvider.notifier).appendSendItemsFromPicker();
+    unawaited(
+      _sendSelectionCoordinator.appendSendItemsFromPicker(
+        ref.read(driftAppNotifierProvider.notifier),
+      ),
+    );
   }
 
   void rescanNearbySendDestinations() {
-    ref.read(driftAppNotifierProvider.notifier).rescanNearbySendDestinations();
+    unawaited(
+      _sendNearbyCoordinator.runScanOnce(
+        ref.read(driftAppNotifierProvider.notifier),
+      ),
+    );
   }
 
   void acceptDroppedSendItems(List<String> paths) {
-    ref.read(driftAppNotifierProvider.notifier).acceptDroppedSendItems(paths);
+    unawaited(
+      _sendSelectionCoordinator.acceptDroppedSendItems(
+        ref.read(driftAppNotifierProvider.notifier),
+        paths,
+      ),
+    );
   }
 
   void appendDroppedSendItems(List<String> paths) {
-    ref.read(driftAppNotifierProvider.notifier).appendDroppedSendItems(paths);
+    unawaited(
+      _sendSelectionCoordinator.appendDroppedSendItems(
+        ref.read(driftAppNotifierProvider.notifier),
+        paths,
+      ),
+    );
   }
 
   void removeSendItem(String path) {
-    ref.read(driftAppNotifierProvider.notifier).removeSendItem(path);
+    unawaited(
+      _sendSelectionCoordinator.removeSendItem(
+        ref.read(driftAppNotifierProvider.notifier),
+        path,
+      ),
+    );
   }
 
   void updateSendDestinationCode(String value) {
-    ref
-        .read(driftAppNotifierProvider.notifier)
-        .updateSendDestinationCode(value);
+    final draft = _currentDraft();
+    final next = send_shell_actions.updateSendDestinationCode(draft, value);
+    if (next == null) {
+      return;
+    }
+    ref.read(driftAppNotifierProvider.notifier).applySendDraftSession(next);
   }
 
   void clearSendDestinationCode() {
-    ref.read(driftAppNotifierProvider.notifier).clearSendDestinationCode();
+    final draft = _currentDraft();
+    final next = send_shell_actions.clearSendDestinationCode(draft);
+    if (next == null) {
+      return;
+    }
+    ref.read(driftAppNotifierProvider.notifier).applySendDraftSession(next);
   }
 
   void startSend() {
-    ref.read(driftAppNotifierProvider.notifier).startSend();
+    final appState = ref.read(driftAppNotifierProvider);
+    final intent = send_flow_actions.buildSendStartIntent(appState);
+    if (intent == null) {
+      return;
+    }
+
+    final host = ref.read(driftAppNotifierProvider.notifier);
+    if (intent.ticket != null && intent.destination != null) {
+      _sendTransferCoordinator.startSendTransferWithTicket(
+        host: host,
+        destination: intent.destination!,
+        ticket: intent.ticket!,
+        onUpdate: host.applySendTransferUpdate,
+      );
+    } else if (intent.normalizedCode != null) {
+      _sendTransferCoordinator.startSendTransfer(
+        host: host,
+        normalizedCode: intent.normalizedCode!,
+        onUpdate: host.applySendTransferUpdate,
+      );
+    }
   }
 
   void cancelSendInProgress() {
@@ -60,8 +139,16 @@ class SendController extends Notifier<SendState> {
   }
 
   void selectNearbyDestination(SendDestinationViewData destination) {
-    ref
-        .read(driftAppNotifierProvider.notifier)
-        .selectNearbyDestination(destination);
+    final draft = _currentDraft();
+    final next = send_shell_actions.selectNearbyDestination(draft, destination);
+    if (next == null) {
+      return;
+    }
+    ref.read(driftAppNotifierProvider.notifier).applySendDraftSession(next);
+  }
+
+  SendDraftSession? _currentDraft() {
+    final session = ref.read(driftAppNotifierProvider).session;
+    return session is SendDraftSession ? session : null;
   }
 }

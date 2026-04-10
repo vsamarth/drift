@@ -919,6 +919,14 @@ class DriftAppNotifier extends Notifier<DriftAppState>
     );
   }
 
+  void applySendTransferUpdate(SendTransferUpdate update) {
+    _applySendUpdate(update);
+  }
+
+  void applySendDraftSession(SendDraftSession session) {
+    _setSession(session);
+  }
+
   void _setSession(ShellSessionState session) {
     state = state.copyWith(session: session);
     _syncSessionPolicies();
