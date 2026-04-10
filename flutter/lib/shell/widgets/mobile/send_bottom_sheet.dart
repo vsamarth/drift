@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/drift_theme.dart';
-import '../../../state/drift_providers.dart';
+import '../../../features/send/send_providers.dart';
+import '../../../features/send/send_state.dart';
 import '../receive_code_field.dart';
 
 class SendBottomSheet extends ConsumerWidget {
@@ -10,8 +11,8 @@ class SendBottomSheet extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final state = ref.watch(driftAppNotifierProvider);
-    final notifier = ref.read(driftAppNotifierProvider.notifier);
+    final state = ref.watch(sendStateProvider);
+    final notifier = ref.read(sendControllerProvider.notifier);
     final destinations = state.nearbySendDestinations;
     final items = state.sendItems;
 

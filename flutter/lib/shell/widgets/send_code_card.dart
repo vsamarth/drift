@@ -3,8 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/models/transfer_models.dart';
 import '../../core/theme/drift_theme.dart';
-import '../../state/drift_app_state.dart';
-import '../../state/drift_providers.dart';
+import '../../features/send/send_providers.dart';
+import '../../features/send/send_state.dart';
 import 'live_transfer_stats.dart';
 import 'preview_list.dart';
 import 'sending_connection_strip.dart';
@@ -28,7 +28,7 @@ class SendCodeCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final state = ref.watch(driftAppNotifierProvider);
+    final state = ref.watch(sendStateProvider);
     final summary = state.sendSummary;
     final itemCount = summary?.itemCount ?? state.sendItems.length;
     final totalSize = summary?.totalSize ?? '';
@@ -168,14 +168,14 @@ class SendCodeCard extends ConsumerWidget {
     );
 
     if (confirmed == true) {
-      ref.read(driftAppNotifierProvider.notifier).cancelSendInProgress();
+      ref.read(sendControllerProvider.notifier).cancelSendInProgress();
     }
   }
 }
 
 Widget? _buildSendExplainer(
   TransferStage stage,
-  DriftAppState state,
+  SendState state,
   Widget liveStats,
 ) {
   if (state.sendTransferSpeedLabel != null ||
@@ -249,7 +249,7 @@ Color _dotColorFor(TransferStage stage) {
   };
 }
 
-SendingStripMode _sendingStripMode(DriftAppState state) {
+SendingStripMode _sendingStripMode(SendState state) {
   if (state.hasSendPayloadProgress) {
     return SendingStripMode.transferring;
   }
@@ -259,7 +259,7 @@ SendingStripMode _sendingStripMode(DriftAppState state) {
   return SendingStripMode.looping;
 }
 
-double _transferProgressForStrip(DriftAppState state) {
+double _transferProgressForStrip(SendState state) {
   if (!state.hasSendPayloadProgress) {
     return 0;
   }

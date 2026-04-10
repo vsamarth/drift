@@ -5,7 +5,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/models/transfer_models.dart';
 import '../../core/theme/drift_theme.dart';
 import '../../shared/formatting/byte_format.dart';
-import '../../state/drift_providers.dart';
+import '../../features/send/send_providers.dart';
+import '../../features/send/send_state.dart';
 import 'receive_code_field.dart';
 
 class SendSelectedCard extends ConsumerStatefulWidget {
@@ -20,8 +21,8 @@ class _SendSelectedCardState extends ConsumerState<SendSelectedCard> {
 
   @override
   Widget build(BuildContext context) {
-    final state = ref.watch(driftAppNotifierProvider);
-    final notifier = ref.read(driftAppNotifierProvider.notifier);
+    final state = ref.watch(sendStateProvider);
+    final notifier = ref.read(sendControllerProvider.notifier);
 
     final canSend =
         state.sendItems.isNotEmpty &&
@@ -212,8 +213,8 @@ class _SelectedItemsSectionState extends ConsumerState<SelectedItemsSection> {
 
   @override
   Widget build(BuildContext context) {
-    final state = ref.watch(driftAppNotifierProvider);
-    final notifier = ref.read(driftAppNotifierProvider.notifier);
+    final state = ref.watch(sendStateProvider);
+    final notifier = ref.read(sendControllerProvider.notifier);
     final isInspecting = state.isInspectingSendItems;
     final items = state.sendItems;
     final count = items.length;
@@ -338,8 +339,8 @@ class NearbyDevicesSection extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final state = ref.watch(driftAppNotifierProvider);
-    final notifier = ref.read(driftAppNotifierProvider.notifier);
+    final state = ref.watch(sendStateProvider);
+    final notifier = ref.read(sendControllerProvider.notifier);
     final destinations = state.nearbySendDestinations;
     final isScanning = state.nearbyScanInProgress;
     final hasFound = destinations.isNotEmpty;
@@ -424,8 +425,8 @@ class ManualCodeSection extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final state = ref.watch(driftAppNotifierProvider);
-    final notifier = ref.read(driftAppNotifierProvider.notifier);
+    final state = ref.watch(sendStateProvider);
+    final notifier = ref.read(sendControllerProvider.notifier);
     final hasCode = state.sendDestinationCode.isNotEmpty;
 
     return Column(
@@ -481,7 +482,7 @@ class SelectedItemRow extends StatelessWidget {
     final notifier = ProviderScope.containerOf(
       context,
       listen: false,
-    ).read(driftAppNotifierProvider.notifier);
+    ).read(sendControllerProvider.notifier);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6),
       child: Row(
@@ -534,7 +535,7 @@ class _NearbyDeviceTile extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final notifier = ref.read(driftAppNotifierProvider.notifier);
+    final notifier = ref.read(sendControllerProvider.notifier);
     return InkWell(
       onTap: () => notifier.selectNearbyDestination(destination),
       borderRadius: BorderRadius.circular(16),

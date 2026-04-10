@@ -3,7 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/models/transfer_models.dart';
 import '../../../core/theme/drift_theme.dart';
-import '../../../state/drift_providers.dart';
+import '../../../features/send/send_providers.dart';
+import '../../../features/send/send_state.dart';
 import '../live_transfer_stats.dart';
 import '../preview_list.dart';
 
@@ -12,8 +13,8 @@ class MobileTransferView extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final state = ref.watch(driftAppNotifierProvider);
-    final notifier = ref.read(driftAppNotifierProvider.notifier);
+    final state = ref.watch(sendStateProvider);
+    final notifier = ref.read(sendControllerProvider.notifier);
 
     final isSending = state.mode == TransferDirection.send;
     final items = isSending

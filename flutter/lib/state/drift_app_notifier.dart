@@ -8,6 +8,7 @@ import '../platform/app_focus.dart';
 import '../platform/send_item_source.dart';
 import '../platform/send_transfer_source.dart';
 import '../features/receive/receive_mapper.dart';
+import '../features/send/send_mapper.dart';
 import '../src/rust/api/receiver.dart' as rust_receiver;
 import '../src/rust/api/transfer.dart' as rust_transfer;
 import '../features/settings/settings_state.dart';
@@ -903,7 +904,7 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
           phase: SendTransferUpdatePhase.failed,
           destinationLabel:
               state.sendDestinationLabel ??
-              _formatCodeAsDestination(state.sendDestinationCode),
+              formatCodeAsDestination(state.sendDestinationCode),
           statusMessage: 'Cancelling transfer...',
           itemCount: state.sendItems.length,
           totalSize:
@@ -1051,7 +1052,7 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
     _listenToSendTransfer(
       generation: generation,
       request: request,
-      fallbackDestination: _formatCodeAsDestination(normalizedCode),
+      fallbackDestination: formatCodeAsDestination(normalizedCode),
     );
   }
 
@@ -1188,7 +1189,7 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
             outcome: TransferResultOutcomeData.success,
             items: items,
             summary: summary,
-            metrics: _buildSendCompletionMetrics(
+            metrics: buildSendCompletionMetrics(
               update,
               payloadStartedAt: _sendPayloadStartedAt,
             ),
@@ -1224,59 +1225,6 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
           ),
         );
     }
-  }
-
-  List<TransferMetricRow> _buildPerformanceMetrics({
-    required DateTime? startedAt,
-    required int bytesTransferred,
-  }) {
-    final rows = <TransferMetricRow>[];
-    if (startedAt == null) {
-      return rows;
-    }
-
-    final now = DateTime.now();
-    final transferElapsed = now.difference(startedAt);
-    if (transferElapsed.inMilliseconds >= 200) {
-      rows.add(
-        TransferMetricRow(
-          label: 'Transfer time',
-          value: _formatElapsedDuration(transferElapsed),
-        ),
-      );
-    }
-
-    final payloadSec = transferElapsed.inMilliseconds / 1000.0;
-    if (payloadSec >= 0.25 && bytesTransferred > 0) {
-      rows.add(
-        TransferMetricRow(
-          label: 'Average speed',
-          value: _formatBytesPerSecond(bytesTransferred / payloadSec),
-        ),
-      );
-    }
-
-    return rows;
-  }
-
-  List<TransferMetricRow>? _buildSendCompletionMetrics(
-    SendTransferUpdate update, {
-    required DateTime? payloadStartedAt,
-  }) {
-    final rows = <TransferMetricRow>[];
-    final recipient = update.destinationLabel.trim().isEmpty
-        ? 'Recipient device'
-        : update.destinationLabel;
-    rows.add(TransferMetricRow(label: 'Sent to', value: recipient));
-    rows.add(TransferMetricRow(label: 'Files', value: '${update.itemCount}'));
-    rows.add(TransferMetricRow(label: 'Size', value: update.totalSize));
-    rows.addAll(
-      _buildPerformanceMetrics(
-        startedAt: payloadStartedAt,
-        bytesTransferred: update.bytesSent,
-      ),
-    );
-    return rows;
   }
 
   void _setSession(ShellSessionState session) {
@@ -1363,59 +1311,4 @@ int _bigIntToInt(BigInt value) {
     return 0x7fffffffffffffff;
   }
   return value.toInt();
-}
-
-String _formatCodeAsDestination(String code) {
-  final prefix = code.substring(0, 3);
-  final suffix = code.substring(3);
-  return 'Code $prefix $suffix';
-}
-
-String _formatElapsedDuration(Duration duration) {
-  final ms = duration.inMilliseconds;
-  if (ms < 60 * 1000) {
-    final sec = (ms / 1000).clamp(0.05, double.infinity);
-    if (sec < 10) {
-      return '${sec.toStringAsFixed(1)} s';
-    }
-    return '${sec.round()} s';
-  }
-  if (ms < 3600 * 1000) {
-    final minutes = duration.inMinutes;
-    final seconds = duration.inSeconds % 60;
-    return seconds == 0 ? '$minutes min' : '$minutes min $seconds s';
-  }
-  final hours = duration.inHours;
-  final minutes = duration.inMinutes % 60;
-  return minutes == 0 ? '$hours h' : '$hours h $minutes min';
-}
-
-String _formatBytesPerSecond(double bps) {
-  const units = ['B/s', 'KB/s', 'MB/s', 'GB/s'];
-  var value = bps;
-  var index = 0;
-  while (value >= 1024 && index < units.length - 1) {
-    value /= 1024;
-    index += 1;
-  }
-  final decimals = value >= 10 || index == 0 ? 0 : 1;
-  return '${value.toStringAsFixed(decimals)} ${units[index]}';
-}
-
-String _formatEtaSeconds(double seconds) {
-  if (seconds.isNaN || seconds.isInfinite || seconds <= 0) {
-    return '';
-  }
-  if (seconds < 1) {
-    return 'Finishing…';
-  }
-  if (seconds < 45) {
-    return '${seconds.round()}s';
-  }
-  if (seconds < 3600) {
-    final minutes = (seconds / 60).ceil();
-    return minutes <= 1 ? '1 min' : '$minutes min';
-  }
-  final hours = (seconds / 3600).ceil();
-  return hours <= 1 ? '1 h' : '$hours h';
 }
