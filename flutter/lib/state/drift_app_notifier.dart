@@ -10,6 +10,7 @@ import '../features/receive/receive_mapper.dart';
 import '../features/send/send_selection_builder.dart';
 import '../features/send/send_nearby_coordinator.dart';
 import '../features/send/send_selection_coordinator.dart';
+import '../features/send/send_session_reducer.dart';
 import '../features/send/send_transfer_coordinator.dart';
 import '../features/send/send_mapper.dart';
 import '../src/rust/api/receiver.dart' as rust_receiver;
@@ -922,15 +923,6 @@ class DriftAppNotifier extends Notifier<DriftAppState>
   }
 
   void _applySendUpdate(SendTransferUpdate update) {
-    final items = state.sendItems.isEmpty ? sampleSendItems : state.sendItems;
-    final existingSummary = state.sendSummary ?? sampleSendSummary;
-    final summary = existingSummary.copyWith(
-      itemCount: update.itemCount,
-      totalSize: update.totalSize,
-      code: state.sendDestinationCode,
-      destinationLabel: update.destinationLabel,
-      statusMessage: update.errorMessage ?? update.statusMessage,
-    );
     final progress = progressFromSnapshot(update.snapshot);
     final bytesTransferred =
         progress.bytesTransferred ??
@@ -939,116 +931,13 @@ class DriftAppNotifier extends Notifier<DriftAppState>
       _sendPayloadStartedAt = DateTime.now();
     }
 
-    switch (update.phase) {
-      case SendTransferUpdatePhase.connecting:
-        _setSession(
-          SendTransferSession(
-            phase: SendTransferSessionPhase.connecting,
-            items: items,
-            summary: summary,
-            plan: update.plan ?? state.sendTransferPlan,
-            snapshot: update.snapshot,
-            remoteDeviceType: update.remoteDeviceType,
-          ),
-        );
-      case SendTransferUpdatePhase.waitingForDecision:
-        _setSession(
-          SendTransferSession(
-            phase: SendTransferSessionPhase.waitingForDecision,
-            items: items,
-            summary: summary,
-            plan: update.plan ?? state.sendTransferPlan,
-            snapshot: update.snapshot,
-            remoteDeviceType: update.remoteDeviceType,
-          ),
-        );
-      case SendTransferUpdatePhase.accepted:
-        _setSession(
-          SendTransferSession(
-            phase: SendTransferSessionPhase.accepted,
-            items: items,
-            summary: summary,
-            plan: update.plan ?? state.sendTransferPlan,
-            snapshot: update.snapshot,
-            remoteDeviceType: update.remoteDeviceType,
-          ),
-        );
-      case SendTransferUpdatePhase.declined:
-        _setSession(
-          SendResultSession(
-            success: false,
-            outcome: TransferResultOutcomeData.declined,
-            items: items,
-            summary: summary.copyWith(
-              statusMessage: update.errorMessage ?? 'Transfer declined.',
-            ),
-            plan: update.plan ?? state.sendTransferPlan,
-            snapshot: update.snapshot,
-            remoteDeviceType: update.remoteDeviceType,
-          ),
-        );
-      case SendTransferUpdatePhase.sending:
-        final payloadBytesSent = bytesTransferred;
-        final payloadTotalBytes =
-            progress.totalBytes ??
-            (update.totalBytes > 0 ? update.totalBytes : null);
-        _setSession(
-          SendTransferSession(
-            phase: SendTransferSessionPhase.sending,
-            items: items,
-            summary: summary,
-            plan: update.plan ?? state.sendTransferPlan,
-            snapshot: update.snapshot,
-            remoteDeviceType: update.remoteDeviceType,
-            payloadBytesSent: payloadBytesSent,
-            payloadTotalBytes: payloadTotalBytes,
-            payloadSpeedLabel: progress.speedLabel,
-            payloadEtaLabel: progress.etaLabel,
-          ),
-        );
-      case SendTransferUpdatePhase.completed:
-        _setSession(
-          SendResultSession(
-            success: true,
-            outcome: TransferResultOutcomeData.success,
-            items: items,
-            summary: summary,
-            metrics: buildSendCompletionMetrics(
-              update,
-              payloadStartedAt: _sendPayloadStartedAt,
-            ),
-            plan: update.plan ?? state.sendTransferPlan,
-            snapshot: update.snapshot,
-            remoteDeviceType: update.remoteDeviceType,
-          ),
-        );
-      case SendTransferUpdatePhase.cancelled:
-        _setSession(
-          SendResultSession(
-            success: false,
-            outcome: TransferResultOutcomeData.cancelled,
-            items: items,
-            summary: summary.copyWith(
-              statusMessage: update.errorMessage ?? 'Transfer cancelled.',
-            ),
-            plan: update.plan ?? state.sendTransferPlan,
-            snapshot: update.snapshot,
-            remoteDeviceType: update.remoteDeviceType,
-          ),
-        );
-      case SendTransferUpdatePhase.failed:
-        _setSession(
-          SendResultSession(
-            success: false,
-            outcome: TransferResultOutcomeData.failed,
-            items: items,
-            summary: summary,
-            plan: update.plan ?? state.sendTransferPlan,
-            snapshot: update.snapshot,
-            remoteDeviceType: update.remoteDeviceType,
-          ),
-        );
-    }
+    _setSession(
+      reduceSendTransferUpdate(
+        state: state,
+        update: update,
+        payloadStartedAt: _sendPayloadStartedAt,
+      ),
+    );
   }
 
   void _setSession(ShellSessionState session) {
