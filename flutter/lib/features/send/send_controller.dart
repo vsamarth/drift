@@ -1,20 +1,23 @@
 import 'dart:async';
 
-import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import '../../core/models/transfer_models.dart';
 import '../../state/drift_app_state.dart';
 import '../../state/drift_providers.dart';
 import 'send_flow_actions.dart' as send_flow_actions;
+import 'send_dependencies.dart' as send_deps;
 import 'send_nearby_coordinator.dart';
 import 'send_selection_builder.dart';
 import 'send_selection_coordinator.dart';
 import 'send_shell_actions.dart' as send_shell_actions;
 import 'send_transfer_coordinator.dart';
-import 'send_providers.dart' as send_deps;
 import 'send_state.dart';
 
-class SendController extends Notifier<SendState> {
+part 'send_controller.g.dart';
+
+@Riverpod(keepAlive: true)
+class SendController extends _$SendController {
   late SendSelectionCoordinator _sendSelectionCoordinator;
   late SendNearbyCoordinator _sendNearbyCoordinator;
   late SendTransferCoordinator _sendTransferCoordinator;
