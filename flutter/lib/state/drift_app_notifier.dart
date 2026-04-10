@@ -5,10 +5,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/models/transfer_models.dart';
 import '../platform/app_focus.dart';
-import '../platform/send_item_source.dart';
 import '../platform/send_transfer_source.dart';
 import '../features/receive/receive_mapper.dart';
 import '../features/send/send_selection_builder.dart';
+import '../features/send/send_selection_coordinator.dart';
 import '../features/send/send_mapper.dart';
 import '../src/rust/api/receiver.dart' as rust_receiver;
 import '../features/settings/settings_state.dart';
@@ -35,11 +35,10 @@ const List<TransferItemViewData> _defaultDroppedSendItems = [
   ),
 ];
 
-const SendSelectionBuilder _sendSelectionBuilder = SendSelectionBuilder();
-
-class DriftAppNotifier extends Notifier<DriftAppState> {
+class DriftAppNotifier extends Notifier<DriftAppState>
+    implements SendSelectionHost {
   late DriftAppIdentity _identity;
-  late final SendItemSource _sendItemSource;
+  late final SendSelectionCoordinator _sendSelectionCoordinator;
   late final SendTransferSource _sendTransferSource;
   late final NearbyDiscoverySource _nearbyDiscoverySource;
   late final ReceiverServiceSource _receiverServiceSource;
@@ -60,7 +59,10 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
   @override
   DriftAppState build() {
     _identity = ref.watch(initialDriftAppIdentityProvider);
-    _sendItemSource = ref.watch(sendItemSourceProvider);
+    _sendSelectionCoordinator = SendSelectionCoordinator(
+      itemSource: ref.watch(sendItemSourceProvider),
+      selectionBuilder: const SendSelectionBuilder(),
+    );
     _sendTransferSource = ref.watch(sendTransferSourceProvider);
     _nearbyDiscoverySource = ref.watch(nearbyDiscoverySourceProvider);
     _receiverServiceSource = ref.watch(receiverServiceSourceProvider);
@@ -105,11 +107,11 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
   }
 
   void pickSendItems() {
-    unawaited(_pickSendItems());
+    unawaited(_sendSelectionCoordinator.pickSendItems(this));
   }
 
   void appendSendItemsFromPicker() {
-    unawaited(_appendSendItemsFromPicker());
+    unawaited(_sendSelectionCoordinator.appendSendItemsFromPicker(this));
   }
 
   void rescanNearbySendDestinations() {
@@ -117,22 +119,26 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
   }
 
   void acceptDroppedSendItems(List<String> paths) {
-    unawaited(_acceptDroppedSendItems(paths));
+    unawaited(_sendSelectionCoordinator.acceptDroppedSendItems(this, paths));
   }
 
   void appendDroppedSendItems(List<String> paths) {
-    unawaited(_appendDroppedSendItems(paths));
+    unawaited(_sendSelectionCoordinator.appendDroppedSendItems(this, paths));
   }
 
   void removeSendItem(String path) {
-    unawaited(_removeSendItem(path));
+    unawaited(_sendSelectionCoordinator.removeSendItem(this, path));
   }
 
+  @override
   void clearSendFlow() {
     _cancelNearbyScanTimer();
     _cancelActiveSendTransfer();
     _setSession(const IdleSession());
   }
+
+  @override
+  List<TransferItemViewData> get currentSendItems => state.sendItems;
 
   void updateSendDestinationCode(String value) {
     final draft = _draftSession;
@@ -313,128 +319,38 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
     }
   }
 
-  Future<void> _pickSendItems() async {
-    try {
-      final items = await _sendItemSource.pickFiles();
-      if (items.isEmpty) {
-        return;
-      }
-      _clearSendSetupError();
-      _beginSendInspection(clearExistingItems: true);
-      _applySelectedSendItems(items);
-    } catch (error, stackTrace) {
-      clearSendFlow();
-      _reportSendSelectionError(
-        'Drift couldn\'t prepare the selected files.',
-        error,
-        stackTrace,
-      );
-    }
+  @override
+  void applySelectedSendItems(List<TransferItemViewData> items) {
+    _applySelectedSendItems(items);
   }
 
-  Future<void> _acceptDroppedSendItems(List<String> paths) async {
-    if (paths.isEmpty) {
-      return;
-    }
-    _beginSendInspection(clearExistingItems: true);
-    try {
-      final items = await _sendItemSource.loadPaths(paths);
-      if (items.isEmpty) {
-        clearSendFlow();
-        return;
-      }
-      _clearSendSetupError();
-      _applySelectedSendItems(items);
-    } catch (error, stackTrace) {
-      clearSendFlow();
-      _reportSendSelectionError(
-        'Drift couldn\'t prepare the dropped files.',
-        error,
-        stackTrace,
-      );
-    }
+  @override
+  void applyPendingSendItems(List<TransferItemViewData> items) {
+    _applyPendingSendItems(items);
   }
 
-  Future<void> _appendDroppedSendItems(List<String> paths) async {
-    if (paths.isEmpty) {
-      return;
-    }
-    _beginSendInspection(clearExistingItems: false);
-    _optimisticallyAppendPendingSendItems(paths);
-    try {
-      final items = await _sendItemSource.appendPaths(
-        existingPaths: _currentSendSelectionPaths,
-        incomingPaths: paths,
-      );
-      if (items.isEmpty) {
-        _finishSendInspection();
-        return;
-      }
-      _clearSendSetupError();
-      _applySelectedSendItems(items);
-    } catch (error, stackTrace) {
-      _finishSendInspection();
-      _reportSendSelectionError(
-        'Drift couldn\'t add those files right now.',
-        error,
-        stackTrace,
-      );
-    }
+  @override
+  void beginSendInspection({required bool clearExistingItems}) {
+    _beginSendInspection(clearExistingItems: clearExistingItems);
   }
 
-  Future<void> _appendSendItemsFromPicker() async {
-    final paths = await _sendItemSource.pickAdditionalPaths();
-    if (paths.isEmpty) {
-      return;
-    }
-    _beginSendInspection(clearExistingItems: false);
-    _optimisticallyAppendPendingSendItems(paths);
-    try {
-      final items = await _sendItemSource.appendPaths(
-        existingPaths: _currentSendSelectionPaths,
-        incomingPaths: paths,
-      );
-      if (items.isEmpty) {
-        _finishSendInspection();
-        return;
-      }
-      _clearSendSetupError();
-      _applySelectedSendItems(items);
-    } catch (error, stackTrace) {
-      _finishSendInspection();
-      _reportSendSelectionError(
-        'Drift couldn\'t add those files right now.',
-        error,
-        stackTrace,
-      );
-    }
+  @override
+  void finishSendInspection() {
+    _finishSendInspection();
   }
 
-  Future<void> _removeSendItem(String path) async {
-    final draft = _draftSession;
-    if (draft == null || path.trim().isEmpty) {
-      return;
-    }
-    _beginSendInspection(clearExistingItems: false);
-    try {
-      final items = await _sendItemSource.removePath(
-        existingPaths: _currentSendSelectionPaths,
-        removedPath: path,
-      );
-      if (items.isEmpty) {
-        clearSendFlow();
-        return;
-      }
-      _clearSendSetupError();
-      _applySelectedSendItems(items);
-    } catch (error, stackTrace) {
-      _finishSendInspection();
-      _reportSendSelectionError(
-        'Drift couldn\'t update the selected files.',
-        error,
-        stackTrace,
-      );
-    }
+  @override
+  void clearSendSetupError() {
+    _clearSendSetupError();
+  }
+
+  @override
+  void reportSendSelectionError(
+    String userMessage,
+    Object error,
+    StackTrace stackTrace,
+  ) {
+    _reportSendSelectionError(userMessage, error, stackTrace);
   }
 
   void _applySelectedSendItems(List<TransferItemViewData> items) {
@@ -453,17 +369,14 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
     _scheduleNearbyScanning();
   }
 
-  void _optimisticallyAppendPendingSendItems(List<String> incomingPaths) {
+  void _applyPendingSendItems(List<TransferItemViewData> items) {
     final draft = _draftSession;
-    if (draft == null || incomingPaths.isEmpty) {
+    if (draft == null || items.isEmpty) {
       return;
     }
     _setSession(
       draft.copyWith(
-        items: _sendSelectionBuilder.appendPendingItems(
-          existingItems: draft.items,
-          incomingPaths: incomingPaths,
-        ),
+        items: List<TransferItemViewData>.unmodifiable(items),
       ),
     );
   }
@@ -1212,9 +1125,6 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
     final session = state.session;
     return session is SendDraftSession ? session : null;
   }
-
-  List<String> get _currentSendSelectionPaths =>
-      state.sendItems.map((item) => item.path).toList(growable: false);
 
   void _reportSendSelectionError(
     String userMessage,
