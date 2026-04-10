@@ -10,6 +10,7 @@ import '../features/receive/receive_mapper.dart';
 import '../features/send/send_selection_builder.dart';
 import '../features/send/send_nearby_coordinator.dart';
 import '../features/send/send_selection_coordinator.dart';
+import '../features/send/send_transfer_coordinator.dart';
 import '../features/send/send_mapper.dart';
 import '../src/rust/api/receiver.dart' as rust_receiver;
 import '../features/settings/settings_state.dart';
@@ -37,10 +38,11 @@ const List<TransferItemViewData> _defaultDroppedSendItems = [
 ];
 
 class DriftAppNotifier extends Notifier<DriftAppState>
-    implements SendSelectionHost, SendNearbyScanHost {
+    implements SendSelectionHost, SendNearbyScanHost, SendTransferHost {
   late DriftAppIdentity _identity;
   late final SendSelectionCoordinator _sendSelectionCoordinator;
   late final SendNearbyCoordinator _sendNearbyCoordinator;
+  late final SendTransferCoordinator _sendTransferCoordinator;
   late final SendTransferSource _sendTransferSource;
   late final NearbyDiscoverySource _nearbyDiscoverySource;
   late final ReceiverServiceSource _receiverServiceSource;
@@ -51,8 +53,6 @@ class DriftAppNotifier extends Notifier<DriftAppState>
   StreamSubscription<ReceiverBadgeState>? _badgeSubscription;
   StreamSubscription<rust_receiver.ReceiverTransferEvent>?
   _incomingSubscription;
-  StreamSubscription<SendTransferUpdate>? _sendTransferSubscription;
-  int _sendTransferGeneration = 0;
   bool? _appliedDiscoverable;
 
   DateTime? _sendPayloadStartedAt;
@@ -70,6 +70,9 @@ class DriftAppNotifier extends Notifier<DriftAppState>
       nearbyDiscoverySource: _nearbyDiscoverySource,
     );
     _sendTransferSource = ref.watch(sendTransferSourceProvider);
+    _sendTransferCoordinator = SendTransferCoordinator(
+      transferSource: _sendTransferSource,
+    );
     _receiverServiceSource = ref.watch(receiverServiceSourceProvider);
     _animateSendingConnection = ref.watch(animateSendingConnectionProvider);
     _enableIdleIncomingListener = ref.watch(enableIdleIncomingListenerProvider);
@@ -177,9 +180,18 @@ class DriftAppNotifier extends Notifier<DriftAppState>
     final ticket = selected?.lanTicket?.trim();
 
     if (selected != null && ticket != null && ticket.isNotEmpty) {
-      _startSendTransferWithTicket(selected, ticket);
+      _sendTransferCoordinator.startSendTransferWithTicket(
+        host: this,
+        destination: selected,
+        ticket: ticket,
+        onUpdate: _applySendUpdate,
+      );
     } else if (draft.destinationCode.length == 6) {
-      _startSendTransfer(draft.destinationCode);
+      _sendTransferCoordinator.startSendTransfer(
+        host: this,
+        normalizedCode: draft.destinationCode,
+        onUpdate: _applySendUpdate,
+      );
     }
   }
 
@@ -359,7 +371,24 @@ class DriftAppNotifier extends Notifier<DriftAppState>
   List<TransferItemViewData> get currentSendItems => state.sendItems;
 
   @override
+  String get currentDeviceName => state.deviceName;
+
+  @override
   String get currentDeviceType => state.deviceType;
+
+  @override
+  String? get currentServerUrl => state.serverUrl;
+
+  @override
+  void logSendTransferFailure(Object error, StackTrace stackTrace) {
+    debugPrint('[drift/notifier] failed to send files: $error');
+    debugPrintStack(stackTrace: stackTrace);
+  }
+
+  @override
+  void clearSendMetricState() {
+    _clearSendMetricState();
+  }
 
   @override
   bool get isInspectingSendItems => state.isInspectingSendItems;
@@ -892,89 +921,6 @@ class DriftAppNotifier extends Notifier<DriftAppState>
     );
   }
 
-  void _startSendTransferWithTicket(
-    SendDestinationViewData destination,
-    String ticket,
-  ) {
-    _cancelNearbyScanTimer();
-    _cancelActiveSendTransfer();
-    _clearSendMetricState();
-    final generation = ++_sendTransferGeneration;
-    final request = SendTransferRequestData(
-      code: '',
-      ticket: ticket,
-      lanDestinationLabel: destination.name,
-      paths: state.sendItems.map((item) => item.path).toList(growable: false),
-      deviceName: state.deviceName,
-      deviceType: state.deviceType,
-    );
-    _listenToSendTransfer(
-      generation: generation,
-      request: request,
-      fallbackDestination: destination.name,
-    );
-  }
-
-  void _startSendTransfer(String normalizedCode) {
-    _cancelNearbyScanTimer();
-    _cancelActiveSendTransfer();
-    _clearSendMetricState();
-    final generation = ++_sendTransferGeneration;
-    final request = SendTransferRequestData(
-      code: normalizedCode,
-      paths: state.sendItems.map((item) => item.path).toList(growable: false),
-      deviceName: state.deviceName,
-      deviceType: state.deviceType,
-      serverUrl: state.serverUrl,
-    );
-    _listenToSendTransfer(
-      generation: generation,
-      request: request,
-      fallbackDestination: formatCodeAsDestination(normalizedCode),
-    );
-  }
-
-  void _listenToSendTransfer({
-    required int generation,
-    required SendTransferRequestData request,
-    required String fallbackDestination,
-  }) {
-    _sendTransferSubscription = _sendTransferSource
-        .startTransfer(request)
-        .listen(
-          (update) {
-            if (generation != _sendTransferGeneration) {
-              debugPrint(
-                '[drift/notifier] ignoring stale send update '
-                'generation=$generation current=$_sendTransferGeneration',
-              );
-              return;
-            }
-            _applySendUpdate(update);
-          },
-          onError: (Object error, StackTrace stackTrace) {
-            if (generation != _sendTransferGeneration) {
-              return;
-            }
-            debugPrint('[drift/notifier] failed to send files: $error');
-            debugPrintStack(stackTrace: stackTrace);
-            _applySendUpdate(
-              SendTransferUpdate(
-                phase: SendTransferUpdatePhase.failed,
-                destinationLabel:
-                    state.sendDestinationLabel ?? fallbackDestination,
-                statusMessage: 'Request sent',
-                itemCount: state.sendItems.length,
-                totalSize: sampleSendSummary.totalSize,
-                bytesSent: 0,
-                totalBytes: 0,
-                errorMessage: error.toString(),
-              ),
-            );
-          },
-        );
-  }
-
   void _applySendUpdate(SendTransferUpdate update) {
     final items = state.sendItems.isEmpty ? sampleSendItems : state.sendItems;
     final existingSummary = state.sendSummary ?? sampleSendSummary;
@@ -1131,12 +1077,6 @@ class DriftAppNotifier extends Notifier<DriftAppState>
     }
   }
 
-  void _cancelActiveSendTransfer() {
-    _sendTransferGeneration += 1;
-    unawaited(_sendTransferSubscription?.cancel());
-    _sendTransferSubscription = null;
-  }
-
   void _cancelNearbyScanTimer() {
     _nearbyScanTimer?.cancel();
     _nearbyScanTimer = null;
@@ -1169,13 +1109,17 @@ class DriftAppNotifier extends Notifier<DriftAppState>
     _sendPayloadStartedAt = null;
   }
 
+  void _cancelActiveSendTransfer() {
+    _sendTransferCoordinator.cancelActiveTransfer();
+  }
+
   void _clearReceiveMetricState() {
     _receivePayloadStartedAt = null;
   }
 
   void _dispose() {
     _cancelNearbyScanTimer();
-    _sendTransferSubscription?.cancel();
+    _sendTransferCoordinator.cancelActiveTransfer();
     _badgeSubscription?.cancel();
     _incomingSubscription?.cancel();
   }
