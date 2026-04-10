@@ -13,10 +13,10 @@ final transfersServiceSourceProvider = Provider<ReceiverServiceSource>(
   (ref) => FakeReceiverServiceSource(),
 );
 
-final transfersServiceProvider = NotifierProvider<
-  TransfersServiceController,
-  TransferSessionState
->(TransfersServiceController.new);
+final transfersServiceProvider =
+    NotifierProvider<TransfersServiceController, TransferSessionState>(
+      TransfersServiceController.new,
+    );
 
 class TransfersServiceController extends Notifier<TransferSessionState> {
   StreamSubscription<rust_receiver.ReceiverTransferEvent>? _subscription;
@@ -30,15 +30,11 @@ class TransfersServiceController extends Notifier<TransferSessionState> {
       switch (event.phase) {
         case rust_receiver.ReceiverTransferPhase.offerReady:
           _incomingOffer = _mapIncomingOffer(event);
-          state = TransferSessionState.offerPending(
-            offer: _incomingOffer!,
-          );
+          state = TransferSessionState.offerPending(offer: _incomingOffer!);
           return;
         case rust_receiver.ReceiverTransferPhase.connecting:
           if (_incomingOffer != null) {
-            state = TransferSessionState.offerPending(
-              offer: _incomingOffer!,
-            );
+            state = TransferSessionState.offerPending(offer: _incomingOffer!);
           }
           return;
         case rust_receiver.ReceiverTransferPhase.receiving:
@@ -99,6 +95,13 @@ class TransfersServiceController extends Notifier<TransferSessionState> {
     return source.respondToOffer(accept: false);
   }
 
+  Future<void> cancelTransfer() {
+    final source = ref.read(transfersServiceSourceProvider);
+    state = const TransferSessionState.idle();
+    _incomingOffer = null;
+    return source.cancelTransfer();
+  }
+
   TransferIncomingOffer _mapIncomingOffer(
     rust_receiver.ReceiverTransferEvent event,
   ) {
@@ -113,10 +116,8 @@ class TransfersServiceController extends Notifier<TransferSessionState> {
       manifest: TransferManifest(
         items: event.files
             .map(
-              (file) => TransferManifestItem(
-                path: file.path,
-                sizeBytes: file.size,
-              ),
+              (file) =>
+                  TransferManifestItem(path: file.path, sizeBytes: file.size),
             )
             .toList(growable: false),
       ),
@@ -131,30 +132,32 @@ class TransfersServiceController extends Notifier<TransferSessionState> {
   ) {
     final snapshot = event.snapshot;
     return TransferTransferProgress(
-      bytesTransferred:
-          snapshot == null ? event.bytesReceived : snapshot.bytesTransferred,
-      totalBytes:
-          snapshot == null ? event.totalSizeBytes : snapshot.totalBytes,
-      completedFiles:
-          snapshot == null ? 0 : snapshot.completedFiles,
-      totalFiles: snapshot == null ? event.itemCount.toInt() : snapshot.totalFiles,
+      bytesTransferred: snapshot == null
+          ? event.bytesReceived
+          : snapshot.bytesTransferred,
+      totalBytes: snapshot == null ? event.totalSizeBytes : snapshot.totalBytes,
+      completedFiles: snapshot == null ? 0 : snapshot.completedFiles,
+      totalFiles: snapshot == null
+          ? event.itemCount.toInt()
+          : snapshot.totalFiles,
       speedLabel: snapshot == null ? null : _formatRate(snapshot.bytesPerSec),
       etaLabel: snapshot == null ? null : _formatEta(snapshot.etaSeconds),
     );
   }
 
-  TransferTransferResult _mapResult(
-    rust_receiver.ReceiverTransferEvent event,
-  ) {
+  TransferTransferResult _mapResult(rust_receiver.ReceiverTransferEvent event) {
     final snapshot = event.snapshot;
     return TransferTransferResult(
-      bytesTransferred:
-          snapshot == null ? event.bytesReceived : snapshot.bytesTransferred,
-      totalBytes:
-          snapshot == null ? event.totalSizeBytes : snapshot.totalBytes,
-      completedFiles:
-          snapshot == null ? event.itemCount.toInt() : snapshot.completedFiles,
-      totalFiles: snapshot == null ? event.itemCount.toInt() : snapshot.totalFiles,
+      bytesTransferred: snapshot == null
+          ? event.bytesReceived
+          : snapshot.bytesTransferred,
+      totalBytes: snapshot == null ? event.totalSizeBytes : snapshot.totalBytes,
+      completedFiles: snapshot == null
+          ? event.itemCount.toInt()
+          : snapshot.completedFiles,
+      totalFiles: snapshot == null
+          ? event.itemCount.toInt()
+          : snapshot.totalFiles,
     );
   }
 
@@ -202,10 +205,8 @@ class TransfersServiceController extends Notifier<TransferSessionState> {
       manifest: TransferManifest(
         items: (source.lastIncomingFiles ?? const [])
             .map(
-              (file) => TransferManifestItem(
-                path: file.path,
-                sizeBytes: file.size,
-              ),
+              (file) =>
+                  TransferManifestItem(path: file.path, sizeBytes: file.size),
             )
             .toList(growable: false),
       ),

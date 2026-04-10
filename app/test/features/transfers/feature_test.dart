@@ -10,16 +10,10 @@ void main() {
   testWidgets('shows the empty transfer state', (WidgetTester tester) async {
     await tester.pumpWidget(
       ProviderScope(
-        overrides: [
-          transferReviewAnimationProvider.overrideWithValue(false),
-        ],
+        overrides: [transferReviewAnimationProvider.overrideWithValue(false)],
         child: MaterialApp(
           home: Scaffold(
-            body: SizedBox(
-              width: 440,
-              height: 560,
-              child: ReceiveFeature(),
-            ),
+            body: SizedBox(width: 440, height: 560, child: ReceiveFeature()),
           ),
         ),
       ),
@@ -40,11 +34,7 @@ void main() {
         ],
         child: const MaterialApp(
           home: Scaffold(
-            body: SizedBox(
-              width: 440,
-              height: 560,
-              child: ReceiveFeature(),
-            ),
+            body: SizedBox(width: 440, height: 560, child: ReceiveFeature()),
           ),
         ),
       ),
@@ -62,7 +52,9 @@ void main() {
     expect(find.text('No offers yet'), findsNothing);
   });
 
-  testWidgets('shows offer details and manifest items', (WidgetTester tester) async {
+  testWidgets('shows offer details and manifest items', (
+    WidgetTester tester,
+  ) async {
     final source = FakeReceiverServiceSource();
 
     await tester.pumpWidget(
@@ -74,11 +66,7 @@ void main() {
         ],
         child: const MaterialApp(
           home: Scaffold(
-            body: SizedBox(
-              width: 440,
-              height: 560,
-              child: ReceiveFeature(),
-            ),
+            body: SizedBox(width: 440, height: 560, child: ReceiveFeature()),
           ),
         ),
       ),
@@ -96,7 +84,9 @@ void main() {
     expect(find.text('Save to Downloads'), findsOneWidget);
   });
 
-  testWidgets('accept and decline buttons call the source', (tester) async {
+  testWidgets('decline button calls the source and returns to idle', (
+    tester,
+  ) async {
     final source = FakeReceiverServiceSource();
 
     await tester.pumpWidget(
@@ -108,11 +98,35 @@ void main() {
         ],
         child: const MaterialApp(
           home: Scaffold(
-            body: SizedBox(
-              width: 440,
-              height: 560,
-              child: ReceiveFeature(),
-            ),
+            body: SizedBox(width: 440, height: 560, child: ReceiveFeature()),
+          ),
+        ),
+      ),
+    );
+
+    source.emitIncomingOffer(senderName: 'Maya');
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Decline'));
+    await tester.pumpAndSettle();
+    expect(source.lastRespondToOfferAccept, isFalse);
+    expect(find.text('Incoming'), findsNothing);
+    expect(find.text('No offers yet'), findsOneWidget);
+  });
+
+  testWidgets('accepting an offer shows the receiving state', (tester) async {
+    final source = FakeReceiverServiceSource();
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          transferReviewAnimationProvider.overrideWithValue(false),
+          receiverServiceSourceProvider.overrideWithValue(source),
+          transfersServiceSourceProvider.overrideWithValue(source),
+        ],
+        child: const MaterialApp(
+          home: Scaffold(
+            body: SizedBox(width: 440, height: 560, child: ReceiveFeature()),
           ),
         ),
       ),
@@ -122,14 +136,44 @@ void main() {
     await tester.pumpAndSettle();
 
     await tester.tap(find.text('Save to Downloads'));
-    await tester.pump();
-    expect(source.lastRespondToOfferAccept, isTrue);
-    expect(find.text('Incoming'), findsOneWidget);
-
-    await tester.tap(find.text('Decline'));
     await tester.pumpAndSettle();
-    expect(source.lastRespondToOfferAccept, isFalse);
+
+    expect(find.text('Receiving'), findsOneWidget);
+    expect(find.text('Cancel'), findsOneWidget);
     expect(find.text('Incoming'), findsNothing);
+    expect(find.text('wants to send you 2 files (3.0 KB).'), findsNothing);
+  });
+
+  testWidgets('cancelling a receiving transfer returns to idle', (
+    tester,
+  ) async {
+    final source = FakeReceiverServiceSource();
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          transferReviewAnimationProvider.overrideWithValue(false),
+          receiverServiceSourceProvider.overrideWithValue(source),
+          transfersServiceSourceProvider.overrideWithValue(source),
+        ],
+        child: const MaterialApp(
+          home: Scaffold(
+            body: SizedBox(width: 440, height: 560, child: ReceiveFeature()),
+          ),
+        ),
+      ),
+    );
+
+    source.emitIncomingOffer(senderName: 'Maya');
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Save to Downloads'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+
     expect(find.text('No offers yet'), findsOneWidget);
+    expect(find.text('Receiving'), findsNothing);
   });
 }

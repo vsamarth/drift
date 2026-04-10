@@ -1,25 +1,25 @@
 import 'package:flutter/material.dart';
 
 import '../../application/state.dart';
-import '../../../../theme/drift_theme.dart';
 import 'preview_table.dart';
 import 'sending_connection_strip.dart';
 import 'transfer_flow_layout.dart';
+import 'transfer_live_stats.dart';
 import 'transfer_presentation_helpers.dart';
 
-class OfferCard extends StatelessWidget {
-  const OfferCard({
+class ReceivingCard extends StatelessWidget {
+  const ReceivingCard({
     super.key,
     required this.offer,
+    required this.progress,
     required this.animate,
-    required this.onAccept,
-    required this.onDecline,
+    required this.onCancel,
   });
 
   final TransferIncomingOffer offer;
+  final TransferTransferProgress progress;
   final bool animate;
-  final VoidCallback onAccept;
-  final VoidCallback onDecline;
+  final VoidCallback onCancel;
 
   @override
   Widget build(BuildContext context) {
@@ -27,24 +27,25 @@ class OfferCard extends StatelessWidget {
     final itemCount = offer.manifest.itemCount;
     final totalSize = formatBytes(offer.manifest.totalSizeBytes);
     final itemSummary = '${fileCountLabel(itemCount)} · $totalSize';
+    final subtitle = offer.statusMessage.trim().isEmpty
+        ? 'Receiving files...'
+        : offer.statusMessage.trim();
 
     return SizedBox.expand(
       child: TransferFlowLayout(
-        statusLabel: 'Incoming',
-        statusColor: const Color(0xFF4B98AA),
+        statusLabel: 'Receiving',
+        statusColor: const Color(0xFFD4A824),
         title: senderName,
-        subtitle: incomingSubtitle(itemCount, totalSize),
-        explainer: Text(
-          'Review the files and accept only if you trust the sender.',
-          style: driftSans(fontSize: 12, color: kSubtle, height: 1.4),
-        ),
+        subtitle: subtitle,
+        explainer: TransferLiveStats(progress: progress),
         illustration: SendingConnectionStrip(
           localLabel: senderName,
           localDeviceType: deviceTypeLabel(offer.sender.deviceType),
           remoteLabel: 'Drift',
           remoteDeviceType: 'laptop',
           animate: animate,
-          mode: SendingStripMode.waitingOnRecipient,
+          mode: SendingStripMode.transferring,
+          transferProgress: progress.progressFraction,
         ),
         manifest: PreviewTable(
           items: offer.manifest.items,
@@ -53,25 +54,8 @@ class OfferCard extends StatelessWidget {
         footer: Row(
           children: [
             Expanded(
-              flex: 2,
-              child: FilledButton(
-                onPressed: onAccept,
-                style: FilledButton.styleFrom(
-                  backgroundColor: const Color(0xFF4A8E9E),
-                  foregroundColor: Colors.white,
-                  minimumSize: const Size(0, 48),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-                child: Text('Save to ${offer.saveRootLabel}'),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              flex: 1,
               child: TextButton(
-                onPressed: onDecline,
+                onPressed: onCancel,
                 style: TextButton.styleFrom(
                   foregroundColor: const Color(0xFFCC3333),
                   backgroundColor: const Color(
@@ -85,7 +69,7 @@ class OfferCard extends StatelessWidget {
                     ),
                   ),
                 ),
-                child: const Text('Decline'),
+                child: const Text('Cancel'),
               ),
             ),
           ],
