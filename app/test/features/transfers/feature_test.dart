@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:app/features/receive/feature.dart';
 import 'package:app/features/transfers/feature.dart';
 import 'package:app/platform/rust/receiver/fake_source.dart';
+import 'package:app/src/rust/api/receiver.dart' as rust_receiver;
 
 void main() {
   testWidgets('shows the empty transfer state', (WidgetTester tester) async {
@@ -82,6 +83,137 @@ void main() {
     expect(find.text('report.pdf'), findsOneWidget);
     expect(find.text('photo.jpg'), findsOneWidget);
     expect(find.text('Save to Downloads'), findsOneWidget);
+  });
+
+  testWidgets('renders nested manifest paths as a tree', (
+    WidgetTester tester,
+  ) async {
+    final source = FakeReceiverServiceSource();
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          transferReviewAnimationProvider.overrideWithValue(false),
+          receiverServiceSourceProvider.overrideWithValue(source),
+          transfersServiceSourceProvider.overrideWithValue(source),
+        ],
+        child: const MaterialApp(
+          home: Scaffold(
+            body: SizedBox(width: 440, height: 560, child: ReceiveFeature()),
+          ),
+        ),
+      ),
+    );
+
+    source.emitIncomingOffer(
+      senderName: 'Maya',
+      files: [
+        rust_receiver.ReceiverTransferFile(
+          path: 'crates/Cargo.toml',
+          size: BigInt.from(376),
+        ),
+        rust_receiver.ReceiverTransferFile(
+          path: 'crates/core/src/actor.rs',
+          size: BigInt.from(12 * 1024),
+        ),
+        rust_receiver.ReceiverTransferFile(
+          path: 'crates/core/src/nearby.rs',
+          size: BigInt.from(922),
+        ),
+      ],
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('core / src'), findsOneWidget);
+    expect(find.text('Cargo.toml'), findsOneWidget);
+    expect(find.text('actor.rs'), findsOneWidget);
+    expect(find.text('nearby.rs'), findsOneWidget);
+  });
+
+  testWidgets('renders connector lines in the manifest tree', (
+    WidgetTester tester,
+  ) async {
+    final source = FakeReceiverServiceSource();
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          transferReviewAnimationProvider.overrideWithValue(false),
+          receiverServiceSourceProvider.overrideWithValue(source),
+          transfersServiceSourceProvider.overrideWithValue(source),
+        ],
+        child: const MaterialApp(
+          home: Scaffold(
+            body: SizedBox(width: 440, height: 560, child: ReceiveFeature()),
+          ),
+        ),
+      ),
+    );
+
+    source.emitIncomingOffer(
+      senderName: 'Maya',
+      files: [
+        rust_receiver.ReceiverTransferFile(
+          path: 'crates/core/src/actor.rs',
+          size: BigInt.from(12 * 1024),
+        ),
+        rust_receiver.ReceiverTransferFile(
+          path: 'crates/core/src/nearby.rs',
+          size: BigInt.from(922),
+        ),
+      ],
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is CustomPaint &&
+            widget.painter is ManifestTreeConnectorPainter,
+      ),
+      findsWidgets,
+    );
+  });
+
+  testWidgets('keeps manifest tree rows tightly stacked', (
+    WidgetTester tester,
+  ) async {
+    final source = FakeReceiverServiceSource();
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          transferReviewAnimationProvider.overrideWithValue(false),
+          receiverServiceSourceProvider.overrideWithValue(source),
+          transfersServiceSourceProvider.overrideWithValue(source),
+        ],
+        child: const MaterialApp(
+          home: Scaffold(
+            body: SizedBox(width: 440, height: 560, child: ReceiveFeature()),
+          ),
+        ),
+      ),
+    );
+
+    source.emitIncomingOffer(
+      senderName: 'Maya',
+      files: [
+        rust_receiver.ReceiverTransferFile(
+          path: 'crates/core/src/actor.rs',
+          size: BigInt.from(12 * 1024),
+        ),
+        rust_receiver.ReceiverTransferFile(
+          path: 'crates/core/src/nearby.rs',
+          size: BigInt.from(922),
+        ),
+      ],
+    );
+    await tester.pumpAndSettle();
+
+    final actorTop = tester.getTopLeft(find.text('actor.rs')).dy;
+    final nearbyTop = tester.getTopLeft(find.text('nearby.rs')).dy;
+
+    expect(nearbyTop - actorTop, lessThan(34));
   });
 
   testWidgets('decline button calls the source and returns to idle', (

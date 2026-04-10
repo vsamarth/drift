@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../../theme/drift_theme.dart';
 import '../../application/manifest.dart';
+import 'manifest_tree.dart';
 import 'transfer_presentation_helpers.dart';
 
 class PreviewTable extends StatelessWidget {
@@ -60,10 +61,7 @@ class PreviewTable extends StatelessWidget {
         ),
         _divider,
         const SizedBox(height: 10),
-        for (int i = 0; i < items.length; i++) ...[
-          if (i > 0) _divider,
-          _PreviewTableRow(item: items[i]),
-        ],
+        ManifestTree(items: items),
         if (items.length > 1) ...[
           _divider,
           Padding(
@@ -91,67 +89,4 @@ class PreviewTable extends StatelessWidget {
       ],
     );
   }
-}
-
-class _PreviewTableRow extends StatelessWidget {
-  const _PreviewTableRow({required this.item});
-
-  final TransferManifestItem item;
-
-  @override
-  Widget build(BuildContext context) {
-    final name = _displayFileName(item.path);
-    final sizeLabel = formatBytes(item.sizeBytes);
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
-      child: Row(
-        children: [
-          const SizedBox(
-            width: 28,
-            child: Icon(
-              Icons.insert_drive_file_outlined,
-              size: 18,
-              color: kMuted,
-            ),
-          ),
-          Expanded(
-            child: Tooltip(
-              message: name,
-              child: Text(
-                name,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: driftSans(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
-                  color: kInk,
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          SizedBox(
-            width: 116,
-            child: Text(
-              sizeLabel,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.right,
-              style: driftSans(
-                fontSize: 12,
-                fontWeight: FontWeight.w500,
-                color: kMuted,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-String _displayFileName(String path) {
-  final segments = path.split('/')..removeWhere((segment) => segment.isEmpty);
-  return segments.isEmpty ? path : segments.last;
 }
