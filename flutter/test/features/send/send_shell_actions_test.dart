@@ -1,6 +1,6 @@
 import 'package:drift_app/core/models/transfer_models.dart';
 import 'package:drift_app/features/send/send_shell_actions.dart' as send_shell_actions;
-import 'package:drift_app/state/drift_app_state.dart';
+import 'package:drift_app/features/send/send_flow_state.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'send_test_support.dart';

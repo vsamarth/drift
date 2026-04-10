@@ -1,9 +1,9 @@
 import 'package:drift_app/core/models/transfer_models.dart';
 import 'package:drift_app/features/send/send_controller.dart';
 import 'package:drift_app/features/send/send_providers.dart' as send_deps;
+import 'package:drift_app/features/send/send_flow_state.dart';
 import 'package:drift_app/features/send/send_state.dart';
 import 'package:drift_app/platform/send_transfer_source.dart';
-import 'package:drift_app/state/drift_app_state.dart';
 import 'package:drift_app/state/drift_providers.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';

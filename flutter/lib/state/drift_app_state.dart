@@ -10,7 +10,6 @@ import 'transfer_result_state.dart';
 
 export 'shell_session_state.dart';
 export 'transfer_result_state.dart';
-export '../features/send/send_flow_state.dart';
 
 @immutable
 class DriftAppState {

@@ -1,5 +1,6 @@
 import '../../core/models/transfer_models.dart';
 import '../../state/drift_app_state.dart';
+import 'send_flow_state.dart';
 
 enum SendFlowRoute {
   none,

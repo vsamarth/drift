@@ -1,4 +1,5 @@
 import 'package:drift_app/features/send/send_session_reducer.dart';
+import 'package:drift_app/features/send/send_flow_state.dart';
 import 'package:drift_app/features/send/send_state.dart';
 import 'package:drift_app/platform/send_transfer_source.dart';
 import 'package:drift_app/state/drift_app_state.dart';

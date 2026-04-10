@@ -2,6 +2,7 @@ import '../../core/models/transfer_models.dart';
 import '../../shared/formatting/byte_format.dart';
 import '../../state/app_identity.dart';
 import '../../state/drift_app_state.dart';
+import 'send_flow_state.dart';
 import '../../src/rust/api/transfer.dart' as rust_transfer;
 
 class SendState {

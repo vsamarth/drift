@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'drift_app_notifier.dart';
 import 'drift_app_state.dart';
 import 'receiver_service_source.dart';
+import '../features/send/send_flow_state.dart';
 
 export 'drift_dependencies.dart';
 

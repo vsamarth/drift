@@ -8,6 +8,7 @@ import '../../state/drift_app_state.dart';
 import '../../state/drift_providers.dart';
 import 'send_dependencies.dart' as send_deps;
 import 'send_flow_actions.dart' as send_flow_actions;
+import 'send_flow_state.dart';
 import 'send_nearby_coordinator.dart';
 import 'send_selection_builder.dart';
 import 'send_selection_coordinator.dart';
