@@ -19,7 +19,6 @@ import 'drift_dependencies.dart';
 import 'drift_app_state.dart';
 import 'nearby_discovery_source.dart';
 import 'receiver_service_source.dart';
-import 'settings_store.dart';
 
 const List<TransferItemViewData> _defaultDroppedSendItems = [
   TransferItemViewData(
@@ -42,7 +41,6 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
   late final SendTransferSource _sendTransferSource;
   late final NearbyDiscoverySource _nearbyDiscoverySource;
   late final ReceiverServiceSource _receiverServiceSource;
-  late final DriftSettingsStore _settingsStore;
   late final bool _animateSendingConnection;
   late final bool _enableIdleIncomingListener;
 
@@ -64,7 +62,6 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
     _sendTransferSource = ref.watch(sendTransferSourceProvider);
     _nearbyDiscoverySource = ref.watch(nearbyDiscoverySourceProvider);
     _receiverServiceSource = ref.watch(receiverServiceSourceProvider);
-    _settingsStore = ref.watch(driftSettingsStoreProvider);
     _animateSendingConnection = ref.watch(animateSendingConnectionProvider);
     _enableIdleIncomingListener = ref.watch(enableIdleIncomingListenerProvider);
 
@@ -91,34 +88,6 @@ class DriftAppNotifier extends Notifier<DriftAppState> {
     _identity = next.identity;
     state = state.copyWith(
       identity: next.identity,
-      receiverBadge: const ReceiverBadgeState.registering(),
-    );
-    _startReceiverSubscriptions();
-    _syncSessionPolicies();
-  }
-
-  Future<void> saveSettings({
-    required String deviceName,
-    required String downloadRoot,
-    required bool discoverableByDefault,
-    String? serverUrl,
-  }) async {
-    final nextIdentity = buildDefaultDriftAppIdentity(
-      deviceName: deviceName,
-      deviceType: _identity.deviceType,
-      downloadRoot: downloadRoot,
-      serverUrl: serverUrl,
-      discoverable: discoverableByDefault,
-    );
-
-    if (nextIdentity == _identity) {
-      return;
-    }
-
-    await _settingsStore.save(nextIdentity);
-    _identity = nextIdentity;
-    state = state.copyWith(
-      identity: nextIdentity,
       receiverBadge: const ReceiverBadgeState.registering(),
     );
     _startReceiverSubscriptions();
