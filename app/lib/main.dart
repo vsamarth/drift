@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:bitsdojo_window/bitsdojo_window.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'app/app.dart';
 
 void main() {
   const initialSize = Size(440, 560);
   appWindow.size = initialSize;
-  runApp(const DriftApp());
+  runApp(const ProviderScope(child: DriftApp()));
   doWhenWindowReady(() {
     final win = appWindow;
     win.minSize = initialSize;
