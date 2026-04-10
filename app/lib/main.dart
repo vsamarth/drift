@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'app/app.dart';
 import 'features/receive/feature.dart';
+import 'features/transfers/feature.dart';
 import 'src/rust/frb_generated.dart';
 
 Future<void> main() async {
@@ -13,11 +14,15 @@ Future<void> main() async {
 
   const initialSize = Size(440, 560);
   appWindow.size = initialSize;
+  const rustSource = RustReceiverServiceSource();
   runApp(
     ProviderScope(
       overrides: [
         receiverServiceSourceProvider.overrideWithValue(
-          const RustReceiverServiceSource(),
+          rustSource,
+        ),
+        transfersServiceSourceProvider.overrideWithValue(
+          rustSource,
         ),
       ],
       child: const DriftApp(),

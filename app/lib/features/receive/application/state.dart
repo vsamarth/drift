@@ -188,4 +188,14 @@ class ReceiverServiceState {
 
   final ReceiverSnapshot snapshot;
   final PairingCodeState pairingCode;
+
+  ReceiverServiceState copyWith({
+    ReceiverSnapshot? snapshot,
+    PairingCodeState? pairingCode,
+  }) {
+    return ReceiverServiceState(
+      snapshot: snapshot ?? this.snapshot,
+      pairingCode: pairingCode ?? this.pairingCode,
+    );
+  }
 }

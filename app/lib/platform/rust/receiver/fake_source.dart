@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import '../../../features/receive/application/state.dart';
+import '../../../src/rust/api/receiver.dart' as rust_receiver;
 import 'source.dart';
 
 class FakeReceiverServiceSource implements ReceiverServiceSource {
@@ -12,8 +13,16 @@ class FakeReceiverServiceSource implements ReceiverServiceSource {
 
   final StreamController<ReceiverServiceState> _stateController =
       StreamController<ReceiverServiceState>.broadcast(sync: true);
+  final StreamController<rust_receiver.ReceiverTransferEvent>
+      _incomingController =
+      StreamController<rust_receiver.ReceiverTransferEvent>.broadcast(
+        sync: true,
+      );
 
   ReceiverServiceState _state;
+  bool? lastRespondToOfferAccept;
+  int respondToOfferCalls = 0;
+  String? lastIncomingSenderName;
 
   @override
   ReceiverServiceState get currentState => _state;
@@ -27,11 +36,41 @@ class FakeReceiverServiceSource implements ReceiverServiceSource {
     },
   );
 
+  @override
+  Stream<rust_receiver.ReceiverTransferEvent> watchIncomingTransfers() =>
+      Stream<rust_receiver.ReceiverTransferEvent>.multi((multi) {
+        final subscription = _incomingController.stream.listen(multi.add);
+        multi.onCancel = subscription.cancel;
+      });
+
   void emit(ReceiverServiceState next) {
     _state = next;
     if (!_stateController.isClosed) {
       _stateController.add(next);
     }
+  }
+
+  void emitIncomingOffer({required String senderName}) {
+    if (_incomingController.isClosed) {
+      return;
+    }
+    lastIncomingSenderName = senderName;
+    _incomingController.add(
+      rust_receiver.ReceiverTransferEvent(
+        phase: rust_receiver.ReceiverTransferPhase.offerReady,
+        senderName: senderName,
+        senderDeviceType: 'laptop',
+        destinationLabel: 'Downloads',
+        saveRootLabel: 'Downloads',
+        statusMessage: 'Incoming offer',
+        itemCount: BigInt.zero,
+        totalSizeBytes: BigInt.zero,
+        bytesReceived: BigInt.zero,
+        totalSizeLabel: '0 B',
+        files: const [],
+        error: null,
+      ),
+    );
   }
 
   @override
@@ -44,7 +83,10 @@ class FakeReceiverServiceSource implements ReceiverServiceSource {
   Future<void> setDiscoverable({required bool enabled}) async {}
 
   @override
-  Future<void> respondToOffer({required bool accept}) async {}
+  Future<void> respondToOffer({required bool accept}) async {
+    lastRespondToOfferAccept = accept;
+    respondToOfferCalls += 1;
+  }
 
   @override
   Future<void> cancelTransfer() async {}
@@ -57,5 +99,6 @@ class FakeReceiverServiceSource implements ReceiverServiceSource {
   @override
   Future<void> shutdown() async {
     await _stateController.close();
+    await _incomingController.close();
   }
 }

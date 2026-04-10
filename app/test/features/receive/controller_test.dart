@@ -23,4 +23,5 @@ void main() {
     expect(state.badge.phase, ReceiverBadgePhase.registering);
     expect(state.code, '......');
   });
+
 }

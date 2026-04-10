@@ -22,12 +22,6 @@ class RustReceiverServiceSource implements ReceiverServiceSource {
     yield const ReceiverServiceState.registering();
 
     try {
-      await rust_receiver.ensureReceiverRegistration(
-        serverUrl: _serverUrl,
-        deviceName: _deviceName,
-      );
-      await rust_receiver.setReceiverDiscoverable(enabled: true);
-
       await for (final pairing in rust_receiver.watchReceiverPairing(
         serverUrl: _serverUrl,
         downloadRoot: _downloadRoot,
@@ -38,6 +32,22 @@ class RustReceiverServiceSource implements ReceiverServiceSource {
       }
     } catch (_) {
       yield const ReceiverServiceState.unavailable();
+    }
+  }
+
+  @override
+  Stream<rust_receiver.ReceiverTransferEvent> watchIncomingTransfers() async* {
+    try {
+      await for (final event in rust_receiver.startReceiverTransferListener(
+        serverUrl: _serverUrl,
+        downloadRoot: _downloadRoot,
+        deviceName: _deviceName,
+        deviceType: _deviceType,
+      )) {
+        yield event;
+      }
+    } catch (_) {
+      // Ignore listener failures for now; the UI will stay in the empty state.
     }
   }
 
@@ -106,5 +116,5 @@ class RustReceiverServiceSource implements ReceiverServiceSource {
         TargetPlatform.fuchsia => 'laptop',
       };
 
-  static String? get _serverUrl => 'https://drift.samarthv.com';
+  static String? get _serverUrl => 'http://127.0.0.1:8787';
 }

@@ -49,231 +49,185 @@ class _ReceiveIdleCardState extends State<ReceiveIdleCard> {
   Widget build(BuildContext context) {
     final badgeColor = widget.state.badge.color;
 
-    return Padding(
-      key: const ValueKey<String>('idle-identity-zone'),
-      padding: const EdgeInsets.fromLTRB(6, 0, 6, 1),
-      child: Container(
-        decoration: BoxDecoration(
-          color: kSurface,
-          borderRadius: BorderRadius.circular(28),
-          border: Border.all(color: kBorder),
-          boxShadow: const [
-            BoxShadow(
-              color: Color(0x12000000),
-              blurRadius: 24,
-              offset: Offset(0, 12),
-            ),
-          ],
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(18),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Expanded(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          widget.state.deviceName,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: driftSans(
-                            fontSize: 13.5,
-                            fontWeight: FontWeight.w600,
-                            color: kInk,
-                            letterSpacing: -0.25,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Row(
-                          children: [
-                            Container(
-                              width: 7,
-                              height: 7,
-                              decoration: BoxDecoration(
-                                color: badgeColor,
-                                shape: BoxShape.circle,
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: badgeColor.withValues(alpha: 0.22),
-                                    blurRadius: 6,
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(width: 7),
-                            Flexible(
-                              child: Text(
-                                widget.state.badge.label,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: driftSans(
-                                  fontSize: 11.5,
-                                  fontWeight: FontWeight.w500,
-                                  color: badgeColor,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Row(
+    return Container(
+      decoration: BoxDecoration(
+        color: kSurface,
+        borderRadius: BorderRadius.circular(28),
+        border: Border.all(color: kBorder),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x12000000),
+            blurRadius: 24,
+            offset: Offset(0, 12),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Expanded(
+                  child: Column(
                     mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.end,
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.end,
+                      Text(
+                        widget.state.deviceName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: driftSans(
+                          fontSize: 13.5,
+                          fontWeight: FontWeight.w600,
+                          color: kInk,
+                          letterSpacing: -0.25,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Row(
                         children: [
-                          AnimatedSwitcher(
-                            duration: const Duration(milliseconds: 160),
-                            switchInCurve: Curves.easeOutCubic,
-                            switchOutCurve: Curves.easeInCubic,
-                            transitionBuilder: (child, animation) =>
-                                FadeTransition(opacity: animation, child: child),
-                            child: Text(
-                              _copied ? 'Copied' : 'Receive code',
-                              key: ValueKey<String>(
-                                _copied ? 'copied-label' : 'receive-label',
-                              ),
-                              style: driftSans(
-                                fontSize: 9.5,
-                                fontWeight: FontWeight.w500,
-                                color: _copied
-                                    ? const Color(0xFF5E9B70)
-                                    : kMuted.withValues(alpha: 0.62),
-                                letterSpacing: 0.18,
-                              ),
+                          Container(
+                            width: 7,
+                            height: 7,
+                            decoration: BoxDecoration(
+                              color: badgeColor,
+                              shape: BoxShape.circle,
+                              boxShadow: [
+                                BoxShadow(
+                                  color: badgeColor.withValues(alpha: 0.22),
+                                  blurRadius: 6,
+                                ),
+                              ],
                             ),
                           ),
-                          const SizedBox(height: 6),
-                          MouseRegion(
-                            cursor: SystemMouseCursors.click,
-                            onEnter: (_) => setState(() => _codeHovering = true),
-                            onExit: (_) => setState(() => _codeHovering = false),
-                            child: GestureDetector(
-                              onTap: () => _copyCode(widget.state.clipboardCode),
-                              child: AnimatedContainer(
-                                key: const ValueKey<String>('idle-receive-code'),
-                                duration: const Duration(milliseconds: 160),
-                                curve: Curves.easeOutCubic,
-                                height: 38,
-                                padding: const EdgeInsets.symmetric(horizontal: 14),
-                                decoration: BoxDecoration(
-                                  color: _codeHovering ? Colors.white : const Color(0xFFFDFDFD),
-                                  borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(
-                                    color: _codeHovering
-                                        ? const Color(0xFFCFCFCF)
-                                        : const Color(0xFFD7D7D7),
-                                  ),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: Colors.black.withValues(
-                                        alpha: _codeHovering ? 0.028 : 0.018,
-                                      ),
-                                      blurRadius: _codeHovering ? 10 : 6,
-                                      offset: const Offset(0, 2),
-                                    ),
-                                  ],
-                                ),
-                                child: Center(
-                                  child: Text(
-                                    _formatCode(widget.state.code),
-                                    style: driftMono(
-                                      fontSize: 15,
-                                      fontWeight: FontWeight.w700,
-                                      color: const Color(0xFF111111),
-                                      letterSpacing: 2.2,
-                                    ),
-                                  ),
-                                ),
+                          const SizedBox(width: 7),
+                          Flexible(
+                            child: Text(
+                              widget.state.badge.label,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: driftSans(
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w500,
+                                color: badgeColor,
                               ),
                             ),
                           ),
                         ],
                       ),
-                      const SizedBox(width: 8),
-                      IconButton(
-                        key: const ValueKey<String>('idle-settings-button'),
-                        onPressed: widget.onOpenSettings ?? () {},
-                        tooltip: 'Settings',
-                        style: IconButton.styleFrom(
-                          fixedSize: const Size(38, 38),
-                          minimumSize: const Size(38, 38),
-                          padding: EdgeInsets.zero,
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                          backgroundColor: const Color(0xFFFCFCFC),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            side: const BorderSide(color: Color(0xFFD7D7D7)),
-                          ),
-                        ),
-                        icon: Icon(
-                          Icons.tune_rounded,
-                          size: 18,
-                          color: kMuted.withValues(alpha: 0.9),
-                        ),
-                      ),
                     ],
                   ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Expanded(
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: kFill,
-                    borderRadius: BorderRadius.circular(22),
-                  ),
-                  child: Center(
-                    child: Column(
+                ),
+                const SizedBox(width: 12),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Column(
                       mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
-                        Container(
-                          width: 54,
-                          height: 54,
-                          decoration: BoxDecoration(
-                            color: badgeColor.withValues(alpha: 0.14),
-                            borderRadius: BorderRadius.circular(18),
-                          ),
-                        ),
-                        const SizedBox(height: 14),
-                        Text(
-                          'No offers yet',
-                          style: driftSans(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                            color: kInk,
-                            letterSpacing: -0.15,
+                        AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 160),
+                          switchInCurve: Curves.easeOutCubic,
+                          switchOutCurve: Curves.easeInCubic,
+                          transitionBuilder: (child, animation) =>
+                              FadeTransition(opacity: animation, child: child),
+                          child: Text(
+                            _copied ? 'Copied' : 'Receive code',
+                            key: ValueKey<String>(
+                              _copied ? 'copied-label' : 'receive-label',
+                            ),
+                            style: driftSans(
+                              fontSize: 9.5,
+                              fontWeight: FontWeight.w500,
+                              color: _copied
+                                  ? const Color(0xFF5E9B70)
+                                  : kMuted.withValues(alpha: 0.62),
+                              letterSpacing: 0.18,
+                            ),
                           ),
                         ),
                         const SizedBox(height: 6),
-                        Text(
-                          'Incoming offers will appear here.',
-                          textAlign: TextAlign.center,
-                          style: driftSans(
-                            fontSize: 11.5,
-                            fontWeight: FontWeight.w400,
-                            color: kMuted,
-                            height: 1.3,
+                        MouseRegion(
+                          cursor: SystemMouseCursors.click,
+                          onEnter: (_) => setState(() => _codeHovering = true),
+                          onExit: (_) => setState(() => _codeHovering = false),
+                          child: GestureDetector(
+                            onTap: () => _copyCode(widget.state.clipboardCode),
+                            child: AnimatedContainer(
+                              key: const ValueKey<String>('idle-receive-code'),
+                              duration: const Duration(milliseconds: 160),
+                              curve: Curves.easeOutCubic,
+                              height: 38,
+                              padding: const EdgeInsets.symmetric(horizontal: 14),
+                              decoration: BoxDecoration(
+                                color: _codeHovering
+                                    ? Colors.white
+                                    : const Color(0xFFFDFDFD),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: _codeHovering
+                                      ? const Color(0xFFCFCFCF)
+                                      : const Color(0xFFD7D7D7),
+                                ),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withValues(
+                                      alpha: _codeHovering ? 0.028 : 0.018,
+                                    ),
+                                    blurRadius: _codeHovering ? 10 : 6,
+                                    offset: const Offset(0, 2),
+                                  ),
+                                ],
+                              ),
+                              child: Center(
+                                child: Text(
+                                  _formatCode(widget.state.code),
+                                  style: driftMono(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w700,
+                                    color: const Color(0xFF111111),
+                                    letterSpacing: 2.2,
+                                  ),
+                                ),
+                              ),
+                            ),
                           ),
                         ),
                       ],
                     ),
-                  ),
+                    const SizedBox(width: 8),
+                    IconButton(
+                      key: const ValueKey<String>('idle-settings-button'),
+                      onPressed: widget.onOpenSettings ?? () {},
+                      tooltip: 'Settings',
+                      style: IconButton.styleFrom(
+                        fixedSize: const Size(38, 38),
+                        minimumSize: const Size(38, 38),
+                        padding: EdgeInsets.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        backgroundColor: const Color(0xFFFCFCFC),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          side: const BorderSide(color: Color(0xFFD7D7D7)),
+                        ),
+                      ),
+                      icon: Icon(
+                        Icons.tune_rounded,
+                        size: 18,
+                        color: kMuted.withValues(alpha: 0.9),
+                      ),
+                    ),
+                  ],
                 ),
-              ),
-            ],
-          ),
+              ],
+            ),
+          ],
         ),
       ),
     );

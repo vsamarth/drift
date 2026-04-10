@@ -1,9 +1,12 @@
 import '../../../features/receive/application/state.dart';
+import '../../../src/rust/api/receiver.dart' as rust_receiver;
 
 abstract class ReceiverServiceSource {
   ReceiverServiceState get currentState;
 
   Stream<ReceiverServiceState> watchState();
+
+  Stream<rust_receiver.ReceiverTransferEvent> watchIncomingTransfers();
 
   Future<void> setup({String? serverUrl});
 

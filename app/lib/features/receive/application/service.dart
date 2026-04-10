@@ -22,7 +22,9 @@ class ReceiverServiceController extends Notifier<ReceiverServiceState> {
   ReceiverServiceState build() {
     final source = ref.watch(receiverServiceSourceProvider);
     _subscription?.cancel();
-    _subscription = source.watchState().listen((next) => state = next);
+    _subscription = source.watchState().listen((next) {
+      state = next;
+    });
     ref.onDispose(() => _subscription?.cancel());
     return source.currentState;
   }
