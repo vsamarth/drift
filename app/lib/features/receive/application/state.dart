@@ -63,11 +63,32 @@ class NearbyReceiver {
 
 @immutable
 class ReceiverBadgeState {
-  const ReceiverBadgeState({
+  const ReceiverBadgeState._({
     required this.phase,
     required this.label,
     required this.color,
   });
+
+  const ReceiverBadgeState.unavailable()
+      : this._(
+          phase: ReceiverBadgePhase.unavailable,
+          label: 'Unavailable',
+          color: const Color(0xFF8A8A8A),
+        );
+
+  const ReceiverBadgeState.registering()
+      : this._(
+          phase: ReceiverBadgePhase.registering,
+          label: 'Registering',
+          color: const Color(0xFFD4A824),
+        );
+
+  const ReceiverBadgeState.ready()
+      : this._(
+          phase: ReceiverBadgePhase.ready,
+          label: 'Ready',
+          color: const Color(0xFF49B36C),
+        );
 
   final ReceiverBadgePhase phase;
   final String label;
@@ -77,14 +98,14 @@ class ReceiverBadgeState {
 @immutable
 class ReceiverIdleViewState {
   const ReceiverIdleViewState({
-    required this.title,
+    required this.deviceName,
     required this.badge,
     required this.status,
     required this.code,
     required this.lifecycle,
   });
 
-  final String title;
+  final String deviceName;
   final ReceiverBadgeState badge;
   final String status;
   final String code;

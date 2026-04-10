@@ -20,7 +20,7 @@ void main() {
       ),
     );
 
-    expect(find.text('Receiver'), findsOneWidget);
+    expect(find.text('Drift'), findsOneWidget);
     expect(find.text('Ready'), findsOneWidget);
     expect(find.text('Receive code'), findsOneWidget);
     expect(find.text('ABC 123'), findsOneWidget);

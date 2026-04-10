@@ -1,4 +1,3 @@
-import 'package:flutter/material.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import 'service.dart';
@@ -13,39 +12,19 @@ ReceiverIdleViewState receiverIdleViewState(Ref ref) {
   final pairingCode = service.pairingCode;
 
   final badge = switch (snapshot.lifecycle) {
-    ReceiverLifecycle.starting => const ReceiverBadgeState(
-        phase: ReceiverBadgePhase.registering,
-        label: 'Registering',
-        color: Color(0xFFD4A824),
-      ),
+    ReceiverLifecycle.starting => const ReceiverBadgeState.registering(),
     ReceiverLifecycle.ready => pairingCode.isAvailable
-        ? const ReceiverBadgeState(
-            phase: ReceiverBadgePhase.ready,
-            label: 'Ready',
-            color: Color(0xFF49B36C),
-          )
-        : const ReceiverBadgeState(
-            phase: ReceiverBadgePhase.unavailable,
-            label: 'Unavailable',
-            color: Color(0xFF8A8A8A),
-          ),
-    ReceiverLifecycle.stopped => const ReceiverBadgeState(
-        phase: ReceiverBadgePhase.unavailable,
-        label: 'Unavailable',
-        color: Color(0xFF8A8A8A),
-      ),
-    ReceiverLifecycle.failed => const ReceiverBadgeState(
-        phase: ReceiverBadgePhase.unavailable,
-        label: 'Unavailable',
-        color: Color(0xFF8A8A8A),
-      ),
+        ? const ReceiverBadgeState.ready()
+        : const ReceiverBadgeState.unavailable(),
+    ReceiverLifecycle.stopped => const ReceiverBadgeState.unavailable(),
+    ReceiverLifecycle.failed => const ReceiverBadgeState.unavailable(),
   };
 
   final code =
       pairingCode.isAvailable ? pairingCode.formattedCode : '......';
 
   return ReceiverIdleViewState(
-    title: 'Receiver',
+    deviceName: 'Drift',
     badge: badge,
     status: badge.label,
     code: code,

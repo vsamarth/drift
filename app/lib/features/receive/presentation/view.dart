@@ -10,6 +10,8 @@ class ReceiveFeature extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(receiverIdleViewStateProvider);
-    return ReceiveIdleCard(state: state);
+    return SizedBox.expand(
+      child: ReceiveIdleCard(state: state),
+    );
   }
 }

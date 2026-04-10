@@ -12,7 +12,7 @@ void main() {
     await tester.pumpWidget(const ProviderScope(child: DriftApp()));
     await tester.pumpAndSettle();
 
-    expect(find.text('Receiver'), findsOneWidget);
-    expect(find.text('Send'), findsOneWidget);
+    expect(find.text('Drift'), findsOneWidget);
+    expect(find.text('Send'), findsNothing);
   });
 }

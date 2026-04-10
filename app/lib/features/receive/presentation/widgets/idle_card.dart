@@ -1,130 +1,295 @@
-import 'package:flutter/material.dart';
+import 'dart:async';
 
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+
+import '../../../../theme/drift_theme.dart';
 import '../../application/state.dart';
 
-class ReceiveIdleCard extends StatelessWidget {
-  const ReceiveIdleCard({super.key, required this.state});
+class ReceiveIdleCard extends StatefulWidget {
+  const ReceiveIdleCard({super.key, required this.state, this.onOpenSettings});
 
   final ReceiverIdleViewState state;
+  final VoidCallback? onOpenSettings;
+
+  @override
+  State<ReceiveIdleCard> createState() => _ReceiveIdleCardState();
+}
+
+class _ReceiveIdleCardState extends State<ReceiveIdleCard> {
+  bool _codeHovering = false;
+  bool _copied = false;
+  Timer? _copiedResetTimer;
+
+  String _formatCode(String raw) {
+    if (raw.length != 6) return raw;
+    return '${raw.substring(0, 3)} ${raw.substring(3)}';
+  }
+
+  Future<void> _copyCode(String code) async {
+    await Clipboard.setData(ClipboardData(text: code));
+    _copiedResetTimer?.cancel();
+    if (mounted) {
+      setState(() => _copied = true);
+    }
+    _copiedResetTimer = Timer(const Duration(milliseconds: 1100), () {
+      if (mounted) {
+        setState(() => _copied = false);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _copiedResetTimer?.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final badgeColor = widget.state.badge.color;
 
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.94),
-        borderRadius: BorderRadius.circular(28),
-        border: Border.all(color: const Color(0xFF2563EB).withValues(alpha: 0.14)),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x12000000),
-            blurRadius: 24,
-            offset: Offset(0, 12),
-          ),
-        ],
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(18),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                _BadgeDot(color: state.badge.color),
-                const SizedBox(width: 10),
-                Text(
-                  state.title,
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w800,
-                    color: const Color(0xFF0F172A),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            _StatusBadge(state: state.badge),
-            const SizedBox(height: 14),
-            Expanded(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: const Color(0xFFEAF2FF),
-                  borderRadius: BorderRadius.circular(22),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.all(18),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Text(
-                        'Receive code',
-                        style: theme.textTheme.labelMedium?.copyWith(
-                          fontWeight: FontWeight.w700,
-                          color: const Color(0xFF5477B8),
-                          letterSpacing: 0.18,
-                        ),
-                      ),
-                      const Spacer(),
-                      Center(
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 18,
-                            vertical: 14,
-                          ),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFFFFFFF),
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(
-                              color: const Color(0xFFCBDDFE),
-                            ),
-                          ),
-                          child: Text(
-                            state.code,
-                            style: theme.textTheme.headlineSmall?.copyWith(
-                              fontWeight: FontWeight.w800,
-                              letterSpacing: 2.2,
-                              color: const Color(0xFF0F172A),
-                            ),
-                          ),
-                        ),
-                      ),
-                      const Spacer(),
-                    ],
-                  ),
-                ),
-              ),
+    return Padding(
+      key: const ValueKey<String>('idle-identity-zone'),
+      padding: const EdgeInsets.fromLTRB(6, 0, 6, 1),
+      child: Container(
+        decoration: BoxDecoration(
+          color: kSurface,
+          borderRadius: BorderRadius.circular(28),
+          border: Border.all(color: kBorder),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x12000000),
+              blurRadius: 24,
+              offset: Offset(0, 12),
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-class _StatusBadge extends StatelessWidget {
-  const _StatusBadge({required this.state});
-
-  final ReceiverBadgeState state;
-
-  @override
-  Widget build(BuildContext context) {
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: state.color.withValues(alpha: 0.12),
-          borderRadius: BorderRadius.circular(999),
-          border: Border.all(color: state.color.withValues(alpha: 0.18)),
-        ),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-          child: Text(
-            state.label,
-            style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                  fontWeight: FontWeight.w700,
-                  color: state.color,
-                  letterSpacing: 0.18,
+          padding: const EdgeInsets.all(18),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Expanded(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          widget.state.deviceName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: driftSans(
+                            fontSize: 13.5,
+                            fontWeight: FontWeight.w600,
+                            color: kInk,
+                            letterSpacing: -0.25,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Row(
+                          children: [
+                            Container(
+                              width: 7,
+                              height: 7,
+                              decoration: BoxDecoration(
+                                color: badgeColor,
+                                shape: BoxShape.circle,
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: badgeColor.withValues(alpha: 0.22),
+                                    blurRadius: 6,
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 7),
+                            Flexible(
+                              child: Text(
+                                widget.state.badge.label,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: driftSans(
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.w500,
+                                  color: badgeColor,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          AnimatedSwitcher(
+                            duration: const Duration(milliseconds: 160),
+                            switchInCurve: Curves.easeOutCubic,
+                            switchOutCurve: Curves.easeInCubic,
+                            transitionBuilder: (child, animation) =>
+                                FadeTransition(opacity: animation, child: child),
+                            child: Text(
+                              _copied ? 'Copied' : 'Receive code',
+                              key: ValueKey<String>(
+                                _copied ? 'copied-label' : 'receive-label',
+                              ),
+                              style: driftSans(
+                                fontSize: 9.5,
+                                fontWeight: FontWeight.w500,
+                                color: _copied
+                                    ? const Color(0xFF5E9B70)
+                                    : kMuted.withValues(alpha: 0.62),
+                                letterSpacing: 0.18,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          MouseRegion(
+                            cursor: SystemMouseCursors.click,
+                            onEnter: (_) => setState(() => _codeHovering = true),
+                            onExit: (_) => setState(() => _codeHovering = false),
+                            child: GestureDetector(
+                              onTap: () => _copyCode(widget.state.code),
+                              child: AnimatedContainer(
+                                key: const ValueKey<String>('idle-receive-code'),
+                                duration: const Duration(milliseconds: 160),
+                                curve: Curves.easeOutCubic,
+                                height: 38,
+                                padding: const EdgeInsets.symmetric(horizontal: 14),
+                                decoration: BoxDecoration(
+                                  color: _codeHovering ? Colors.white : const Color(0xFFFDFDFD),
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: _codeHovering
+                                        ? const Color(0xFFCFCFCF)
+                                        : const Color(0xFFD7D7D7),
+                                  ),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withValues(
+                                        alpha: _codeHovering ? 0.028 : 0.018,
+                                      ),
+                                      blurRadius: _codeHovering ? 10 : 6,
+                                      offset: const Offset(0, 2),
+                                    ),
+                                  ],
+                                ),
+                                child: Center(
+                                  child: Text(
+                                    _formatCode(widget.state.code),
+                                    style: driftMono(
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w700,
+                                      color: const Color(0xFF111111),
+                                      letterSpacing: 2.2,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(width: 8),
+                      IconButton(
+                        key: const ValueKey<String>('idle-settings-button'),
+                        onPressed: widget.onOpenSettings ?? () {},
+                        tooltip: 'Settings',
+                        style: IconButton.styleFrom(
+                          fixedSize: const Size(38, 38),
+                          minimumSize: const Size(38, 38),
+                          padding: EdgeInsets.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          backgroundColor: const Color(0xFFFCFCFC),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            side: const BorderSide(color: Color(0xFFD7D7D7)),
+                          ),
+                        ),
+                        icon: Icon(
+                          Icons.tune_rounded,
+                          size: 18,
+                          color: kMuted.withValues(alpha: 0.9),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Expanded(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: kFill,
+                    borderRadius: BorderRadius.circular(22),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(14),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        _SkeletonLine(
+                          widthFactor: 0.36,
+                          height: 10,
+                          color: badgeColor.withValues(alpha: 0.2),
+                        ),
+                        const SizedBox(height: 10),
+                        Row(
+                          children: [
+                            Container(
+                              width: 36,
+                              height: 36,
+                              decoration: BoxDecoration(
+                                color: badgeColor.withValues(alpha: 0.16),
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  _SkeletonLine(
+                                    widthFactor: 0.54,
+                                    height: 12,
+                                    color: badgeColor.withValues(alpha: 0.26),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  _SkeletonLine(
+                                    widthFactor: 0.88,
+                                    height: 8,
+                                    color: badgeColor.withValues(alpha: 0.14),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                        const Spacer(),
+                        DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: kSurface2,
+                            borderRadius: BorderRadius.circular(18),
+                          ),
+                          child: const SizedBox(height: 44),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
+              ),
+            ],
           ),
         ),
       ),
@@ -132,25 +297,28 @@ class _StatusBadge extends StatelessWidget {
   }
 }
 
-class _BadgeDot extends StatelessWidget {
-  const _BadgeDot({required this.color});
+class _SkeletonLine extends StatelessWidget {
+  const _SkeletonLine({
+    required this.widthFactor,
+    required this.height,
+    required this.color,
+  });
 
+  final double widthFactor;
+  final double height;
   final Color color;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: 12,
-      height: 12,
-      decoration: BoxDecoration(
-        color: color,
-        shape: BoxShape.circle,
-        boxShadow: [
-          BoxShadow(
-            color: color.withValues(alpha: 0.22),
-            blurRadius: 6,
-          ),
-        ],
+    return FractionallySizedBox(
+      widthFactor: widthFactor,
+      alignment: Alignment.centerLeft,
+      child: Container(
+        height: height,
+        decoration: BoxDecoration(
+          color: color,
+          borderRadius: BorderRadius.circular(height / 2),
+        ),
       ),
     );
   }
