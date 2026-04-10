@@ -2,55 +2,62 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../platform/rust/receiver/fake_source.dart';
+import '../../../platform/rust/receiver/source.dart';
 import 'state.dart';
 
-final receiverServiceProvider =
-    NotifierProvider<ReceiverServiceController, ReceiverServiceState>(
-  ReceiverServiceController.new,
+final receiverServiceSourceProvider = Provider<ReceiverServiceSource>(
+  (ref) => FakeReceiverServiceSource(),
 );
 
-class ReceiverServiceController extends Notifier<ReceiverServiceState> {
-  Timer? _timer;
-  int _stateIndex = 0;
+final receiverServiceProvider = NotifierProvider<
+  ReceiverServiceController,
+  ReceiverServiceState
+>(ReceiverServiceController.new);
 
-  static const _states = <ReceiverServiceState>[
-    ReceiverServiceState.ready(),
-    ReceiverServiceState.unavailable(),
-    ReceiverServiceState.registering(),
-  ];
+class ReceiverServiceController extends Notifier<ReceiverServiceState> {
+  StreamSubscription<ReceiverServiceState>? _subscription;
 
   @override
   ReceiverServiceState build() {
-    ref.onDispose(() => _timer?.cancel());
-    _timer ??= Timer.periodic(
-      const Duration(milliseconds: 1400),
-      (_) => advanceDemoState(),
-    );
-    _stateIndex = 0;
-    return _states[_stateIndex];
+    final source = ref.watch(receiverServiceSourceProvider);
+    _subscription?.cancel();
+    _subscription = source.watchState().listen((next) => state = next);
+    ref.onDispose(() => _subscription?.cancel());
+    return source.currentState;
   }
 
-  void advanceDemoState() {
-    _stateIndex = (_stateIndex + 1) % _states.length;
-    state = _states[_stateIndex];
+  Future<void> setup({String? serverUrl}) {
+    return ref.read(receiverServiceSourceProvider).setup(serverUrl: serverUrl);
   }
 
-  Future<void> setup({String? serverUrl}) async {}
-
-  Future<void> ensureRegistered({String? serverUrl}) async {}
-
-  Future<void> setDiscoverable({required bool enabled}) async {}
-
-  Future<void> respondToOffer({required bool accept}) async {}
-
-  Future<void> cancelTransfer() async {}
-
-  Future<List<NearbyReceiver>> scanNearby({required Duration timeout}) async {
-    return const [];
+  Future<void> ensureRegistered({String? serverUrl}) {
+    return ref
+        .read(receiverServiceSourceProvider)
+        .ensureRegistered(serverUrl: serverUrl);
   }
 
-  Future<void> shutdown() async {
-    _timer?.cancel();
-    _timer = null;
+  Future<void> setDiscoverable({required bool enabled}) {
+    return ref
+        .read(receiverServiceSourceProvider)
+        .setDiscoverable(enabled: enabled);
+  }
+
+  Future<void> respondToOffer({required bool accept}) {
+    return ref.read(receiverServiceSourceProvider).respondToOffer(accept: accept);
+  }
+
+  Future<void> cancelTransfer() {
+    return ref.read(receiverServiceSourceProvider).cancelTransfer();
+  }
+
+  Future<List<NearbyReceiver>> scanNearby({
+    required Duration timeout,
+  }) {
+    return ref.read(receiverServiceSourceProvider).scanNearby(timeout: timeout);
+  }
+
+  Future<void> shutdown() {
+    return ref.read(receiverServiceSourceProvider).shutdown();
   }
 }

@@ -37,8 +37,14 @@ class PairingCodeState {
 
   bool get isAvailable => code != null && code!.trim().isNotEmpty;
 
+  String get normalizedCode {
+    return (code ?? '').replaceAll(' ', '').trim().toUpperCase();
+  }
+
+  String get clipboardCode => normalizedCode;
+
   String get formattedCode {
-    final value = (code ?? '').replaceAll(' ', '').trim().toUpperCase();
+    final value = normalizedCode;
     if (value.length != 6) {
       return value;
     }
@@ -102,6 +108,7 @@ class ReceiverIdleViewState {
     required this.badge,
     required this.status,
     required this.code,
+    required this.clipboardCode,
     required this.lifecycle,
   });
 
@@ -109,6 +116,7 @@ class ReceiverIdleViewState {
   final ReceiverBadgeState badge;
   final String status;
   final String code;
+  final String clipboardCode;
   final ReceiverLifecycle lifecycle;
 }
 
@@ -119,18 +127,24 @@ class ReceiverServiceState {
     required this.pairingCode,
   });
 
-  const ReceiverServiceState.ready()
-      : snapshot = const ReceiverSnapshot(
-          lifecycle: ReceiverLifecycle.ready,
-          discoverableRequested: false,
-          advertisingActive: false,
-          hasRegistration: true,
-          hasPendingOffer: false,
-        ),
-        pairingCode = const PairingCodeState.active(
-          code: 'ABC123',
-          expiresAt: '2099-01-01T00:00:00Z',
-        );
+  factory ReceiverServiceState.ready({
+    required String code,
+    String? expiresAt,
+  }) {
+    return ReceiverServiceState(
+      snapshot: const ReceiverSnapshot(
+        lifecycle: ReceiverLifecycle.ready,
+        discoverableRequested: false,
+        advertisingActive: false,
+        hasRegistration: true,
+        hasPendingOffer: false,
+      ),
+      pairingCode: PairingCodeState.active(
+        code: code,
+        expiresAt: expiresAt,
+      ),
+    );
+  }
 
   const ReceiverServiceState.unavailable()
       : snapshot = const ReceiverSnapshot(
@@ -145,6 +159,26 @@ class ReceiverServiceState {
   const ReceiverServiceState.registering()
       : snapshot = const ReceiverSnapshot(
           lifecycle: ReceiverLifecycle.starting,
+          discoverableRequested: false,
+          advertisingActive: false,
+          hasRegistration: false,
+          hasPendingOffer: false,
+        ),
+        pairingCode = const PairingCodeState.unavailable();
+
+  const ReceiverServiceState.stopped()
+      : snapshot = const ReceiverSnapshot(
+          lifecycle: ReceiverLifecycle.stopped,
+          discoverableRequested: false,
+          advertisingActive: false,
+          hasRegistration: false,
+          hasPendingOffer: false,
+        ),
+        pairingCode = const PairingCodeState.unavailable();
+
+  const ReceiverServiceState.failed()
+      : snapshot = const ReceiverSnapshot(
+          lifecycle: ReceiverLifecycle.failed,
           discoverableRequested: false,
           advertisingActive: false,
           hasRegistration: false,

@@ -1,13 +1,28 @@
+import 'package:app/platform/rust/receiver/rust_source.dart';
 import 'package:flutter/material.dart';
 import 'package:bitsdojo_window/bitsdojo_window.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'app/app.dart';
+import 'features/receive/feature.dart';
+import 'src/rust/frb_generated.dart';
 
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await RustLib.init();
+
   const initialSize = Size(440, 560);
   appWindow.size = initialSize;
-  runApp(const ProviderScope(child: DriftApp()));
+  runApp(
+    ProviderScope(
+      overrides: [
+        receiverServiceSourceProvider.overrideWithValue(
+          const RustReceiverServiceSource(),
+        ),
+      ],
+      child: const DriftApp(),
+    ),
+  );
   doWhenWindowReady(() {
     final win = appWindow;
     win.minSize = initialSize;

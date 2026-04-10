@@ -28,6 +28,7 @@ ReceiverIdleViewState receiverIdleViewState(Ref ref) {
     badge: badge,
     status: badge.label,
     code: code,
+    clipboardCode: pairingCode.clipboardCode,
     lifecycle: snapshot.lifecycle,
   );
 }

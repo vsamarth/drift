@@ -160,7 +160,7 @@ class _ReceiveIdleCardState extends State<ReceiveIdleCard> {
                             onEnter: (_) => setState(() => _codeHovering = true),
                             onExit: (_) => setState(() => _codeHovering = false),
                             child: GestureDetector(
-                              onTap: () => _copyCode(widget.state.code),
+                              onTap: () => _copyCode(widget.state.clipboardCode),
                               child: AnimatedContainer(
                                 key: const ValueKey<String>('idle-receive-code'),
                                 duration: const Duration(milliseconds: 160),
