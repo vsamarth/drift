@@ -12,7 +12,7 @@ void main() {
     final state = container.read(transfersServiceProvider);
 
     expect(state.phase, TransferSessionPhase.idle);
-    expect(state.incomingOffer, isNull);
+    expect(state.offer, isNull);
   });
 
   test('transfers service tracks an incoming offer', () async {
@@ -24,14 +24,16 @@ void main() {
     );
     addTearDown(container.dispose);
 
-    expect(container.read(transfersServiceProvider).incomingOffer, isNull);
+    expect(container.read(transfersServiceProvider).offer, isNull);
 
     source.emitIncomingOffer(senderName: 'Maya');
     await Future<void>.delayed(Duration.zero);
 
     final updated = container.read(transfersServiceProvider);
     expect(updated.phase, TransferSessionPhase.offerPending);
-    expect(updated.incomingOffer?.displaySenderName, 'Maya');
+    expect(updated.offer?.displaySenderName, 'Maya');
+    expect(updated.offer?.manifest.itemCount, 2);
+    expect(updated.offer?.manifest.totalSizeBytes, BigInt.from(3072));
   });
 
   test('transfers service forwards offer decisions to the source', () async {
@@ -43,9 +45,13 @@ void main() {
     );
     addTearDown(container.dispose);
 
+    source.emitIncomingOffer(senderName: 'Maya');
+    await Future<void>.delayed(Duration.zero);
+
     await container.read(transfersServiceProvider.notifier).acceptOffer();
     expect(source.lastRespondToOfferAccept, isTrue);
     expect(container.read(transfersServiceProvider).phase, TransferSessionPhase.receiving);
+    expect(container.read(transfersServiceProvider).progress?.totalFiles, 2);
 
     await container.read(transfersServiceProvider.notifier).declineOffer();
     expect(source.lastRespondToOfferAccept, isFalse);

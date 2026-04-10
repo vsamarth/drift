@@ -45,5 +45,6 @@ void main() {
     expect(await next, isTrue);
     expect(iterator.current.phase, rust_receiver.ReceiverTransferPhase.offerReady);
     expect(iterator.current.senderName, 'Maya');
+    expect(iterator.current.files, hasLength(2));
   });
 }

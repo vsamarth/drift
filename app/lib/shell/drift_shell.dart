@@ -11,10 +11,7 @@ class DriftShell extends StatelessWidget {
     return const Scaffold(
       backgroundColor: kBg,
       body: SafeArea(
-        child: Padding(
-          padding: EdgeInsets.all(16),
-          child: ReceiveFeature(),
-        ),
+        child: ReceiveFeature(),
       ),
     );
   }

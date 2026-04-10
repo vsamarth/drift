@@ -23,6 +23,8 @@ class FakeReceiverServiceSource implements ReceiverServiceSource {
   bool? lastRespondToOfferAccept;
   int respondToOfferCalls = 0;
   String? lastIncomingSenderName;
+  String? lastIncomingSenderEndpointId;
+  List<rust_receiver.ReceiverTransferFile>? lastIncomingFiles;
 
   @override
   ReceiverServiceState get currentState => _state;
@@ -50,24 +52,49 @@ class FakeReceiverServiceSource implements ReceiverServiceSource {
     }
   }
 
-  void emitIncomingOffer({required String senderName}) {
+  void emitIncomingOffer({
+    required String senderName,
+    String senderEndpointId = 'endpoint-1',
+    String senderDeviceType = 'laptop',
+    String destinationLabel = 'Downloads',
+    String saveRootLabel = 'Downloads',
+    String statusMessage = 'Incoming offer',
+    List<rust_receiver.ReceiverTransferFile>? files,
+  }) {
     if (_incomingController.isClosed) {
       return;
     }
+    final incomingFiles =
+        files ??
+        [
+          rust_receiver.ReceiverTransferFile(
+            path: 'report.pdf',
+            size: BigInt.from(1024),
+          ),
+          rust_receiver.ReceiverTransferFile(
+            path: 'photo.jpg',
+            size: BigInt.from(2048),
+          ),
+    ];
+    lastIncomingSenderEndpointId = senderEndpointId;
     lastIncomingSenderName = senderName;
+    lastIncomingFiles = incomingFiles;
     _incomingController.add(
       rust_receiver.ReceiverTransferEvent(
         phase: rust_receiver.ReceiverTransferPhase.offerReady,
         senderName: senderName,
-        senderDeviceType: 'laptop',
-        destinationLabel: 'Downloads',
-        saveRootLabel: 'Downloads',
-        statusMessage: 'Incoming offer',
-        itemCount: BigInt.zero,
-        totalSizeBytes: BigInt.zero,
+        senderDeviceType: senderDeviceType,
+        destinationLabel: destinationLabel,
+        saveRootLabel: saveRootLabel,
+        statusMessage: statusMessage,
+        itemCount: BigInt.from(incomingFiles.length),
+        totalSizeBytes: incomingFiles.fold<BigInt>(
+          BigInt.zero,
+          (sum, file) => sum + file.size,
+        ),
         bytesReceived: BigInt.zero,
         totalSizeLabel: '0 B',
-        files: const [],
+        files: incomingFiles,
         error: null,
       ),
     );

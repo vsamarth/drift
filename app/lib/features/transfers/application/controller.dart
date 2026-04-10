@@ -3,10 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'service.dart';
 import 'state.dart';
 
-final transfersViewStateProvider = Provider<TransfersViewState>((ref) {
+final transferReviewAnimationProvider = Provider<bool>((ref) => true);
+
+final transfersViewStateProvider = Provider<TransferSessionState>((ref) {
   final service = ref.watch(transfersServiceProvider);
-  return TransfersViewState(
-    phase: service.phase,
-    incomingOffer: service.incomingOffer,
-  );
+  return service;
 });

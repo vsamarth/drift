@@ -1,91 +1,143 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
+
+import 'identity.dart';
+import 'manifest.dart';
 
 enum TransferSessionPhase { idle, offerPending, receiving, completed, failed }
 
 @immutable
-class TransferIncomingOfferState {
-  const TransferIncomingOfferState({
-    required this.senderName,
+class TransferTransferProgress {
+  const TransferTransferProgress({
+    required this.bytesTransferred,
+    required this.totalBytes,
+    required this.completedFiles,
+    required this.totalFiles,
+    this.speedLabel,
+    this.etaLabel,
   });
 
-  final String senderName;
+  final BigInt bytesTransferred;
+  final BigInt totalBytes;
+  final int completedFiles;
+  final int totalFiles;
+  final String? speedLabel;
+  final String? etaLabel;
 
-  String get displaySenderName {
-    final value = senderName.trim();
-    return value.isEmpty ? 'Nearby device' : value;
+  double get progressFraction {
+    if (totalBytes == BigInt.zero) {
+      return 0;
+    }
+
+    final transferred = bytesTransferred.toDouble();
+    final total = totalBytes.toDouble();
+    return transferred / total;
   }
 }
 
 @immutable
-class TransfersServiceState {
-  const TransfersServiceState({
-    required this.phase,
-    required this.incomingOffer,
+class TransferTransferResult {
+  const TransferTransferResult({
+    required this.bytesTransferred,
+    required this.totalBytes,
+    required this.completedFiles,
+    required this.totalFiles,
   });
 
-  const TransfersServiceState.idle()
-      : phase = TransferSessionPhase.idle,
-        incomingOffer = null;
-
-  factory TransfersServiceState.offerPending({
-    required String senderName,
-  }) {
-    return TransfersServiceState(
-      phase: TransferSessionPhase.offerPending,
-      incomingOffer: TransferIncomingOfferState(senderName: senderName),
-    );
-  }
-
-  factory TransfersServiceState.receiving({
-    required String senderName,
-  }) {
-    return TransfersServiceState(
-      phase: TransferSessionPhase.receiving,
-      incomingOffer: TransferIncomingOfferState(senderName: senderName),
-    );
-  }
-
-  factory TransfersServiceState.completed({
-    String? senderName,
-  }) {
-    return TransfersServiceState(
-      phase: TransferSessionPhase.completed,
-      incomingOffer: senderName == null
-          ? null
-          : TransferIncomingOfferState(senderName: senderName),
-    );
-  }
-
-  factory TransfersServiceState.failed({
-    String? senderName,
-  }) {
-    return TransfersServiceState(
-      phase: TransferSessionPhase.failed,
-      incomingOffer: senderName == null
-          ? null
-          : TransferIncomingOfferState(senderName: senderName),
-    );
-  }
-
-  final TransferSessionPhase phase;
-  final TransferIncomingOfferState? incomingOffer;
-
-  bool get hasIncomingOffer => incomingOffer != null;
+  final BigInt bytesTransferred;
+  final BigInt totalBytes;
+  final int completedFiles;
+  final int totalFiles;
 }
 
 @immutable
-class TransfersViewState {
-  const TransfersViewState({
-    required this.phase,
-    required this.incomingOffer,
+class TransferIncomingOffer {
+  const TransferIncomingOffer({
+    required this.sender,
+    required this.manifest,
+    required this.destinationLabel,
+    required this.saveRootLabel,
+    required this.statusMessage,
   });
 
-  const TransfersViewState.empty()
-      : phase = TransferSessionPhase.idle,
-        incomingOffer = null;
+  final TransferIdentity sender;
+  final TransferManifest manifest;
+  final String destinationLabel;
+  final String saveRootLabel;
+  final String statusMessage;
+
+  String get displaySenderName => sender.displayName;
+}
+
+@immutable
+class TransferSessionState {
+  const TransferSessionState._({
+    required this.phase,
+    required this.offer,
+    required this.progress,
+    required this.result,
+    required this.errorMessage,
+  });
+
+  const TransferSessionState.idle()
+      : this._(
+          phase: TransferSessionPhase.idle,
+          offer: null,
+          progress: null,
+          result: null,
+          errorMessage: null,
+        );
+
+  const TransferSessionState.offerPending({
+    required TransferIncomingOffer offer,
+  }) : this._(
+          phase: TransferSessionPhase.offerPending,
+          offer: offer,
+          progress: null,
+          result: null,
+          errorMessage: null,
+        );
+
+  const TransferSessionState.receiving({
+    required TransferIncomingOffer offer,
+    required TransferTransferProgress progress,
+  }) : this._(
+          phase: TransferSessionPhase.receiving,
+          offer: offer,
+          progress: progress,
+          result: null,
+          errorMessage: null,
+        );
+
+  const TransferSessionState.completed({
+    required TransferIncomingOffer offer,
+    required TransferTransferResult result,
+  }) : this._(
+          phase: TransferSessionPhase.completed,
+          offer: offer,
+          progress: null,
+          result: result,
+          errorMessage: null,
+        );
+
+  const TransferSessionState.failed({
+    required TransferIncomingOffer offer,
+    required String errorMessage,
+  }) : this._(
+          phase: TransferSessionPhase.failed,
+          offer: offer,
+          progress: null,
+          result: null,
+          errorMessage: errorMessage,
+        );
 
   final TransferSessionPhase phase;
-  final TransferIncomingOfferState? incomingOffer;
+  final TransferIncomingOffer? offer;
+  final TransferTransferProgress? progress;
+  final TransferTransferResult? result;
+  final String? errorMessage;
 
-  bool get hasIncomingOffer => incomingOffer != null;
+  bool get hasOffer => offer != null;
+  bool get hasIncomingOffer => hasOffer;
+
+  TransferIncomingOffer? get incomingOffer => offer;
 }
