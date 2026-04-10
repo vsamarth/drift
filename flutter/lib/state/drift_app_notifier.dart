@@ -8,6 +8,7 @@ import '../platform/app_focus.dart';
 import '../platform/send_transfer_source.dart';
 import '../features/receive/receive_mapper.dart';
 import '../features/send/send_selection_builder.dart';
+import '../features/send/send_nearby_coordinator.dart';
 import '../features/send/send_selection_coordinator.dart';
 import '../features/send/send_mapper.dart';
 import '../src/rust/api/receiver.dart' as rust_receiver;
@@ -36,9 +37,10 @@ const List<TransferItemViewData> _defaultDroppedSendItems = [
 ];
 
 class DriftAppNotifier extends Notifier<DriftAppState>
-    implements SendSelectionHost {
+    implements SendSelectionHost, SendNearbyScanHost {
   late DriftAppIdentity _identity;
   late final SendSelectionCoordinator _sendSelectionCoordinator;
+  late final SendNearbyCoordinator _sendNearbyCoordinator;
   late final SendTransferSource _sendTransferSource;
   late final NearbyDiscoverySource _nearbyDiscoverySource;
   late final ReceiverServiceSource _receiverServiceSource;
@@ -63,8 +65,11 @@ class DriftAppNotifier extends Notifier<DriftAppState>
       itemSource: ref.watch(sendItemSourceProvider),
       selectionBuilder: const SendSelectionBuilder(),
     );
-    _sendTransferSource = ref.watch(sendTransferSourceProvider);
     _nearbyDiscoverySource = ref.watch(nearbyDiscoverySourceProvider);
+    _sendNearbyCoordinator = SendNearbyCoordinator(
+      nearbyDiscoverySource: _nearbyDiscoverySource,
+    );
+    _sendTransferSource = ref.watch(sendTransferSourceProvider);
     _receiverServiceSource = ref.watch(receiverServiceSourceProvider);
     _animateSendingConnection = ref.watch(animateSendingConnectionProvider);
     _enableIdleIncomingListener = ref.watch(enableIdleIncomingListenerProvider);
@@ -115,7 +120,7 @@ class DriftAppNotifier extends Notifier<DriftAppState>
   }
 
   void rescanNearbySendDestinations() {
-    unawaited(_runNearbyScanOnce());
+    unawaited(_sendNearbyCoordinator.runScanOnce(this));
   }
 
   void acceptDroppedSendItems(List<String> paths) {
@@ -136,9 +141,6 @@ class DriftAppNotifier extends Notifier<DriftAppState>
     _cancelActiveSendTransfer();
     _setSession(const IdleSession());
   }
-
-  @override
-  List<TransferItemViewData> get currentSendItems => state.sendItems;
 
   void updateSendDestinationCode(String value) {
     final draft = _draftSession;
@@ -351,6 +353,67 @@ class DriftAppNotifier extends Notifier<DriftAppState>
     StackTrace stackTrace,
   ) {
     _reportSendSelectionError(userMessage, error, stackTrace);
+  }
+
+  @override
+  List<TransferItemViewData> get currentSendItems => state.sendItems;
+
+  @override
+  String get currentDeviceType => state.deviceType;
+
+  @override
+  bool get isInspectingSendItems => state.isInspectingSendItems;
+
+  @override
+  bool get nearbyScanInFlight => state.nearbyScanInProgress;
+
+  @override
+  void setNearbyScanInFlight(bool value) {
+    final draft = _draftSession;
+    if (draft == null) {
+      return;
+    }
+    _setSession(draft.copyWith(nearbyScanInFlight: value));
+  }
+
+  @override
+  void setNearbyScanCompletedOnce(bool value) {
+    final draft = _draftSession;
+    if (draft == null) {
+      return;
+    }
+    _setSession(draft.copyWith(nearbyScanCompletedOnce: value));
+  }
+
+  @override
+  void setNearbyDestinations(List<SendDestinationViewData> destinations) {
+    final draft = _draftSession;
+    if (draft == null) {
+      return;
+    }
+    _setSession(
+      draft.copyWith(
+        nearbyDestinations: List<SendDestinationViewData>.unmodifiable(
+          destinations,
+        ),
+      ),
+    );
+  }
+
+  @override
+  void setSendSetupError(String message) {
+    _setSendSetupError(message);
+  }
+
+  @override
+  void clearNearbyScanTimer() {
+    _cancelNearbyScanTimer();
+  }
+
+  @override
+  void logNearbyScanFailure(Object error, StackTrace stackTrace) {
+    debugPrint('[drift/notifier] nearby scan failed: $error');
+    debugPrintStack(stackTrace: stackTrace);
   }
 
   void _applySelectedSendItems(List<TransferItemViewData> items) {
@@ -815,61 +878,19 @@ class DriftAppNotifier extends Notifier<DriftAppState>
     _setSession(
       draft.copyWith(nearbyScanCompletedOnce: false, nearbyScanInFlight: false),
     );
-    unawaited(_runNearbyScanOnce());
-    _nearbyScanTimer = Timer.periodic(_nearbyRefreshInterval, (_) {
-      final current = _draftSession;
-      if (current == null || current.items.isEmpty || current.isInspecting) {
-        _cancelNearbyScanTimer();
-        return;
-      }
-      unawaited(_runNearbyScanOnce());
-    });
+    unawaited(_sendNearbyCoordinator.runScanOnce(this));
+    _nearbyScanTimer = Timer.periodic(
+      _sendNearbyCoordinator.refreshIntervalForDeviceType(_identity.deviceType),
+      (_) {
+        final current = _draftSession;
+        if (current == null || current.items.isEmpty || current.isInspecting) {
+          _cancelNearbyScanTimer();
+          return;
+        }
+        unawaited(_sendNearbyCoordinator.runScanOnce(this));
+      },
+    );
   }
-
-  Future<void> _runNearbyScanOnce() async {
-    final draft = _draftSession;
-    if (draft == null || draft.isInspecting || draft.nearbyScanInFlight) {
-      return;
-    }
-    _setSession(draft.copyWith(nearbyScanInFlight: true));
-    try {
-      final next = await _nearbyDiscoverySource.scan(
-        timeout: _nearbyScanTimeout,
-      );
-      final current = _draftSession;
-      if (current == null || current.isInspecting) {
-        return;
-      }
-      _setSession(
-        current.copyWith(
-          nearbyDestinations: List<SendDestinationViewData>.unmodifiable(next),
-          nearbyScanInFlight: false,
-          nearbyScanCompletedOnce: true,
-        ),
-      );
-    } catch (error, stackTrace) {
-      debugPrint('[drift/notifier] nearby scan failed: $error');
-      debugPrintStack(stackTrace: stackTrace);
-      _setSendSetupError('Drift couldn\'t scan for nearby devices right now.');
-      final current = _draftSession;
-      if (current != null) {
-        _setSession(
-          current.copyWith(
-            nearbyScanInFlight: false,
-            nearbyScanCompletedOnce: true,
-          ),
-        );
-      }
-    }
-  }
-
-  Duration get _nearbyScanTimeout => _identity.deviceType == 'phone'
-      ? const Duration(seconds: 4)
-      : const Duration(seconds: 8);
-
-  Duration get _nearbyRefreshInterval => _identity.deviceType == 'phone'
-      ? const Duration(seconds: 8)
-      : const Duration(seconds: 12);
 
   void _startSendTransferWithTicket(
     SendDestinationViewData destination,
