@@ -6,7 +6,6 @@ import 'package:app/app/app_router.dart';
 import 'package:app/features/settings/feature.dart';
 import 'package:app/features/send/presentation/send_draft_preview.dart';
 import 'package:app/features/send/send_drop_zone.dart';
-import 'package:app/shell/drift_shell.dart';
 import '../support/settings_test_overrides.dart';
 
 void main() {

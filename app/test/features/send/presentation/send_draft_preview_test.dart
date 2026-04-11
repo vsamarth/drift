@@ -45,7 +45,7 @@ void main() {
       routes: [
         GoRoute(
           path: AppRoutePaths.home,
-          builder: (_, __) => const Scaffold(body: Text('Home')),
+          builder: (context, state) => const Scaffold(body: Text('Home')),
           routes: [
             GoRoute(
               path: AppRoutePaths.sendDraftSegment,
