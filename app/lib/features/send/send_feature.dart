@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
+import 'application/controller.dart';
+import 'application/state.dart';
+
 part 'send_feature.g.dart';
 
 @riverpod
@@ -34,12 +37,16 @@ class SendFeaturePlaceholder extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final visuals = ref.watch(sendFeatureVisualsProvider);
-    return _FeatureCard(
-      title: visuals.title,
-      accent: visuals.accent,
-      primaryTone: visuals.primaryTone,
-      secondaryTone: visuals.secondaryTone,
+    final state = ref.watch(sendControllerProvider);
+    return Center(
+      child: Text(
+        switch (state.phase) {
+          SendSessionPhase.idle => 'Send is idle',
+          SendSessionPhase.drafting => 'Drafting',
+          SendSessionPhase.transferring => 'Transferring',
+          SendSessionPhase.result => 'Result',
+        },
+      ),
     );
   }
 }

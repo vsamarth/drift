@@ -20,6 +20,6 @@ void main() {
       ),
     );
 
-    expect(find.text('Send'), findsOneWidget);
+    expect(find.text('Send is idle'), findsOneWidget);
   });
 }
