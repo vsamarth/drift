@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import '../features/send/application/model.dart';
 import '../features/send/presentation/send_draft_preview.dart';
 import '../features/send/presentation/send_transfer_route.dart';
+import '../features/receive/presentation/receive_transfer_route.dart';
 import '../features/settings/feature.dart';
 import '../shell/drift_shell.dart';
 import '../shell/title_bar_shell.dart';
@@ -13,11 +14,13 @@ abstract final class AppRoutePaths {
   static const String settings = '/settings';
   static const String sendDraft = '/send/draft';
   static const String sendTransfer = '/send/transfer';
+  static const String receiveTransfer = '/receive/transfer';
 
   // GoRouter child routes use relative paths.
   static const String settingsSegment = 'settings';
   static const String sendDraftSegment = 'send/draft';
   static const String sendTransferSegment = 'send/transfer';
+  static const String receiveTransferSegment = 'receive/transfer';
 }
 
 extension AppRouteNavigation on BuildContext {
@@ -30,6 +33,8 @@ extension AppRouteNavigation on BuildContext {
 
   void pushSendTransfer({required SendRequestData request}) =>
       push(AppRoutePaths.sendTransfer, extra: request);
+
+  void pushReceiveTransfer() => push(AppRoutePaths.receiveTransfer);
 }
 
 GoRouter buildAppRouter({List<NavigatorObserver> observers = const []}) {
@@ -38,8 +43,7 @@ GoRouter buildAppRouter({List<NavigatorObserver> observers = const []}) {
     routes: [
       GoRoute(
         path: AppRoutePaths.home,
-        builder: (context, state) =>
-            const TitleBarShell(child: DriftShell()),
+        builder: (context, state) => const TitleBarShell(child: DriftShell()),
         routes: [
           GoRoute(
             path: AppRoutePaths.settingsSegment,
@@ -63,6 +67,11 @@ GoRouter buildAppRouter({List<NavigatorObserver> observers = const []}) {
             },
           ),
         ],
+      ),
+      GoRoute(
+        path: AppRoutePaths.receiveTransfer,
+        builder: (context, state) =>
+            const TitleBarShell(child: ReceiveTransferRoutePage()),
       ),
     ],
   );

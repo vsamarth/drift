@@ -19,7 +19,7 @@ class FakeReceiverServiceSource implements ReceiverServiceSource {
   final StreamController<ReceiverServiceState> _stateController =
       StreamController<ReceiverServiceState>.broadcast(sync: true);
   final StreamController<rust_receiver.ReceiverTransferEvent>
-      _incomingController =
+  _incomingController =
       StreamController<rust_receiver.ReceiverTransferEvent>.broadcast(
         sync: true,
       );
@@ -33,6 +33,7 @@ class FakeReceiverServiceSource implements ReceiverServiceSource {
   String? lastIncomingSenderName;
   String? lastIncomingSenderEndpointId;
   List<rust_receiver.ReceiverTransferFile>? lastIncomingFiles;
+  rust_receiver.ReceiverTransferEvent? _lastIncomingEvent;
   String? lastUpdatedDeviceName;
   String? lastUpdatedServerUrl;
 
@@ -40,17 +41,19 @@ class FakeReceiverServiceSource implements ReceiverServiceSource {
   ReceiverServiceState get currentState => _state;
 
   @override
-  Stream<ReceiverServiceState> watchState() => Stream<ReceiverServiceState>.multi(
-    (multi) {
-      multi.add(_state);
-      final subscription = _stateController.stream.listen(multi.add);
-      multi.onCancel = subscription.cancel;
-    },
-  );
+  Stream<ReceiverServiceState> watchState() =>
+      Stream<ReceiverServiceState>.multi((multi) {
+        multi.add(_state);
+        final subscription = _stateController.stream.listen(multi.add);
+        multi.onCancel = subscription.cancel;
+      });
 
   @override
   Stream<rust_receiver.ReceiverTransferEvent> watchIncomingTransfers() =>
       Stream<rust_receiver.ReceiverTransferEvent>.multi((multi) {
+        if (_lastIncomingEvent != null) {
+          multi.add(_lastIncomingEvent!);
+        }
         final subscription = _incomingController.stream.listen(multi.add);
         multi.onCancel = subscription.cancel;
       });
@@ -85,29 +88,28 @@ class FakeReceiverServiceSource implements ReceiverServiceSource {
             path: 'photo.jpg',
             size: BigInt.from(2048),
           ),
-    ];
+        ];
     lastIncomingSenderEndpointId = senderEndpointId;
     lastIncomingSenderName = senderName;
     lastIncomingFiles = incomingFiles;
-    _incomingController.add(
-      rust_receiver.ReceiverTransferEvent(
-        phase: rust_receiver.ReceiverTransferPhase.offerReady,
-        senderName: senderName,
-        senderDeviceType: senderDeviceType,
-        destinationLabel: destinationLabel,
-        saveRootLabel: saveRootLabel,
-        statusMessage: statusMessage,
-        itemCount: BigInt.from(incomingFiles.length),
-        totalSizeBytes: incomingFiles.fold<BigInt>(
-          BigInt.zero,
-          (sum, file) => sum + file.size,
-        ),
-        bytesReceived: BigInt.zero,
-        totalSizeLabel: '0 B',
-        files: incomingFiles,
-        error: null,
+    _lastIncomingEvent = rust_receiver.ReceiverTransferEvent(
+      phase: rust_receiver.ReceiverTransferPhase.offerReady,
+      senderName: senderName,
+      senderDeviceType: senderDeviceType,
+      destinationLabel: destinationLabel,
+      saveRootLabel: saveRootLabel,
+      statusMessage: statusMessage,
+      itemCount: BigInt.from(incomingFiles.length),
+      totalSizeBytes: incomingFiles.fold<BigInt>(
+        BigInt.zero,
+        (sum, file) => sum + file.size,
       ),
+      bytesReceived: BigInt.zero,
+      totalSizeLabel: '0 B',
+      files: incomingFiles,
+      error: null,
     );
+    _incomingController.add(_lastIncomingEvent!);
   }
 
   void emitCompletedTransfer({
@@ -120,7 +122,8 @@ class FakeReceiverServiceSource implements ReceiverServiceSource {
     if (_incomingController.isClosed) {
       return;
     }
-    final completedFiles = lastIncomingFiles ??
+    final completedFiles =
+        lastIncomingFiles ??
         [
           rust_receiver.ReceiverTransferFile(
             path: 'report.pdf',
@@ -133,44 +136,44 @@ class FakeReceiverServiceSource implements ReceiverServiceSource {
         ];
     lastIncomingSenderName = senderName;
     lastIncomingFiles = completedFiles;
-    _incomingController.add(
-      rust_receiver.ReceiverTransferEvent(
-        phase: rust_receiver.ReceiverTransferPhase.completed,
-        senderName: senderName,
-        senderDeviceType: senderDeviceType,
-        destinationLabel: destinationLabel,
-        saveRootLabel: saveRootLabel,
-        statusMessage: statusMessage,
-        itemCount: BigInt.from(completedFiles.length),
-        totalSizeBytes: completedFiles.fold<BigInt>(
-          BigInt.zero,
-          (sum, file) => sum + file.size,
-        ),
-        bytesReceived: completedFiles.fold<BigInt>(
-          BigInt.zero,
-          (sum, file) => sum + file.size,
-        ),
-        snapshot: rust_transfer.TransferSnapshotData(
-          sessionId: 'completed-session',
-          phase: rust_transfer.TransferPhaseData.completed,
-          totalFiles: completedFiles.length,
-          completedFiles: completedFiles.length,
-          totalBytes: completedFiles.fold<BigInt>(
-            BigInt.zero,
-            (sum, file) => sum + file.size,
-          ),
-          bytesTransferred: completedFiles.fold<BigInt>(
-            BigInt.zero,
-            (sum, file) => sum + file.size,
-          ),
-          bytesPerSec: null,
-          etaSeconds: null,
-        ),
-        totalSizeLabel: '${completedFiles.fold<BigInt>(BigInt.zero, (sum, file) => sum + file.size)} B',
-        files: completedFiles,
-        error: null,
+    _lastIncomingEvent = rust_receiver.ReceiverTransferEvent(
+      phase: rust_receiver.ReceiverTransferPhase.completed,
+      senderName: senderName,
+      senderDeviceType: senderDeviceType,
+      destinationLabel: destinationLabel,
+      saveRootLabel: saveRootLabel,
+      statusMessage: statusMessage,
+      itemCount: BigInt.from(completedFiles.length),
+      totalSizeBytes: completedFiles.fold<BigInt>(
+        BigInt.zero,
+        (sum, file) => sum + file.size,
       ),
+      bytesReceived: completedFiles.fold<BigInt>(
+        BigInt.zero,
+        (sum, file) => sum + file.size,
+      ),
+      snapshot: rust_transfer.TransferSnapshotData(
+        sessionId: 'completed-session',
+        phase: rust_transfer.TransferPhaseData.completed,
+        totalFiles: completedFiles.length,
+        completedFiles: completedFiles.length,
+        totalBytes: completedFiles.fold<BigInt>(
+          BigInt.zero,
+          (sum, file) => sum + file.size,
+        ),
+        bytesTransferred: completedFiles.fold<BigInt>(
+          BigInt.zero,
+          (sum, file) => sum + file.size,
+        ),
+        bytesPerSec: null,
+        etaSeconds: null,
+      ),
+      totalSizeLabel:
+          '${completedFiles.fold<BigInt>(BigInt.zero, (sum, file) => sum + file.size)} B',
+      files: completedFiles,
+      error: null,
     );
+    _incomingController.add(_lastIncomingEvent!);
   }
 
   void emitCancelledTransfer({
@@ -178,12 +181,14 @@ class FakeReceiverServiceSource implements ReceiverServiceSource {
     String senderDeviceType = 'laptop',
     String destinationLabel = 'Downloads',
     String saveRootLabel = 'Downloads',
-    String statusMessage = 'Drift stopped receiving before all files were saved.',
+    String statusMessage =
+        'Drift stopped receiving before all files were saved.',
   }) {
     if (_incomingController.isClosed) {
       return;
     }
-    final cancelledFiles = lastIncomingFiles ??
+    final cancelledFiles =
+        lastIncomingFiles ??
         [
           rust_receiver.ReceiverTransferFile(
             path: 'report.pdf',
@@ -196,29 +201,28 @@ class FakeReceiverServiceSource implements ReceiverServiceSource {
         ];
     lastIncomingSenderName = senderName;
     lastIncomingFiles = cancelledFiles;
-    _incomingController.add(
-      rust_receiver.ReceiverTransferEvent(
-        phase: rust_receiver.ReceiverTransferPhase.cancelled,
-        senderName: senderName,
-        senderDeviceType: senderDeviceType,
-        destinationLabel: destinationLabel,
-        saveRootLabel: saveRootLabel,
-        statusMessage: statusMessage,
-        itemCount: BigInt.from(cancelledFiles.length),
-        totalSizeBytes: cancelledFiles.fold<BigInt>(
-          BigInt.zero,
-          (sum, file) => sum + file.size,
-        ),
-        bytesReceived: cancelledFiles.fold<BigInt>(
-          BigInt.zero,
-          (sum, file) => sum + file.size,
-        ),
-        totalSizeLabel:
-            '${cancelledFiles.fold<BigInt>(BigInt.zero, (sum, file) => sum + file.size)} B',
-        files: cancelledFiles,
-        error: null,
+    _lastIncomingEvent = rust_receiver.ReceiverTransferEvent(
+      phase: rust_receiver.ReceiverTransferPhase.cancelled,
+      senderName: senderName,
+      senderDeviceType: senderDeviceType,
+      destinationLabel: destinationLabel,
+      saveRootLabel: saveRootLabel,
+      statusMessage: statusMessage,
+      itemCount: BigInt.from(cancelledFiles.length),
+      totalSizeBytes: cancelledFiles.fold<BigInt>(
+        BigInt.zero,
+        (sum, file) => sum + file.size,
       ),
+      bytesReceived: cancelledFiles.fold<BigInt>(
+        BigInt.zero,
+        (sum, file) => sum + file.size,
+      ),
+      totalSizeLabel:
+          '${cancelledFiles.fold<BigInt>(BigInt.zero, (sum, file) => sum + file.size)} B',
+      files: cancelledFiles,
+      error: null,
     );
+    _incomingController.add(_lastIncomingEvent!);
   }
 
   @override

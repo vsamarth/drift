@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../application/state.dart';
-import 'package:app/features/send/presentation/widgets/content_summary_card.dart';
 import 'package:app/features/send/presentation/widgets/recipient_avatar.dart';
 import 'sending_connection_strip.dart';
+import 'preview_table.dart';
 import 'transfer_flow_layout.dart';
 import 'transfer_live_stats.dart';
 import 'transfer_presentation_helpers.dart';
@@ -43,8 +43,11 @@ class ReceivingCard extends ConsumerWidget {
           mode: SendingStripMode.transferring,
           progress: progress.progressFraction,
         ),
-        manifest: ContentSummaryCard(
+        manifest: PreviewTable(
           items: offer.manifest.items,
+          footerSummary:
+              '${fileCountLabel(offer.manifest.itemCount)} · '
+              '${formatBytes(offer.manifest.totalSizeBytes)}',
         ),
         footer: Row(
           children: [

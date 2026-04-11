@@ -3,9 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../application/state.dart';
 import '../../../../theme/drift_theme.dart';
-import 'package:app/features/send/presentation/widgets/content_summary_card.dart';
 import 'package:app/features/send/presentation/widgets/recipient_avatar.dart';
 import 'sending_connection_strip.dart';
+import 'preview_table.dart';
 import 'transfer_flow_layout.dart';
 import 'transfer_presentation_helpers.dart';
 
@@ -45,8 +45,9 @@ class OfferCard extends ConsumerWidget {
           animate: animate,
           mode: SendingStripMode.waitingOnRecipient,
         ),
-        manifest: ContentSummaryCard(
+        manifest: PreviewTable(
           items: offer.manifest.items,
+          footerSummary: '${fileCountLabel(itemCount)} · $totalSize',
         ),
         footer: Row(
           children: [

@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../features/receive/application/controller.dart';
 import '../features/receive/presentation/widgets/idle_card.dart';
+import '../features/receive/presentation/receive_transfer_route_gate.dart';
 import '../app/app_router.dart';
 import '../features/send/application/model.dart';
 import '../features/send/application/send_selection_picker.dart';
@@ -77,45 +78,46 @@ class DriftShell extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final receiverState = ref.watch(receiverIdleViewStateProvider);
-
-    return Scaffold(
-      backgroundColor: kBg,
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
-            ReceiveIdleCard(
-              state: receiverState,
-              onOpenSettings: () {
-                context.goSettings();
-              },
-            ),
-            const SizedBox(height: 12),
-            Expanded(
-              child: SendDropZone(
-                onChooseFiles: () {
-                  return showSendSelectionSourceSheet(
-                    context,
-                    onChooseFiles: () => _pickFiles(context, ref),
-                    onChooseFolder: () => _pickFolder(context, ref),
-                  );
-                },
-                onDropPaths: (paths) {
-                  if (paths.isEmpty) {
-                    return;
-                  }
-                  unawaited(
-                    _loadDroppedFiles(paths).then((files) async {
-                      if (!context.mounted) {
-                        return;
-                      }
-                      await _openSelectedFiles(context, files);
-                    }),
-                  );
+    return ReceiveTransferRouteGate(
+      child: Scaffold(
+        backgroundColor: kBg,
+        body: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            children: [
+              ReceiveIdleCard(
+                state: receiverState,
+                onOpenSettings: () {
+                  context.goSettings();
                 },
               ),
-            ),
-          ],
+              const SizedBox(height: 12),
+              Expanded(
+                child: SendDropZone(
+                  onChooseFiles: () {
+                    return showSendSelectionSourceSheet(
+                      context,
+                      onChooseFiles: () => _pickFiles(context, ref),
+                      onChooseFolder: () => _pickFolder(context, ref),
+                    );
+                  },
+                  onDropPaths: (paths) {
+                    if (paths.isEmpty) {
+                      return;
+                    }
+                    unawaited(
+                      _loadDroppedFiles(paths).then((files) async {
+                        if (!context.mounted) {
+                          return;
+                        }
+                        await _openSelectedFiles(context, files);
+                      }),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

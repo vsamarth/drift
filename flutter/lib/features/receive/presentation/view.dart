@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../application/controller.dart';
-import '../../transfers/feature.dart';
 import '../../settings/presentation/view.dart';
+import 'receive_transfer_route_gate.dart';
 import 'widgets/idle_card.dart';
 
 class ReceiveFeature extends ConsumerWidget {
@@ -12,11 +12,27 @@ class ReceiveFeature extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final receiverState = ref.watch(receiverIdleViewStateProvider);
-    final transferState = ref.watch(transfersViewStateProvider);
-    final isIdle = transferState.phase == TransferSessionPhase.idle;
-
-    final child = isIdle
-        ? Column(
+    return ReceiveTransferRouteGate(
+      child: SizedBox.expand(
+        child: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 220),
+          switchInCurve: Curves.easeOutCubic,
+          switchOutCurve: Curves.easeInCubic,
+          transitionBuilder: (child, animation) {
+            final fade = CurvedAnimation(
+              parent: animation,
+              curve: Curves.easeOutCubic,
+            );
+            final slide = Tween<Offset>(
+              begin: const Offset(0, 0.03),
+              end: Offset.zero,
+            ).animate(fade);
+            return FadeTransition(
+              opacity: fade,
+              child: SlideTransition(position: slide, child: child),
+            );
+          },
+          child: Column(
             key: const ValueKey<String>('receive-idle'),
             children: [
               ReceiveIdleCard(
@@ -29,37 +45,9 @@ class ReceiveFeature extends ConsumerWidget {
                   );
                 },
               ),
-              const SizedBox(height: 12),
-              const Expanded(child: TransfersFeature()),
             ],
-          )
-        : const SizedBox(
-            key: ValueKey<String>('receive-active'),
-            width: double.infinity,
-            height: double.infinity,
-            child: TransfersFeature(),
-          );
-
-    return SizedBox.expand(
-      child: AnimatedSwitcher(
-        duration: const Duration(milliseconds: 220),
-        switchInCurve: Curves.easeOutCubic,
-        switchOutCurve: Curves.easeInCubic,
-        transitionBuilder: (child, animation) {
-          final fade = CurvedAnimation(
-            parent: animation,
-            curve: Curves.easeOutCubic,
-          );
-          final slide = Tween<Offset>(
-            begin: const Offset(0, 0.03),
-            end: Offset.zero,
-          ).animate(fade);
-          return FadeTransition(
-            opacity: fade,
-            child: SlideTransition(position: slide, child: child),
-          );
-        },
-        child: child,
+          ),
+        ),
       ),
     );
   }
