@@ -7,7 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../features/receive/application/controller.dart';
 import '../features/receive/presentation/widgets/idle_card.dart';
 import '../features/send/application/model.dart';
-import '../features/send/presentation/dropped_files_page.dart';
+import '../features/send/presentation/send_draft_preview.dart';
 import '../features/send/send_drop_zone.dart';
 import '../features/settings/feature.dart';
 import '../theme/drift_theme.dart';
@@ -19,25 +19,64 @@ class DriftShell extends ConsumerWidget {
     NavigatorState navigator,
     List<SendPickedFile> files,
   ) async {
-    await navigator.push(
+      await navigator.push(
       MaterialPageRoute<void>(
-        builder: (_) => DroppedFilesPage(files: files),
+        builder: (_) => SendDraftPreview(files: files),
       ),
     );
   }
 
-  Future<void> _pickFiles(NavigatorState navigator) async {
+  Future<List<SendPickedFile>> _loadPickedFiles() async {
     final pickedFiles = await openFiles();
     if (pickedFiles.isEmpty) {
+      return const [];
+    }
+
+    return Future.wait(
+      pickedFiles.map((file) async {
+        final path = file.path.isNotEmpty ? file.path : file.name;
+        final name = file.name.trim().isEmpty
+            ? Uri.file(path).pathSegments.isNotEmpty
+                ? Uri.file(path).pathSegments.last
+                : path
+            : file.name;
+        BigInt? sizeBytes;
+        try {
+          sizeBytes = BigInt.from(await file.length());
+        } catch (_) {
+          sizeBytes = null;
+        }
+        return SendPickedFile(path: path, name: name, sizeBytes: sizeBytes);
+      }),
+    );
+  }
+
+  Future<void> _pickFiles(NavigatorState navigator) async {
+    final files = await _loadPickedFiles();
+    if (files.isEmpty) {
       return;
     }
 
-    final files = pickedFiles
-        .map((file) => SendPickedFile.fromPath(file.path.isNotEmpty
-            ? file.path
-            : file.name))
-        .toList(growable: false);
     await _openSelectedFiles(navigator, files);
+  }
+
+  Future<List<SendPickedFile>> _loadDroppedFiles(List<String> paths) async {
+    return Future.wait(
+      paths.map((path) async {
+        final picked = SendPickedFile.fromPath(path);
+        BigInt? sizeBytes;
+        try {
+          sizeBytes = BigInt.from(await XFile(path).length());
+        } catch (_) {
+          sizeBytes = null;
+        }
+        return SendPickedFile(
+          path: picked.path,
+          name: picked.name,
+          sizeBytes: sizeBytes,
+        );
+      }),
+    );
   }
 
   @override
@@ -70,10 +109,11 @@ class DriftShell extends ConsumerWidget {
                     if (paths.isEmpty) {
                       return;
                     }
-                    final files = paths
-                        .map(SendPickedFile.fromPath)
-                        .toList(growable: false);
-                    unawaited(_openSelectedFiles(navigator, files));
+                    unawaited(
+                      _loadDroppedFiles(paths).then(
+                        (files) => _openSelectedFiles(navigator, files),
+                      ),
+                    );
                   },
                 ),
               ),

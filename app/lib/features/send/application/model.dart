@@ -33,6 +33,7 @@ class SendPickedFile {
   const SendPickedFile({
     required this.path,
     required this.name,
+    this.sizeBytes,
   });
 
   factory SendPickedFile.fromPath(String path) {
@@ -46,4 +47,5 @@ class SendPickedFile {
 
   final String path;
   final String name;
+  final BigInt? sizeBytes;
 }
