@@ -35,6 +35,9 @@ dependencies:
   flutter_riverpod: ^3.3.1
   animated_tree_view: ^2.3.0
   flutter_rust_bridge: 2.12.0
+  file_selector: ^1.1.0
+  path_provider: ^2.1.5
+  shared_preferences: ^2.5.3
   riverpod_annotation: ^4.0.2
   window_manager: ^0.5.1
   drift_bridge:

@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 
@@ -10,9 +9,15 @@ import 'mapper.dart';
 import 'source.dart';
 
 class RustReceiverServiceSource implements ReceiverServiceSource {
-  const RustReceiverServiceSource();
+  RustReceiverServiceSource({
+    required this.deviceName,
+    required this.downloadRoot,
+    this.serverUrl,
+  });
 
-  static const String _deviceName = 'Drift';
+  String deviceName;
+  final String downloadRoot;
+  String? serverUrl;
 
   @override
   ReceiverServiceState get currentState => const ReceiverServiceState.registering();
@@ -23,9 +28,9 @@ class RustReceiverServiceSource implements ReceiverServiceSource {
 
     try {
       await for (final pairing in rust_receiver.watchReceiverPairing(
-        serverUrl: _serverUrl,
-        downloadRoot: _downloadRoot,
-        deviceName: _deviceName,
+        serverUrl: _resolvedServerUrl,
+        downloadRoot: downloadRoot,
+        deviceName: deviceName,
         deviceType: _deviceType,
       )) {
         yield mapReceiverPairingState(pairing);
@@ -39,9 +44,9 @@ class RustReceiverServiceSource implements ReceiverServiceSource {
   Stream<rust_receiver.ReceiverTransferEvent> watchIncomingTransfers() async* {
     try {
       await for (final event in rust_receiver.startReceiverTransferListener(
-        serverUrl: _serverUrl,
-        downloadRoot: _downloadRoot,
-        deviceName: _deviceName,
+        serverUrl: _resolvedServerUrl,
+        downloadRoot: downloadRoot,
+        deviceName: deviceName,
         deviceType: _deviceType,
       )) {
         yield event;
@@ -54,17 +59,27 @@ class RustReceiverServiceSource implements ReceiverServiceSource {
   @override
   Future<void> setup({String? serverUrl}) async {
     await rust_receiver.registerReceiver(
-      serverUrl: serverUrl ?? _serverUrl,
-      deviceName: _deviceName,
+      serverUrl: serverUrl ?? _resolvedServerUrl,
+      deviceName: deviceName,
     );
   }
 
   @override
   Future<void> ensureRegistered({String? serverUrl}) async {
     await rust_receiver.ensureReceiverRegistration(
-      serverUrl: serverUrl ?? _serverUrl,
-      deviceName: _deviceName,
+      serverUrl: serverUrl ?? _resolvedServerUrl,
+      deviceName: deviceName,
     );
+  }
+
+  @override
+  Future<void> updateIdentity({
+    required String deviceName,
+    String? serverUrl,
+  }) async {
+    this.deviceName = deviceName;
+    this.serverUrl = serverUrl;
+    await ensureRegistered(serverUrl: serverUrl);
   }
 
   @override
@@ -104,8 +119,8 @@ class RustReceiverServiceSource implements ReceiverServiceSource {
     await rust_receiver.setReceiverDiscoverable(enabled: false);
   }
 
-  static String get _downloadRoot =>
-      '${Directory.systemTemp.path}${Platform.pathSeparator}Drift';
+  String get _resolvedServerUrl =>
+      serverUrl ?? 'http://127.0.0.1:8787';
 
   static String get _deviceType =>
       switch (defaultTargetPlatform) {
@@ -116,5 +131,4 @@ class RustReceiverServiceSource implements ReceiverServiceSource {
         TargetPlatform.fuchsia => 'laptop',
       };
 
-  static String? get _serverUrl => 'http://127.0.0.1:8787';
 }

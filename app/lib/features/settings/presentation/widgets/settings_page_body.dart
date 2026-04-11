@@ -46,10 +46,14 @@ class _SettingsPageBodyState extends ConsumerState<SettingsPageBody> {
       text: formatSettingsDownloadRootForDisplay(_initialDownloadRoot),
     );
     _serverUrlController = TextEditingController(text: _initialServerUrl);
+    _deviceNameController.addListener(_onFieldChanged);
+    _serverUrlController.addListener(_onFieldChanged);
   }
 
   @override
   void dispose() {
+    _deviceNameController.removeListener(_onFieldChanged);
+    _serverUrlController.removeListener(_onFieldChanged);
     _deviceNameController.dispose();
     _downloadRootController.dispose();
     _serverUrlController.dispose();
@@ -61,6 +65,12 @@ class _SettingsPageBodyState extends ConsumerState<SettingsPageBody> {
         _downloadRootValue.trim() != _initialDownloadRoot.trim() ||
         _serverUrlController.text.trim() != _initialServerUrl.trim() ||
         _discoverable != _initialDiscoverable;
+  }
+
+  void _onFieldChanged() {
+    if (mounted) {
+      setState(() {});
+    }
   }
 
   Future<void> _handleBack() async {

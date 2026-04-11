@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../application/controller.dart';
 import '../../transfers/feature.dart';
-import '../../transfers/application/controller.dart';
+import '../../settings/presentation/view.dart';
 import 'widgets/idle_card.dart';
 
 class ReceiveFeature extends ConsumerWidget {
@@ -19,7 +19,16 @@ class ReceiveFeature extends ConsumerWidget {
         ? Column(
             key: const ValueKey<String>('receive-idle'),
             children: [
-              ReceiveIdleCard(state: receiverState),
+              ReceiveIdleCard(
+                state: receiverState,
+                onOpenSettings: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const SettingsFeature(),
+                    ),
+                  );
+                },
+              ),
               const SizedBox(height: 12),
               const Expanded(child: TransfersFeature()),
             ],

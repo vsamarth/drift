@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:app/platform/rust/receiver/rust_source.dart';
+import 'package:app/app/app_bootstrap.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:window_manager/window_manager.dart';
@@ -8,6 +8,7 @@ import 'package:window_manager/window_manager.dart';
 import 'app/app.dart';
 import 'features/receive/feature.dart';
 import 'features/transfers/feature.dart';
+import 'features/settings/settings_providers.dart';
 import 'src/rust/frb_generated.dart';
 
 Future<void> main() async {
@@ -18,15 +19,17 @@ Future<void> main() async {
   await RustLib.init();
 
   const initialSize = Size(440, 560);
-  const rustSource = RustReceiverServiceSource();
+  final bootstrap = await loadAppBootstrap();
   runApp(
     ProviderScope(
       overrides: [
-        receiverServiceSourceProvider.overrideWithValue(
-          rustSource,
+        settingsRepositoryProvider.overrideWithValue(
+          bootstrap.settingsRepository,
         ),
+        initialAppSettingsProvider.overrideWithValue(bootstrap.initialSettings),
+        receiverServiceSourceProvider.overrideWithValue(bootstrap.receiverSource),
         transfersServiceSourceProvider.overrideWithValue(
-          rustSource,
+          bootstrap.receiverSource,
         ),
       ],
       child: const DriftApp(),

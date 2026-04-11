@@ -26,6 +26,8 @@ class FakeReceiverServiceSource implements ReceiverServiceSource {
   String? lastIncomingSenderName;
   String? lastIncomingSenderEndpointId;
   List<rust_receiver.ReceiverTransferFile>? lastIncomingFiles;
+  String? lastUpdatedDeviceName;
+  String? lastUpdatedServerUrl;
 
   @override
   ReceiverServiceState get currentState => _state;
@@ -169,6 +171,15 @@ class FakeReceiverServiceSource implements ReceiverServiceSource {
 
   @override
   Future<void> ensureRegistered({String? serverUrl}) async {}
+
+  @override
+  Future<void> updateIdentity({
+    required String deviceName,
+    String? serverUrl,
+  }) async {
+    lastUpdatedDeviceName = deviceName;
+    lastUpdatedServerUrl = serverUrl;
+  }
 
   @override
   Future<void> setDiscoverable({required bool enabled}) async {}

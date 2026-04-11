@@ -1,5 +1,6 @@
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
+import '../../settings/feature.dart';
 import 'service.dart';
 import 'state.dart';
 
@@ -22,9 +23,10 @@ ReceiverIdleViewState receiverIdleViewState(Ref ref) {
 
   final code =
       pairingCode.isAvailable ? pairingCode.formattedCode : '......';
+  final deviceName = ref.watch(settingsControllerProvider).settings.deviceName;
 
   return ReceiverIdleViewState(
-    deviceName: 'Drift',
+    deviceName: deviceName,
     badge: badge,
     status: badge.label,
     code: code,

@@ -12,6 +12,11 @@ abstract class ReceiverServiceSource {
 
   Future<void> ensureRegistered({String? serverUrl});
 
+  Future<void> updateIdentity({
+    required String deviceName,
+    String? serverUrl,
+  });
+
   Future<void> setDiscoverable({required bool enabled});
 
   Future<void> respondToOffer({required bool accept});

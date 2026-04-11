@@ -4,15 +4,20 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:animated_tree_view/animated_tree_view.dart';
 
 import 'package:app/features/receive/feature.dart';
+import 'package:app/features/settings/feature.dart';
 import 'package:app/features/transfers/feature.dart';
 import 'package:app/platform/rust/receiver/fake_source.dart';
 import 'package:app/src/rust/api/receiver.dart' as rust_receiver;
+import '../../support/settings_test_overrides.dart';
 
 void main() {
   testWidgets('shows the empty transfer state', (WidgetTester tester) async {
     await tester.pumpWidget(
       ProviderScope(
-        overrides: [transferReviewAnimationProvider.overrideWithValue(false)],
+        overrides: [
+          transferReviewAnimationProvider.overrideWithValue(false),
+          initialAppSettingsProvider.overrideWithValue(testAppSettings),
+        ],
         child: MaterialApp(
           home: Scaffold(
             body: SizedBox(width: 440, height: 560, child: ReceiveFeature()),
@@ -31,6 +36,7 @@ void main() {
       ProviderScope(
         overrides: [
           transferReviewAnimationProvider.overrideWithValue(false),
+          initialAppSettingsProvider.overrideWithValue(testAppSettings),
           receiverServiceSourceProvider.overrideWithValue(source),
           transfersServiceSourceProvider.overrideWithValue(source),
         ],
@@ -63,6 +69,7 @@ void main() {
       ProviderScope(
         overrides: [
           transferReviewAnimationProvider.overrideWithValue(false),
+          initialAppSettingsProvider.overrideWithValue(testAppSettings),
           receiverServiceSourceProvider.overrideWithValue(source),
           transfersServiceSourceProvider.overrideWithValue(source),
         ],
@@ -95,6 +102,7 @@ void main() {
       ProviderScope(
         overrides: [
           transferReviewAnimationProvider.overrideWithValue(false),
+          initialAppSettingsProvider.overrideWithValue(testAppSettings),
           receiverServiceSourceProvider.overrideWithValue(source),
           transfersServiceSourceProvider.overrideWithValue(source),
         ],
@@ -142,6 +150,7 @@ void main() {
       ProviderScope(
         overrides: [
           transferReviewAnimationProvider.overrideWithValue(false),
+          initialAppSettingsProvider.overrideWithValue(testAppSettings),
           receiverServiceSourceProvider.overrideWithValue(source),
           transfersServiceSourceProvider.overrideWithValue(source),
         ],
@@ -187,6 +196,7 @@ void main() {
       ProviderScope(
         overrides: [
           transferReviewAnimationProvider.overrideWithValue(false),
+          initialAppSettingsProvider.overrideWithValue(testAppSettings),
           receiverServiceSourceProvider.overrideWithValue(source),
           transfersServiceSourceProvider.overrideWithValue(source),
         ],
@@ -228,6 +238,7 @@ void main() {
       ProviderScope(
         overrides: [
           transferReviewAnimationProvider.overrideWithValue(false),
+          initialAppSettingsProvider.overrideWithValue(testAppSettings),
           receiverServiceSourceProvider.overrideWithValue(source),
           transfersServiceSourceProvider.overrideWithValue(source),
         ],
@@ -256,6 +267,7 @@ void main() {
       ProviderScope(
         overrides: [
           transferReviewAnimationProvider.overrideWithValue(false),
+          initialAppSettingsProvider.overrideWithValue(testAppSettings),
           receiverServiceSourceProvider.overrideWithValue(source),
           transfersServiceSourceProvider.overrideWithValue(source),
         ],
@@ -288,6 +300,7 @@ void main() {
       ProviderScope(
         overrides: [
           transferReviewAnimationProvider.overrideWithValue(false),
+          initialAppSettingsProvider.overrideWithValue(testAppSettings),
           receiverServiceSourceProvider.overrideWithValue(source),
           transfersServiceSourceProvider.overrideWithValue(source),
         ],
@@ -321,6 +334,7 @@ void main() {
       ProviderScope(
         overrides: [
           transferReviewAnimationProvider.overrideWithValue(false),
+          initialAppSettingsProvider.overrideWithValue(testAppSettings),
           receiverServiceSourceProvider.overrideWithValue(source),
           transfersServiceSourceProvider.overrideWithValue(source),
         ],
@@ -359,6 +373,7 @@ void main() {
       ProviderScope(
         overrides: [
           transferReviewAnimationProvider.overrideWithValue(false),
+          initialAppSettingsProvider.overrideWithValue(testAppSettings),
           receiverServiceSourceProvider.overrideWithValue(source),
           transfersServiceSourceProvider.overrideWithValue(source),
         ],
