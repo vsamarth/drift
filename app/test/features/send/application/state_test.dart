@@ -1,5 +1,6 @@
 import 'package:app/features/send/application/state.dart';
 import 'package:app/features/send/application/model.dart';
+import 'package:app/features/send/application/transfer_state.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -48,11 +49,21 @@ void main() {
         deviceType: 'laptop',
         code: 'ABC123',
       ),
+      transfer: SendTransferState(
+        phase: SendTransferPhase.connecting,
+        destinationLabel: 'Code ABC 123',
+        statusMessage: 'Request sent',
+        itemCount: BigInt.one,
+        totalSize: BigInt.zero,
+        bytesSent: BigInt.zero,
+        totalBytes: BigInt.zero,
+      ),
     );
 
     expect(state.phase, SendSessionPhase.transferring);
     expect(state.destination.mode, SendDestinationMode.code);
     expect(state.request?.code, 'ABC123');
+    expect(state.transfer?.phase, SendTransferPhase.connecting);
   });
 
   test('send state can represent a final result with the original request snapshot', () {
@@ -70,6 +81,15 @@ void main() {
         ticket: 'ticket-1',
         lanDestinationLabel: 'Laptop',
       ),
+      transfer: SendTransferState(
+        phase: SendTransferPhase.completed,
+        destinationLabel: 'Laptop',
+        statusMessage: 'Sent successfully',
+        itemCount: BigInt.zero,
+        totalSize: BigInt.zero,
+        bytesSent: BigInt.zero,
+        totalBytes: BigInt.zero,
+      ),
       result: const SendTransferResult(
         outcome: SendTransferOutcome.success,
         title: 'Sent',
@@ -82,5 +102,6 @@ void main() {
     expect(state.request?.destinationMode, SendDestinationMode.nearby);
     expect(state.request?.ticket, 'ticket-1');
     expect(state.result?.outcome, SendTransferOutcome.success);
+    expect(state.transfer?.phase, SendTransferPhase.completed);
   });
 }

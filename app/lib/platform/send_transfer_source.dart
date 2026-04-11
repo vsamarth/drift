@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../src/rust/api/error.dart' as rust_error;
 import '../src/rust/api/sender.dart' as rust_sender;
+import '../src/rust/api/transfer.dart' as rust_transfer;
 
 final sendTransferSourceProvider = Provider<SendTransferSource>((_) {
   return const LocalSendTransferSource();
@@ -56,6 +57,8 @@ class SendTransferUpdate {
     required this.totalSize,
     required this.bytesSent,
     required this.totalBytes,
+    this.plan,
+    this.snapshot,
     this.remoteDeviceType,
     this.error,
   });
@@ -67,6 +70,8 @@ class SendTransferUpdate {
     required BigInt totalSize,
     required BigInt bytesSent,
     String? remoteDeviceType,
+    rust_transfer.TransferPlanData? plan,
+    rust_transfer.TransferSnapshotData? snapshot,
   }) : this(
          phase: SendTransferUpdatePhase.completed,
          destinationLabel: destinationLabel,
@@ -75,7 +80,34 @@ class SendTransferUpdate {
          totalSize: totalSize,
          bytesSent: bytesSent,
          totalBytes: totalSize,
+         plan: plan,
+         snapshot: snapshot,
          remoteDeviceType: remoteDeviceType,
+       );
+
+  const SendTransferUpdate.declined({
+    required String destinationLabel,
+    required String statusMessage,
+    required BigInt itemCount,
+    required BigInt totalSize,
+    required BigInt bytesSent,
+    required BigInt totalBytes,
+    SendTransferErrorData? error,
+    String? remoteDeviceType,
+    rust_transfer.TransferPlanData? plan,
+    rust_transfer.TransferSnapshotData? snapshot,
+  }) : this(
+         phase: SendTransferUpdatePhase.declined,
+         destinationLabel: destinationLabel,
+         statusMessage: statusMessage,
+         itemCount: itemCount,
+         totalSize: totalSize,
+         bytesSent: bytesSent,
+         totalBytes: totalBytes,
+         plan: plan,
+         snapshot: snapshot,
+         remoteDeviceType: remoteDeviceType,
+         error: error,
        );
 
   const SendTransferUpdate.failed({
@@ -87,6 +119,8 @@ class SendTransferUpdate {
     required BigInt totalBytes,
     SendTransferErrorData? error,
     String? remoteDeviceType,
+    rust_transfer.TransferPlanData? plan,
+    rust_transfer.TransferSnapshotData? snapshot,
   }) : this(
          phase: SendTransferUpdatePhase.failed,
          destinationLabel: destinationLabel,
@@ -95,6 +129,8 @@ class SendTransferUpdate {
          totalSize: totalSize,
          bytesSent: bytesSent,
          totalBytes: totalBytes,
+         plan: plan,
+         snapshot: snapshot,
          remoteDeviceType: remoteDeviceType,
          error: error,
        );
@@ -108,6 +144,8 @@ class SendTransferUpdate {
     required BigInt totalBytes,
     SendTransferErrorData? error,
     String? remoteDeviceType,
+    rust_transfer.TransferPlanData? plan,
+    rust_transfer.TransferSnapshotData? snapshot,
   }) : this(
          phase: SendTransferUpdatePhase.cancelled,
          destinationLabel: destinationLabel,
@@ -116,6 +154,8 @@ class SendTransferUpdate {
          totalSize: totalSize,
          bytesSent: bytesSent,
          totalBytes: totalBytes,
+         plan: plan,
+         snapshot: snapshot,
          remoteDeviceType: remoteDeviceType,
          error: error,
        );
@@ -127,6 +167,8 @@ class SendTransferUpdate {
   final BigInt totalSize;
   final BigInt bytesSent;
   final BigInt totalBytes;
+  final rust_transfer.TransferPlanData? plan;
+  final rust_transfer.TransferSnapshotData? snapshot;
   final String? remoteDeviceType;
   final SendTransferErrorData? error;
 }
@@ -220,6 +262,8 @@ class LocalSendTransferSource implements SendTransferSource {
       totalSize: totalSize,
       bytesSent: event.bytesSent,
       totalBytes: totalSize,
+      plan: event.plan,
+      snapshot: event.snapshot,
       remoteDeviceType: event.remoteDeviceType,
       error: _mapError(event.error),
     );

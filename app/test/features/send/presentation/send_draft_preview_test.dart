@@ -391,8 +391,8 @@ void main() {
       container.read(sendControllerProvider).phase,
       SendSessionPhase.transferring,
     );
-    expect(find.text('Transferring'), findsOneWidget);
-    expect(find.text('/tmp/report.pdf'), findsOneWidget);
+    expect(find.text('Connecting to recipient'), findsOneWidget);
+    expect(find.text('/tmp/report.pdf'), findsWidgets);
   });
 
   testWidgets('tapping back pops the router and returns home', (

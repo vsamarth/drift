@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 import 'model.dart';
+import 'transfer_state.dart';
 
 @immutable
 class SendDestinationState {
@@ -36,6 +37,7 @@ class SendState {
     required this.items,
     required this.destination,
     required this.request,
+    required this.transfer,
     required this.result,
     required this.errorMessage,
   });
@@ -46,6 +48,7 @@ class SendState {
           items: const [],
           destination: const SendDestinationState.none(),
           request: null,
+          transfer: null,
           result: null,
           errorMessage: null,
         );
@@ -58,6 +61,7 @@ class SendState {
          items: items,
          destination: destination,
          request: null,
+         transfer: null,
          result: null,
          errorMessage: null,
        );
@@ -66,11 +70,13 @@ class SendState {
     required List<SendDraftItem> items,
     required SendDestinationState destination,
     required SendRequestData request,
+    required SendTransferState transfer,
   }) : this._(
          phase: SendSessionPhase.transferring,
          items: items,
          destination: destination,
          request: request,
+         transfer: transfer,
          result: null,
          errorMessage: null,
        );
@@ -79,6 +85,7 @@ class SendState {
     required List<SendDraftItem> items,
     required SendDestinationState destination,
     required SendRequestData request,
+    required SendTransferState transfer,
     required SendTransferResult result,
     String? errorMessage,
   }) : this._(
@@ -86,6 +93,7 @@ class SendState {
          items: items,
          destination: destination,
          request: request,
+         transfer: transfer,
          result: result,
          errorMessage: errorMessage,
        );
@@ -94,6 +102,7 @@ class SendState {
   final List<SendDraftItem> items;
   final SendDestinationState destination;
   final SendRequestData? request;
+  final SendTransferState? transfer;
   final SendTransferResult? result;
   final String? errorMessage;
 }

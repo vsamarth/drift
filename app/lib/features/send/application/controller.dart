@@ -8,6 +8,7 @@ import 'model.dart';
 import '../../../platform/send_transfer_source.dart';
 import '../../settings/application/controller.dart';
 import 'state.dart';
+import 'transfer_state.dart';
 
 part 'controller.g.dart';
 
@@ -154,6 +155,7 @@ class SendController extends _$SendController {
       items: state.items,
       destination: state.destination,
       request: validatedRequest,
+      transfer: _buildInitialTransferState(validatedRequest),
     );
     unawaited(_transferSubscription?.cancel());
     _transferSubscription = transferSource
@@ -199,9 +201,35 @@ class SendController extends _$SendController {
   }
 
   void _handleTransferUpdate(SendTransferUpdate update) {
-    if (state.phase != SendSessionPhase.transferring || state.request == null) {
+    if (state.phase != SendSessionPhase.transferring ||
+        state.request == null ||
+        state.transfer == null) {
       return;
     }
+
+    final nextTransfer = state.transfer!.copyWith(
+      phase: switch (update.phase) {
+        SendTransferUpdatePhase.connecting => SendTransferPhase.connecting,
+        SendTransferUpdatePhase.waitingForDecision =>
+          SendTransferPhase.waitingForDecision,
+        SendTransferUpdatePhase.accepted => SendTransferPhase.accepted,
+        SendTransferUpdatePhase.sending => SendTransferPhase.sending,
+        SendTransferUpdatePhase.completed => SendTransferPhase.completed,
+        SendTransferUpdatePhase.cancelled => SendTransferPhase.cancelled,
+        SendTransferUpdatePhase.declined => SendTransferPhase.declined,
+        SendTransferUpdatePhase.failed => SendTransferPhase.failed,
+      },
+      destinationLabel: update.destinationLabel,
+      statusMessage: update.statusMessage,
+      itemCount: update.itemCount,
+      totalSize: update.totalSize,
+      bytesSent: update.bytesSent,
+      totalBytes: update.totalBytes,
+      plan: update.plan ?? state.transfer!.plan,
+      snapshot: update.snapshot ?? state.transfer!.snapshot,
+      remoteDeviceType: update.remoteDeviceType ?? state.transfer!.remoteDeviceType,
+      error: update.error ?? state.transfer!.error,
+    );
 
     switch (update.phase) {
       case SendTransferUpdatePhase.completed:
@@ -211,6 +239,7 @@ class SendController extends _$SendController {
             title: 'Sent',
             message: update.statusMessage,
           ),
+          transfer: nextTransfer,
         );
       case SendTransferUpdatePhase.cancelled:
         _completeTransfer(
@@ -219,6 +248,7 @@ class SendController extends _$SendController {
             title: 'Cancelled',
             message: update.statusMessage,
           ),
+          transfer: nextTransfer,
         );
       case SendTransferUpdatePhase.declined:
         _completeTransfer(
@@ -227,6 +257,7 @@ class SendController extends _$SendController {
             title: 'Declined',
             message: update.statusMessage,
           ),
+          transfer: nextTransfer,
         );
       case SendTransferUpdatePhase.failed:
         _completeTransfer(
@@ -235,18 +266,26 @@ class SendController extends _$SendController {
             title: update.error?.title ?? 'Send failed',
             message: update.error?.message ?? update.statusMessage,
           ),
+          transfer: nextTransfer,
           errorMessage: update.error?.message ?? update.statusMessage,
         );
       case SendTransferUpdatePhase.connecting:
       case SendTransferUpdatePhase.waitingForDecision:
       case SendTransferUpdatePhase.accepted:
       case SendTransferUpdatePhase.sending:
-        break;
+        state = SendState.transferring(
+          items: state.items,
+          destination: state.destination,
+          request: state.request!,
+          transfer: nextTransfer,
+        );
     }
   }
 
   void _handleTransferError(Object error, StackTrace stackTrace) {
-    if (state.phase != SendSessionPhase.transferring || state.request == null) {
+    if (state.phase != SendSessionPhase.transferring ||
+        state.request == null ||
+        state.transfer == null) {
       return;
     }
     _completeTransfer(
@@ -254,6 +293,11 @@ class SendController extends _$SendController {
         outcome: SendTransferOutcome.failed,
         title: 'Send failed',
         message: error.toString(),
+      ),
+      transfer: state.transfer!.copyWith(
+        phase: SendTransferPhase.failed,
+        statusMessage: 'Send failed',
+        error: null,
       ),
       errorMessage: error.toString(),
     );
@@ -296,6 +340,7 @@ class SendController extends _$SendController {
 
   void _completeTransfer(
     SendTransferResult result, {
+    required SendTransferState transfer,
     String? errorMessage,
   }) {
     final request = state.request;
@@ -307,11 +352,25 @@ class SendController extends _$SendController {
       items: state.items,
       destination: state.destination,
       request: request,
+      transfer: transfer,
       result: result,
       errorMessage: errorMessage,
     );
     final subscription = _transferSubscription;
     _transferSubscription = null;
     unawaited(subscription?.cancel());
+  }
+
+  SendTransferState _buildInitialTransferState(SendRequestData request) {
+    final totalSize = state.items.fold<BigInt>(
+      BigInt.zero,
+      (sum, item) => sum + item.sizeBytes,
+    );
+    return SendTransferState.connecting(
+      destinationLabel:
+          request.lanDestinationLabel ?? request.code ?? 'Recipient device',
+      itemCount: BigInt.from(state.items.length),
+      totalSize: totalSize,
+    );
   }
 }
