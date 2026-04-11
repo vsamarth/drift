@@ -97,6 +97,34 @@ void main() {
     expect(find.text('report.pdf'), findsOneWidget);
   });
 
+  testWidgets('dropping a directory navigates to /send/draft and shows preview', (
+    WidgetTester tester,
+  ) async {
+    final directory = Directory.systemTemp.createTempSync('drift_shell_dir');
+    final router = buildAppRouter();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          initialAppSettingsProvider.overrideWithValue(testAppSettings),
+        ],
+        child: MaterialApp.router(routerConfig: router),
+      ),
+    );
+
+    final dropZone = tester.widget<SendDropZone>(find.byType(SendDropZone));
+    dropZone.onDropPaths([directory.path]);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    expect(
+      router.routeInformationProvider.value.uri.toString(),
+      AppRoutePaths.sendDraft,
+    );
+    expect(find.byType(SendDraftPreview), findsOneWidget);
+    expect(find.text(directory.path.split(Platform.pathSeparator).last), findsOneWidget);
+    expect(find.byIcon(Icons.folder_outlined), findsOneWidget);
+  });
+
   testWidgets('choosing Files routes to send draft preview', (
     WidgetTester tester,
   ) async {
