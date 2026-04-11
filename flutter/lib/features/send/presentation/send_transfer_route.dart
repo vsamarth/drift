@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../theme/drift_theme.dart';
 import '../../transfers/presentation/widgets/sending_connection_strip.dart';
-import '../../transfers/presentation/widgets/transfer_flow_layout.dart';
+import '../../transfers/presentation/widgets/utility_transfer_flow_layout.dart';
 import '../application/controller.dart';
 import '../application/model.dart';
 import '../application/state.dart';
@@ -99,44 +99,68 @@ class _TransferStateCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final accent = viewData.visual.accentColor;
-    final showConnectionStrip = viewData.stripMode != null;
     final showFooterButton =
         state is SendStateTransferring || state is SendStateResult;
     final primary = Theme.of(context).colorScheme.primary;
     final isSuccessResult = state is SendStateResult &&
         viewData.visual.statusLabel.toLowerCase().trim() == 'success';
 
-    return TransferFlowLayout(
+    final heroText = viewData.etaLabel ??
+        (viewData.progressFraction != null
+            ? '${(viewData.progressFraction! * 100).toInt()}%'
+            : viewData.visual.statusLabel);
+
+    return UtilityTransferFlowLayout(
       statusLabel: viewData.visual.statusLabel,
       statusColor: accent,
-      title: viewData.visual.title,
-      subtitle: viewData.visual.subtitle,
-      explainer: _buildExplainer(viewData),
-      illustration: showConnectionStrip
-          ? SendingConnectionStrip(
-              localLabel: viewData.localLabel,
-              localDeviceType: viewData.localDeviceType,
-              remoteLabel: viewData.remoteLabel,
-              remoteDeviceType: viewData.remoteDeviceType,
-              animate: viewData.visual.showSpinner,
-              mode: viewData.stripMode!,
-              transferProgress: viewData.progressFraction ?? 0.0,
-            )
-          : DecoratedBox(
-              decoration: BoxDecoration(
-                color: accent.withValues(alpha: 0.1),
-                shape: BoxShape.circle,
-              ),
-              child: Padding(
-                padding: const EdgeInsets.all(18),
-                child: Icon(viewData.visual.icon, size: 42, color: accent),
+      heroText: heroText,
+      subtitle: 'Sending to ${viewData.remoteLabel}',
+      utilityBar: Row(
+        children: [
+          if (viewData.speedLabel != null)
+            Text(
+              viewData.speedLabel!,
+              style: driftSans(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: kInk,
               ),
             ),
+          if (viewData.speedLabel != null && viewData.progressLabel != null)
+            Text('  ·  ', style: driftSans(color: kMuted)),
+          if (viewData.progressLabel != null)
+            Text(
+              viewData.progressLabel!,
+              style: driftSans(
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+                color: kMuted,
+              ),
+            ),
+        ],
+      ),
+      progressBar: LinearProgressIndicator(
+        value: viewData.progressFraction?.clamp(0.0, 1.0),
+        minHeight: 12,
+        backgroundColor: accent.withValues(alpha: 0.1),
+        valueColor: AlwaysStoppedAnimation<Color>(accent),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      activityLine: viewData.files.any((f) => f.state == SendTransferFileState.active)
+          ? Text(
+              'Now: ${viewData.files.firstWhere((f) => f.state == SendTransferFileState.active).name}',
+              style: driftSans(
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+                color: kInk,
+              ),
+            )
+          : null,
       manifest: _SendManifest(viewData: viewData),
       footer: Row(
         children: [
           Expanded(
-              child: showFooterButton
+            child: showFooterButton
                 ? (state is SendStateResult
                     ? FilledButton(
                         onPressed: onExit,
@@ -154,8 +178,8 @@ class _TransferStateCard extends StatelessWidget {
                         onPressed: onExit,
                         style: TextButton.styleFrom(
                           foregroundColor: const Color(0xFFB34A4A),
-                          backgroundColor: const Color(0xFFB34A4A)
-                              .withValues(alpha: 0.08),
+                          backgroundColor:
+                              const Color(0xFFB34A4A).withValues(alpha: 0.08),
                           minimumSize: const Size(0, 48),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12),
@@ -356,47 +380,25 @@ class _FileList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: kSurface2,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: kBorder.withValues(alpha: 0.8)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(18, 16, 18, 0),
-            child: Text(
-              'Files',
-              style: driftSans(
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-                color: kMuted,
-                letterSpacing: 0.15,
-              ),
-            ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          'FILES',
+          style: driftSans(
+            fontSize: 11,
+            fontWeight: FontWeight.w800,
+            color: kMuted,
+            letterSpacing: 1.0,
           ),
-          const SizedBox(height: 8),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 14),
-            child: Column(
-              children: [
-                for (int index = 0; index < files.length; index++) ...[
-                  _FileRow(file: files[index]),
-                  if (index < files.length - 1)
-                    Divider(
-                      height: 20,
-                      thickness: 1,
-                      color: kBorder.withValues(alpha: 0.55),
-                    ),
-                ],
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
+        ),
+        const SizedBox(height: 16),
+        for (int index = 0; index < files.length; index++) ...[
+          _FileRow(file: files[index]),
+          if (index < files.length - 1) const SizedBox(height: 20),
         ],
-      ),
+        const SizedBox(height: 16),
+      ],
     );
   }
 }
@@ -442,13 +444,15 @@ class _FileRow extends StatelessWidget {
                       color: kInk,
                     ),
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    file.path,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: driftMono(fontSize: 11.5, color: kMuted),
-                  ),
+                  if (file.state == SendTransferFileState.active) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      file.path,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: driftMono(fontSize: 11, color: kMuted),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -489,3 +493,4 @@ class _FileRow extends StatelessWidget {
     );
   }
 }
+
