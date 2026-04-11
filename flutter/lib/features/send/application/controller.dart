@@ -142,7 +142,7 @@ class SendController extends _$SendController {
     }
   }
 
-  bool get canStartSend => buildSendRequest() != null;
+  bool canStartSend() => buildSendRequest() != null;
 
   void startTransfer(SendRequestData request) {
     final validatedRequest = buildSendRequest();

@@ -95,7 +95,7 @@ void main() {
     ]);
 
     expect(controller.buildSendRequest(), isNull);
-    expect(controller.canStartSend, isFalse);
+    expect(controller.canStartSend(), isFalse);
   });
 
   test('send controller builds a code request for a valid 6-character code', () {
@@ -118,7 +118,7 @@ void main() {
 
     final request = controller.buildSendRequest();
     expect(request, isNotNull);
-    expect(controller.canStartSend, isTrue);
+    expect(controller.canStartSend(), isTrue);
     expect(request?.destinationMode, SendDestinationMode.code);
     expect(request?.code, 'ABC123');
     expect(request?.ticket, isNull);
@@ -147,7 +147,7 @@ void main() {
     controller.updateDestinationCode('ABC');
 
     expect(controller.buildSendRequest(), isNull);
-    expect(controller.canStartSend, isFalse);
+    expect(controller.canStartSend(), isFalse);
   });
 
   test('send controller builds a nearby request from the selected receiver', () {
@@ -181,7 +181,7 @@ void main() {
 
     final request = controller.buildSendRequest();
     expect(request, isNotNull);
-    expect(controller.canStartSend, isTrue);
+    expect(controller.canStartSend(), isTrue);
     expect(request?.destinationMode, SendDestinationMode.nearby);
     expect(request?.ticket, 'ticket-1');
     expect(request?.lanDestinationLabel, 'Laptop');

@@ -180,7 +180,7 @@ class _SendDraftPreviewState extends ConsumerState<SendDraftPreview> {
   bool _canStartSend(SendState state) {
     return state.phase == SendSessionPhase.drafting &&
         state.items.isNotEmpty &&
-        ref.read(sendControllerProvider.notifier).canStartSend;
+        ref.read(sendControllerProvider.notifier).canStartSend();
   }
 
   @override
