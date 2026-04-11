@@ -3,27 +3,22 @@ import 'dart:async';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../features/receive/application/controller.dart';
 import '../features/receive/presentation/widgets/idle_card.dart';
 import '../features/send/application/model.dart';
-import '../features/send/presentation/send_draft_preview.dart';
 import '../features/send/send_drop_zone.dart';
-import '../features/settings/feature.dart';
 import '../theme/drift_theme.dart';
 
 class DriftShell extends ConsumerWidget {
   const DriftShell({super.key});
 
   Future<void> _openSelectedFiles(
-    NavigatorState navigator,
+    BuildContext context,
     List<SendPickedFile> files,
   ) async {
-      await navigator.push(
-      MaterialPageRoute<void>(
-        builder: (_) => SendDraftPreview(files: files),
-      ),
-    );
+    context.go('/send/draft', extra: files);
   }
 
   Future<List<SendPickedFile>> _loadPickedFiles() async {
@@ -51,13 +46,17 @@ class DriftShell extends ConsumerWidget {
     );
   }
 
-  Future<void> _pickFiles(NavigatorState navigator) async {
+  Future<void> _pickFiles(BuildContext context) async {
     final files = await _loadPickedFiles();
     if (files.isEmpty) {
       return;
     }
 
-    await _openSelectedFiles(navigator, files);
+    if (!context.mounted) {
+      return;
+    }
+
+    await _openSelectedFiles(context, files);
   }
 
   Future<List<SendPickedFile>> _loadDroppedFiles(List<String> paths) async {
@@ -82,7 +81,6 @@ class DriftShell extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final receiverState = ref.watch(receiverIdleViewStateProvider);
-    final navigator = Navigator.of(context);
 
     return Scaffold(
       backgroundColor: kBg,
@@ -94,24 +92,25 @@ class DriftShell extends ConsumerWidget {
               ReceiveIdleCard(
                 state: receiverState,
                 onOpenSettings: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => const SettingsFeature(),
-                    ),
-                  );
+                  context.go('/settings');
                 },
               ),
               const SizedBox(height: 12),
               Expanded(
                 child: SendDropZone(
-                  onChooseFiles: () => _pickFiles(navigator),
+                  onChooseFiles: () => _pickFiles(context),
                   onDropPaths: (paths) {
                     if (paths.isEmpty) {
                       return;
                     }
                     unawaited(
                       _loadDroppedFiles(paths).then(
-                        (files) => _openSelectedFiles(navigator, files),
+                        (files) async {
+                          if (!context.mounted) {
+                            return;
+                          }
+                          await _openSelectedFiles(context, files);
+                        },
                       ),
                     );
                   },
