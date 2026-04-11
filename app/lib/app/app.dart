@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../shell/drift_shell.dart';
+import 'app_router.dart';
 import '../theme/drift_theme.dart';
 
 class DriftApp extends StatelessWidget {
@@ -8,11 +8,11 @@ class DriftApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
+    return MaterialApp.router(
       title: 'Drift',
       debugShowCheckedModeBanner: false,
       theme: buildDriftTheme(),
-      home: const DriftShell(),
+      routerConfig: buildAppRouter(),
     );
   }
 }
