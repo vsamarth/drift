@@ -36,32 +36,31 @@ GoRouter buildAppRouter({List<NavigatorObserver> observers = const []}) {
   return GoRouter(
     observers: observers,
     routes: [
-      ShellRoute(
-        builder: (context, state, child) => TitleBarShell(child: child),
+      GoRoute(
+        path: AppRoutePaths.home,
+        builder: (context, state) =>
+            const TitleBarShell(child: DriftShell()),
         routes: [
           GoRoute(
-            path: AppRoutePaths.home,
-            builder: (context, state) => const DriftShell(),
-            routes: [
-              GoRoute(
-                path: AppRoutePaths.settingsSegment,
-                builder: (context, state) => const SettingsFeature(),
-              ),
-              GoRoute(
-                path: AppRoutePaths.sendDraftSegment,
-                builder: (context, state) {
-                  final files = state.extra as List<SendPickedFile>? ?? const [];
-                  return SendDraftRoutePage(files: files);
-                },
-              ),
-              GoRoute(
-                path: AppRoutePaths.sendTransferSegment,
-                builder: (context, state) {
-                  final request = state.extra as SendRequestData;
-                  return SendTransferRoutePage(request: request);
-                },
-              ),
-            ],
+            path: AppRoutePaths.settingsSegment,
+            builder: (context, state) =>
+                const TitleBarShell(child: SettingsFeature()),
+          ),
+          GoRoute(
+            path: AppRoutePaths.sendDraftSegment,
+            builder: (context, state) {
+              final files = state.extra as List<SendPickedFile>? ?? const [];
+              return TitleBarShell(child: SendDraftRoutePage(files: files));
+            },
+          ),
+          GoRoute(
+            path: AppRoutePaths.sendTransferSegment,
+            builder: (context, state) {
+              final request = state.extra as SendRequestData;
+              return TitleBarShell(
+                child: SendTransferRoutePage(request: request),
+              );
+            },
           ),
         ],
       ),

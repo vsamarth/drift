@@ -104,8 +104,8 @@ void main() {
     final receiverSource = FakeReceiverServiceSource();
     late final GoRouter router;
     final discoveryObserver = DiscoveryRouterObserver(() {
-      final enabled =
-          router.routeInformationProvider.value.uri.path == AppRoutePaths.home;
+      final uri = router.routeInformationProvider.value.uri;
+      final enabled = uri.path == AppRoutePaths.home;
       unawaited(receiverSource.setDiscoverable(enabled: enabled));
     });
     router = buildAppRouter(observers: [discoveryObserver]);
