@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import '../../../../theme/drift_theme.dart';
 import '../../application/manifest.dart';
 import 'manifest_tree.dart';
-import 'transfer_presentation_helpers.dart';
 
 class PreviewTable extends StatelessWidget {
   const PreviewTable({

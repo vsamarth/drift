@@ -1,13 +1,15 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../application/state.dart';
+import '../../../settings/feature.dart';
 import '../../../../theme/drift_theme.dart';
 import 'preview_table.dart';
 import 'sending_connection_strip.dart';
 import 'transfer_flow_layout.dart';
 import 'transfer_presentation_helpers.dart';
 
-class OfferCard extends StatelessWidget {
+class OfferCard extends ConsumerWidget {
   const OfferCard({
     super.key,
     required this.offer,
@@ -22,8 +24,9 @@ class OfferCard extends StatelessWidget {
   final VoidCallback onDecline;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final senderName = displaySender(offer.sender.displayName);
+    final localDeviceName = ref.watch(settingsControllerProvider).settings.deviceName;
     final itemCount = offer.manifest.itemCount;
     final totalSize = formatBytes(offer.manifest.totalSizeBytes);
     final itemSummary = '${fileCountLabel(itemCount)} · $totalSize';
@@ -41,7 +44,7 @@ class OfferCard extends StatelessWidget {
         illustration: SendingConnectionStrip(
           localLabel: senderName,
           localDeviceType: deviceTypeLabel(offer.sender.deviceType),
-          remoteLabel: 'Drift',
+          remoteLabel: localDeviceName,
           remoteDeviceType: 'laptop',
           animate: animate,
           mode: SendingStripMode.waitingOnRecipient,
