@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use drift_core::fs_plan::preview::{
     SelectedPathKind, SelectedPathPreview, SelectionPreview as CoreSelectionPreview,
@@ -13,7 +14,7 @@ use drift_core::transfer::{
 };
 use drift_core::util::{decode_ticket, format_code_label};
 use iroh::{EndpointAddr, EndpointId};
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{Mutex, mpsc, oneshot, watch};
 use tokio_stream::{StreamExt, wrappers::UnboundedReceiverStream};
 
 use crate::error::{AppError, AppResult, UserFacingError, UserFacingErrorKind};
@@ -54,7 +55,13 @@ pub enum SendSessionOutcome {
 #[derive(Debug)]
 pub struct SendRun {
     pub events: SendEventStream,
+    cancel_tx: Arc<Mutex<Option<watch::Sender<bool>>>>,
     outcome_rx: oneshot::Receiver<AppResult<SendSessionOutcome>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct SendCancelHandle {
+    cancel_tx: Arc<Mutex<Option<watch::Sender<bool>>>>,
 }
 
 pub type SendEventStream = UnboundedReceiverStream<SendEvent>;
@@ -216,6 +223,12 @@ impl SendDestination {
 }
 
 impl SendRun {
+    pub fn cancel_handle(&self) -> SendCancelHandle {
+        SendCancelHandle {
+            cancel_tx: Arc::clone(&self.cancel_tx),
+        }
+    }
+
     pub fn into_parts(
         self,
     ) -> (
@@ -225,10 +238,27 @@ impl SendRun {
         (self.events, self.outcome_rx)
     }
 
+    pub async fn cancel_transfer(&self) -> AppResult<()> {
+        self.cancel_handle().cancel_transfer().await
+    }
+
     pub async fn outcome(self) -> AppResult<SendSessionOutcome> {
         self.outcome_rx.await.map_err(|_| AppError::Internal {
             message: "waiting for send outcome".to_owned(),
         })?
+    }
+}
+
+impl SendCancelHandle {
+    pub async fn cancel_transfer(&self) -> AppResult<()> {
+        let guard = self.cancel_tx.lock().await;
+        match guard.as_ref() {
+            Some(cancel_tx) => {
+                let _ = cancel_tx.send(true);
+                Ok(())
+            }
+            None => Err(AppError::NoActiveTransfer),
+        }
     }
 }
 
@@ -248,14 +278,17 @@ impl SendSession {
     pub fn start(self) -> SendRun {
         let (event_tx, event_rx) = mpsc::unbounded_channel();
         let (outcome_tx, outcome_rx) = oneshot::channel();
+        let cancel_tx = Arc::new(Mutex::new(None));
+        let cancel_tx_for_task = Arc::clone(&cancel_tx);
 
         tokio::spawn(async move {
-            let outcome = self.drive(event_tx).await;
+            let outcome = self.drive(event_tx, cancel_tx_for_task).await;
             let _ = outcome_tx.send(outcome);
         });
 
         SendRun {
             events: UnboundedReceiverStream::new(event_rx),
+            cancel_tx,
             outcome_rx,
         }
     }
@@ -263,6 +296,7 @@ impl SendSession {
     async fn drive(
         self,
         event_tx: mpsc::UnboundedSender<SendEvent>,
+        cancel_tx_slot: Arc<Mutex<Option<watch::Sender<bool>>>>,
     ) -> AppResult<SendSessionOutcome> {
         let preview = self.draft.inspect()?;
         let mut destination_label = self.destination.display_label();
@@ -308,7 +342,11 @@ impl SendSession {
         );
 
         let sender_run = sender.run_with_events();
-        let (mut core_events, _cancel_tx, outcome_rx) = sender_run.into_parts();
+        let (mut core_events, cancel_tx, outcome_rx) = sender_run.into_parts();
+        {
+            let mut slot = cancel_tx_slot.lock().await;
+            *slot = Some(cancel_tx);
+        }
         let mut current_label = destination_label.clone();
         let mut current_plan: Option<TransferPlan> = None;
 
@@ -595,6 +633,10 @@ mod tests {
     use drift_core::protocol::{CancelPhase, TransferRole};
     use drift_core::transfer::TransferCancellation;
     use std::path::{Path, PathBuf};
+    use std::sync::Arc;
+    use tokio::sync::Mutex;
+    use tokio::sync::{mpsc, oneshot, watch};
+    use tokio_stream::wrappers::UnboundedReceiverStream;
 
     #[test]
     fn destination_label_falls_back_for_unknown_values() {
@@ -716,5 +758,22 @@ mod tests {
             reason: "sender cancelled before approval".to_owned(),
         };
         assert!(!is_receiver_decline_cancel(&sender_cancel));
+    }
+
+    #[tokio::test]
+    async fn send_run_cancel_transfer_signals_watch_channel() {
+        let (_event_tx, event_rx) = mpsc::unbounded_channel();
+        let (outcome_tx, outcome_rx) = oneshot::channel();
+        let (cancel_tx, cancel_rx) = watch::channel(false);
+        let run = super::SendRun {
+            events: UnboundedReceiverStream::new(event_rx),
+            cancel_tx: Arc::new(Mutex::new(Some(cancel_tx))),
+            outcome_rx,
+        };
+
+        run.cancel_transfer().await.expect("cancel succeeds");
+
+        assert!(*cancel_rx.borrow());
+        drop(outcome_tx);
     }
 }

@@ -6,6 +6,7 @@ import 'package:animated_tree_view/animated_tree_view.dart';
 import 'package:app/features/receive/feature.dart';
 import 'package:app/features/settings/feature.dart';
 import 'package:app/features/transfers/feature.dart';
+import 'package:app/theme/drift_theme.dart';
 import 'package:app/platform/rust/receiver/fake_source.dart';
 import 'package:app/src/rust/api/receiver.dart' as rust_receiver;
 import '../../support/settings_test_overrides.dart';
@@ -291,7 +292,7 @@ void main() {
     expect(find.text('wants to send you 2 files (3.0 KB).'), findsNothing);
   });
 
-  testWidgets('cancelling a receiving transfer returns to idle', (
+  testWidgets('cancelling a receiving transfer shows the cancelled result', (
     tester,
   ) async {
     final source = FakeReceiverServiceSource();
@@ -321,8 +322,19 @@ void main() {
     await tester.tap(find.text('Cancel'));
     await tester.pumpAndSettle();
 
-    expect(find.text('No offers yet'), findsOneWidget);
+    expect(find.text('Receive cancelled'), findsOneWidget);
+    expect(
+      find.text('Drift stopped receiving before all files were saved.'),
+      findsOneWidget,
+    );
+    expect(find.text('Done'), findsOneWidget);
     expect(find.text('Receiving'), findsNothing);
+
+    await tester.tap(find.text('Done'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('No offers yet'), findsOneWidget);
+    expect(find.text('Receive cancelled'), findsNothing);
   });
 
   testWidgets('completing a receiving transfer shows the completed state', (
@@ -359,11 +371,14 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Complete'), findsOneWidget);
-    expect(find.text('Transfer complete'), findsOneWidget);
+    expect(find.text('Success'), findsOneWidget);
+    expect(find.text('Files saved'), findsOneWidget);
     expect(find.text('Pictures'), findsOneWidget);
     expect(find.text('Done'), findsOneWidget);
     expect(find.text('Receiving'), findsNothing);
+
+    final doneButton = tester.widget<FilledButton>(find.byType(FilledButton));
+    expect(doneButton.style?.backgroundColor?.resolve(<WidgetState>{}), kPrimary);
   });
 
   testWidgets('done on a completed transfer returns to idle', (tester) async {

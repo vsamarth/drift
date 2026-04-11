@@ -3,7 +3,14 @@ import 'package:flutter/foundation.dart';
 import 'identity.dart';
 import 'manifest.dart';
 
-enum TransferSessionPhase { idle, offerPending, receiving, completed, failed }
+enum TransferSessionPhase {
+  idle,
+  offerPending,
+  receiving,
+  completed,
+  cancelled,
+  failed,
+}
 
 @immutable
 class TransferTransferProgress {
@@ -117,6 +124,17 @@ class TransferSessionState {
           progress: null,
           result: result,
           errorMessage: null,
+        );
+
+  const TransferSessionState.cancelled({
+    required TransferIncomingOffer offer,
+    required String errorMessage,
+  }) : this._(
+          phase: TransferSessionPhase.cancelled,
+          offer: offer,
+          progress: null,
+          result: null,
+          errorMessage: errorMessage,
         );
 
   const TransferSessionState.failed({

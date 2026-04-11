@@ -166,6 +166,54 @@ class FakeReceiverServiceSource implements ReceiverServiceSource {
     );
   }
 
+  void emitCancelledTransfer({
+    required String senderName,
+    String senderDeviceType = 'laptop',
+    String destinationLabel = 'Downloads',
+    String saveRootLabel = 'Downloads',
+    String statusMessage = 'Drift stopped receiving before all files were saved.',
+  }) {
+    if (_incomingController.isClosed) {
+      return;
+    }
+    final cancelledFiles = lastIncomingFiles ??
+        [
+          rust_receiver.ReceiverTransferFile(
+            path: 'report.pdf',
+            size: BigInt.from(1024),
+          ),
+          rust_receiver.ReceiverTransferFile(
+            path: 'photo.jpg',
+            size: BigInt.from(2048),
+          ),
+        ];
+    lastIncomingSenderName = senderName;
+    lastIncomingFiles = cancelledFiles;
+    _incomingController.add(
+      rust_receiver.ReceiverTransferEvent(
+        phase: rust_receiver.ReceiverTransferPhase.cancelled,
+        senderName: senderName,
+        senderDeviceType: senderDeviceType,
+        destinationLabel: destinationLabel,
+        saveRootLabel: saveRootLabel,
+        statusMessage: statusMessage,
+        itemCount: BigInt.from(cancelledFiles.length),
+        totalSizeBytes: cancelledFiles.fold<BigInt>(
+          BigInt.zero,
+          (sum, file) => sum + file.size,
+        ),
+        bytesReceived: cancelledFiles.fold<BigInt>(
+          BigInt.zero,
+          (sum, file) => sum + file.size,
+        ),
+        totalSizeLabel:
+            '${cancelledFiles.fold<BigInt>(BigInt.zero, (sum, file) => sum + file.size)} B',
+        files: cancelledFiles,
+        error: null,
+      ),
+    );
+  }
+
   @override
   Future<void> setup({String? serverUrl}) async {}
 
@@ -192,7 +240,12 @@ class FakeReceiverServiceSource implements ReceiverServiceSource {
   }
 
   @override
-  Future<void> cancelTransfer() async {}
+  Future<void> cancelTransfer() async {
+    if (lastIncomingSenderName == null) {
+      return;
+    }
+    emitCancelledTransfer(senderName: lastIncomingSenderName!);
+  }
 
   @override
   Future<List<NearbyReceiver>> scanNearby({required Duration timeout}) async {

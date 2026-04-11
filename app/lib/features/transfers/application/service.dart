@@ -52,6 +52,14 @@ class TransfersServiceController extends Notifier<TransferSessionState> {
           );
           _incomingOffer = null;
           return;
+        case rust_receiver.ReceiverTransferPhase.cancelled:
+          final offer = _mapIncomingOffer(event);
+          state = TransferSessionState.cancelled(
+            offer: offer,
+            errorMessage: event.error?.message ?? event.statusMessage,
+          );
+          _incomingOffer = null;
+          return;
         case rust_receiver.ReceiverTransferPhase.failed:
           final offer = _mapIncomingOffer(event);
           state = TransferSessionState.failed(
@@ -97,8 +105,6 @@ class TransfersServiceController extends Notifier<TransferSessionState> {
 
   Future<void> cancelTransfer() {
     final source = ref.read(transfersServiceSourceProvider);
-    state = const TransferSessionState.idle();
-    _incomingOffer = null;
     return source.cancelTransfer();
   }
 
