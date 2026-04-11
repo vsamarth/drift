@@ -25,8 +25,9 @@ extension AppRouteNavigation on BuildContext {
       go(AppRoutePaths.sendDraft, extra: files);
 }
 
-GoRouter buildAppRouter() {
+GoRouter buildAppRouter({List<NavigatorObserver> observers = const []}) {
   return GoRouter(
+    observers: observers,
     routes: [
       GoRoute(
         path: AppRoutePaths.home,

@@ -24,6 +24,8 @@ class FakeReceiverServiceSource implements ReceiverServiceSource {
 
   ReceiverServiceState _state;
   final List<NearbyReceiver> _nearbyResults;
+  bool? lastDiscoverableEnabled;
+  int setDiscoverableCalls = 0;
   bool? lastRespondToOfferAccept;
   int respondToOfferCalls = 0;
   String? lastIncomingSenderName;
@@ -234,7 +236,10 @@ class FakeReceiverServiceSource implements ReceiverServiceSource {
   }
 
   @override
-  Future<void> setDiscoverable({required bool enabled}) async {}
+  Future<void> setDiscoverable({required bool enabled}) async {
+    lastDiscoverableEnabled = enabled;
+    setDiscoverableCalls += 1;
+  }
 
   @override
   Future<void> respondToOffer({required bool accept}) async {
