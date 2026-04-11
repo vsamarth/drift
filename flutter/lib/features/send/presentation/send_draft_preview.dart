@@ -243,11 +243,11 @@ class _SendDraftPreviewState extends ConsumerState<SendDraftPreview> {
             Expanded(
               child: SingleChildScrollView(
                 physics: const BouncingScrollPhysics(),
-                padding: const EdgeInsets.fromLTRB(24, 8, 24, 20),
+                padding: const EdgeInsets.fromLTRB(24, 0, 24, 20),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 8),
                     Row(
                       children: [
                         Text(
@@ -344,7 +344,7 @@ class _SendDraftPreviewState extends ConsumerState<SendDraftPreview> {
               top: false,
               child: Container(
                 width: double.infinity,
-                padding: const EdgeInsets.fromLTRB(24, 12, 24, 12),
+                padding: const EdgeInsets.fromLTRB(24, 8, 24, 8),
                 decoration: BoxDecoration(
                   color: kBg,
                   border: Border(
