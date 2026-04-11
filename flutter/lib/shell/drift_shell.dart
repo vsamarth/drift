@@ -80,44 +80,42 @@ class DriftShell extends ConsumerWidget {
 
     return Scaffold(
       backgroundColor: kBg,
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            children: [
-              ReceiveIdleCard(
-                state: receiverState,
-                onOpenSettings: () {
-                  context.goSettings();
+      body: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          children: [
+            ReceiveIdleCard(
+              state: receiverState,
+              onOpenSettings: () {
+                context.goSettings();
+              },
+            ),
+            const SizedBox(height: 12),
+            Expanded(
+              child: SendDropZone(
+                onChooseFiles: () {
+                  return showSendSelectionSourceSheet(
+                    context,
+                    onChooseFiles: () => _pickFiles(context, ref),
+                    onChooseFolder: () => _pickFolder(context, ref),
+                  );
+                },
+                onDropPaths: (paths) {
+                  if (paths.isEmpty) {
+                    return;
+                  }
+                  unawaited(
+                    _loadDroppedFiles(paths).then((files) async {
+                      if (!context.mounted) {
+                        return;
+                      }
+                      await _openSelectedFiles(context, files);
+                    }),
+                  );
                 },
               ),
-              const SizedBox(height: 12),
-              Expanded(
-                child: SendDropZone(
-                  onChooseFiles: () {
-                    return showSendSelectionSourceSheet(
-                      context,
-                      onChooseFiles: () => _pickFiles(context, ref),
-                      onChooseFolder: () => _pickFolder(context, ref),
-                    );
-                  },
-                  onDropPaths: (paths) {
-                    if (paths.isEmpty) {
-                      return;
-                    }
-                    unawaited(
-                      _loadDroppedFiles(paths).then((files) async {
-                        if (!context.mounted) {
-                          return;
-                        }
-                        await _openSelectedFiles(context, files);
-                      }),
-                    );
-                  },
-                ),
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );

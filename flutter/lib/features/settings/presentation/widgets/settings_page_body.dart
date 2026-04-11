@@ -174,26 +174,25 @@ class _SettingsPageBodyState extends ConsumerState<SettingsPageBody> {
       );
     });
   }
+@override
+Widget build(BuildContext context) {
+  final state = ref.watch(settingsControllerProvider);
+  final saving = _saving || state.isSaving;
 
-  @override
-  Widget build(BuildContext context) {
-    final state = ref.watch(settingsControllerProvider);
-    final saving = _saving || state.isSaving;
-
-    return PopScope(
-      canPop: !_isDirty,
-      onPopInvokedWithResult: (didPop, _) {
-        if (!didPop) {
-          unawaited(_handleBack());
-        }
-      },
-      child: Scaffold(
-        backgroundColor: kBg,
-        body: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(24, 10, 24, 16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
+  return PopScope(
+    canPop: !_isDirty,
+    onPopInvokedWithResult: (didPop, _) {
+      if (!didPop) {
+        unawaited(_handleBack());
+      }
+    },
+    child: Scaffold(
+      backgroundColor: kBg,
+      body: Padding(
+        padding: const EdgeInsets.fromLTRB(24, 10, 24, 16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+...
               children: [
                 Row(
                   children: [
