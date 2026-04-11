@@ -1,17 +1,55 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../theme/drift_theme.dart';
 import '../../transfers/presentation/widgets/transfer_presentation_helpers.dart';
 import '../application/model.dart';
+import '../application/send_selection_picker.dart';
 
-class SendDraftPreview extends StatelessWidget {
+class SendDraftPreview extends ConsumerStatefulWidget {
   const SendDraftPreview({
     super.key,
     required this.files,
   });
 
   final List<SendPickedFile> files;
+
+  @override
+  ConsumerState<SendDraftPreview> createState() => _SendDraftPreviewState();
+}
+
+class _SendDraftPreviewState extends ConsumerState<SendDraftPreview> {
+  late List<SendPickedFile> _files;
+
+  @override
+  void initState() {
+    super.initState();
+    _files = List<SendPickedFile>.of(widget.files);
+  }
+
+  @override
+  void didUpdateWidget(covariant SendDraftPreview oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!listEquals(oldWidget.files, widget.files)) {
+      _files = List<SendPickedFile>.of(widget.files);
+    }
+  }
+
+  Future<void> _appendSelection(
+    Future<List<SendPickedFile>> Function(SendSelectionPicker picker) pick,
+  ) async {
+    final picker = ref.read(sendSelectionPickerProvider);
+    final selected = await pick(picker);
+    if (selected.isEmpty || !mounted) {
+      return;
+    }
+
+    setState(() {
+      _files = [..._files, ...selected];
+    });
+  }
 
   String _selectionSummaryLabel(List<SendPickedFile> files) {
     final count = files.length;
@@ -26,7 +64,7 @@ class SendDraftPreview extends StatelessWidget {
     return '${count == 1 ? '1 item' : '$count items'}, ${formatBytes(totalBytes)}';
   }
 
-  double _previewHeightFor(BuildContext context) {
+  double _previewHeightFor(BuildContext context, List<SendPickedFile> files) {
     const tableTopPadding = 12.0;
     const tableHeaderHeight = 22.0;
     const dividerHeight = 1.0;
@@ -50,8 +88,8 @@ class SendDraftPreview extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final summary = _selectionSummaryLabel(files);
-    final previewHeight = _previewHeightFor(context);
+    final summary = _selectionSummaryLabel(_files);
+    final previewHeight = _previewHeightFor(context, _files);
 
     return Scaffold(
       backgroundColor: kBg,
@@ -121,9 +159,34 @@ class SendDraftPreview extends StatelessWidget {
                     SizedBox(
                       height: previewHeight,
                       child: _PreviewTableViewport(
-                        files: files,
+                        files: _files,
                         maxHeight: previewHeight,
                       ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              Align(
+                alignment: Alignment.centerRight,
+                child: Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  alignment: WrapAlignment.end,
+                  children: [
+                    TextButton.icon(
+                      onPressed: () => _appendSelection(
+                        (picker) => picker.pickFiles(),
+                      ),
+                      icon: const Icon(Icons.add_rounded, size: 16),
+                      label: const Text('Add files'),
+                    ),
+                    TextButton.icon(
+                      onPressed: () => _appendSelection(
+                        (picker) => picker.pickFolder(),
+                      ),
+                      icon: const Icon(Icons.create_new_folder_outlined, size: 16),
+                      label: const Text('Add folders'),
                     ),
                   ],
                 ),
