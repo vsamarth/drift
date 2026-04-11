@@ -5,6 +5,9 @@ import 'state.dart';
 part 'controller.g.dart';
 
 @riverpod
-SendState sendController(Ref ref) {
-  return const SendState.idle();
+class SendController extends _$SendController {
+  @override
+  SendState build() {
+    return const SendState.idle();
+  }
 }

@@ -37,16 +37,19 @@ class SendFeaturePlaceholder extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final visuals = ref.watch(sendFeatureVisualsProvider);
     final state = ref.watch(sendControllerProvider);
-    return Center(
-      child: Text(
-        switch (state.phase) {
-          SendSessionPhase.idle => 'Send is idle',
-          SendSessionPhase.drafting => 'Drafting',
-          SendSessionPhase.transferring => 'Transferring',
-          SendSessionPhase.result => 'Result',
-        },
-      ),
+    return _FeatureCard(
+      title: visuals.title,
+      status: switch (state.phase) {
+        SendSessionPhase.idle => 'Send is idle',
+        SendSessionPhase.drafting => 'Drafting',
+        SendSessionPhase.transferring => 'Transferring',
+        SendSessionPhase.result => 'Result',
+      },
+      accent: visuals.accent,
+      primaryTone: visuals.primaryTone,
+      secondaryTone: visuals.secondaryTone,
     );
   }
 }
@@ -54,12 +57,14 @@ class SendFeaturePlaceholder extends ConsumerWidget {
 class _FeatureCard extends StatelessWidget {
   const _FeatureCard({
     required this.title,
+    required this.status,
     required this.accent,
     required this.primaryTone,
     required this.secondaryTone,
   });
 
   final String title;
+  final String status;
   final Color accent;
   final Color primaryTone;
   final Color secondaryTone;
@@ -82,6 +87,7 @@ class _FeatureCard extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.all(18),
         child: Column(
+          mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Row(
@@ -98,65 +104,72 @@ class _FeatureCard extends StatelessWidget {
                 Text(
                   title,
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w800,
-                        color: const Color(0xFF0F172A),
-                      ),
+                    fontWeight: FontWeight.w800,
+                    color: const Color(0xFF0F172A),
+                  ),
                 ),
               ],
             ),
+            const SizedBox(height: 10),
+            Text(
+              status,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+                color: const Color(0xFF0F172A),
+              ),
+            ),
             const SizedBox(height: 16),
-            Expanded(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: primaryTone,
-                  borderRadius: BorderRadius.circular(22),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.all(18),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Row(
-                        children: [
-                          Container(
-                            width: 42,
-                            height: 42,
-                            decoration: BoxDecoration(
-                              color: accent.withValues(alpha: 0.16),
-                              borderRadius: BorderRadius.circular(14),
-                            ),
+            DecoratedBox(
+              decoration: BoxDecoration(
+                color: primaryTone,
+                borderRadius: BorderRadius.circular(22),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(18),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          width: 42,
+                          height: 42,
+                          decoration: BoxDecoration(
+                            color: accent.withValues(alpha: 0.16),
+                            borderRadius: BorderRadius.circular(14),
                           ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                _SkeletonLine(
-                                  widthFactor: 0.58,
-                                  height: 14,
-                                  color: accent.withValues(alpha: 0.26),
-                                ),
-                                const SizedBox(height: 8),
-                                _SkeletonLine(
-                                  widthFactor: 0.92,
-                                  height: 10,
-                                  color: accent.withValues(alpha: 0.14),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                      const Spacer(),
-                      DecoratedBox(
-                        decoration: BoxDecoration(
-                          color: secondaryTone,
-                          borderRadius: BorderRadius.circular(18),
                         ),
-                        child: const SizedBox(height: 78),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _SkeletonLine(
+                                widthFactor: 0.58,
+                                height: 14,
+                                color: accent.withValues(alpha: 0.26),
+                              ),
+                              const SizedBox(height: 8),
+                              _SkeletonLine(
+                                widthFactor: 0.92,
+                                height: 10,
+                                color: accent.withValues(alpha: 0.14),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 18),
+                    DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: secondaryTone,
+                        borderRadius: BorderRadius.circular(18),
                       ),
-                    ],
-                  ),
+                      child: const SizedBox(height: 58),
+                    ),
+                  ],
                 ),
               ),
             ),
