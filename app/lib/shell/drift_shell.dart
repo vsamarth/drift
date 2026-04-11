@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 
 import '../features/receive/application/controller.dart';
 import '../features/receive/presentation/widgets/idle_card.dart';
+import '../app/app_router.dart';
 import '../features/send/application/model.dart';
 import '../features/send/send_drop_zone.dart';
 import '../theme/drift_theme.dart';
@@ -18,7 +19,7 @@ class DriftShell extends ConsumerWidget {
     BuildContext context,
     List<SendPickedFile> files,
   ) async {
-    context.go('/send/draft', extra: files);
+    context.goSendDraft(files: files);
   }
 
   Future<List<SendPickedFile>> _loadPickedFiles() async {
@@ -92,7 +93,7 @@ class DriftShell extends ConsumerWidget {
               ReceiveIdleCard(
                 state: receiverState,
                 onOpenSettings: () {
-                  context.go('/settings');
+                  context.goSettings();
                 },
               ),
               const SizedBox(height: 12),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 
+import 'package:app/app/app_router.dart';
 import 'package:app/features/send/application/model.dart';
 import 'package:app/features/send/presentation/send_draft_preview.dart';
 
@@ -40,15 +41,15 @@ void main() {
     WidgetTester tester,
   ) async {
     final router = GoRouter(
-      initialLocation: '/send/draft',
+      initialLocation: AppRoutePaths.sendDraft,
       initialExtra: const <SendPickedFile>[],
       routes: [
         GoRoute(
-          path: '/',
+          path: AppRoutePaths.home,
           builder: (_, __) => const Scaffold(body: Text('Home')),
           routes: [
             GoRoute(
-              path: 'send/draft',
+              path: AppRoutePaths.sendDraftSegment,
               builder: (context, state) {
                 final files =
                     state.extra as List<SendPickedFile>? ?? const [];
@@ -64,12 +65,18 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byType(SendDraftPreview), findsOneWidget);
-    expect(router.routeInformationProvider.value.uri.toString(), '/send/draft');
+    expect(
+      router.routeInformationProvider.value.uri.toString(),
+      AppRoutePaths.sendDraft,
+    );
 
     await tester.tap(find.byTooltip('Back'));
     await tester.pumpAndSettle();
 
-    expect(router.routeInformationProvider.value.uri.toString(), '/');
+    expect(
+      router.routeInformationProvider.value.uri.toString(),
+      AppRoutePaths.home,
+    );
     expect(find.byType(SendDraftPreview), findsNothing);
     expect(find.text('Home'), findsOneWidget);
   });

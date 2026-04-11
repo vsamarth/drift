@@ -47,12 +47,18 @@ void main() {
       ),
     );
 
-    expect(router.routeInformationProvider.value.uri.toString(), '/');
+    expect(
+      router.routeInformationProvider.value.uri.toString(),
+      AppRoutePaths.home,
+    );
 
     await tester.tap(find.byTooltip('Settings'));
     await tester.pumpAndSettle();
 
-    expect(router.routeInformationProvider.value.uri.toString(), '/settings');
+    expect(
+      router.routeInformationProvider.value.uri.toString(),
+      AppRoutePaths.settings,
+    );
     expect(find.byType(SettingsFeature), findsOneWidget);
     expect(find.text('Settings'), findsWidgets);
   });
@@ -72,7 +78,10 @@ void main() {
       ),
     );
 
-    expect(router.routeInformationProvider.value.uri.toString(), '/');
+    expect(
+      router.routeInformationProvider.value.uri.toString(),
+      AppRoutePaths.home,
+    );
 
     final dropZone = tester.widget<SendDropZone>(find.byType(SendDropZone));
     await tester.runAsync(() async {
@@ -81,7 +90,10 @@ void main() {
     });
     await tester.pumpAndSettle();
 
-    expect(router.routeInformationProvider.value.uri.toString(), '/send/draft');
+    expect(
+      router.routeInformationProvider.value.uri.toString(),
+      AppRoutePaths.sendDraft,
+    );
     expect(find.byType(SendDraftPreview), findsOneWidget);
     expect(find.text('report.pdf'), findsOneWidget);
   });
