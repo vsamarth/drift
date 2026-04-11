@@ -28,3 +28,22 @@ class SendDraftItem {
   final BigInt sizeBytes;
 }
 
+@immutable
+class SendPickedFile {
+  const SendPickedFile({
+    required this.path,
+    required this.name,
+  });
+
+  factory SendPickedFile.fromPath(String path) {
+    final uri = Uri.file(path);
+    final name = uri.pathSegments.isNotEmpty ? uri.pathSegments.last : path;
+    return SendPickedFile(
+      path: path,
+      name: name.trim().isEmpty ? path : name,
+    );
+  }
+
+  final String path;
+  final String name;
+}

@@ -68,7 +68,6 @@ class TransfersServiceController extends Notifier<TransferSessionState> {
           );
           _incomingOffer = null;
           return;
-        case rust_receiver.ReceiverTransferPhase.cancelled:
         case rust_receiver.ReceiverTransferPhase.declined:
           state = const TransferSessionState.idle();
           _incomingOffer = null;

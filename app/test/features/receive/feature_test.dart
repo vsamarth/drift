@@ -32,7 +32,7 @@ void main() {
     expect(find.text('Ready'), findsOneWidget);
     expect(find.text('Receive code'), findsOneWidget);
     expect(find.text('ABC 123'), findsOneWidget);
-    expect(find.text('No offers yet'), findsOneWidget);
+    expect(find.text('No offers yet'), findsNothing);
   });
 
   testWidgets('shows an incoming offer sender', (WidgetTester tester) async {
@@ -168,7 +168,7 @@ void main() {
     expect(find.text('Drift'), findsOneWidget);
     expect(find.text('Ready'), findsOneWidget);
     expect(find.text('Receive code'), findsOneWidget);
-    expect(find.text('No offers yet'), findsOneWidget);
+    expect(find.text('No offers yet'), findsNothing);
     expect(find.text('Incoming offer'), findsNothing);
   });
 

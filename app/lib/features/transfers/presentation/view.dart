@@ -7,7 +7,6 @@ import '../application/result_view_data.dart';
 import '../application/state.dart';
 import 'widgets/receiving_card.dart';
 import 'widgets/offer_card.dart';
-import 'widgets/empty_card.dart';
 import 'widgets/transfer_result_card.dart';
 
 class TransfersFeature extends ConsumerWidget {
@@ -42,7 +41,7 @@ class TransfersFeature extends ConsumerWidget {
             onDone: () =>
                 ref.read(transfersServiceProvider.notifier).dismissTransferResult(),
           ),
-        _ => const EmptyTransfersCard(),
+        _ => const SizedBox.shrink(),
       },
     );
   }

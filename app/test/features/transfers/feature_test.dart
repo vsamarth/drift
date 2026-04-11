@@ -12,7 +12,9 @@ import 'package:app/src/rust/api/receiver.dart' as rust_receiver;
 import '../../support/settings_test_overrides.dart';
 
 void main() {
-  testWidgets('shows the empty transfer state', (WidgetTester tester) async {
+  testWidgets('shows an empty transfer state without the old card', (
+    WidgetTester tester,
+  ) async {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
@@ -27,7 +29,7 @@ void main() {
       ),
     );
 
-    expect(find.text('No offers yet'), findsOneWidget);
+    expect(find.text('No offers yet'), findsNothing);
   });
 
   testWidgets('shows an incoming transfer offer', (WidgetTester tester) async {
@@ -258,7 +260,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(source.lastRespondToOfferAccept, isFalse);
     expect(find.text('Incoming'), findsNothing);
-    expect(find.text('No offers yet'), findsOneWidget);
+    expect(find.text('No offers yet'), findsNothing);
   });
 
   testWidgets('accepting an offer shows the receiving state', (tester) async {
@@ -333,7 +335,7 @@ void main() {
     await tester.tap(find.text('Done'));
     await tester.pumpAndSettle();
 
-    expect(find.text('No offers yet'), findsOneWidget);
+    expect(find.text('No offers yet'), findsNothing);
     expect(find.text('Receive cancelled'), findsNothing);
   });
 
@@ -416,7 +418,7 @@ void main() {
     await tester.tap(find.text('Done'));
     await tester.pumpAndSettle();
 
-    expect(find.text('No offers yet'), findsOneWidget);
+    expect(find.text('No offers yet'), findsNothing);
     expect(find.text('Complete'), findsNothing);
   });
 }
