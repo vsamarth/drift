@@ -175,6 +175,7 @@ class FakeReceiverServiceSource implements ReceiverServiceSource {
   @override
   Future<void> updateIdentity({
     required String deviceName,
+    required String downloadRoot,
     String? serverUrl,
   }) async {
     lastUpdatedDeviceName = deviceName;

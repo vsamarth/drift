@@ -14,6 +14,7 @@ abstract class ReceiverServiceSource {
 
   Future<void> updateIdentity({
     required String deviceName,
+    required String downloadRoot,
     String? serverUrl,
   });
 

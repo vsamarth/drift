@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../settings_providers.dart';
@@ -30,13 +31,37 @@ class SettingsController extends Notifier<SettingsState> {
       discoveryServerUrl: _normalizeServerUrl(serverUrl),
     );
 
+    debugPrint(
+      '[settings] save requested '
+      'device="${nextSettings.deviceName}" '
+      'downloadRoot="${nextSettings.downloadRoot}" '
+      'serverUrl="${nextSettings.discoveryServerUrl ?? ""}" '
+      'discoverable=${nextSettings.discoverableByDefault}',
+    );
     state = state.copyWith(isSaving: true, clearErrorMessage: true);
     try {
       await repository.save(nextSettings);
-      await receiverSource.updateIdentity(
-        deviceName: nextSettings.deviceName,
-        serverUrl: nextSettings.discoveryServerUrl,
-      );
+      final identityChanged =
+          nextSettings.deviceName != state.settings.deviceName ||
+          nextSettings.downloadRoot != state.settings.downloadRoot ||
+          nextSettings.discoveryServerUrl !=
+              state.settings.discoveryServerUrl;
+      if (identityChanged) {
+        debugPrint(
+          '[settings] live receiver update '
+          'device="${nextSettings.deviceName}" '
+          'downloadRoot="${nextSettings.downloadRoot}" '
+          'serverUrl="${nextSettings.discoveryServerUrl ?? ""}"',
+        );
+        await receiverSource.updateIdentity(
+          deviceName: nextSettings.deviceName,
+          downloadRoot: nextSettings.downloadRoot,
+          serverUrl: nextSettings.discoveryServerUrl,
+        );
+        debugPrint('[settings] live receiver update complete');
+      } else {
+        debugPrint('[settings] live receiver unchanged; skipped rebuild');
+      }
       state = state.copyWith(
         settings: nextSettings,
         isSaving: false,
