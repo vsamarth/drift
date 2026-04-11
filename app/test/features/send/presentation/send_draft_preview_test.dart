@@ -17,6 +17,11 @@ void main() {
               name: 'report.pdf',
               sizeBytes: BigInt.from(1024),
             ),
+            const SendPickedFile(
+              path: '/tmp/photos',
+              name: 'photos',
+              kind: SendPickedFileKind.directory,
+            ),
             SendPickedFile(
               path: '/tmp/photo.jpg',
               name: 'photo.jpg',
@@ -29,11 +34,15 @@ void main() {
 
     expect(find.text('Selected files'), findsOneWidget);
     expect(find.text('report.pdf'), findsOneWidget);
+    expect(find.text('photos'), findsOneWidget);
     expect(find.text('photo.jpg'), findsOneWidget);
     expect(find.text('Name'), findsOneWidget);
     expect(find.text('Size'), findsOneWidget);
     expect(find.text('1.0 KB'), findsOneWidget);
     expect(find.text('2.0 KB'), findsOneWidget);
+    expect(find.byIcon(Icons.folder_outlined), findsOneWidget);
+    expect(find.byIcon(Icons.insert_drive_file_outlined), findsNWidgets(2));
+    expect(find.text('—'), findsNothing);
   });
 
   testWidgets('tapping back pops the router and returns home', (

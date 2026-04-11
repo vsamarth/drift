@@ -252,9 +252,13 @@ class _PreviewTableRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final sizeLabel = file.sizeBytes == null
-        ? '—'
+    final isDirectory = file.kind == SendPickedFileKind.directory;
+    final sizeLabel = isDirectory || file.sizeBytes == null
+        ? ''
         : formatBytes(file.sizeBytes!);
+    final rowIcon = isDirectory
+        ? Icons.folder_outlined
+        : Icons.insert_drive_file_outlined;
 
     return SizedBox(
       height: 38,
@@ -268,8 +272,8 @@ class _PreviewTableRow extends StatelessWidget {
               color: const Color(0xFFEFF7F6),
               borderRadius: BorderRadius.circular(8),
             ),
-            child: const Icon(
-              Icons.insert_drive_file_outlined,
+            child: Icon(
+              rowIcon,
               size: 13,
               color: Color(0xFF4F8B88),
             ),
