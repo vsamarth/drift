@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../theme/drift_theme.dart';
+import '../../../app/app_router.dart';
 import '../application/controller.dart';
 import '../../receive/application/service.dart';
 import '../../receive/application/state.dart';
@@ -115,7 +116,8 @@ class _SendDraftPreviewState extends ConsumerState<SendDraftPreview> {
 
       final state = ref.read(sendControllerProvider);
       final exists = state.items.any(
-        (item) => item.path == path && item.kind == SendPickedFileKind.directory,
+        (item) =>
+            item.path == path && item.kind == SendPickedFileKind.directory,
       );
       if (!exists) {
         return;
@@ -130,17 +132,19 @@ class _SendDraftPreviewState extends ConsumerState<SendDraftPreview> {
   }
 
   List<SendPickedFile> _displayFilesFor(SendState state) {
-    return state.items.map((item) {
-      final sizeBytes = item.kind == SendPickedFileKind.directory
-          ? (_resolvedDirectorySizes[item.path] ?? item.sizeBytes)
-          : item.sizeBytes;
-      return SendPickedFile(
-        path: item.path,
-        name: item.name,
-        kind: item.kind,
-        sizeBytes: sizeBytes,
-      );
-    }).toList(growable: false);
+    return state.items
+        .map((item) {
+          final sizeBytes = item.kind == SendPickedFileKind.directory
+              ? (_resolvedDirectorySizes[item.path] ?? item.sizeBytes)
+              : item.sizeBytes;
+          return SendPickedFile(
+            path: item.path,
+            name: item.name,
+            kind: item.kind,
+            sizeBytes: sizeBytes,
+          );
+        })
+        .toList(growable: false);
   }
 
   String _selectionSummaryLabel(List<SendPickedFile> files) {
@@ -173,6 +177,12 @@ class _SendDraftPreviewState extends ConsumerState<SendDraftPreview> {
     return contentHeight.clamp(0, viewportCap).toDouble();
   }
 
+  bool _canStartSend(SendState state) {
+    return state.phase == SendSessionPhase.drafting &&
+        state.items.isNotEmpty &&
+        ref.read(sendControllerProvider.notifier).canStartSend;
+  }
+
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(sendControllerProvider);
@@ -203,8 +213,12 @@ class _SendDraftPreviewState extends ConsumerState<SendDraftPreview> {
     final files = _displayFilesFor(state);
     final summary = _selectionSummaryLabel(files);
     final previewHeight = _previewHeightFor(context, files);
-    final code = state.destination ?? '';
     final controller = ref.read(sendControllerProvider.notifier);
+    final canEditDraft = state.phase == SendSessionPhase.drafting;
+    final canStartSend = _canStartSend(state);
+    final actionLabel = state.phase == SendSessionPhase.result
+        ? 'Done'
+        : (state.phase == SendSessionPhase.transferring ? 'Sending...' : 'Send');
 
     return Scaffold(
       backgroundColor: kBg,
@@ -289,16 +303,20 @@ class _SendDraftPreviewState extends ConsumerState<SendDraftPreview> {
                         alignment: WrapAlignment.end,
                         children: [
                           TextButton.icon(
-                            onPressed: () => _appendSelection(
-                              (picker) => picker.pickFiles(),
-                            ),
+                            onPressed: canEditDraft
+                                ? () => _appendSelection(
+                                    (picker) => picker.pickFiles(),
+                                  )
+                                : null,
                             icon: const Icon(Icons.add_rounded, size: 16),
                             label: const Text('Add files'),
                           ),
                           TextButton.icon(
-                            onPressed: () => _appendSelection(
-                              (picker) => picker.pickFolder(),
-                            ),
+                            onPressed: canEditDraft
+                                ? () => _appendSelection(
+                                    (picker) => picker.pickFolder(),
+                                  )
+                                : null,
                             icon: const Icon(
                               Icons.create_new_folder_outlined,
                               size: 16,
@@ -309,10 +327,11 @@ class _SendDraftPreviewState extends ConsumerState<SendDraftPreview> {
                       ),
                     ),
                     const SizedBox(height: 18),
-                    _SendDraftExtras(
-                      code: code,
-                      onCodeChanged: controller.updateDestinationCode,
-                    ),
+                    _SendDraftExtras(controller: controller),
+                    if (state.phase == SendSessionPhase.result) ...[
+                      const SizedBox(height: 18),
+                      _SendResultCard(result: state.result!),
+                    ],
                   ],
                 ),
               ),
@@ -329,16 +348,26 @@ class _SendDraftPreviewState extends ConsumerState<SendDraftPreview> {
                   ),
                 ),
                 child: FilledButton(
-                  onPressed: state.items.isEmpty ? null : () {},
+                  onPressed: state.phase == SendSessionPhase.result
+                      ? controller.clearDraft
+                      : (canStartSend
+                            ? () {
+                                final request = controller.buildSendRequest();
+                                if (request == null) {
+                                  return;
+                                }
+                                context.pushSendTransfer(request: request);
+                              }
+                            : null),
                   style: FilledButton.styleFrom(
                     minimumSize: const Size.fromHeight(48),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
                     ),
-                    backgroundColor: const Color(0xFFB8D1DA),
+                    backgroundColor: kAccentCyanStrong,
                     foregroundColor: Colors.white,
                   ),
-                  child: const Text('Send'),
+                  child: Text(actionLabel),
                 ),
               ),
             ),
@@ -349,14 +378,53 @@ class _SendDraftPreviewState extends ConsumerState<SendDraftPreview> {
   }
 }
 
-class _SendDraftExtras extends ConsumerStatefulWidget {
-  const _SendDraftExtras({
-    required this.code,
-    required this.onCodeChanged,
-  });
+class _SendResultCard extends StatelessWidget {
+  const _SendResultCard({required this.result});
 
-  final String code;
-  final ValueChanged<String> onCodeChanged;
+  final SendTransferResult result;
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = switch (result.outcome) {
+      SendTransferOutcome.success => const Color(0xFF1F7A57),
+      SendTransferOutcome.cancelled => const Color(0xFF8B6B20),
+      SendTransferOutcome.declined => const Color(0xFF8B4B20),
+      SendTransferOutcome.failed => const Color(0xFFB42318),
+    };
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: accent.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: accent.withValues(alpha: 0.22)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            result.title,
+            style: driftSans(
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+              color: kInk,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            result.message,
+            style: driftSans(fontSize: 13.5, color: kMuted, height: 1.4),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SendDraftExtras extends ConsumerStatefulWidget {
+  const _SendDraftExtras({required this.controller});
+
+  final SendController controller;
 
   @override
   ConsumerState<_SendDraftExtras> createState() => _SendDraftExtrasState();
@@ -406,10 +474,6 @@ class _SendDraftExtrasState extends ConsumerState<_SendDraftExtras> {
     }
   }
 
-  String _normalizedCode(String code) {
-    return code.replaceAll(' ', '').trim().toUpperCase();
-  }
-
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(sendControllerProvider);
@@ -445,13 +509,13 @@ class _SendDraftExtrasState extends ConsumerState<_SendDraftExtras> {
               itemBuilder: (context, index) {
                 final receiver = _nearbyDevices[index];
                 final selected =
-                    _normalizedCode(state.destination ?? widget.code) ==
-                    _normalizedCode(receiver.code);
+                    state.destination.mode == SendDestinationMode.nearby &&
+                    state.destination.ticket == receiver.ticket;
                 return _NearbyDeviceTile(
                   receiver: receiver,
                   isSelected: selected,
                   icon: Icons.devices_rounded,
-                  onTap: () => widget.onCodeChanged(receiver.code),
+                  onTap: () => widget.controller.selectNearbyReceiver(receiver),
                 );
               },
             ),
@@ -465,8 +529,10 @@ class _SendDraftExtrasState extends ConsumerState<_SendDraftExtras> {
         ),
         const SizedBox(height: 16),
         ReceiveCodeField(
-          code: state.destination ?? widget.code,
-          onChanged: widget.onCodeChanged,
+          code: state.destination.mode == SendDestinationMode.code
+              ? state.destination.code ?? ''
+              : '',
+          onChanged: widget.controller.updateDestinationCode,
           hintText: 'AB12CD',
           understated: true,
         ),

@@ -27,7 +27,7 @@ class SendDestinationState {
   final String? lanDestinationLabel;
 }
 
-enum SendSessionPhase { idle, drafting, reviewing, transferring, result }
+enum SendSessionPhase { idle, drafting, transferring, result }
 
 @immutable
 class SendState {
@@ -58,19 +58,6 @@ class SendState {
          items: items,
          destination: destination,
          request: null,
-         result: null,
-         errorMessage: null,
-       );
-
-  const SendState.reviewing({
-    required List<SendDraftItem> items,
-    required SendDestinationState destination,
-    required SendRequestData request,
-  }) : this._(
-         phase: SendSessionPhase.reviewing,
-         items: items,
-         destination: destination,
-         request: request,
          result: null,
          errorMessage: null,
        );

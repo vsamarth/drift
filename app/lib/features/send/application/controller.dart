@@ -22,6 +22,7 @@ class SendController extends _$SendController {
   }
 
   void beginDraft(List<SendPickedFile> files) {
+    unawaited(_cancelActiveTransfer());
     state = SendState.drafting(
       items: files.map(SendDraftItem.fromPickedFile).toList(growable: false),
     );
@@ -204,44 +205,32 @@ class SendController extends _$SendController {
 
     switch (update.phase) {
       case SendTransferUpdatePhase.completed:
-        state = SendState.result(
-          items: state.items,
-          destination: state.destination,
-          request: state.request!,
-          result: SendTransferResult(
+        _completeTransfer(
+          SendTransferResult(
             outcome: SendTransferOutcome.success,
             title: 'Sent',
             message: update.statusMessage,
           ),
         );
       case SendTransferUpdatePhase.cancelled:
-        state = SendState.result(
-          items: state.items,
-          destination: state.destination,
-          request: state.request!,
-          result: SendTransferResult(
+        _completeTransfer(
+          SendTransferResult(
             outcome: SendTransferOutcome.cancelled,
             title: 'Cancelled',
             message: update.statusMessage,
           ),
         );
       case SendTransferUpdatePhase.declined:
-        state = SendState.result(
-          items: state.items,
-          destination: state.destination,
-          request: state.request!,
-          result: SendTransferResult(
+        _completeTransfer(
+          SendTransferResult(
             outcome: SendTransferOutcome.declined,
             title: 'Declined',
             message: update.statusMessage,
           ),
         );
       case SendTransferUpdatePhase.failed:
-        state = SendState.result(
-          items: state.items,
-          destination: state.destination,
-          request: state.request!,
-          result: SendTransferResult(
+        _completeTransfer(
+          SendTransferResult(
             outcome: SendTransferOutcome.failed,
             title: update.error?.title ?? 'Send failed',
             message: update.error?.message ?? update.statusMessage,
@@ -260,11 +249,8 @@ class SendController extends _$SendController {
     if (state.phase != SendSessionPhase.transferring || state.request == null) {
       return;
     }
-    state = SendState.result(
-      items: state.items,
-      destination: state.destination,
-      request: state.request!,
-      result: SendTransferResult(
+    _completeTransfer(
+      SendTransferResult(
         outcome: SendTransferOutcome.failed,
         title: 'Send failed',
         message: error.toString(),
@@ -306,5 +292,26 @@ class SendController extends _$SendController {
         left.ticket == right.ticket &&
         left.lanDestinationLabel == right.lanDestinationLabel &&
         left.serverUrl == right.serverUrl;
+  }
+
+  void _completeTransfer(
+    SendTransferResult result, {
+    String? errorMessage,
+  }) {
+    final request = state.request;
+    if (request == null) {
+      return;
+    }
+
+    state = SendState.result(
+      items: state.items,
+      destination: state.destination,
+      request: request,
+      result: result,
+      errorMessage: errorMessage,
+    );
+    final subscription = _transferSubscription;
+    _transferSubscription = null;
+    unawaited(subscription?.cancel());
   }
 }
