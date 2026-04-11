@@ -51,7 +51,6 @@ void main() {
     expect(find.text('1.0 KB'), findsOneWidget);
     expect(find.text('2.0 KB'), findsOneWidget);
     expect(find.text('3 items, 3.0 KB'), findsOneWidget);
-    expect(find.text('3 items ready to preview'), findsOneWidget);
     expect(find.byIcon(Icons.folder_outlined), findsOneWidget);
     expect(find.byIcon(Icons.insert_drive_file_outlined), findsNWidgets(2));
     expect(find.text('—'), findsNothing);

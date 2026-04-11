@@ -69,19 +69,16 @@ class _SendDraftPreviewState extends ConsumerState<SendDraftPreview> {
     const tableHeaderHeight = 22.0;
     const dividerHeight = 1.0;
     const rowHeight = 38.0;
-    const footerHeight = 28.0;
 
     final viewportCap = MediaQuery.sizeOf(context).height * 0.32;
     final itemCount = files.length;
     final dividerCount = itemCount > 0 ? itemCount : 0;
-    final hasFooter = itemCount > 1;
 
     final contentHeight =
         tableTopPadding +
         tableHeaderHeight +
         (dividerCount * dividerHeight) +
-        (itemCount * rowHeight) +
-        (hasFooter ? footerHeight : 0);
+        (itemCount * rowHeight);
 
     return contentHeight.clamp(0, viewportCap).toDouble();
   }
@@ -268,34 +265,6 @@ class _PreviewTableViewport extends StatelessWidget {
                         color: kBorder.withValues(alpha: 0.55),
                       ),
                     _PreviewTableRow(file: files[i]),
-                  ],
-                  if (files.length > 1) ...[
-                    Divider(
-                      height: 1,
-                      thickness: 1,
-                      color: kBorder.withValues(alpha: 0.55),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.only(top: 10, bottom: 4),
-                      child: Row(
-                        children: [
-                          const SizedBox(width: 28),
-                          Expanded(
-                            child: Text(
-                              '${files.length} items ready to preview',
-                              textAlign: TextAlign.right,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: driftSans(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w500,
-                                color: kMuted,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
                   ],
                 ],
               ),
