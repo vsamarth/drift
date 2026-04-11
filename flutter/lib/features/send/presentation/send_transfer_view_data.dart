@@ -183,7 +183,7 @@ SendTransferPhaseVisualData _visualForState(SendState state) {
       ),
       SendTransferPhase.waitingForDecision => SendTransferPhaseVisualData(
         statusLabel: 'Waiting',
-        title: 'Waiting for confirmation',
+        title: 'Waiting for the other device to confirm',
         subtitle: transfer.statusMessage,
         accentColor: kAccentCyanStrong,
         icon: Icons.hourglass_top_rounded,

@@ -6,14 +6,13 @@ import '../../transfers/application/manifest.dart';
 import '../../transfers/application/state.dart' as transfer_state;
 import '../../transfers/presentation/widgets/sending_connection_strip.dart';
 import '../../transfers/presentation/widgets/transfer_flow_layout.dart';
-import '../../transfers/presentation/widgets/transfer_live_stats.dart';
 import '../../transfers/presentation/widgets/transfer_presentation_helpers.dart';
 import '../application/controller.dart';
 import '../application/model.dart';
 import '../application/state.dart';
 import '../application/transfer_state.dart';
 import 'send_transfer_view_data.dart';
-import 'package:app/features/send/presentation/widgets/content_summary_card.dart';
+import 'package:app/features/transfers/presentation/widgets/manifest_tree_card.dart';
 import 'package:app/features/send/presentation/widgets/recipient_avatar.dart';
 
 class SendTransferRoutePage extends ConsumerStatefulWidget {
@@ -159,7 +158,7 @@ class _TransferStateCard extends StatelessWidget {
       ),
       manifest: manifestItems.isEmpty
           ? null
-          : ContentSummaryCard(items: manifestItems),
+          : ManifestTreeCard(items: manifestItems),
       footer: Row(
         children: [
           Expanded(

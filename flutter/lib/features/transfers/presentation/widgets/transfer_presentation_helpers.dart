@@ -7,7 +7,7 @@ String displaySender(String value) {
 
 String incomingSubtitle(int itemCount, String totalSize) {
   final fileWord = itemCount == 1 ? 'file' : 'files';
-  return 'wants to send you $itemCount $fileWord ($totalSize).';
+  return 'wants to send you $itemCount $fileWord ($totalSize)';
 }
 
 String fileCountLabel(int itemCount) {

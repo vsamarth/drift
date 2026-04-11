@@ -43,9 +43,7 @@ TransferResultViewData buildTransferResultViewData(TransferSessionState state) {
     TransferSessionPhase.completed => TransferResultViewData(
       outcome: TransferResultOutcome.success,
       title: 'Files saved',
-      message: offer.statusMessage.trim().isEmpty
-          ? 'Transfer complete'
-          : offer.statusMessage,
+      message: 'Saved to ${offer.destinationLabel}',
       metrics: [
         ResultMetric(label: 'From', value: _displaySender(offer.sender.displayName)),
         ResultMetric(label: 'Saved to', value: offer.destinationLabel),

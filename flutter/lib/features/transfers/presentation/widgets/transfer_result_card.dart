@@ -56,12 +56,16 @@ class TransferResultCard extends StatelessWidget {
                   style: FilledButton.styleFrom(
                     backgroundColor: visual.buttonColor,
                     foregroundColor: Colors.white,
-                    minimumSize: const Size(0, 48),
+                    minimumSize: const Size(0, 52),
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
+                      borderRadius: BorderRadius.circular(14),
                     ),
+                    elevation: 0,
                   ),
-                  child: Text(viewData.primaryLabel),
+                  child: Text(
+                    viewData.primaryLabel,
+                    style: driftSans(fontWeight: FontWeight.w700, fontSize: 15),
+                  ),
                 ),
               ),
           ],

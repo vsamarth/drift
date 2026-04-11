@@ -4,8 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../application/state.dart';
 import '../../../../theme/drift_theme.dart';
 import 'package:app/features/send/presentation/widgets/recipient_avatar.dart';
+import 'manifest_tree_card.dart';
 import 'sending_connection_strip.dart';
-import 'preview_table.dart';
 import 'transfer_flow_layout.dart';
 import 'transfer_presentation_helpers.dart';
 
@@ -37,7 +37,12 @@ class OfferCard extends ConsumerWidget {
         explainer: Text(
           'Review the files and accept only if you trust the sender.',
           textAlign: TextAlign.center,
-          style: driftSans(fontSize: 12, color: kSubtle, height: 1.4),
+          style: driftSans(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: kInk.withValues(alpha: 0.7),
+            height: 1.4,
+          ),
         ),
         illustration: RecipientAvatar(
           deviceName: senderName,
@@ -45,25 +50,28 @@ class OfferCard extends ConsumerWidget {
           animate: animate,
           mode: SendingStripMode.waitingOnRecipient,
         ),
-        manifest: PreviewTable(
+        manifest: ManifestTreeCard(
           items: offer.manifest.items,
-          footerSummary: '${fileCountLabel(itemCount)} · $totalSize',
         ),
         footer: Row(
           children: [
             Expanded(
-              flex: 2,
+              flex: 3,
               child: FilledButton(
                 onPressed: onAccept,
                 style: FilledButton.styleFrom(
-                  backgroundColor: const Color(0xFF4A8E9E),
+                  backgroundColor: kAccentCyanStrong,
                   foregroundColor: Colors.white,
-                  minimumSize: const Size(0, 48),
+                  minimumSize: const Size(0, 52),
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(14),
                   ),
+                  elevation: 0,
                 ),
-                child: Text('Save to ${offer.saveRootLabel}'),
+                child: Text(
+                  'Save to ${offer.saveRootLabel}',
+                  style: driftSans(fontWeight: FontWeight.w700, fontSize: 15),
+                ),
               ),
             ),
             const SizedBox(width: 12),
@@ -72,23 +80,21 @@ class OfferCard extends ConsumerWidget {
               child: TextButton(
                 onPressed: onDecline,
                 style: TextButton.styleFrom(
-                  foregroundColor: const Color(0xFFCC3333),
-                  backgroundColor: const Color(
-                    0xFFCC3333,
-                  ).withValues(alpha: 0.08),
-                  minimumSize: const Size(0, 48),
+                  foregroundColor: const Color(0xFFB34A4A),
+                  minimumSize: const Size(0, 52),
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    side: BorderSide(
-                      color: const Color(0xFFCC3333).withValues(alpha: 0.15),
-                    ),
+                    borderRadius: BorderRadius.circular(14),
                   ),
                 ),
-                child: const Text('Decline'),
+                child: const Text(
+                  'Decline',
+                  style: TextStyle(fontWeight: FontWeight.w600),
+                ),
               ),
             ),
           ],
         ),
+
       ),
     );
   }

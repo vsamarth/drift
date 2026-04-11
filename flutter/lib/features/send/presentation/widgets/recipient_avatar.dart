@@ -106,11 +106,19 @@ class _RecipientAvatarState extends State<RecipientAvatar>
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   color: kSurface,
-                  border: Border.all(color: kBorder.withValues(alpha: 0.5)),
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      kSurface,
+                      kBg.withValues(alpha: 0.5),
+                    ],
+                  ),
+                  border: Border.all(color: kBorder.withValues(alpha: 0.6)),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.04),
-                      blurRadius: 12,
+                      color: Colors.black.withValues(alpha: 0.05),
+                      blurRadius: 14,
                       offset: const Offset(0, 4),
                     ),
                   ],

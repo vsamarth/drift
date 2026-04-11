@@ -29,7 +29,7 @@ class TransferFlowLayout extends StatelessWidget {
         Expanded(
           child: SingleChildScrollView(
             physics: const BouncingScrollPhysics(),
-            padding: const EdgeInsets.fromLTRB(24, 40, 24, 0),
+            padding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
@@ -39,8 +39,12 @@ class TransferFlowLayout extends StatelessWidget {
                     vertical: 4,
                   ),
                   decoration: BoxDecoration(
-                    color: statusColor.withValues(alpha: 0.1),
+                    color: statusColor.withValues(alpha: 0.06),
                     borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: statusColor.withValues(alpha: 0.15),
+                      width: 1.0,
+                    ),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
@@ -53,22 +57,22 @@ class TransferFlowLayout extends StatelessWidget {
                           shape: BoxShape.circle,
                         ),
                       ),
-                      const SizedBox(width: 8),
+                      const SizedBox(width: 6),
                       Text(
                         statusLabel.toUpperCase(),
                         style: driftSans(
-                          fontSize: 10,
+                          fontSize: 9.5,
                           fontWeight: FontWeight.w800,
                           color: statusColor,
-                          letterSpacing: 0.8,
+                          letterSpacing: 0.6,
                         ),
                       ),
                     ],
                   ),
                 ),
-                const SizedBox(height: 32),
-                illustration,
                 const SizedBox(height: 24),
+                illustration,
+                const SizedBox(height: 12),
                 Text(
                   subtitle,
                   textAlign: TextAlign.center,
@@ -80,24 +84,24 @@ class TransferFlowLayout extends StatelessWidget {
                   ),
                 ),
                 if (explainer != null) ...[
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 16),
                   explainer!,
                 ],
-                const SizedBox(height: 64),
+                const SizedBox(height: 32),
                 if (manifest != null) ...[
                   manifest!,
-                  const SizedBox(height: 32),
+                  const SizedBox(height: 16),
                 ],
               ],
             ),
           ),
         ),
         Container(
-          padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
+          padding: const EdgeInsets.fromLTRB(24, 12, 24, 16),
           decoration: BoxDecoration(
             color: kBg,
             border: Border(
-              top: BorderSide(color: kBorder.withValues(alpha: 0.5)),
+              top: BorderSide(color: kBorder.withValues(alpha: 0.4)),
             ),
           ),
           child: footer,
