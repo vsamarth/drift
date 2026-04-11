@@ -20,6 +20,8 @@ class SendTransferRoutePage extends ConsumerStatefulWidget {
 }
 
 class _SendTransferRoutePageState extends ConsumerState<SendTransferRoutePage> {
+  bool _allowPop = false;
+
   @override
   void initState() {
     super.initState();
@@ -39,8 +41,19 @@ class _SendTransferRoutePageState extends ConsumerState<SendTransferRoutePage> {
       request: widget.request,
     );
 
+    void exitRoute() {
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _allowPop = true;
+      });
+      Navigator.of(context).pop();
+    }
+
     return PopScope(
-      canPop: true,
+      canPop: _allowPop,
       onPopInvokedWithResult: (didPop, _) {
         if (!didPop) {
           return;
@@ -58,21 +71,13 @@ class _SendTransferRoutePageState extends ConsumerState<SendTransferRoutePage> {
       },
       child: Scaffold(
         backgroundColor: kBg,
-        appBar: AppBar(
-          backgroundColor: kBg,
-          elevation: 0,
-          scrolledUnderElevation: 0,
-          leading: IconButton(
-            tooltip: 'Back',
-            icon: const Icon(Icons.arrow_back_rounded),
-            onPressed: () => Navigator.of(context).pop(),
-          ),
-          title: const Text('Send'),
-        ),
-        body: SizedBox.expand(
-          child: _TransferStateCard(
-            state: state,
-            viewData: viewData,
+        body: SafeArea(
+          child: SizedBox.expand(
+            child: _TransferStateCard(
+              state: state,
+              viewData: viewData,
+              onExit: exitRoute,
+            ),
           ),
         ),
       ),
@@ -84,10 +89,12 @@ class _TransferStateCard extends StatelessWidget {
   const _TransferStateCard({
     required this.state,
     required this.viewData,
+    required this.onExit,
   });
 
   final SendState state;
   final SendTransferPageData viewData;
+  final VoidCallback onExit;
 
   @override
   Widget build(BuildContext context) {
@@ -95,6 +102,9 @@ class _TransferStateCard extends StatelessWidget {
     final showConnectionStrip = viewData.stripMode != null;
     final showFooterButton =
         state is SendStateTransferring || state is SendStateResult;
+    final primary = Theme.of(context).colorScheme.primary;
+    final isSuccessResult = state is SendStateResult &&
+        viewData.visual.statusLabel.toLowerCase().trim() == 'success';
 
     return TransferFlowLayout(
       statusLabel: viewData.visual.statusLabel,
@@ -126,12 +136,12 @@ class _TransferStateCard extends StatelessWidget {
       footer: Row(
         children: [
           Expanded(
-            child: showFooterButton
+              child: showFooterButton
                 ? (state is SendStateResult
                     ? FilledButton(
-                        onPressed: () => Navigator.of(context).pop(),
+                        onPressed: onExit,
                         style: FilledButton.styleFrom(
-                          backgroundColor: accent,
+                          backgroundColor: isSuccessResult ? primary : accent,
                           foregroundColor: Colors.white,
                           minimumSize: const Size(0, 48),
                           shape: RoundedRectangleBorder(
@@ -141,7 +151,7 @@ class _TransferStateCard extends StatelessWidget {
                         child: const Text('Done'),
                       )
                     : TextButton(
-                        onPressed: () => Navigator.of(context).pop(),
+                        onPressed: onExit,
                         style: TextButton.styleFrom(
                           foregroundColor: const Color(0xFFB34A4A),
                           backgroundColor: const Color(0xFFB34A4A)
