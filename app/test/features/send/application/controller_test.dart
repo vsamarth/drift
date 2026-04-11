@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -6,7 +8,35 @@ import 'package:app/features/send/application/controller.dart';
 import 'package:app/features/send/application/model.dart';
 import 'package:app/features/send/application/state.dart';
 import 'package:app/features/settings/settings_providers.dart';
+import 'package:app/platform/send_transfer_source.dart';
 import '../../../support/settings_test_overrides.dart';
+
+class FakeSendTransferSource implements SendTransferSource {
+  final StreamController<SendTransferUpdate> _updates =
+      StreamController<SendTransferUpdate>.broadcast(sync: true);
+
+  SendTransferRequestData? lastRequest;
+  bool cancelCalled = false;
+
+  @override
+  Stream<SendTransferUpdate> startTransfer(SendTransferRequestData request) {
+    lastRequest = request;
+    return _updates.stream;
+  }
+
+  @override
+  Future<void> cancelTransfer() async {
+    cancelCalled = true;
+  }
+
+  void emit(SendTransferUpdate update) {
+    _updates.add(update);
+  }
+
+  Future<void> close() async {
+    await _updates.close();
+  }
+}
 
 void main() {
   test('send controller starts idle', () {
@@ -156,5 +186,90 @@ void main() {
     expect(request?.lanDestinationLabel, 'Laptop');
     expect(request?.code, isNull);
     expect(request?.paths, ['/tmp/report.pdf']);
+  });
+
+  test('send controller starts transfer only for the currently validated request', () {
+    final fakeSource = FakeSendTransferSource();
+    final container = ProviderContainer(
+      overrides: [
+        initialAppSettingsProvider.overrideWithValue(testAppSettings),
+        sendTransferSourceProvider.overrideWithValue(fakeSource),
+      ],
+    );
+    addTearDown(container.dispose);
+    addTearDown(fakeSource.close);
+
+    final controller = container.read(sendControllerProvider.notifier);
+    controller.beginDraft([
+      SendPickedFile(
+        path: '/tmp/report.pdf',
+        name: 'report.pdf',
+        sizeBytes: BigInt.from(1024),
+      ),
+    ]);
+    controller.updateDestinationCode('ABC123');
+
+    final request = controller.buildSendRequest()!;
+    final staleRequest = SendRequestData(
+      destinationMode: SendDestinationMode.code,
+      paths: request.paths,
+      deviceName: request.deviceName,
+      deviceType: request.deviceType,
+      code: 'ZZZ999',
+      serverUrl: request.serverUrl,
+    );
+
+    controller.startTransfer(staleRequest);
+    expect(container.read(sendControllerProvider).phase, SendSessionPhase.drafting);
+    expect(fakeSource.lastRequest, isNull);
+
+    controller.startTransfer(request);
+    expect(container.read(sendControllerProvider).phase, SendSessionPhase.transferring);
+    expect(fakeSource.lastRequest?.code, 'ABC123');
+
+    fakeSource.emit(
+      SendTransferUpdate.completed(
+        destinationLabel: 'Laptop',
+        statusMessage: 'Sent successfully',
+        itemCount: BigInt.one,
+        totalSize: BigInt.from(1024),
+        bytesSent: BigInt.from(1024),
+      ),
+    );
+    expect(container.read(sendControllerProvider).phase, SendSessionPhase.result);
+    expect(container.read(sendControllerProvider).request?.code, 'ABC123');
+  });
+
+  test('send controller cancelTransfer restores drafting and cancels source', () async {
+    final fakeSource = FakeSendTransferSource();
+    final container = ProviderContainer(
+      overrides: [
+        initialAppSettingsProvider.overrideWithValue(testAppSettings),
+        sendTransferSourceProvider.overrideWithValue(fakeSource),
+      ],
+    );
+    addTearDown(container.dispose);
+    addTearDown(fakeSource.close);
+
+    final controller = container.read(sendControllerProvider.notifier);
+    controller.beginDraft([
+      SendPickedFile(
+        path: '/tmp/report.pdf',
+        name: 'report.pdf',
+        sizeBytes: BigInt.from(1024),
+      ),
+    ]);
+    controller.updateDestinationCode('ABC123');
+
+    final request = controller.buildSendRequest()!;
+    controller.startTransfer(request);
+    expect(container.read(sendControllerProvider).phase, SendSessionPhase.transferring);
+
+    controller.cancelTransfer();
+    await Future<void>.delayed(Duration.zero);
+
+    expect(fakeSource.cancelCalled, isTrue);
+    expect(container.read(sendControllerProvider).phase, SendSessionPhase.drafting);
+    expect(container.read(sendControllerProvider).request, isNull);
   });
 }

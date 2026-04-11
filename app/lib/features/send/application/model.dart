@@ -17,7 +17,32 @@ class SendRequestData {
     this.ticket,
     this.lanDestinationLabel,
     this.serverUrl,
-  });
+  })  : assert(
+          destinationMode != SendDestinationMode.code || code != null,
+          'Code requests must include a code.',
+        ),
+        assert(
+          destinationMode != SendDestinationMode.code || ticket == null,
+          'Code requests must not include a ticket.',
+        ),
+        assert(
+          destinationMode != SendDestinationMode.code ||
+              lanDestinationLabel == null,
+          'Code requests must not include a nearby destination label.',
+        ),
+        assert(
+          destinationMode != SendDestinationMode.nearby || code == null,
+          'Nearby requests must not include a code.',
+        ),
+        assert(
+          destinationMode != SendDestinationMode.nearby || ticket != null,
+          'Nearby requests must include a ticket.',
+        ),
+        assert(
+          destinationMode != SendDestinationMode.nearby ||
+              lanDestinationLabel != null,
+          'Nearby requests must include a destination label.',
+        );
 
   final SendDestinationMode destinationMode;
   final List<String> paths;

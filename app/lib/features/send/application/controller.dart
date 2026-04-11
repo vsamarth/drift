@@ -143,23 +143,28 @@ class SendController extends _$SendController {
   bool get canStartSend => buildSendRequest() != null;
 
   void startTransfer(SendRequestData request) {
+    final validatedRequest = buildSendRequest();
+    if (validatedRequest == null || !_sameSendRequest(request, validatedRequest)) {
+      return;
+    }
+
     final transferSource = ref.read(sendTransferSourceProvider);
     state = SendState.transferring(
       items: state.items,
       destination: state.destination,
-      request: request,
+      request: validatedRequest,
     );
     unawaited(_transferSubscription?.cancel());
     _transferSubscription = transferSource
         .startTransfer(
           SendTransferRequestData(
-            code: request.code ?? '',
-            paths: request.paths,
-            deviceName: request.deviceName,
-            deviceType: request.deviceType,
-            serverUrl: request.serverUrl,
-            ticket: request.ticket,
-            lanDestinationLabel: request.lanDestinationLabel,
+            code: validatedRequest.code ?? '',
+            paths: validatedRequest.paths,
+            deviceName: validatedRequest.deviceName,
+            deviceType: validatedRequest.deviceType,
+            serverUrl: validatedRequest.serverUrl,
+            ticket: validatedRequest.ticket,
+            lanDestinationLabel: validatedRequest.lanDestinationLabel,
           ),
         )
         .listen(_handleTransferUpdate, onError: _handleTransferError);
@@ -287,5 +292,19 @@ class SendController extends _$SendController {
       case TargetPlatform.windows:
         return 'laptop';
     }
+  }
+
+  bool _sameSendRequest(
+    SendRequestData left,
+    SendRequestData right,
+  ) {
+    return left.destinationMode == right.destinationMode &&
+        listEquals(left.paths, right.paths) &&
+        left.deviceName == right.deviceName &&
+        left.deviceType == right.deviceType &&
+        left.code == right.code &&
+        left.ticket == right.ticket &&
+        left.lanDestinationLabel == right.lanDestinationLabel &&
+        left.serverUrl == right.serverUrl;
   }
 }
