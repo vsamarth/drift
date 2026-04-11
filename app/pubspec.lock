@@ -268,7 +268,7 @@ packages:
   drift_bridge:
     dependency: "direct main"
     description:
-      path: "../ref-app/rust_builder"
+      path: rust_builder
       relative: true
     source: path
     version: "0.0.1"

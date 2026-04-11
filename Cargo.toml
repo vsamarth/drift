@@ -4,6 +4,7 @@ members = [
     "crates/cli",
     "crates/core",
     "crates/server",
+    "app/rust",
 ]
 exclude = ["flutter/rust", "ref-app/rust"]
 resolver = "2"
