@@ -10,14 +10,12 @@ import '../../receive/application/service.dart';
 import '../../receive/application/state.dart';
 import '../../transfers/presentation/widgets/transfer_presentation_helpers.dart';
 import '../application/model.dart';
+import '../application/directory_size.dart';
 import '../application/send_selection_picker.dart';
 import 'receive_code_field.dart';
 
 class SendDraftPreview extends ConsumerStatefulWidget {
-  const SendDraftPreview({
-    super.key,
-    required this.files,
-  });
+  const SendDraftPreview({super.key, required this.files});
 
   final List<SendPickedFile> files;
 
@@ -28,11 +26,17 @@ class SendDraftPreview extends ConsumerStatefulWidget {
 class _SendDraftPreviewState extends ConsumerState<SendDraftPreview> {
   late List<SendPickedFile> _files;
   String _code = '';
+  final Set<String> _pendingDirectorySizes = <String>{};
 
   @override
   void initState() {
     super.initState();
     _files = List<SendPickedFile>.of(widget.files);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _hydrateDirectorySizes();
+      }
+    });
   }
 
   @override
@@ -40,6 +44,11 @@ class _SendDraftPreviewState extends ConsumerState<SendDraftPreview> {
     super.didUpdateWidget(oldWidget);
     if (!listEquals(oldWidget.files, widget.files)) {
       _files = List<SendPickedFile>.of(widget.files);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _hydrateDirectorySizes();
+        }
+      });
     }
   }
 
@@ -55,6 +64,69 @@ class _SendDraftPreviewState extends ConsumerState<SendDraftPreview> {
     setState(() {
       _files = [..._files, ...selected];
     });
+    _hydrateDirectorySizes();
+  }
+
+  void _removeFile(SendPickedFile file) {
+    setState(() {
+      _files.removeWhere((item) => item.path == file.path);
+    });
+
+    if (_files.isEmpty && mounted) {
+      unawaited(
+        Future<void>.microtask(() {
+          if (mounted) {
+            context.pop();
+          }
+        }),
+      );
+    }
+  }
+
+  void _hydrateDirectorySizes() {
+    for (final file in _files) {
+      if (file.kind != SendPickedFileKind.directory || file.sizeBytes != null) {
+        continue;
+      }
+      if (_pendingDirectorySizes.contains(file.path)) {
+        continue;
+      }
+      _pendingDirectorySizes.add(file.path);
+      unawaited(_resolveDirectorySize(file.path));
+    }
+  }
+
+  Future<void> _resolveDirectorySize(String path) async {
+    try {
+      final sizeBytes = await ref
+          .read(directorySizeCalculatorProvider)
+          .sizeOfDirectory(path);
+      if (!mounted) {
+        return;
+      }
+
+      final index = _files.indexWhere(
+        (file) =>
+            file.path == path &&
+            file.kind == SendPickedFileKind.directory &&
+            file.sizeBytes == null,
+      );
+      if (index == -1) {
+        return;
+      }
+
+      setState(() {
+        final current = _files[index];
+        _files[index] = SendPickedFile(
+          path: current.path,
+          name: current.name,
+          kind: current.kind,
+          sizeBytes: sizeBytes,
+        );
+      });
+    } finally {
+      _pendingDirectorySizes.remove(path);
+    }
   }
 
   void _updateCode(String value) {
@@ -77,20 +149,18 @@ class _SendDraftPreviewState extends ConsumerState<SendDraftPreview> {
   }
 
   double _previewHeightFor(BuildContext context, List<SendPickedFile> files) {
-    const tableTopPadding = 12.0;
-    const tableHeaderHeight = 22.0;
     const dividerHeight = 1.0;
     const rowHeight = 38.0;
+    const verticalPadding = 12.0;
 
     final viewportCap = MediaQuery.sizeOf(context).height * 0.32;
     final itemCount = files.length;
-    final dividerCount = itemCount > 0 ? itemCount : 0;
+    final dividerCount = itemCount > 0 ? itemCount - 1 : 0;
 
     final contentHeight =
-        tableTopPadding +
-        tableHeaderHeight +
-        (dividerCount * dividerHeight) +
-        (itemCount * rowHeight);
+        verticalPadding +
+        (itemCount * rowHeight) +
+        (dividerCount * dividerHeight);
 
     return contentHeight.clamp(0, viewportCap).toDouble();
   }
@@ -114,29 +184,22 @@ class _SendDraftPreviewState extends ConsumerState<SendDraftPreview> {
       ),
       body: SafeArea(
         top: false,
-        child: SingleChildScrollView(
-          physics: const BouncingScrollPhysics(),
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const SizedBox(height: 12),
-              Container(
-                padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  color: kSurface,
-                  borderRadius: BorderRadius.circular(24),
-                  border: Border.all(color: kBorder),
-                ),
+        child: Column(
+          children: [
+            Expanded(
+              child: SingleChildScrollView(
+                physics: const BouncingScrollPhysics(),
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
+                    const SizedBox(height: 12),
                     Row(
                       children: [
                         Text(
                           'Selected files',
                           style: driftSans(
-                            fontSize: 16,
+                            fontSize: 17,
                             fontWeight: FontWeight.w700,
                             color: kInk,
                           ),
@@ -145,10 +208,10 @@ class _SendDraftPreviewState extends ConsumerState<SendDraftPreview> {
                         Container(
                           padding: const EdgeInsets.symmetric(
                             horizontal: 10,
-                            vertical: 7,
+                            vertical: 6,
                           ),
                           decoration: BoxDecoration(
-                            color: kSurface2,
+                            color: kSurface,
                             borderRadius: BorderRadius.circular(999),
                             border: Border.all(color: kBorder),
                           ),
@@ -165,48 +228,82 @@ class _SendDraftPreviewState extends ConsumerState<SendDraftPreview> {
                       ],
                     ),
                     const SizedBox(height: 12),
-                    SizedBox(
-                      height: previewHeight,
-                      child: _PreviewTableViewport(
-                        files: _files,
-                        maxHeight: previewHeight,
+                    Container(
+                      padding: const EdgeInsets.all(20),
+                      decoration: BoxDecoration(
+                        color: kSurface,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: kBorder),
+                      ),
+                      child: SizedBox(
+                        height: previewHeight,
+                        child: _PreviewTableViewport(
+                          files: _files,
+                          maxHeight: previewHeight,
+                          onRemove: _removeFile,
+                        ),
                       ),
                     ),
+                    const SizedBox(height: 10),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        alignment: WrapAlignment.end,
+                        children: [
+                          TextButton.icon(
+                            onPressed: () => _appendSelection(
+                              (picker) => picker.pickFiles(),
+                            ),
+                            icon: const Icon(Icons.add_rounded, size: 16),
+                            label: const Text('Add files'),
+                          ),
+                          TextButton.icon(
+                            onPressed: () => _appendSelection(
+                              (picker) => picker.pickFolder(),
+                            ),
+                            icon: const Icon(
+                              Icons.create_new_folder_outlined,
+                              size: 16,
+                            ),
+                            label: const Text('Add folders'),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 18),
+                    _SendDraftExtras(code: _code, onCodeChanged: _updateCode),
                   ],
                 ),
               ),
-              const SizedBox(height: 12),
-              Align(
-                alignment: Alignment.centerRight,
-                child: Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  alignment: WrapAlignment.end,
-                  children: [
-                    TextButton.icon(
-                      onPressed: () => _appendSelection(
-                        (picker) => picker.pickFiles(),
-                      ),
-                      icon: const Icon(Icons.add_rounded, size: 16),
-                      label: const Text('Add files'),
+            ),
+            SafeArea(
+              top: false,
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                decoration: BoxDecoration(
+                  color: kBg,
+                  border: Border(
+                    top: BorderSide(color: kBorder.withValues(alpha: 0.5)),
+                  ),
+                ),
+                child: FilledButton(
+                  onPressed: () {},
+                  style: FilledButton.styleFrom(
+                    minimumSize: const Size.fromHeight(48),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
                     ),
-                    TextButton.icon(
-                      onPressed: () => _appendSelection(
-                        (picker) => picker.pickFolder(),
-                      ),
-                      icon: const Icon(Icons.create_new_folder_outlined, size: 16),
-                      label: const Text('Add folders'),
-                    ),
-                  ],
+                    backgroundColor: const Color(0xFFB8D1DA),
+                    foregroundColor: Colors.white,
+                  ),
+                  child: const Text('Send'),
                 ),
               ),
-              const SizedBox(height: 16),
-              _SendDraftExtras(
-                code: _code,
-                onCodeChanged: _updateCode,
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
@@ -214,10 +311,7 @@ class _SendDraftPreviewState extends ConsumerState<SendDraftPreview> {
 }
 
 class _SendDraftExtras extends ConsumerStatefulWidget {
-  const _SendDraftExtras({
-    required this.code,
-    required this.onCodeChanged,
-  });
+  const _SendDraftExtras({required this.code, required this.onCodeChanged});
 
   final String code;
   final ValueChanged<String> onCodeChanged;
@@ -274,132 +368,174 @@ class _SendDraftExtrasState extends ConsumerState<_SendDraftExtras> {
     return code.replaceAll(' ', '').trim().toUpperCase();
   }
 
-  IconData _iconFor(NearbyReceiver receiver) {
-    final label = '${receiver.label} ${receiver.fullname}'.toLowerCase();
-    if (label.contains('phone')) {
-      return Icons.smartphone_rounded;
-    }
-    if (label.contains('tablet')) {
-      return Icons.tablet_mac_rounded;
-    }
-    return Icons.laptop_mac_rounded;
-  }
-
   @override
   Widget build(BuildContext context) {
+    final titleStyle = driftSans(
+      fontSize: 17,
+      fontWeight: FontWeight.w700,
+      color: kInk,
+    );
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Text(
-                    'NEARBY DEVICES',
-                    style: driftSans(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w800,
-                      color: kMuted,
-                      letterSpacing: 1.2,
-                    ),
-                  ),
-                  const Spacer(),
-                  SizedBox(
-                    width: 28,
-                    height: 28,
-                    child: Center(
-                      child: _isScanningNearby
-                          ? const SizedBox(
-                              width: 14,
-                              height: 14,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                valueColor: AlwaysStoppedAnimation<Color>(
-                                  kMuted,
-                                ),
-                              ),
-                            )
-                          : IconButton(
-                              onPressed: _scanNearby,
-                              icon: const Icon(Icons.refresh_rounded, size: 18),
-                              padding: EdgeInsets.zero,
-                              constraints: const BoxConstraints(),
-                              color: kMuted,
-                              tooltip: 'Scan again',
-                            ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              if (_nearbyDevices.isEmpty)
-                Text(
-                  _isScanningNearby && !_nearbyScanCompletedOnce
-                      ? ' '
-                      : 'No nearby devices found yet.',
-                  style: driftSans(fontSize: 13, color: kMuted, height: 1.4),
-                ),
-              if (_nearbyDevices.isNotEmpty) ...[
-                const SizedBox(height: 12),
-                SizedBox(
-                  height: 94,
-                  child: ListView.separated(
-                    scrollDirection: Axis.horizontal,
-                    physics: const BouncingScrollPhysics(),
-                    itemCount: _nearbyDevices.length,
-                    separatorBuilder: (_, _) => const SizedBox(width: 12),
-                    itemBuilder: (context, index) {
-                      final receiver = _nearbyDevices[index];
-                      final selected =
-                          _normalizedCode(widget.code) ==
-                          _normalizedCode(receiver.code);
-                      return _NearbyDeviceTile(
-                        receiver: receiver,
-                        isSelected: selected,
-                        icon: _iconFor(receiver),
-                        onTap: () => widget.onCodeChanged(receiver.code),
-                      );
-                    },
-                  ),
-                ),
-              ],
-            ],
+        Row(
+          children: [
+            Text('Nearby devices', style: titleStyle),
+            const Spacer(),
+            _ScanAction(isScanning: _isScanningNearby, onPressed: _scanNearby),
+          ],
+        ),
+        const SizedBox(height: 12),
+        if (_nearbyDevices.isEmpty)
+          _NearbyStatusCard(
+            isScanning: _isScanningNearby && !_nearbyScanCompletedOnce,
+          )
+        else
+          SizedBox(
+            height: 110,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              physics: const BouncingScrollPhysics(),
+              itemCount: _nearbyDevices.length,
+              separatorBuilder: (_, _) => const SizedBox(width: 12),
+              itemBuilder: (context, index) {
+                final receiver = _nearbyDevices[index];
+                final selected =
+                    _normalizedCode(widget.code) ==
+                    _normalizedCode(receiver.code);
+                return _NearbyDeviceTile(
+                  receiver: receiver,
+                  isSelected: selected,
+                  icon: Icons.devices_rounded,
+                  onTap: () => widget.onCodeChanged(receiver.code),
+                );
+              },
+            ),
           ),
+        const SizedBox(height: 18),
+        Text('Send with code', style: titleStyle),
+        const SizedBox(height: 6),
+        Text(
+          'Use the 6 characters shown on the receiver.',
+          style: driftSans(fontSize: 13.5, color: kMuted, height: 1.4),
         ),
         const SizedBox(height: 16),
-        Card.outlined(
-          clipBehavior: Clip.antiAlias,
-          child: Padding(
-            padding: const EdgeInsets.all(16),
+        ReceiveCodeField(
+          code: widget.code,
+          onChanged: widget.onCodeChanged,
+          hintText: 'AB12CD',
+          understated: true,
+        ),
+      ],
+    );
+  }
+}
+
+class _ScanAction extends StatelessWidget {
+  const _ScanAction({required this.isScanning, required this.onPressed});
+
+  final bool isScanning;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    if (isScanning) {
+      return const SizedBox(
+        width: 20,
+        height: 20,
+        child: CircularProgressIndicator(
+          strokeWidth: 2,
+          valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF8FB9CA)),
+        ),
+      );
+    }
+
+    return TextButton.icon(
+      onPressed: onPressed,
+      icon: const Icon(Icons.refresh_rounded, size: 18),
+      label: Text(
+        'Rescan',
+        style: driftSans(
+          fontSize: 13,
+          fontWeight: FontWeight.w500,
+          color: const Color(0xFF7AAFC9),
+        ),
+      ),
+      style: TextButton.styleFrom(
+        foregroundColor: const Color(0xFF7AAFC9),
+        padding: EdgeInsets.zero,
+        minimumSize: Size.zero,
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      ),
+    );
+  }
+}
+
+class _NearbyStatusCard extends StatelessWidget {
+  const _NearbyStatusCard({required this.isScanning});
+
+  final bool isScanning;
+
+  @override
+  Widget build(BuildContext context) {
+    final title = isScanning
+        ? 'Scanning for nearby receivers...'
+        : 'No nearby devices found';
+    final subtitle = isScanning
+        ? 'Make sure both devices are on the same Wi-Fi.'
+        : 'Make sure both devices are on the same Wi-Fi. Local network access may be required.';
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      decoration: BoxDecoration(
+        color: kSurface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: kBorder.withValues(alpha: 0.55)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: SizedBox(
+              width: 22,
+              height: 22,
+              child: Icon(
+                isScanning ? Icons.radar_rounded : Icons.wifi_off_rounded,
+                size: 20,
+                color: const Color(0xFF8E8E8E),
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Send with code',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  title,
+                  style: driftSans(
+                    fontSize: 14,
                     fontWeight: FontWeight.w700,
                     color: kInk,
                   ),
                 ),
-                const SizedBox(height: 6),
+                const SizedBox(height: 4),
                 Text(
-                  'Enter the six-character receiver code to start the transfer.',
-                  style: Theme.of(context).textTheme.bodyMedium,
-                ),
-                const SizedBox(height: 14),
-                ReceiveCodeField(
-                  code: widget.code,
-                  onChanged: widget.onCodeChanged,
-                  hintText: 'Receiver code',
+                  subtitle,
+                  style: driftSans(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w400,
+                    color: kMuted,
+                    height: 1.35,
+                  ),
                 ),
               ],
             ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
@@ -424,13 +560,13 @@ class _NearbyDeviceTile extends StatelessWidget {
       borderRadius: BorderRadius.circular(20),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
-        width: 92,
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+        width: 106,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
         decoration: BoxDecoration(
-          color: isSelected ? kAccentCyanHover : kSurface2,
-          borderRadius: BorderRadius.circular(20),
+          color: isSelected ? const Color(0xFFF4F8FA) : kSurface,
+          borderRadius: BorderRadius.circular(16),
           border: Border.all(
-            color: isSelected ? kAccentCyanStrong : kBorder,
+            color: isSelected ? const Color(0xFF8DBED4) : kBorder,
           ),
         ),
         child: Column(
@@ -438,21 +574,19 @@ class _NearbyDeviceTile extends StatelessWidget {
           children: [
             Icon(
               icon,
-              size: 18,
-              color: isSelected
-                  ? kAccentCyanStrong
-                  : kMuted.withValues(alpha: 0.9),
+              size: 20,
+              color: isSelected ? const Color(0xFF7AAFC9) : kMuted,
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 10),
             Text(
               receiver.label,
               style: driftSans(
-                fontSize: 12,
+                fontSize: 12.5,
                 fontWeight: FontWeight.w600,
                 color: kInk,
-                height: 1.1,
+                height: 1.18,
               ),
-              maxLines: 1,
+              maxLines: 2,
               overflow: TextOverflow.ellipsis,
               textAlign: TextAlign.center,
             ),
@@ -467,10 +601,12 @@ class _PreviewTableViewport extends StatelessWidget {
   const _PreviewTableViewport({
     required this.files,
     required this.maxHeight,
+    required this.onRemove,
   });
 
   final List<SendPickedFile> files;
   final double maxHeight;
+  final ValueChanged<SendPickedFile> onRemove;
 
   @override
   Widget build(BuildContext context) {
@@ -481,43 +617,11 @@ class _PreviewTableViewport extends StatelessWidget {
       );
     }
 
-    final headerStyle = driftSans(
-      fontSize: 11,
-      fontWeight: FontWeight.w700,
-      color: kInk.withValues(alpha: 0.8),
-      letterSpacing: 0.15,
-    );
-
     return ConstrainedBox(
       constraints: BoxConstraints(maxHeight: maxHeight),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Padding(
-            padding: const EdgeInsets.only(top: 4, bottom: 8),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.baseline,
-              textBaseline: TextBaseline.alphabetic,
-              children: [
-                const SizedBox(width: 28),
-                Expanded(child: Text('Name', style: headerStyle)),
-                SizedBox(
-                  width: 76,
-                  child: Text(
-                    'Size',
-                    textAlign: TextAlign.right,
-                    style: headerStyle,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Divider(
-            height: 1,
-            thickness: 1,
-            color: kBorder.withValues(alpha: 0.55),
-          ),
-          const SizedBox(height: 10),
           Expanded(
             child: SingleChildScrollView(
               physics: const BouncingScrollPhysics(),
@@ -531,7 +635,10 @@ class _PreviewTableViewport extends StatelessWidget {
                         thickness: 1,
                         color: kBorder.withValues(alpha: 0.55),
                       ),
-                    _PreviewTableRow(file: files[i]),
+                    _PreviewTableRow(
+                      file: files[i],
+                      onRemove: () => onRemove(files[i]),
+                    ),
                   ],
                 ],
               ),
@@ -544,55 +651,54 @@ class _PreviewTableViewport extends StatelessWidget {
 }
 
 class _PreviewTableRow extends StatelessWidget {
-  const _PreviewTableRow({required this.file});
+  const _PreviewTableRow({required this.file, required this.onRemove});
 
   final SendPickedFile file;
+  final VoidCallback onRemove;
 
   @override
   Widget build(BuildContext context) {
     final isDirectory = file.kind == SendPickedFileKind.directory;
-    final sizeLabel = isDirectory || file.sizeBytes == null
-        ? ''
-        : formatBytes(file.sizeBytes!);
+    final sizeLabel = isDirectory
+        ? (file.sizeBytes == null
+              ? 'Calculating...'
+              : formatBytes(file.sizeBytes!))
+        : (file.sizeBytes == null ? '' : formatBytes(file.sizeBytes!));
     final rowIcon = isDirectory
         ? Icons.folder_outlined
         : Icons.insert_drive_file_outlined;
 
-    return SizedBox(
-      height: 38,
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
       child: Row(
         children: [
-          const SizedBox(width: 8),
-          Container(
-            width: 22,
-            height: 22,
-            decoration: BoxDecoration(
-              color: const Color(0xFFEFF7F6),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Icon(
-              rowIcon,
-              size: 13,
-              color: Color(0xFF4F8B88),
-            ),
+          SizedBox(
+            width: 28,
+            child: Icon(rowIcon, size: 18, color: Color(0xFF7A7A7A)),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 10),
           Expanded(
-            child: Text(
-              file.name,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: driftSans(
-                fontSize: 13,
-                fontWeight: FontWeight.w500,
-                color: kInk,
+            child: Tooltip(
+              message: file.name,
+              child: Text(
+                file.name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: driftSans(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                  color: kInk,
+                ),
               ),
             ),
           ),
+          const SizedBox(width: 12),
           SizedBox(
-            width: 76,
+            width: 116,
             child: Text(
               sizeLabel,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               textAlign: TextAlign.right,
               style: driftSans(
                 fontSize: 12,
@@ -600,6 +706,16 @@ class _PreviewTableRow extends StatelessWidget {
                 color: kMuted,
               ),
             ),
+          ),
+          const SizedBox(width: 8),
+          IconButton(
+            onPressed: onRemove,
+            icon: const Icon(Icons.close_rounded, size: 18),
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+            visualDensity: VisualDensity.compact,
+            color: kMuted,
+            tooltip: 'Remove',
           ),
         ],
       ),
