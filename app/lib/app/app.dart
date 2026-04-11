@@ -36,12 +36,16 @@ class _DriftAppState extends ConsumerState<DriftApp> {
   }
 
   void _syncReceiverDiscovery() {
-    final enabled =
-        _router.routeInformationProvider.value.uri.path == AppRoutePaths.home;
+    final routePath = _router.routeInformationProvider.value.uri.path;
+    final enabled = routePath == AppRoutePaths.home;
     if (enabled == _discoverableEnabled) {
       return;
     }
     _discoverableEnabled = enabled;
+    debugPrint(
+      '[app] receiver discovery ${enabled ? 'enabled' : 'disabled'} '
+      'route="$routePath"',
+    );
     unawaited(
       _receiverService.setDiscoverable(enabled: enabled),
     );

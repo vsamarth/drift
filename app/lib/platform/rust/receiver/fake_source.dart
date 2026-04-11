@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
+
 import '../../../features/receive/application/state.dart';
 import '../../../src/rust/api/transfer.dart' as rust_transfer;
 import '../../../src/rust/api/receiver.dart' as rust_receiver;
@@ -237,6 +239,9 @@ class FakeReceiverServiceSource implements ReceiverServiceSource {
 
   @override
   Future<void> setDiscoverable({required bool enabled}) async {
+    debugPrint(
+      '[receiver-fake] discoverable ${enabled ? 'enabled' : 'disabled'}',
+    );
     lastDiscoverableEnabled = enabled;
     setDiscoverableCalls += 1;
   }

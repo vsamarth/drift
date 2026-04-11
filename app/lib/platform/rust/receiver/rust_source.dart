@@ -134,6 +134,9 @@ class RustReceiverServiceSource implements ReceiverServiceSource {
 
   @override
   Future<void> setDiscoverable({required bool enabled}) {
+    debugPrint(
+      '[receiver] discoverable ${enabled ? 'enabled' : 'disabled'}',
+    );
     return rust_receiver.setReceiverDiscoverable(enabled: enabled);
   }
 
