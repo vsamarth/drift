@@ -134,7 +134,7 @@ void main() {
     );
     await _pumpRoute(tester);
 
-    expect(container.read(sendControllerProvider).phase, SendSessionPhase.transferring);
+    expect(container.read(sendControllerProvider), isA<SendStateTransferring>());
     expect(find.byType(SendingConnectionStrip), findsOneWidget);
     expect(find.text('Connecting to recipient'), findsOneWidget);
     expect(find.text('Cancel transfer'), findsOneWidget);

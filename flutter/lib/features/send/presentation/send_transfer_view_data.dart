@@ -93,53 +93,50 @@ SendTransferPageData buildSendTransferPageData({
   required SendState state,
   required SendRequestData request,
 }) {
-  final transfer = state.transfer;
-  if (transfer == null) {
-    return SendTransferPageData(
-      visual: const SendTransferPhaseVisualData(
-        statusLabel: 'Waiting',
-        title: 'Preparing transfer',
-        subtitle: 'Gathering transfer details…',
-        accentColor: kMuted,
-        icon: Icons.hourglass_bottom_rounded,
-        showSpinner: true,
+  return switch (state) {
+    SendStateIdle() || SendStateDrafting() => SendTransferPageData(
+        visual: const SendTransferPhaseVisualData(
+          statusLabel: 'Waiting',
+          title: 'Preparing transfer',
+          subtitle: 'Gathering transfer details…',
+          accentColor: kMuted,
+          icon: Icons.hourglass_bottom_rounded,
+          showSpinner: true,
+        ),
+        metrics: const [],
+        files: const [],
+        progressFraction: null,
+        progressLabel: null,
+        speedLabel: null,
+        etaLabel: null,
+        localLabel: request.deviceName,
+        localDeviceType: request.deviceType,
+        remoteLabel: request.lanDestinationLabel ?? request.code ?? 'Recipient',
+        remoteDeviceType: null,
+        stripMode: null,
       ),
-      metrics: const [],
-      files: const [],
-      progressFraction: null,
-      progressLabel: null,
-      speedLabel: null,
-      etaLabel: null,
-      localLabel: request.deviceName,
-      localDeviceType: request.deviceType,
-      remoteLabel: request.lanDestinationLabel ?? request.code ?? 'Recipient',
-      remoteDeviceType: null,
-      stripMode: null,
-    );
-  }
-
-  return SendTransferPageData(
-    visual: _visualForState(state, transfer),
-    metrics: _metricsForState(state, transfer, request),
-    files: _filesForState(state, transfer),
-    progressFraction: _progressFractionFor(transfer),
-    progressLabel: _progressLabelFor(transfer),
-    speedLabel: _speedLabelFor(transfer),
-    etaLabel: _etaLabelFor(transfer),
-    localLabel: request.deviceName,
-    localDeviceType: request.deviceType,
-    remoteLabel: transfer.destinationLabel,
-    remoteDeviceType: transfer.remoteDeviceType,
-    stripMode: _stripModeFor(transfer),
-  );
+    SendStateTransferring(:final transfer) ||
+    SendStateResult(:final transfer) =>
+      SendTransferPageData(
+        visual: _visualForState(state),
+        metrics: _metricsForState(state),
+        files: _filesForState(state),
+        progressFraction: _progressFractionFor(transfer),
+        progressLabel: _progressLabelFor(transfer),
+        speedLabel: _speedLabelFor(transfer),
+        etaLabel: _etaLabelFor(transfer),
+        localLabel: request.deviceName,
+        localDeviceType: request.deviceType,
+        remoteLabel: transfer.destinationLabel,
+        remoteDeviceType: transfer.remoteDeviceType,
+        stripMode: _stripModeFor(transfer),
+      ),
+  };
 }
 
-SendTransferPhaseVisualData _visualForState(
-  SendState state,
-  SendTransferState transfer,
-) {
-  if (state.phase == SendSessionPhase.result && state.result != null) {
-    return switch (state.result!.outcome) {
+SendTransferPhaseVisualData _visualForState(SendState state) {
+  if (state is SendStateResult) {
+    return switch (state.result.outcome) {
       SendTransferOutcome.success => const SendTransferPhaseVisualData(
           statusLabel: 'Success',
           title: 'Sent',
@@ -151,7 +148,7 @@ SendTransferPhaseVisualData _visualForState(
       SendTransferOutcome.cancelled => SendTransferPhaseVisualData(
           statusLabel: 'Cancelled',
           title: 'Transfer cancelled',
-          subtitle: state.result!.message,
+          subtitle: state.result.message,
           accentColor: const Color(0xFFC0912C),
           icon: Icons.do_not_disturb_on_rounded,
           showSpinner: false,
@@ -159,15 +156,15 @@ SendTransferPhaseVisualData _visualForState(
       SendTransferOutcome.declined => SendTransferPhaseVisualData(
           statusLabel: 'Declined',
           title: 'Transfer declined',
-          subtitle: state.result!.message,
+          subtitle: state.result.message,
           accentColor: const Color(0xFFB86A2B),
           icon: Icons.block_rounded,
           showSpinner: false,
         ),
       SendTransferOutcome.failed => SendTransferPhaseVisualData(
           statusLabel: 'Failed',
-          title: state.result!.title,
-          subtitle: state.result!.message,
+          title: state.result.title,
+          subtitle: state.result.message,
           accentColor: const Color(0xFFCC3333),
           icon: Icons.error_rounded,
           showSpinner: false,
@@ -175,87 +172,94 @@ SendTransferPhaseVisualData _visualForState(
     };
   }
 
-  return switch (transfer.phase) {
-    SendTransferPhase.connecting => SendTransferPhaseVisualData(
-        statusLabel: 'Connecting',
-        title: 'Connecting to recipient',
-        subtitle: transfer.statusMessage,
-        accentColor: kAccentCyanStrong,
-        icon: Icons.sync_rounded,
-        showSpinner: true,
-      ),
-    SendTransferPhase.waitingForDecision => SendTransferPhaseVisualData(
-        statusLabel: 'Waiting',
-        title: 'Waiting for confirmation',
-        subtitle: transfer.statusMessage,
-        accentColor: kAccentCyanStrong,
-        icon: Icons.hourglass_top_rounded,
-        showSpinner: true,
-      ),
-    SendTransferPhase.accepted => SendTransferPhaseVisualData(
-        statusLabel: 'Accepted',
-        title: 'Receiver accepted',
-        subtitle: transfer.statusMessage,
-        accentColor: kAccentCyanStrong,
-        icon: Icons.check_circle_outline_rounded,
-        showSpinner: false,
-      ),
-    SendTransferPhase.sending => SendTransferPhaseVisualData(
-        statusLabel: 'Sending',
-        title: 'Sending files',
-        subtitle: transfer.statusMessage,
-        accentColor: kAccentCyanStrong,
-        icon: Icons.upload_rounded,
-        showSpinner: true,
-      ),
-    SendTransferPhase.cancelling => SendTransferPhaseVisualData(
-        statusLabel: 'Cancelling',
-        title: 'Stopping transfer',
-        subtitle: transfer.statusMessage,
-        accentColor: const Color(0xFFC0912C),
-        icon: Icons.close_rounded,
-        showSpinner: true,
-      ),
-    SendTransferPhase.completed => const SendTransferPhaseVisualData(
-        statusLabel: 'Success',
-        title: 'Sent',
-        subtitle: 'Files finished transferring successfully.',
-        accentColor: Color(0xFF49B36C),
-        icon: Icons.check_circle_rounded,
-        showSpinner: false,
-      ),
-    SendTransferPhase.declined => SendTransferPhaseVisualData(
-        statusLabel: 'Declined',
-        title: 'Transfer declined',
-        subtitle: transfer.statusMessage,
-        accentColor: const Color(0xFFB86A2B),
-        icon: Icons.block_rounded,
-        showSpinner: false,
-      ),
-    SendTransferPhase.cancelled => SendTransferPhaseVisualData(
-        statusLabel: 'Cancelled',
-        title: 'Transfer cancelled',
-        subtitle: transfer.statusMessage,
-        accentColor: const Color(0xFFC0912C),
-        icon: Icons.do_not_disturb_on_rounded,
-        showSpinner: false,
-      ),
-    SendTransferPhase.failed => SendTransferPhaseVisualData(
-        statusLabel: 'Failed',
-        title: 'Send failed',
-        subtitle: transfer.error?.message ?? transfer.statusMessage,
-        accentColor: const Color(0xFFCC3333),
-        icon: Icons.error_rounded,
-        showSpinner: false,
-      ),
-  };
+  if (state is SendStateTransferring) {
+    final transfer = state.transfer;
+    return switch (transfer.phase) {
+      SendTransferPhase.connecting => SendTransferPhaseVisualData(
+          statusLabel: 'Connecting',
+          title: 'Connecting to recipient',
+          subtitle: transfer.statusMessage,
+          accentColor: kAccentCyanStrong,
+          icon: Icons.sync_rounded,
+          showSpinner: true,
+        ),
+      SendTransferPhase.waitingForDecision => SendTransferPhaseVisualData(
+          statusLabel: 'Waiting',
+          title: 'Waiting for confirmation',
+          subtitle: transfer.statusMessage,
+          accentColor: kAccentCyanStrong,
+          icon: Icons.hourglass_top_rounded,
+          showSpinner: true,
+        ),
+      SendTransferPhase.accepted => SendTransferPhaseVisualData(
+          statusLabel: 'Accepted',
+          title: 'Receiver accepted',
+          subtitle: transfer.statusMessage,
+          accentColor: kAccentCyanStrong,
+          icon: Icons.check_circle_outline_rounded,
+          showSpinner: false,
+        ),
+      SendTransferPhase.sending => SendTransferPhaseVisualData(
+          statusLabel: 'Sending',
+          title: 'Sending files',
+          subtitle: transfer.statusMessage,
+          accentColor: kAccentCyanStrong,
+          icon: Icons.upload_rounded,
+          showSpinner: true,
+        ),
+      SendTransferPhase.cancelling => SendTransferPhaseVisualData(
+          statusLabel: 'Cancelling',
+          title: 'Stopping transfer',
+          subtitle: transfer.statusMessage,
+          accentColor: const Color(0xFFC0912C),
+          icon: Icons.close_rounded,
+          showSpinner: true,
+        ),
+      SendTransferPhase.completed => const SendTransferPhaseVisualData(
+          statusLabel: 'Success',
+          title: 'Sent',
+          subtitle: 'Files finished transferring successfully.',
+          accentColor: Color(0xFF49B36C),
+          icon: Icons.check_circle_rounded,
+          showSpinner: false,
+        ),
+      SendTransferPhase.declined => SendTransferPhaseVisualData(
+          statusLabel: 'Declined',
+          title: 'Transfer declined',
+          subtitle: transfer.statusMessage,
+          accentColor: const Color(0xFFB86A2B),
+          icon: Icons.block_rounded,
+          showSpinner: false,
+        ),
+      SendTransferPhase.cancelled => SendTransferPhaseVisualData(
+          statusLabel: 'Cancelled',
+          title: 'Transfer cancelled',
+          subtitle: transfer.statusMessage,
+          accentColor: const Color(0xFFC0912C),
+          icon: Icons.do_not_disturb_on_rounded,
+          showSpinner: false,
+        ),
+      SendTransferPhase.failed => SendTransferPhaseVisualData(
+          statusLabel: 'Failed',
+          title: 'Send failed',
+          subtitle: transfer.error?.message ?? transfer.statusMessage,
+          accentColor: const Color(0xFFCC3333),
+          icon: Icons.error_rounded,
+          showSpinner: false,
+        ),
+    };
+  }
+
+  throw StateError('Unexpected state for visual data: $state');
 }
 
-List<SendTransferMetricData> _metricsForState(
-  SendState state,
-  SendTransferState transfer,
-  SendRequestData request,
-) {
+List<SendTransferMetricData> _metricsForState(SendState state) {
+  final (transfer, request) = switch (state) {
+    SendStateTransferring(:final transfer, :final request) => (transfer, request),
+    SendStateResult(:final transfer, :final request) => (transfer, request),
+    _ => throw StateError('Metrics requires an active or completed transfer'),
+  };
+
   final metrics = <SendTransferMetricData>[
     SendTransferMetricData(
       label: 'Destination',
@@ -291,7 +295,7 @@ List<SendTransferMetricData> _metricsForState(
     );
   }
 
-  if (state.phase == SendSessionPhase.result && request.serverUrl != null) {
+  if (state is SendStateResult && request.serverUrl != null) {
     metrics.add(
       SendTransferMetricData(
         label: 'Server',
@@ -303,15 +307,18 @@ List<SendTransferMetricData> _metricsForState(
   return metrics;
 }
 
-List<SendTransferFileViewData> _filesForState(
-  SendState state,
-  SendTransferState transfer,
-) {
+List<SendTransferFileViewData> _filesForState(SendState state) {
+  final (transfer, items) = switch (state) {
+    SendStateTransferring(:final transfer, :final items) => (transfer, items),
+    SendStateResult(:final transfer, :final items) => (transfer, items),
+    _ => throw StateError('Files requires an active or completed transfer'),
+  };
+
   final plan = transfer.plan;
   final snapshot = transfer.snapshot;
 
   if (plan == null) {
-    return state.items
+    return items
         .map(
           (item) => SendTransferFileViewData(
             name: item.name,

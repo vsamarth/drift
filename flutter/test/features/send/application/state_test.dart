@@ -5,18 +5,13 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   test('send state starts idle with no draft data', () {
-    const state = SendState.idle();
+    const state = SendStateIdle();
 
-    expect(state.phase, SendSessionPhase.idle);
-    expect(state.items, isEmpty);
-    expect(state.destination.mode, SendDestinationMode.none);
-    expect(state.request, isNull);
-    expect(state.result, isNull);
-    expect(state.errorMessage, isNull);
+    expect(state, isA<SendStateIdle>());
   });
 
   test('send state can represent a draft with a destination', () {
-    final state = SendState.drafting(
+    final state = SendStateDrafting(
       items: [
         SendDraftItem(
           path: '/tmp/report.pdf',
@@ -28,18 +23,15 @@ void main() {
       destination: const SendDestinationState.code('ABC123'),
     );
 
-    expect(state.phase, SendSessionPhase.drafting);
+    expect(state, isA<SendStateDrafting>());
     expect(state.items, hasLength(1));
     expect(state.items.single.path, '/tmp/report.pdf');
     expect(state.destination.mode, SendDestinationMode.code);
     expect(state.destination.code, 'ABC123');
-    expect(state.request, isNull);
-    expect(state.result, isNull);
-    expect(state.errorMessage, isNull);
   });
 
   test('send state can represent an active transfer with a request snapshot', () {
-    final state = SendState.transferring(
+    final state = SendStateTransferring(
       items: const [],
       destination: const SendDestinationState.code('ABC123'),
       request: const SendRequestData(
@@ -60,14 +52,14 @@ void main() {
       ),
     );
 
-    expect(state.phase, SendSessionPhase.transferring);
+    expect(state, isA<SendStateTransferring>());
     expect(state.destination.mode, SendDestinationMode.code);
-    expect(state.request?.code, 'ABC123');
-    expect(state.transfer?.phase, SendTransferPhase.connecting);
+    expect(state.request.code, 'ABC123');
+    expect(state.transfer.phase, SendTransferPhase.connecting);
   });
 
   test('send state can represent a final result with the original request snapshot', () {
-    final state = SendState.result(
+    final state = SendStateResult(
       items: const [],
       destination: const SendDestinationState.nearby(
         ticket: 'ticket-1',
@@ -97,11 +89,11 @@ void main() {
       ),
     );
 
-    expect(state.phase, SendSessionPhase.result);
+    expect(state, isA<SendStateResult>());
     expect(state.destination.mode, SendDestinationMode.nearby);
-    expect(state.request?.destinationMode, SendDestinationMode.nearby);
-    expect(state.request?.ticket, 'ticket-1');
-    expect(state.result?.outcome, SendTransferOutcome.success);
-    expect(state.transfer?.phase, SendTransferPhase.completed);
+    expect(state.request.destinationMode, SendDestinationMode.nearby);
+    expect(state.request.ticket, 'ticket-1');
+    expect(state.result.outcome, SendTransferOutcome.success);
+    expect(state.transfer.phase, SendTransferPhase.completed);
   });
 }

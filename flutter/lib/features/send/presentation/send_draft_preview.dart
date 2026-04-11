@@ -7,14 +7,12 @@ import 'package:go_router/go_router.dart';
 import '../../../theme/drift_theme.dart';
 import '../../../app/app_router.dart';
 import '../application/controller.dart';
-import '../../receive/application/service.dart';
-import '../../receive/application/state.dart';
 import '../../transfers/presentation/widgets/transfer_presentation_helpers.dart';
 import '../application/model.dart';
-import '../application/directory_size.dart';
 import '../application/send_selection_picker.dart';
 import '../application/state.dart';
-import 'receive_code_field.dart';
+import 'widgets/send_destination_selector.dart';
+import 'widgets/send_draft_file_list.dart';
 
 class SendDraftRoutePage extends ConsumerStatefulWidget {
   const SendDraftRoutePage({super.key, required this.files});
@@ -53,89 +51,47 @@ class _SendDraftRoutePageState extends ConsumerState<SendDraftRoutePage> {
   }
 }
 
-class SendDraftPreview extends ConsumerStatefulWidget {
+class SendDraftPreview extends ConsumerWidget {
   const SendDraftPreview({super.key});
 
-  @override
-  ConsumerState<SendDraftPreview> createState() => _SendDraftPreviewState();
-}
-
-class _SendDraftPreviewState extends ConsumerState<SendDraftPreview> {
-  final Set<String> _pendingDirectorySizes = <String>{};
-  final Map<String, BigInt> _resolvedDirectorySizes = <String, BigInt>{};
-
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        _hydrateDirectorySizes();
-      }
-    });
-  }
-
   Future<void> _appendSelection(
+    WidgetRef ref,
     Future<List<SendPickedFile>> Function(SendSelectionPicker picker) pick,
   ) async {
     final picker = ref.read(sendSelectionPickerProvider);
     final selected = await pick(picker);
-    if (selected.isEmpty || !mounted) {
+    if (selected.isEmpty) {
       return;
     }
 
     ref.read(sendControllerProvider.notifier).appendDraftItems(selected);
   }
 
-  void _removeFile(SendPickedFile file) {
+  void _removeFile(WidgetRef ref, SendPickedFile file) {
     ref.read(sendControllerProvider.notifier).removeDraftItem(file.path);
   }
 
-  void _hydrateDirectorySizes() {
-    final state = ref.read(sendControllerProvider);
-    for (final item in state.items) {
-      if (item.kind != SendPickedFileKind.directory) {
-        continue;
-      }
-      if (_resolvedDirectorySizes.containsKey(item.path) ||
-          _pendingDirectorySizes.contains(item.path)) {
-        continue;
-      }
-      _pendingDirectorySizes.add(item.path);
-      unawaited(_resolveDirectorySize(item.path));
-    }
-  }
-
-  Future<void> _resolveDirectorySize(String path) async {
-    try {
-      final sizeBytes = await ref
-          .read(directorySizeCalculatorProvider)
-          .sizeOfDirectory(path);
-      if (!mounted) {
-        return;
-      }
-
-      final state = ref.read(sendControllerProvider);
-      final exists = state.items.any(
-        (item) =>
-            item.path == path && item.kind == SendPickedFileKind.directory,
-      );
-      if (!exists) {
-        return;
-      }
-
-      setState(() {
-        _resolvedDirectorySizes[path] = sizeBytes;
-      });
-    } finally {
-      _pendingDirectorySizes.remove(path);
-    }
-  }
-
   List<SendPickedFile> _displayFilesFor(SendState state) {
-    return state.items
+    final (items, resolvedSizes) = switch (state) {
+      SendStateDrafting(:final items, :final resolvedDirectorySizes) => (
+          items,
+          resolvedDirectorySizes
+        ),
+      SendStateTransferring(:final items, :final resolvedDirectorySizes) => (
+          items,
+          resolvedDirectorySizes
+        ),
+      SendStateResult(:final items, :final resolvedDirectorySizes) => (
+          items,
+          resolvedDirectorySizes
+        ),
+      SendStateIdle() => (const <SendDraftItem>[], const <String, BigInt>{}),
+    };
+
+    return items
         .map((item) {
           final sizeBytes = item.kind == SendPickedFileKind.directory
-              ? (_resolvedDirectorySizes[item.path] ?? item.sizeBytes)
+              ? (resolvedSizes[item.path] ?? item.sizeBytes)
               : item.sizeBytes;
           return SendPickedFile(
             path: item.path,
@@ -169,41 +125,31 @@ class _SendDraftPreviewState extends ConsumerState<SendDraftPreview> {
     final itemCount = files.length;
     final dividerCount = itemCount > 0 ? itemCount - 1 : 0;
 
-    final contentHeight =
-        verticalPadding +
+    final contentHeight = verticalPadding +
         (itemCount * rowHeight) +
         (dividerCount * dividerHeight);
 
     return contentHeight.clamp(0, viewportCap).toDouble();
   }
 
-  bool _canStartSend(SendState state) {
-    return state.phase == SendSessionPhase.drafting &&
+  bool _canStartSend(WidgetRef ref, SendState state) {
+    return state is SendStateDrafting &&
         state.items.isNotEmpty &&
         ref.read(sendControllerProvider.notifier).canStartSend();
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(sendControllerProvider);
     ref.listen<SendState>(sendControllerProvider, (previous, next) {
-      if (previous?.items != next.items) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) {
-            _hydrateDirectorySizes();
-          }
-        });
-      }
-      if (previous?.phase == SendSessionPhase.drafting &&
-          next.phase == SendSessionPhase.idle &&
-          mounted) {
+      if (previous is SendStateDrafting && next is SendStateIdle) {
         context.pop();
       }
     });
 
-    if (state.phase == SendSessionPhase.idle) {
+    if (state is SendStateIdle) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && Navigator.of(context).canPop()) {
+        if (Navigator.of(context).canPop()) {
           context.pop();
         }
       });
@@ -214,11 +160,13 @@ class _SendDraftPreviewState extends ConsumerState<SendDraftPreview> {
     final summary = _selectionSummaryLabel(files);
     final previewHeight = _previewHeightFor(context, files);
     final controller = ref.read(sendControllerProvider.notifier);
-    final canEditDraft = state.phase == SendSessionPhase.drafting;
-    final canStartSend = _canStartSend(state);
-    final actionLabel = state.phase == SendSessionPhase.result
-        ? 'Done'
-        : (state.phase == SendSessionPhase.transferring ? 'Sending...' : 'Send');
+    final canEditDraft = state is SendStateDrafting;
+    final canStartSend = _canStartSend(ref, state);
+    final actionLabel = switch (state) {
+      SendStateResult() => 'Done',
+      SendStateTransferring() => 'Sending...',
+      _ => 'Send',
+    };
 
     return Scaffold(
       backgroundColor: kBg,
@@ -291,11 +239,10 @@ class _SendDraftPreviewState extends ConsumerState<SendDraftPreview> {
                       ),
                       child: SizedBox(
                         height: previewHeight,
-                        child: _PreviewTableViewport(
-                          key: const ValueKey('preview_table'),
+                        child: SendDraftFileList(
                           files: files,
                           maxHeight: previewHeight,
-                          onRemove: _removeFile,
+                          onRemove: (SendPickedFile file) => _removeFile(ref, file),
                         ),
                       ),
                     ),
@@ -310,8 +257,9 @@ class _SendDraftPreviewState extends ConsumerState<SendDraftPreview> {
                           TextButton.icon(
                             onPressed: canEditDraft
                                 ? () => _appendSelection(
-                                    (picker) => picker.pickFiles(),
-                                  )
+                                      ref,
+                                      (picker) => picker.pickFiles(),
+                                    )
                                 : null,
                             icon: const Icon(Icons.add_rounded, size: 16),
                             label: const Text('Add files'),
@@ -319,8 +267,9 @@ class _SendDraftPreviewState extends ConsumerState<SendDraftPreview> {
                           TextButton.icon(
                             onPressed: canEditDraft
                                 ? () => _appendSelection(
-                                    (picker) => picker.pickFolder(),
-                                  )
+                                      ref,
+                                      (picker) => picker.pickFolder(),
+                                    )
                                 : null,
                             icon: const Icon(
                               Icons.create_new_folder_outlined,
@@ -332,10 +281,10 @@ class _SendDraftPreviewState extends ConsumerState<SendDraftPreview> {
                       ),
                     ),
                     const SizedBox(height: 18),
-                    _SendDraftExtras(controller: controller),
-                    if (state.phase == SendSessionPhase.result) ...[
+                    SendDestinationSelector(controller: controller),
+                    if (state is SendStateResult) ...[
                       const SizedBox(height: 18),
-                      _SendResultCard(result: state.result!),
+                      _SendResultCard(result: state.result),
                     ],
                   ],
                 ),
@@ -353,17 +302,17 @@ class _SendDraftPreviewState extends ConsumerState<SendDraftPreview> {
                   ),
                 ),
                 child: FilledButton(
-                  onPressed: state.phase == SendSessionPhase.result
+                  onPressed: state is SendStateResult
                       ? controller.clearDraft
                       : (canStartSend
-                            ? () {
-                                final request = controller.buildSendRequest();
-                                if (request == null) {
-                                  return;
-                                }
-                                context.pushSendTransfer(request: request);
+                          ? () {
+                              final request = controller.buildSendRequest();
+                              if (request == null) {
+                                return;
                               }
-                            : null),
+                              context.pushSendTransfer(request: request);
+                            }
+                          : null),
                   style: FilledButton.styleFrom(
                     minimumSize: const Size.fromHeight(48),
                     shape: RoundedRectangleBorder(
@@ -421,426 +370,6 @@ class _SendResultCard extends StatelessWidget {
             style: driftSans(fontSize: 13.5, color: kMuted, height: 1.4),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _SendDraftExtras extends ConsumerStatefulWidget {
-  const _SendDraftExtras({required this.controller});
-
-  final SendController controller;
-
-  @override
-  ConsumerState<_SendDraftExtras> createState() => _SendDraftExtrasState();
-}
-
-class _SendDraftExtrasState extends ConsumerState<_SendDraftExtras> {
-  List<NearbyReceiver> _nearbyDevices = const [];
-  bool _isScanningNearby = false;
-  bool _nearbyScanCompletedOnce = false;
-
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        unawaited(_scanNearby());
-      }
-    });
-  }
-
-  Future<void> _scanNearby() async {
-    setState(() {
-      _isScanningNearby = true;
-    });
-
-    try {
-      final devices = await ref
-          .read(receiverServiceProvider.notifier)
-          .scanNearby(timeout: const Duration(seconds: 4));
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        _nearbyDevices = devices;
-        _isScanningNearby = false;
-        _nearbyScanCompletedOnce = true;
-      });
-    } catch (_) {
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        _nearbyDevices = const [];
-        _isScanningNearby = false;
-        _nearbyScanCompletedOnce = true;
-      });
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final state = ref.watch(sendControllerProvider);
-    final titleStyle = driftSans(
-      fontSize: 17,
-      fontWeight: FontWeight.w700,
-      color: kInk,
-    );
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Row(
-          children: [
-            Text('Nearby devices', style: titleStyle),
-            const Spacer(),
-            _ScanAction(isScanning: _isScanningNearby, onPressed: _scanNearby),
-          ],
-        ),
-        const SizedBox(height: 12),
-        if (_nearbyDevices.isEmpty)
-          _NearbyStatusCard(
-            isScanning: _isScanningNearby && !_nearbyScanCompletedOnce,
-          )
-        else
-          SizedBox(
-            height: 110,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              physics: const BouncingScrollPhysics(),
-              itemCount: _nearbyDevices.length,
-              separatorBuilder: (_, _) => const SizedBox(width: 12),
-              itemBuilder: (context, index) {
-                final receiver = _nearbyDevices[index];
-                final selected =
-                    state.destination.mode == SendDestinationMode.nearby &&
-                    state.destination.ticket == receiver.ticket;
-                return _NearbyDeviceTile(
-                  receiver: receiver,
-                  isSelected: selected,
-                  icon: Icons.devices_rounded,
-                  onTap: () => widget.controller.selectNearbyReceiver(receiver),
-                );
-              },
-            ),
-          ),
-        const SizedBox(height: 18),
-        Text('Send with code', style: titleStyle),
-        const SizedBox(height: 6),
-        Text(
-          'Use the 6 characters shown on the receiver.',
-          style: driftSans(fontSize: 13.5, color: kMuted, height: 1.4),
-        ),
-        const SizedBox(height: 16),
-        ReceiveCodeField(
-          code: state.destination.mode == SendDestinationMode.code
-              ? state.destination.code ?? ''
-              : '',
-          onChanged: widget.controller.updateDestinationCode,
-          hintText: 'AB12CD',
-          understated: true,
-        ),
-      ],
-    );
-  }
-}
-
-class _ScanAction extends StatelessWidget {
-  const _ScanAction({required this.isScanning, required this.onPressed});
-
-  final bool isScanning;
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    if (isScanning) {
-      return const SizedBox(
-        width: 20,
-        height: 20,
-        child: CircularProgressIndicator(
-          strokeWidth: 2,
-          valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF8FB9CA)),
-        ),
-      );
-    }
-
-    return TextButton.icon(
-      onPressed: onPressed,
-      icon: const Icon(Icons.refresh_rounded, size: 18),
-      label: Text(
-        'Rescan',
-        style: driftSans(
-          fontSize: 13,
-          fontWeight: FontWeight.w500,
-          color: const Color(0xFF7AAFC9),
-        ),
-      ),
-      style: TextButton.styleFrom(
-        foregroundColor: const Color(0xFF7AAFC9),
-        padding: EdgeInsets.zero,
-        minimumSize: Size.zero,
-        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-      ),
-    );
-  }
-}
-
-class _NearbyStatusCard extends StatelessWidget {
-  const _NearbyStatusCard({required this.isScanning});
-
-  final bool isScanning;
-
-  @override
-  Widget build(BuildContext context) {
-    final title = isScanning
-        ? 'Scanning for nearby receivers...'
-        : 'No nearby devices found';
-    final subtitle = isScanning
-        ? 'Make sure both devices are on the same Wi-Fi.'
-        : 'Make sure both devices are on the same Wi-Fi. Local network access may be required.';
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      decoration: BoxDecoration(
-        color: kSurface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: kBorder.withValues(alpha: 0.55)),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.only(top: 2),
-            child: SizedBox(
-              width: 22,
-              height: 22,
-              child: Icon(
-                isScanning ? Icons.radar_rounded : Icons.wifi_off_rounded,
-                size: 20,
-                color: const Color(0xFF8E8E8E),
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: driftSans(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                    color: kInk,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  subtitle,
-                  style: driftSans(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w400,
-                    color: kMuted,
-                    height: 1.35,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _NearbyDeviceTile extends StatelessWidget {
-  const _NearbyDeviceTile({
-    required this.receiver,
-    required this.isSelected,
-    required this.icon,
-    required this.onTap,
-  });
-
-  final NearbyReceiver receiver;
-  final bool isSelected;
-  final IconData icon;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(20),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        width: 106,
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-        decoration: BoxDecoration(
-          color: isSelected ? const Color(0xFFF4F8FA) : kSurface,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: isSelected ? const Color(0xFF8DBED4) : kBorder,
-          ),
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              icon,
-              size: 20,
-              color: isSelected ? const Color(0xFF7AAFC9) : kMuted,
-            ),
-            const SizedBox(height: 10),
-            Text(
-              receiver.label,
-              style: driftSans(
-                fontSize: 12.5,
-                fontWeight: FontWeight.w600,
-                color: kInk,
-                height: 1.18,
-              ),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _PreviewTableViewport extends StatelessWidget {
-  const _PreviewTableViewport({
-    super.key,
-    required this.files,
-    required this.maxHeight,
-    required this.onRemove,
-  });
-
-  final List<SendPickedFile> files;
-  final double maxHeight;
-  final ValueChanged<SendPickedFile> onRemove;
-
-  @override
-  Widget build(BuildContext context) {
-    if (files.isEmpty) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        child: Text('No files', style: Theme.of(context).textTheme.bodyMedium),
-      );
-    }
-
-    return ConstrainedBox(
-      constraints: BoxConstraints(maxHeight: maxHeight),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Expanded(
-            child: SingleChildScrollView(
-              physics: const BouncingScrollPhysics(),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  for (int i = 0; i < files.length; i++) ...[
-                    if (i > 0)
-                      Divider(
-                        height: 1,
-                        thickness: 0.5,
-                        color: kBorder.withValues(alpha: 0.3),
-                      ),
-                    _PreviewTableRow(
-                      key: ValueKey(files[i].path),
-                      file: files[i],
-                      onRemove: () => onRemove(files[i]),
-                    ),                  ],
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _PreviewTableRow extends StatelessWidget {
-  const _PreviewTableRow({
-    super.key,
-    required this.file,
-    required this.onRemove,
-  });
-
-  final SendPickedFile file;
-  final VoidCallback onRemove;
-
-  @override
-  Widget build(BuildContext context) {
-    final isDirectory = file.kind == SendPickedFileKind.directory;
-    final sizeLabel = isDirectory
-        ? (file.sizeBytes == null
-            ? 'Calculating...'
-            : formatBytes(file.sizeBytes!))
-        : (file.sizeBytes == null ? '' : formatBytes(file.sizeBytes!));
-    final rowIcon =
-        isDirectory ? Icons.folder_rounded : Icons.description_rounded;
-    final iconColor = isDirectory ? const Color(0xFF4A8E9E) : kMuted;
-
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: () {}, // For splash effect
-        child: Container(
-          height: 56,
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          child: Row(
-            children: [
-              SizedBox(
-                width: 28,
-                child: Icon(rowIcon, size: 20, color: iconColor),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Tooltip(
-                  message: file.name,
-                  child: Text(
-                    file.name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: driftSans(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: kInk,
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Text(
-                sizeLabel,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.right,
-                style: driftSans(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w500,
-                  color: kMuted,
-                ),
-              ),
-              const SizedBox(width: 10),
-              IconButton(
-                onPressed: onRemove,
-                icon: const Icon(Icons.close_rounded, size: 18),
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-                visualDensity: VisualDensity.compact,
-                color: kMuted.withValues(alpha: 0.5),
-                tooltip: 'Remove',
-              ),
-            ],
-          ),
-        ),
       ),
     );
   }

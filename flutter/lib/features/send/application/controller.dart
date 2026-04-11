@@ -5,6 +5,7 @@ import 'package:app/features/receive/application/state.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import 'model.dart';
+import 'directory_size.dart';
 import '../../../platform/send_transfer_source.dart';
 import '../../settings/application/controller.dart';
 import 'state.dart';
@@ -15,38 +16,42 @@ part 'controller.g.dart';
 @Riverpod(keepAlive: true)
 class SendController extends _$SendController {
   StreamSubscription<SendTransferUpdate>? _transferSubscription;
+  final Set<String> _pendingDirectorySizes = <String>{};
 
   @override
   SendState build() {
     ref.onDispose(_dispose);
-    return const SendState.idle();
+    return const SendStateIdle();
   }
 
   void beginDraft(List<SendPickedFile> files) {
     unawaited(_cancelActiveTransfer());
-    state = SendState.drafting(
+    state = SendStateDrafting(
       items: files.map(SendDraftItem.fromPickedFile).toList(growable: false),
     );
+    _hydrateDirectorySizes();
   }
 
   void appendDraftItems(List<SendPickedFile> files) {
-    if (state.phase != SendSessionPhase.drafting) {
+    final currentState = state;
+    if (currentState is! SendStateDrafting) {
       beginDraft(files);
       return;
     }
 
-    state = SendState.drafting(
-      items: [...state.items, ...files.map(SendDraftItem.fromPickedFile)],
-      destination: state.destination,
+    state = currentState.copyWith(
+      items: [...currentState.items, ...files.map(SendDraftItem.fromPickedFile)],
     );
+    _hydrateDirectorySizes();
   }
 
   void removeDraftItem(String path) {
-    if (state.phase != SendSessionPhase.drafting) {
+    final currentState = state;
+    if (currentState is! SendStateDrafting) {
       return;
     }
 
-    final nextItems = state.items
+    final nextItems = currentState.items
         .where((item) => item.path != path)
         .toList(growable: false);
     if (nextItems.isEmpty) {
@@ -54,20 +59,17 @@ class SendController extends _$SendController {
       return;
     }
 
-    state = SendState.drafting(
-      items: nextItems,
-      destination: state.destination,
-    );
+    state = currentState.copyWith(items: nextItems);
   }
 
   void updateDestinationCode(String value) {
-    if (state.phase != SendSessionPhase.drafting) {
+    final currentState = state;
+    if (currentState is! SendStateDrafting) {
       return;
     }
 
     final normalized = _normalizedCode(value);
-    state = SendState.drafting(
-      items: state.items,
+    state = currentState.copyWith(
       destination: normalized.isEmpty
           ? const SendDestinationState.none()
           : SendDestinationState.code(normalized),
@@ -75,23 +77,23 @@ class SendController extends _$SendController {
   }
 
   void clearDestinationCode() {
-    if (state.phase != SendSessionPhase.drafting) {
+    final currentState = state;
+    if (currentState is! SendStateDrafting) {
       return;
     }
 
-    state = SendState.drafting(
-      items: state.items,
+    state = currentState.copyWith(
       destination: const SendDestinationState.none(),
     );
   }
 
   void selectNearbyReceiver(NearbyReceiver receiver) {
-    if (state.phase != SendSessionPhase.drafting) {
+    final currentState = state;
+    if (currentState is! SendStateDrafting) {
       return;
     }
 
-    state = SendState.drafting(
-      items: state.items,
+    state = currentState.copyWith(
       destination: SendDestinationState.nearby(
         ticket: receiver.ticket,
         lanDestinationLabel: receiver.label,
@@ -101,17 +103,25 @@ class SendController extends _$SendController {
 
   void clearDraft() {
     unawaited(_cancelActiveTransfer());
-    state = const SendState.idle();
+    state = const SendStateIdle();
+    _pendingDirectorySizes.clear();
   }
 
   SendRequestData? buildSendRequest() {
-    if (state.phase != SendSessionPhase.drafting || state.items.isEmpty) {
+    final currentState = state;
+    final (items, destination) = switch (currentState) {
+      SendStateDrafting(:final items, :final destination) => (items, destination),
+      SendStateTransferring(:final items, :final destination) => (items, destination),
+      SendStateResult(:final items, :final destination) => (items, destination),
+      SendStateIdle() => (null, null),
+    };
+
+    if (items == null || items.isEmpty || destination == null) {
       return null;
     }
 
     final settings = ref.read(settingsControllerProvider).settings;
-    final paths = state.items.map((item) => item.path).toList(growable: false);
-    final destination = state.destination;
+    final paths = items.map((item) => item.path).toList(growable: false);
 
     switch (destination.mode) {
       case SendDestinationMode.none:
@@ -145,17 +155,24 @@ class SendController extends _$SendController {
   bool canStartSend() => buildSendRequest() != null;
 
   void startTransfer(SendRequestData request) {
+    final currentState = state;
+    if (currentState is! SendStateDrafting) {
+      return;
+    }
+
     final validatedRequest = buildSendRequest();
-    if (validatedRequest == null || !_sameSendRequest(request, validatedRequest)) {
+    if (validatedRequest == null ||
+        !_sameSendRequest(request, validatedRequest)) {
       return;
     }
 
     final transferSource = ref.read(sendTransferSourceProvider);
-    state = SendState.transferring(
-      items: state.items,
-      destination: state.destination,
+    state = SendStateTransferring(
+      items: currentState.items,
+      destination: currentState.destination,
       request: validatedRequest,
-      transfer: _buildInitialTransferState(validatedRequest),
+      transfer: _buildInitialTransferState(validatedRequest, currentState.items),
+      resolvedDirectorySizes: currentState.resolvedDirectorySizes,
     );
     unawaited(_transferSubscription?.cancel());
     _transferSubscription = transferSource
@@ -175,11 +192,76 @@ class SendController extends _$SendController {
 
   void cancelTransfer() {
     unawaited(_cancelActiveTransfer());
-    if (state.phase == SendSessionPhase.transferring) {
-      state = SendState.drafting(
-        items: state.items,
-        destination: state.destination,
+    final currentState = state;
+    if (currentState is SendStateTransferring) {
+      state = SendStateDrafting(
+        items: currentState.items,
+        destination: currentState.destination,
+        resolvedDirectorySizes: currentState.resolvedDirectorySizes,
       );
+    }
+  }
+
+  void _hydrateDirectorySizes() {
+    final currentState = state;
+    final (items, resolvedSizes) = switch (currentState) {
+      SendStateDrafting(:final items, :final resolvedDirectorySizes) => (items, resolvedDirectorySizes),
+      SendStateTransferring(:final items, :final resolvedDirectorySizes) => (items, resolvedDirectorySizes),
+      SendStateResult(:final items, :final resolvedDirectorySizes) => (items, resolvedDirectorySizes),
+      SendStateIdle() => (null, null),
+    };
+
+    if (items == null || resolvedSizes == null) return;
+
+    for (final item in items) {
+      if (item.kind != SendPickedFileKind.directory) {
+        continue;
+      }
+      if (resolvedSizes.containsKey(item.path) ||
+          _pendingDirectorySizes.contains(item.path)) {
+        continue;
+      }
+      _pendingDirectorySizes.add(item.path);
+      unawaited(_resolveDirectorySize(item.path));
+    }
+  }
+
+  Future<void> _resolveDirectorySize(String path) async {
+    try {
+      final sizeBytes = await ref
+          .read(directorySizeCalculatorProvider)
+          .sizeOfDirectory(path);
+      
+      final currentState = state;
+      final (items, resolvedSizes) = switch (currentState) {
+        SendStateDrafting(:final items, :final resolvedDirectorySizes) => (items, resolvedDirectorySizes),
+        SendStateTransferring(:final items, :final resolvedDirectorySizes) => (items, resolvedDirectorySizes),
+        SendStateResult(:final items, :final resolvedDirectorySizes) => (items, resolvedDirectorySizes),
+        SendStateIdle() => (null, null),
+      };
+
+      if (items == null || resolvedSizes == null) return;
+
+      final exists = items.any(
+        (item) =>
+            item.path == path && item.kind == SendPickedFileKind.directory,
+      );
+      if (!exists) {
+        return;
+      }
+
+      final nextSizes = Map<String, BigInt>.from(resolvedSizes);
+      nextSizes[path] = sizeBytes;
+
+      if (currentState is SendStateDrafting) {
+        state = currentState.copyWith(resolvedDirectorySizes: nextSizes);
+      } else if (currentState is SendStateTransferring) {
+        state = currentState.copyWith(resolvedDirectorySizes: nextSizes);
+      } else if (currentState is SendStateResult) {
+        state = currentState.copyWith(resolvedDirectorySizes: nextSizes);
+      }
+    } finally {
+      _pendingDirectorySizes.remove(path);
     }
   }
 
@@ -201,13 +283,12 @@ class SendController extends _$SendController {
   }
 
   void _handleTransferUpdate(SendTransferUpdate update) {
-    if (state.phase != SendSessionPhase.transferring ||
-        state.request == null ||
-        state.transfer == null) {
+    final currentState = state;
+    if (currentState is! SendStateTransferring) {
       return;
     }
 
-    final nextTransfer = state.transfer!.copyWith(
+    final nextTransfer = currentState.transfer.copyWith(
       phase: switch (update.phase) {
         SendTransferUpdatePhase.connecting => SendTransferPhase.connecting,
         SendTransferUpdatePhase.waitingForDecision =>
@@ -225,10 +306,11 @@ class SendController extends _$SendController {
       totalSize: update.totalSize,
       bytesSent: update.bytesSent,
       totalBytes: update.totalBytes,
-      plan: update.plan ?? state.transfer!.plan,
-      snapshot: update.snapshot ?? state.transfer!.snapshot,
-      remoteDeviceType: update.remoteDeviceType ?? state.transfer!.remoteDeviceType,
-      error: update.error ?? state.transfer!.error,
+      plan: update.plan ?? currentState.transfer.plan,
+      snapshot: update.snapshot ?? currentState.transfer.snapshot,
+      remoteDeviceType:
+          update.remoteDeviceType ?? currentState.transfer.remoteDeviceType,
+      error: update.error ?? currentState.transfer.error,
     );
 
     switch (update.phase) {
@@ -273,19 +355,13 @@ class SendController extends _$SendController {
       case SendTransferUpdatePhase.waitingForDecision:
       case SendTransferUpdatePhase.accepted:
       case SendTransferUpdatePhase.sending:
-        state = SendState.transferring(
-          items: state.items,
-          destination: state.destination,
-          request: state.request!,
-          transfer: nextTransfer,
-        );
+        state = currentState.copyWith(transfer: nextTransfer);
     }
   }
 
   void _handleTransferError(Object error, StackTrace stackTrace) {
-    if (state.phase != SendSessionPhase.transferring ||
-        state.request == null ||
-        state.transfer == null) {
+    final currentState = state;
+    if (currentState is! SendStateTransferring) {
       return;
     }
     _completeTransfer(
@@ -294,7 +370,7 @@ class SendController extends _$SendController {
         title: 'Send failed',
         message: error.toString(),
       ),
-      transfer: state.transfer!.copyWith(
+      transfer: currentState.transfer.copyWith(
         phase: SendTransferPhase.failed,
         statusMessage: 'Send failed',
         error: null,
@@ -343,33 +419,37 @@ class SendController extends _$SendController {
     required SendTransferState transfer,
     String? errorMessage,
   }) {
-    final request = state.request;
-    if (request == null) {
+    final currentState = state;
+    if (currentState is! SendStateTransferring) {
       return;
     }
 
-    state = SendState.result(
-      items: state.items,
-      destination: state.destination,
-      request: request,
+    state = SendStateResult(
+      items: currentState.items,
+      destination: currentState.destination,
+      request: currentState.request,
       transfer: transfer,
       result: result,
       errorMessage: errorMessage,
+      resolvedDirectorySizes: currentState.resolvedDirectorySizes,
     );
     final subscription = _transferSubscription;
     _transferSubscription = null;
     unawaited(subscription?.cancel());
   }
 
-  SendTransferState _buildInitialTransferState(SendRequestData request) {
-    final totalSize = state.items.fold<BigInt>(
+  SendTransferState _buildInitialTransferState(
+    SendRequestData request,
+    List<SendDraftItem> items,
+  ) {
+    final totalSize = items.fold<BigInt>(
       BigInt.zero,
       (sum, item) => sum + item.sizeBytes,
     );
     return SendTransferState.connecting(
       destinationLabel:
           request.lanDestinationLabel ?? request.code ?? 'Recipient device',
-      itemCount: BigInt.from(state.items.length),
+      itemCount: BigInt.from(items.length),
       totalSize: totalSize,
     );
   }

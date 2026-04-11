@@ -121,8 +121,8 @@ void main() {
     expect(find.text('photo.jpg'), findsOneWidget);
     expect(find.text('1.0 KB'), findsNWidgets(2));
     expect(find.text('2.0 KB'), findsOneWidget);
-    expect(find.byIcon(Icons.folder_outlined), findsOneWidget);
-    expect(find.byIcon(Icons.insert_drive_file_outlined), findsNWidgets(2));
+    expect(find.byIcon(Icons.folder_rounded), findsOneWidget);
+    expect(find.byIcon(Icons.description_rounded), findsNWidgets(2));
     expect(find.byIcon(Icons.close_rounded), findsNWidgets(3));
     expect(find.text('Add files'), findsOneWidget);
     expect(find.text('Add folders'), findsOneWidget);
@@ -261,7 +261,7 @@ void main() {
     expect(find.byType(SendDraftPreview), findsOneWidget);
     expect(find.text('report.pdf'), findsOneWidget);
     expect(find.text('photos'), findsOneWidget);
-    expect(find.byIcon(Icons.folder_outlined), findsOneWidget);
+    expect(find.byIcon(Icons.folder_rounded), findsOneWidget);
     expect(find.text('2 items, 3.0 KB'), findsOneWidget);
   });
 
@@ -312,15 +312,17 @@ void main() {
     await _pumpPreview(tester);
 
     expect(find.text('ABC123'), findsNothing);
+    final state = container.read(sendControllerProvider);
+    expect(state, isA<SendStateDrafting>());
     expect(
-      container.read(sendControllerProvider).destination.mode,
+      (state as SendStateDrafting).destination.mode,
       SendDestinationMode.nearby,
     );
     expect(
-      container.read(sendControllerProvider).destination.ticket,
+      state.destination.ticket,
       'ticket-1',
     );
-    expect(container.read(sendControllerProvider).destination.code, isNull);
+    expect(state.destination.code, isNull);
   });
 
   testWidgets('tapping Send shows the transfer page', (
@@ -388,8 +390,8 @@ void main() {
     await tester.pump();
 
     expect(
-      container.read(sendControllerProvider).phase,
-      SendSessionPhase.transferring,
+      container.read(sendControllerProvider),
+      isA<SendStateTransferring>(),
     );
     expect(find.text('Connecting to recipient'), findsOneWidget);
     expect(find.text('/tmp/report.pdf'), findsWidgets);

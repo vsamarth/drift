@@ -47,10 +47,13 @@ class _SendTransferRoutePageState extends ConsumerState<SendTransferRoutePage> {
         }
 
         final currentState = ref.read(sendControllerProvider);
-        if (currentState.phase == SendSessionPhase.transferring) {
-          controller.cancelTransfer();
-        } else if (currentState.phase == SendSessionPhase.result) {
-          controller.clearDraft();
+        switch (currentState) {
+          case SendStateTransferring():
+            controller.cancelTransfer();
+          case SendStateResult():
+            controller.clearDraft();
+          case SendStateIdle() || SendStateDrafting():
+            break;
         }
       },
       child: Scaffold(
@@ -90,8 +93,8 @@ class _TransferStateCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final accent = viewData.visual.accentColor;
     final showConnectionStrip = viewData.stripMode != null;
-    final showFooterButton = state.phase == SendSessionPhase.transferring ||
-        state.phase == SendSessionPhase.result;
+    final showFooterButton =
+        state is SendStateTransferring || state is SendStateResult;
 
     return TransferFlowLayout(
       statusLabel: viewData.visual.statusLabel,
@@ -124,7 +127,7 @@ class _TransferStateCard extends StatelessWidget {
         children: [
           Expanded(
             child: showFooterButton
-                ? (state.phase == SendSessionPhase.result
+                ? (state is SendStateResult
                     ? FilledButton(
                         onPressed: () => Navigator.of(context).pop(),
                         style: FilledButton.styleFrom(

@@ -41,11 +41,11 @@ class SendFeaturePlaceholder extends ConsumerWidget {
     final state = ref.watch(sendControllerProvider);
     return _FeatureCard(
       title: visuals.title,
-      status: switch (state.phase) {
-        SendSessionPhase.idle => 'Send is idle',
-        SendSessionPhase.drafting => 'Drafting',
-        SendSessionPhase.transferring => 'Transferring',
-        SendSessionPhase.result => 'Result',
+      status: switch (state) {
+        SendStateIdle() => 'Send is idle',
+        SendStateDrafting() => 'Drafting',
+        SendStateTransferring() => 'Transferring',
+        SendStateResult() => 'Result',
       },
       accent: visuals.accent,
       primaryTone: visuals.primaryTone,

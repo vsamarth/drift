@@ -122,7 +122,7 @@ void main() {
     );
     expect(find.byType(SendDraftPreview), findsOneWidget);
     expect(find.text(directory.path.split(Platform.pathSeparator).last), findsOneWidget);
-    expect(find.byIcon(Icons.folder_outlined), findsOneWidget);
+    expect(find.byIcon(Icons.folder_rounded), findsOneWidget);
   });
 
   testWidgets('choosing Files routes to send draft preview', (

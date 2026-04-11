@@ -46,9 +46,7 @@ void main() {
 
     final state = container.read(sendControllerProvider);
 
-    expect(state.phase, SendSessionPhase.idle);
-    expect(state.destination.mode, SendDestinationMode.none);
-    expect(state.request, isNull);
+    expect(state, isA<SendStateIdle>());
   });
 
   test('send controller can begin and clear a draft', () {
@@ -65,16 +63,14 @@ void main() {
     ]);
 
     final drafting = container.read(sendControllerProvider);
-    expect(drafting.phase, SendSessionPhase.drafting);
-    expect(drafting.items, hasLength(1));
+    expect(drafting, isA<SendStateDrafting>());
+    expect((drafting as SendStateDrafting).items, hasLength(1));
     expect(drafting.destination.mode, SendDestinationMode.none);
 
     controller.clearDraft();
 
     final idle = container.read(sendControllerProvider);
-    expect(idle.phase, SendSessionPhase.idle);
-    expect(idle.items, isEmpty);
-    expect(idle.destination.mode, SendDestinationMode.none);
+    expect(idle, isA<SendStateIdle>());
   });
 
   test('send controller buildSendRequest returns null when destination is missing', () {
@@ -176,7 +172,8 @@ void main() {
     );
 
     final state = container.read(sendControllerProvider);
-    expect(state.destination.mode, SendDestinationMode.nearby);
+    expect(state, isA<SendStateDrafting>());
+    expect((state as SendStateDrafting).destination.mode, SendDestinationMode.nearby);
     expect(state.destination.code, isNull);
 
     final request = controller.buildSendRequest();
@@ -221,14 +218,14 @@ void main() {
     );
 
     controller.startTransfer(staleRequest);
-    expect(container.read(sendControllerProvider).phase, SendSessionPhase.drafting);
+    expect(container.read(sendControllerProvider), isA<SendStateDrafting>());
     expect(fakeSource.lastRequest, isNull);
 
     controller.startTransfer(request);
-    expect(container.read(sendControllerProvider).phase, SendSessionPhase.transferring);
+    expect(container.read(sendControllerProvider), isA<SendStateTransferring>());
     expect(fakeSource.lastRequest?.code, 'ABC123');
     expect(
-      container.read(sendControllerProvider).transfer?.phase,
+      (container.read(sendControllerProvider) as SendStateTransferring).transfer.phase,
       SendTransferPhase.connecting,
     );
 
@@ -241,10 +238,10 @@ void main() {
         bytesSent: BigInt.from(1024),
       ),
     );
-    expect(container.read(sendControllerProvider).phase, SendSessionPhase.result);
-    expect(container.read(sendControllerProvider).request?.code, 'ABC123');
+    expect(container.read(sendControllerProvider), isA<SendStateResult>());
+    expect((container.read(sendControllerProvider) as SendStateResult).request.code, 'ABC123');
     expect(
-      container.read(sendControllerProvider).transfer?.phase,
+      (container.read(sendControllerProvider) as SendStateResult).transfer.phase,
       SendTransferPhase.completed,
     );
   });
@@ -272,7 +269,7 @@ void main() {
     controller.startTransfer(controller.buildSendRequest()!);
 
     expect(
-      container.read(sendControllerProvider).transfer?.phase,
+      (container.read(sendControllerProvider) as SendStateTransferring).transfer.phase,
       SendTransferPhase.connecting,
     );
 
@@ -288,7 +285,7 @@ void main() {
       ),
     );
     expect(
-      container.read(sendControllerProvider).transfer?.phase,
+      (container.read(sendControllerProvider) as SendStateTransferring).transfer.phase,
       SendTransferPhase.waitingForDecision,
     );
 
@@ -304,7 +301,7 @@ void main() {
       ),
     );
     expect(
-      container.read(sendControllerProvider).transfer?.phase,
+      (container.read(sendControllerProvider) as SendStateTransferring).transfer.phase,
       SendTransferPhase.accepted,
     );
 
@@ -320,10 +317,10 @@ void main() {
         remoteDeviceType: 'laptop',
       ),
     );
-    final state = container.read(sendControllerProvider);
-    expect(state.transfer?.phase, SendTransferPhase.sending);
-    expect(state.transfer?.bytesSent, BigInt.from(512));
-    expect(state.transfer?.remoteDeviceType, 'laptop');
+    final state = container.read(sendControllerProvider) as SendStateTransferring;
+    expect(state.transfer.phase, SendTransferPhase.sending);
+    expect(state.transfer.bytesSent, BigInt.from(512));
+    expect(state.transfer.remoteDeviceType, 'laptop');
   });
 
   test('send controller maps terminal transfer updates into result state', () {
@@ -410,17 +407,16 @@ void main() {
       controller.startTransfer(controller.buildSendRequest()!);
 
       fakeSource.emit(fixture.update);
-      final state = container.read(sendControllerProvider);
-      expect(state.phase, SendSessionPhase.result);
-      expect(state.transfer?.phase, fixture.update.phase == SendTransferUpdatePhase.completed
+      final state = container.read(sendControllerProvider) as SendStateResult;
+      expect(state.transfer.phase, fixture.update.phase == SendTransferUpdatePhase.completed
           ? SendTransferPhase.completed
           : fixture.update.phase == SendTransferUpdatePhase.declined
               ? SendTransferPhase.declined
               : fixture.update.phase == SendTransferUpdatePhase.cancelled
                   ? SendTransferPhase.cancelled
                   : SendTransferPhase.failed);
-      expect(state.result?.outcome, fixture.outcome);
-      expect(state.result?.title, fixture.title);
+      expect(state.result.outcome, fixture.outcome);
+      expect(state.result.title, fixture.title);
     }
   });
 
@@ -447,13 +443,12 @@ void main() {
 
     final request = controller.buildSendRequest()!;
     controller.startTransfer(request);
-    expect(container.read(sendControllerProvider).phase, SendSessionPhase.transferring);
+    expect(container.read(sendControllerProvider), isA<SendStateTransferring>());
 
     controller.cancelTransfer();
     await Future<void>.delayed(Duration.zero);
 
     expect(fakeSource.cancelCalled, isTrue);
-    expect(container.read(sendControllerProvider).phase, SendSessionPhase.drafting);
-    expect(container.read(sendControllerProvider).request, isNull);
+    expect(container.read(sendControllerProvider), isA<SendStateDrafting>());
   });
 }
