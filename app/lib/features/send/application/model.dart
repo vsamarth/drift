@@ -1,6 +1,10 @@
+import 'dart:io';
+
 import 'package:flutter/foundation.dart';
 
 enum SendTransferOutcome { success, cancelled, declined, failed }
+
+enum SendPickedFileKind { file, directory }
 
 @immutable
 class SendTransferResult {
@@ -33,19 +37,26 @@ class SendPickedFile {
   const SendPickedFile({
     required this.path,
     required this.name,
+    this.kind = SendPickedFileKind.file,
     this.sizeBytes,
   });
 
   factory SendPickedFile.fromPath(String path) {
+    final type = FileSystemEntity.typeSync(path);
+    final kind = type == FileSystemEntityType.directory
+        ? SendPickedFileKind.directory
+        : SendPickedFileKind.file;
     final uri = Uri.file(path);
     final name = uri.pathSegments.isNotEmpty ? uri.pathSegments.last : path;
     return SendPickedFile(
       path: path,
       name: name.trim().isEmpty ? path : name,
+      kind: kind,
     );
   }
 
   final String path;
   final String name;
+  final SendPickedFileKind kind;
   final BigInt? sizeBytes;
 }
