@@ -8,9 +8,11 @@ import 'source.dart';
 class FakeReceiverServiceSource implements ReceiverServiceSource {
   FakeReceiverServiceSource({
     ReceiverServiceState? initialState,
+    List<NearbyReceiver> nearbyResults = const [],
   }) : _state =
            initialState ??
-           ReceiverServiceState.ready(code: 'ABC123', expiresAt: null);
+           ReceiverServiceState.ready(code: 'ABC123', expiresAt: null),
+       _nearbyResults = nearbyResults;
 
   final StreamController<ReceiverServiceState> _stateController =
       StreamController<ReceiverServiceState>.broadcast(sync: true);
@@ -21,6 +23,7 @@ class FakeReceiverServiceSource implements ReceiverServiceSource {
       );
 
   ReceiverServiceState _state;
+  final List<NearbyReceiver> _nearbyResults;
   bool? lastRespondToOfferAccept;
   int respondToOfferCalls = 0;
   String? lastIncomingSenderName;
@@ -249,7 +252,7 @@ class FakeReceiverServiceSource implements ReceiverServiceSource {
 
   @override
   Future<List<NearbyReceiver>> scanNearby({required Duration timeout}) async {
-    return const [];
+    return _nearbyResults;
   }
 
   @override

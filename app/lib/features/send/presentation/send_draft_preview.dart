@@ -1,12 +1,17 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../theme/drift_theme.dart';
+import '../../receive/application/service.dart';
+import '../../receive/application/state.dart';
 import '../../transfers/presentation/widgets/transfer_presentation_helpers.dart';
 import '../application/model.dart';
 import '../application/send_selection_picker.dart';
+import 'receive_code_field.dart';
 
 class SendDraftPreview extends ConsumerStatefulWidget {
   const SendDraftPreview({
@@ -22,6 +27,7 @@ class SendDraftPreview extends ConsumerStatefulWidget {
 
 class _SendDraftPreviewState extends ConsumerState<SendDraftPreview> {
   late List<SendPickedFile> _files;
+  String _code = '';
 
   @override
   void initState() {
@@ -48,6 +54,12 @@ class _SendDraftPreviewState extends ConsumerState<SendDraftPreview> {
 
     setState(() {
       _files = [..._files, ...selected];
+    });
+  }
+
+  void _updateCode(String value) {
+    setState(() {
+      _code = value;
     });
   }
 
@@ -188,8 +200,263 @@ class _SendDraftPreviewState extends ConsumerState<SendDraftPreview> {
                   ],
                 ),
               ),
+              const SizedBox(height: 16),
+              _SendDraftExtras(
+                code: _code,
+                onCodeChanged: _updateCode,
+              ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SendDraftExtras extends ConsumerStatefulWidget {
+  const _SendDraftExtras({
+    required this.code,
+    required this.onCodeChanged,
+  });
+
+  final String code;
+  final ValueChanged<String> onCodeChanged;
+
+  @override
+  ConsumerState<_SendDraftExtras> createState() => _SendDraftExtrasState();
+}
+
+class _SendDraftExtrasState extends ConsumerState<_SendDraftExtras> {
+  List<NearbyReceiver> _nearbyDevices = const [];
+  bool _isScanningNearby = false;
+  bool _nearbyScanCompletedOnce = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        unawaited(_scanNearby());
+      }
+    });
+  }
+
+  Future<void> _scanNearby() async {
+    setState(() {
+      _isScanningNearby = true;
+    });
+
+    try {
+      final devices = await ref
+          .read(receiverServiceProvider.notifier)
+          .scanNearby(timeout: const Duration(seconds: 4));
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _nearbyDevices = devices;
+        _isScanningNearby = false;
+        _nearbyScanCompletedOnce = true;
+      });
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _nearbyDevices = const [];
+        _isScanningNearby = false;
+        _nearbyScanCompletedOnce = true;
+      });
+    }
+  }
+
+  String _normalizedCode(String code) {
+    return code.replaceAll(' ', '').trim().toUpperCase();
+  }
+
+  IconData _iconFor(NearbyReceiver receiver) {
+    final label = '${receiver.label} ${receiver.fullname}'.toLowerCase();
+    if (label.contains('phone')) {
+      return Icons.smartphone_rounded;
+    }
+    if (label.contains('tablet')) {
+      return Icons.tablet_mac_rounded;
+    }
+    return Icons.laptop_mac_rounded;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Text(
+                    'NEARBY DEVICES',
+                    style: driftSans(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                      color: kMuted,
+                      letterSpacing: 1.2,
+                    ),
+                  ),
+                  const Spacer(),
+                  SizedBox(
+                    width: 28,
+                    height: 28,
+                    child: Center(
+                      child: _isScanningNearby
+                          ? const SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                  kMuted,
+                                ),
+                              ),
+                            )
+                          : IconButton(
+                              onPressed: _scanNearby,
+                              icon: const Icon(Icons.refresh_rounded, size: 18),
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(),
+                              color: kMuted,
+                              tooltip: 'Scan again',
+                            ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              if (_nearbyDevices.isEmpty)
+                Text(
+                  _isScanningNearby && !_nearbyScanCompletedOnce
+                      ? ' '
+                      : 'No nearby devices found yet.',
+                  style: driftSans(fontSize: 13, color: kMuted, height: 1.4),
+                ),
+              if (_nearbyDevices.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                SizedBox(
+                  height: 94,
+                  child: ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    physics: const BouncingScrollPhysics(),
+                    itemCount: _nearbyDevices.length,
+                    separatorBuilder: (_, _) => const SizedBox(width: 12),
+                    itemBuilder: (context, index) {
+                      final receiver = _nearbyDevices[index];
+                      final selected =
+                          _normalizedCode(widget.code) ==
+                          _normalizedCode(receiver.code);
+                      return _NearbyDeviceTile(
+                        receiver: receiver,
+                        isSelected: selected,
+                        icon: _iconFor(receiver),
+                        onTap: () => widget.onCodeChanged(receiver.code),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+        Card.outlined(
+          clipBehavior: Clip.antiAlias,
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Send with code',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    color: kInk,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Enter the six-character receiver code to start the transfer.',
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+                const SizedBox(height: 14),
+                ReceiveCodeField(
+                  code: widget.code,
+                  onChanged: widget.onCodeChanged,
+                  hintText: 'Receiver code',
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _NearbyDeviceTile extends StatelessWidget {
+  const _NearbyDeviceTile({
+    required this.receiver,
+    required this.isSelected,
+    required this.icon,
+    required this.onTap,
+  });
+
+  final NearbyReceiver receiver;
+  final bool isSelected;
+  final IconData icon;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(20),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        width: 92,
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+        decoration: BoxDecoration(
+          color: isSelected ? kAccentCyanHover : kSurface2,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: isSelected ? kAccentCyanStrong : kBorder,
+          ),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              icon,
+              size: 18,
+              color: isSelected
+                  ? kAccentCyanStrong
+                  : kMuted.withValues(alpha: 0.9),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              receiver.label,
+              style: driftSans(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: kInk,
+                height: 1.1,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+            ),
+          ],
         ),
       ),
     );
