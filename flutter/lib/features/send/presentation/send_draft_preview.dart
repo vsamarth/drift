@@ -161,9 +161,9 @@ class _SendDraftPreviewState extends ConsumerState<SendDraftPreview> {
   }
 
   double _previewHeightFor(BuildContext context, List<SendPickedFile> files) {
-    const dividerHeight = 1.0;
-    const rowHeight = 38.0;
-    const verticalPadding = 12.0;
+    const dividerHeight = 0.5;
+    const rowHeight = 56.0;
+    const verticalPadding = 0.0;
 
     final viewportCap = MediaQuery.sizeOf(context).height * 0.32;
     final itemCount = files.length;
@@ -286,12 +286,13 @@ class _SendDraftPreviewState extends ConsumerState<SendDraftPreview> {
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
                         color: kSurface,
-                        borderRadius: BorderRadius.circular(20),
+                        borderRadius: BorderRadius.circular(24),
                         border: Border.all(color: kBorder),
                       ),
                       child: SizedBox(
                         height: previewHeight,
                         child: _PreviewTableViewport(
+                          key: const ValueKey('preview_table'),
                           files: files,
                           maxHeight: previewHeight,
                           onRemove: _removeFile,
@@ -712,6 +713,7 @@ class _NearbyDeviceTile extends StatelessWidget {
 
 class _PreviewTableViewport extends StatelessWidget {
   const _PreviewTableViewport({
+    super.key,
     required this.files,
     required this.maxHeight,
     required this.onRemove,
@@ -745,14 +747,14 @@ class _PreviewTableViewport extends StatelessWidget {
                     if (i > 0)
                       Divider(
                         height: 1,
-                        thickness: 1,
-                        color: kBorder.withValues(alpha: 0.55),
+                        thickness: 0.5,
+                        color: kBorder.withValues(alpha: 0.3),
                       ),
                     _PreviewTableRow(
+                      key: ValueKey(files[i].path),
                       file: files[i],
                       onRemove: () => onRemove(files[i]),
-                    ),
-                  ],
+                    ),                  ],
                 ],
               ),
             ),
@@ -764,7 +766,11 @@ class _PreviewTableViewport extends StatelessWidget {
 }
 
 class _PreviewTableRow extends StatelessWidget {
-  const _PreviewTableRow({required this.file, required this.onRemove});
+  const _PreviewTableRow({
+    super.key,
+    required this.file,
+    required this.onRemove,
+  });
 
   final SendPickedFile file;
   final VoidCallback onRemove;
@@ -774,63 +780,67 @@ class _PreviewTableRow extends StatelessWidget {
     final isDirectory = file.kind == SendPickedFileKind.directory;
     final sizeLabel = isDirectory
         ? (file.sizeBytes == null
-              ? 'Calculating...'
-              : formatBytes(file.sizeBytes!))
+            ? 'Calculating...'
+            : formatBytes(file.sizeBytes!))
         : (file.sizeBytes == null ? '' : formatBytes(file.sizeBytes!));
-    final rowIcon = isDirectory
-        ? Icons.folder_outlined
-        : Icons.insert_drive_file_outlined;
+    final rowIcon =
+        isDirectory ? Icons.folder_rounded : Icons.description_rounded;
+    final iconColor = isDirectory ? const Color(0xFF4A8E9E) : kMuted;
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-      child: Row(
-        children: [
-          SizedBox(
-            width: 28,
-            child: Icon(rowIcon, size: 18, color: Color(0xFF7A7A7A)),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Tooltip(
-              message: file.name,
-              child: Text(
-                file.name,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: driftSans(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
-                  color: kInk,
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () {}, // For splash effect
+        child: Container(
+          height: 56,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: Row(
+            children: [
+              SizedBox(
+                width: 28,
+                child: Icon(rowIcon, size: 20, color: iconColor),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Tooltip(
+                  message: file.name,
+                  child: Text(
+                    file.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: driftSans(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: kInk,
+                    ),
+                  ),
                 ),
               ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          SizedBox(
-            width: 116,
-            child: Text(
-              sizeLabel,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.right,
-              style: driftSans(
-                fontSize: 12,
-                fontWeight: FontWeight.w500,
-                color: kMuted,
+              const SizedBox(width: 12),
+              Text(
+                sizeLabel,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.right,
+                style: driftSans(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                  color: kMuted,
+                ),
               ),
-            ),
+              const SizedBox(width: 10),
+              IconButton(
+                onPressed: onRemove,
+                icon: const Icon(Icons.close_rounded, size: 18),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                visualDensity: VisualDensity.compact,
+                color: kMuted.withValues(alpha: 0.5),
+                tooltip: 'Remove',
+              ),
+            ],
           ),
-          const SizedBox(width: 8),
-          IconButton(
-            onPressed: onRemove,
-            icon: const Icon(Icons.close_rounded, size: 18),
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-            visualDensity: VisualDensity.compact,
-            color: kMuted,
-            tooltip: 'Remove',
-          ),
-        ],
+        ),
       ),
     );
   }
