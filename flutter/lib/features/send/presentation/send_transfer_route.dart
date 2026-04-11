@@ -2,11 +2,17 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../theme/drift_theme.dart';
+import '../../transfers/application/manifest.dart';
+import '../../transfers/application/state.dart' as transfer_state;
+import '../../transfers/presentation/widgets/preview_table.dart';
 import '../../transfers/presentation/widgets/sending_connection_strip.dart';
-import '../../transfers/presentation/widgets/utility_transfer_flow_layout.dart';
+import '../../transfers/presentation/widgets/transfer_flow_layout.dart';
+import '../../transfers/presentation/widgets/transfer_live_stats.dart';
+import '../../transfers/presentation/widgets/transfer_presentation_helpers.dart';
 import '../application/controller.dart';
 import '../application/model.dart';
 import '../application/state.dart';
+import '../application/transfer_state.dart';
 import 'send_transfer_view_data.dart';
 
 class SendTransferRoutePage extends ConsumerStatefulWidget {
@@ -101,101 +107,89 @@ class _TransferStateCard extends StatelessWidget {
     final accent = viewData.visual.accentColor;
     final showFooterButton =
         state is SendStateTransferring || state is SendStateResult;
+    final transfer = switch (state) {
+      SendStateTransferring(:final transfer) => transfer,
+      SendStateResult(:final transfer) => transfer,
+      _ => null,
+    };
     final primary = Theme.of(context).colorScheme.primary;
-    final isSuccessResult = state is SendStateResult &&
+    final isSuccessResult =
+        state is SendStateResult &&
         viewData.visual.statusLabel.toLowerCase().trim() == 'success';
 
-    final heroText = viewData.etaLabel ??
-        (viewData.progressFraction != null
-            ? '${(viewData.progressFraction! * 100).toInt()}%'
-            : viewData.visual.statusLabel);
+    final progress = _buildSharedTransferProgress(
+      transfer,
+      viewData.files.length,
+    );
+    final manifestItems = viewData.files
+        .map(
+          (file) =>
+              TransferManifestItem(path: file.path, sizeBytes: file.sizeBytes),
+        )
+        .toList(growable: false);
+    final itemSummary =
+        '${fileCountLabel(manifestItems.length)} · ${formatBytes(_totalManifestSize(manifestItems))}';
+    final stripMode =
+        viewData.stripMode ??
+        (isSuccessResult
+            ? SendingStripMode.transferring
+            : SendingStripMode.waitingOnRecipient);
+    final activeLine = _activeFileLine(viewData.files);
 
-    return UtilityTransferFlowLayout(
+    return TransferFlowLayout(
       statusLabel: viewData.visual.statusLabel,
       statusColor: accent,
-      heroText: heroText,
-      subtitle: 'Sending to ${viewData.remoteLabel}',
-      utilityBar: Row(
-        children: [
-          if (viewData.speedLabel != null)
-            Text(
-              viewData.speedLabel!,
-              style: driftSans(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: kInk,
-              ),
-            ),
-          if (viewData.speedLabel != null && viewData.progressLabel != null)
-            Text('  ·  ', style: driftSans(color: kMuted)),
-          if (viewData.progressLabel != null)
-            Text(
-              viewData.progressLabel!,
-              style: driftSans(
-                fontSize: 13,
-                fontWeight: FontWeight.w500,
-                color: kMuted,
-              ),
-            ),
-        ],
+      title: viewData.remoteLabel,
+      subtitle: viewData.visual.subtitle,
+      explainer: _SendExplainer(progress: progress, activeLine: activeLine),
+      illustration: SendingConnectionStrip(
+        localLabel: viewData.localLabel,
+        localDeviceType: viewData.localDeviceType,
+        remoteLabel: viewData.remoteLabel,
+        remoteDeviceType: viewData.remoteDeviceType,
+        animate: viewData.visual.showSpinner,
+        mode: stripMode,
+        transferProgress: (viewData.progressFraction ?? 0.0).clamp(0.0, 1.0),
       ),
-      progressBar: LinearProgressIndicator(
-        value: viewData.progressFraction?.clamp(0.0, 1.0),
-        minHeight: 12,
-        backgroundColor: accent.withValues(alpha: 0.1),
-        valueColor: AlwaysStoppedAnimation<Color>(accent),
-        borderRadius: BorderRadius.circular(999),
-      ),
-      activityLine: () {
-        final activeIndex =
-            viewData.files.indexWhere((f) => f.state == SendTransferFileState.active);
-        if (activeIndex == -1) return null;
-
-        final activeFile = viewData.files[activeIndex];
-        return Text(
-          'Now: ${activeFile.name} (${activeIndex + 1} of ${viewData.files.length})',
-          style: driftSans(
-            fontSize: 13,
-            fontWeight: FontWeight.w500,
-            color: kInk,
-          ),
-        );
-      }(),
-      manifest: _SendManifest(viewData: viewData),
+      manifest: manifestItems.isEmpty
+          ? null
+          : PreviewTable(items: manifestItems, footerSummary: itemSummary),
       footer: Row(
         children: [
           Expanded(
             child: showFooterButton
                 ? (state is SendStateResult
-                    ? FilledButton(
-                        onPressed: onExit,
-                        style: FilledButton.styleFrom(
-                          backgroundColor: isSuccessResult ? primary : accent,
-                          foregroundColor: Colors.white,
-                          minimumSize: const Size(0, 48),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                        child: const Text('Done'),
-                      )
-                    : TextButton(
-                        onPressed: onExit,
-                        style: TextButton.styleFrom(
-                          foregroundColor: const Color(0xFFB34A4A),
-                          backgroundColor:
-                              const Color(0xFFB34A4A).withValues(alpha: 0.08),
-                          minimumSize: const Size(0, 48),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            side: BorderSide(
-                              color: const Color(0xFFB34A4A)
-                                  .withValues(alpha: 0.15),
+                      ? FilledButton(
+                          onPressed: onExit,
+                          style: FilledButton.styleFrom(
+                            backgroundColor: isSuccessResult ? primary : accent,
+                            foregroundColor: Colors.white,
+                            minimumSize: const Size(0, 48),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
                             ),
                           ),
-                        ),
-                        child: const Text('Cancel transfer'),
-                      ))
+                          child: const Text('Done'),
+                        )
+                      : TextButton(
+                          onPressed: onExit,
+                          style: TextButton.styleFrom(
+                            foregroundColor: const Color(0xFFB34A4A),
+                            backgroundColor: const Color(
+                              0xFFB34A4A,
+                            ).withValues(alpha: 0.08),
+                            minimumSize: const Size(0, 48),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              side: BorderSide(
+                                color: const Color(
+                                  0xFFB34A4A,
+                                ).withValues(alpha: 0.15),
+                              ),
+                            ),
+                          ),
+                          child: const Text('Cancel transfer'),
+                        ))
                 : const SizedBox.shrink(),
           ),
         ],
@@ -204,139 +198,26 @@ class _TransferStateCard extends StatelessWidget {
   }
 }
 
-class _SendManifest extends StatelessWidget {
-  const _SendManifest({required this.viewData});
+class _SendExplainer extends StatelessWidget {
+  const _SendExplainer({required this.progress, this.activeLine});
 
-  final SendTransferPageData viewData;
-
-  @override
-  Widget build(BuildContext context) {
-    if (viewData.files.isEmpty) {
-      return const SizedBox.shrink();
-    }
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        _FileList(files: viewData.files),
-      ],
-    );
-  }
-}
-
-class _FileList extends StatelessWidget {
-  const _FileList({required this.files});
-
-  final List<SendTransferFileViewData> files;
+  final transfer_state.TransferTransferProgress? progress;
+  final String? activeLine;
 
   @override
   Widget build(BuildContext context) {
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          'FILES',
-          style: driftSans(
-            fontSize: 11,
-            fontWeight: FontWeight.w800,
-            color: kMuted,
-            letterSpacing: 1.0,
-          ),
-        ),
-        const SizedBox(height: 16),
-        for (int index = 0; index < files.length; index++) ...[
-          _FileRow(file: files[index]),
-          if (index < files.length - 1) const SizedBox(height: 20),
-        ],
-        const SizedBox(height: 16),
-      ],
-    );
-  }
-}
-
-class _FileRow extends StatelessWidget {
-  const _FileRow({required this.file});
-
-  final SendTransferFileViewData file;
-
-  @override
-  Widget build(BuildContext context) {
-    final accent = switch (file.state) {
-      SendTransferFileState.pending => kMuted,
-      SendTransferFileState.active => kAccentCyanStrong,
-      SendTransferFileState.completed => const Color(0xFF49B36C),
-    };
-
-    final icon = switch (file.state) {
-      SendTransferFileState.pending => Icons.radio_button_unchecked_rounded,
-      SendTransferFileState.active => Icons.sync_rounded,
-      SendTransferFileState.completed => Icons.check_circle_rounded,
-    };
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(icon, color: accent, size: 18),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    file.name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: driftSans(
-                      fontSize: 13.5,
-                      fontWeight: FontWeight.w600,
-                      color: kInk,
-                    ),
-                  ),
-                  if (file.state == SendTransferFileState.active) ...[
-                    const SizedBox(height: 4),
-                    Text(
-                      file.path,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: driftMono(fontSize: 11, color: kMuted),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-            const SizedBox(width: 12),
-            Text(
-              file.sizeLabel,
-              style: driftSans(
-                fontSize: 12.5,
-                fontWeight: FontWeight.w600,
-                color: kMuted,
-              ),
-            ),
-          ],
-        ),
-        if (file.state == SendTransferFileState.active &&
-            file.progressFraction != null) ...[
-          const SizedBox(height: 10),
-          LinearProgressIndicator(
-            value: file.progressFraction!.clamp(0.0, 1.0),
-            minHeight: 5,
-            backgroundColor: accent.withValues(alpha: 0.12),
-            valueColor: AlwaysStoppedAnimation<Color>(accent),
-            borderRadius: BorderRadius.circular(999),
-          ),
-        ],
-        if (file.statusLabel != null) ...[
-          const SizedBox(height: 6),
+        if (progress != null) TransferLiveStats(progress: progress!),
+        if (activeLine != null) ...[
+          if (progress != null) const SizedBox(height: 8),
           Text(
-            file.statusLabel!,
+            activeLine!,
             style: driftSans(
-              fontSize: 11.5,
+              fontSize: 12.5,
               fontWeight: FontWeight.w600,
-              color: accent,
+              color: kInk,
             ),
           ),
         ],
@@ -345,3 +226,70 @@ class _FileRow extends StatelessWidget {
   }
 }
 
+transfer_state.TransferTransferProgress? _buildSharedTransferProgress(
+  SendTransferState? transfer,
+  int fallbackFileCount,
+) {
+  if (transfer == null || transfer.totalBytes == BigInt.zero) {
+    return null;
+  }
+
+  final snapshot = transfer.snapshot;
+  return transfer_state.TransferTransferProgress(
+    bytesTransferred: transfer.bytesSent,
+    totalBytes: transfer.totalBytes,
+    completedFiles: snapshot?.completedFiles ?? 0,
+    totalFiles: snapshot?.totalFiles ?? fallbackFileCount,
+    speedLabel: viewSpeedLabel(transfer),
+    etaLabel: viewEtaLabel(transfer),
+  );
+}
+
+String? _activeFileLine(List<SendTransferFileViewData> files) {
+  final activeIndex = files.indexWhere(
+    (file) => file.state == SendTransferFileState.active,
+  );
+  if (activeIndex == -1) {
+    return null;
+  }
+  final activeFile = files[activeIndex];
+  return 'Now sending: ${activeFile.path} (${activeIndex + 1} of ${files.length})';
+}
+
+BigInt _totalManifestSize(List<TransferManifestItem> items) {
+  return items.fold(BigInt.zero, (sum, item) => sum + item.sizeBytes);
+}
+
+String? viewSpeedLabel(SendTransferState transfer) {
+  final speed = transfer.snapshot?.bytesPerSec;
+  if (speed == null || speed <= BigInt.zero) {
+    return null;
+  }
+  return '${formatBytes(speed)}/s';
+}
+
+String? viewEtaLabel(SendTransferState transfer) {
+  final eta = transfer.snapshot?.etaSeconds;
+  if (eta == null || eta <= BigInt.zero) {
+    return null;
+  }
+
+  final seconds = eta.toInt();
+  if (seconds < 60) {
+    return '$seconds s left';
+  }
+
+  final minutes = seconds ~/ 60;
+  final remainingSeconds = seconds % 60;
+  if (minutes < 60) {
+    return remainingSeconds == 0
+        ? '$minutes m left'
+        : '$minutes m $remainingSeconds s left';
+  }
+
+  final hours = minutes ~/ 60;
+  final remainingMinutes = minutes % 60;
+  return remainingMinutes == 0
+      ? '$hours h left'
+      : '$hours h $remainingMinutes m left';
+}
