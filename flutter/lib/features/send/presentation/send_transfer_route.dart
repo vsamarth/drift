@@ -146,16 +146,21 @@ class _TransferStateCard extends StatelessWidget {
         valueColor: AlwaysStoppedAnimation<Color>(accent),
         borderRadius: BorderRadius.circular(999),
       ),
-      activityLine: viewData.files.any((f) => f.state == SendTransferFileState.active)
-          ? Text(
-              'Now: ${viewData.files.firstWhere((f) => f.state == SendTransferFileState.active).name}',
-              style: driftSans(
-                fontSize: 13,
-                fontWeight: FontWeight.w500,
-                color: kInk,
-              ),
-            )
-          : null,
+      activityLine: () {
+        final activeIndex =
+            viewData.files.indexWhere((f) => f.state == SendTransferFileState.active);
+        if (activeIndex == -1) return null;
+
+        final activeFile = viewData.files[activeIndex];
+        return Text(
+          'Now: ${activeFile.name} (${activeIndex + 1} of ${viewData.files.length})',
+          style: driftSans(
+            fontSize: 13,
+            fontWeight: FontWeight.w500,
+            color: kInk,
+          ),
+        );
+      }(),
       manifest: _SendManifest(viewData: viewData),
       footer: Row(
         children: [
