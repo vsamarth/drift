@@ -8,12 +8,13 @@ void main() {
 
     expect(state.phase, SendSessionPhase.idle);
     expect(state.items, isEmpty);
-    expect(state.destination, isNull);
+    expect(state.destination.mode, SendDestinationMode.none);
+    expect(state.request, isNull);
     expect(state.result, isNull);
     expect(state.errorMessage, isNull);
   });
 
-  test('send state can represent a draft', () {
+  test('send state can represent a draft with a destination', () {
     final state = SendState.drafting(
       items: [
         SendDraftItem(
@@ -23,13 +24,63 @@ void main() {
           sizeBytes: BigInt.from(1024),
         ),
       ],
+      destination: const SendDestinationState.code('ABC123'),
     );
 
     expect(state.phase, SendSessionPhase.drafting);
     expect(state.items, hasLength(1));
     expect(state.items.single.path, '/tmp/report.pdf');
-    expect(state.destination, isNull);
+    expect(state.destination.mode, SendDestinationMode.code);
+    expect(state.destination.code, 'ABC123');
+    expect(state.request, isNull);
     expect(state.result, isNull);
     expect(state.errorMessage, isNull);
+  });
+
+  test('send state can represent an active transfer with a request snapshot', () {
+    final state = SendState.transferring(
+      items: const [],
+      destination: const SendDestinationState.code('ABC123'),
+      request: const SendRequestData(
+        destinationMode: SendDestinationMode.code,
+        paths: ['/tmp/report.pdf'],
+        deviceName: 'MacBook Pro',
+        deviceType: 'laptop',
+        code: 'ABC123',
+      ),
+    );
+
+    expect(state.phase, SendSessionPhase.transferring);
+    expect(state.destination.mode, SendDestinationMode.code);
+    expect(state.request?.code, 'ABC123');
+  });
+
+  test('send state can represent a final result with the original request snapshot', () {
+    final state = SendState.result(
+      items: const [],
+      destination: const SendDestinationState.nearby(
+        ticket: 'ticket-1',
+        lanDestinationLabel: 'Laptop',
+      ),
+      request: const SendRequestData(
+        destinationMode: SendDestinationMode.nearby,
+        paths: ['/tmp/report.pdf'],
+        deviceName: 'MacBook Pro',
+        deviceType: 'laptop',
+        ticket: 'ticket-1',
+        lanDestinationLabel: 'Laptop',
+      ),
+      result: const SendTransferResult(
+        outcome: SendTransferOutcome.success,
+        title: 'Sent',
+        message: 'Done',
+      ),
+    );
+
+    expect(state.phase, SendSessionPhase.result);
+    expect(state.destination.mode, SendDestinationMode.nearby);
+    expect(state.request?.destinationMode, SendDestinationMode.nearby);
+    expect(state.request?.ticket, 'ticket-1');
+    expect(state.result?.outcome, SendTransferOutcome.success);
   });
 }
