@@ -27,8 +27,7 @@ void main() {
       ),
     );
 
-    expect(find.text('Selected files'), findsWidgets);
-    expect(find.text('Choose how you want to send this selection.'), findsOneWidget);
+    expect(find.text('Selected files'), findsOneWidget);
     expect(find.text('report.pdf'), findsOneWidget);
     expect(find.text('photo.jpg'), findsOneWidget);
     expect(find.text('Name'), findsOneWidget);
