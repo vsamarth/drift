@@ -1,8 +1,33 @@
 import 'package:flutter/foundation.dart';
 
+enum SendDestinationMode { none, code, nearby }
+
 enum SendTransferOutcome { success, cancelled, declined, failed }
 
 enum SendPickedFileKind { file, directory }
+
+@immutable
+class SendRequestData {
+  const SendRequestData({
+    required this.destinationMode,
+    required this.paths,
+    required this.deviceName,
+    required this.deviceType,
+    this.code,
+    this.ticket,
+    this.lanDestinationLabel,
+    this.serverUrl,
+  });
+
+  final SendDestinationMode destinationMode;
+  final List<String> paths;
+  final String deviceName;
+  final String deviceType;
+  final String? code;
+  final String? ticket;
+  final String? lanDestinationLabel;
+  final String? serverUrl;
+}
 
 @immutable
 class SendTransferResult {
@@ -53,10 +78,7 @@ class SendPickedFile {
   factory SendPickedFile.fromPath(String path) {
     final uri = Uri.file(path);
     final name = uri.pathSegments.isNotEmpty ? uri.pathSegments.last : path;
-    return SendPickedFile(
-      path: path,
-      name: name.trim().isEmpty ? path : name,
-    );
+    return SendPickedFile(path: path, name: name.trim().isEmpty ? path : name);
   }
 
   factory SendPickedFile.directory(String path) {
