@@ -23,10 +23,20 @@ class SendState {
           errorMessage: null,
         );
 
+  const SendState.drafting({
+    required List<SendDraftItem> items,
+    String? destination,
+  }) : this._(
+          phase: SendSessionPhase.drafting,
+          items: items,
+          destination: destination,
+          result: null,
+          errorMessage: null,
+        );
+
   final SendSessionPhase phase;
   final List<SendDraftItem> items;
   final String? destination;
   final SendTransferResult? result;
   final String? errorMessage;
 }
-

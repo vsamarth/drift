@@ -1,55 +1,76 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../theme/drift_theme.dart';
+import '../application/controller.dart';
 import '../../receive/application/service.dart';
 import '../../receive/application/state.dart';
 import '../../transfers/presentation/widgets/transfer_presentation_helpers.dart';
 import '../application/model.dart';
 import '../application/directory_size.dart';
 import '../application/send_selection_picker.dart';
+import '../application/state.dart';
 import 'receive_code_field.dart';
 
-class SendDraftPreview extends ConsumerStatefulWidget {
-  const SendDraftPreview({super.key, required this.files});
+class SendDraftRoutePage extends ConsumerStatefulWidget {
+  const SendDraftRoutePage({super.key, required this.files});
 
   final List<SendPickedFile> files;
+
+  @override
+  ConsumerState<SendDraftRoutePage> createState() => _SendDraftRoutePageState();
+}
+
+class _SendDraftRoutePageState extends ConsumerState<SendDraftRoutePage> {
+  bool _seeded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      if (widget.files.isNotEmpty) {
+        ref.read(sendControllerProvider.notifier).beginDraft(widget.files);
+      }
+      setState(() {
+        _seeded = true;
+      });
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_seeded) {
+      return const SizedBox.shrink();
+    }
+    return const SendDraftPreview();
+  }
+}
+
+class SendDraftPreview extends ConsumerStatefulWidget {
+  const SendDraftPreview({super.key});
 
   @override
   ConsumerState<SendDraftPreview> createState() => _SendDraftPreviewState();
 }
 
 class _SendDraftPreviewState extends ConsumerState<SendDraftPreview> {
-  late List<SendPickedFile> _files;
-  String _code = '';
   final Set<String> _pendingDirectorySizes = <String>{};
+  final Map<String, BigInt> _resolvedDirectorySizes = <String, BigInt>{};
 
   @override
   void initState() {
     super.initState();
-    _files = List<SendPickedFile>.of(widget.files);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         _hydrateDirectorySizes();
       }
     });
-  }
-
-  @override
-  void didUpdateWidget(covariant SendDraftPreview oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (!listEquals(oldWidget.files, widget.files)) {
-      _files = List<SendPickedFile>.of(widget.files);
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
-          _hydrateDirectorySizes();
-        }
-      });
-    }
   }
 
   Future<void> _appendSelection(
@@ -61,38 +82,25 @@ class _SendDraftPreviewState extends ConsumerState<SendDraftPreview> {
       return;
     }
 
-    setState(() {
-      _files = [..._files, ...selected];
-    });
-    _hydrateDirectorySizes();
+    ref.read(sendControllerProvider.notifier).appendDraftItems(selected);
   }
 
   void _removeFile(SendPickedFile file) {
-    setState(() {
-      _files.removeWhere((item) => item.path == file.path);
-    });
-
-    if (_files.isEmpty && mounted) {
-      unawaited(
-        Future<void>.microtask(() {
-          if (mounted) {
-            context.pop();
-          }
-        }),
-      );
-    }
+    ref.read(sendControllerProvider.notifier).removeDraftItem(file.path);
   }
 
   void _hydrateDirectorySizes() {
-    for (final file in _files) {
-      if (file.kind != SendPickedFileKind.directory || file.sizeBytes != null) {
+    final state = ref.read(sendControllerProvider);
+    for (final item in state.items) {
+      if (item.kind != SendPickedFileKind.directory) {
         continue;
       }
-      if (_pendingDirectorySizes.contains(file.path)) {
+      if (_resolvedDirectorySizes.containsKey(item.path) ||
+          _pendingDirectorySizes.contains(item.path)) {
         continue;
       }
-      _pendingDirectorySizes.add(file.path);
-      unawaited(_resolveDirectorySize(file.path));
+      _pendingDirectorySizes.add(item.path);
+      unawaited(_resolveDirectorySize(item.path));
     }
   }
 
@@ -105,34 +113,34 @@ class _SendDraftPreviewState extends ConsumerState<SendDraftPreview> {
         return;
       }
 
-      final index = _files.indexWhere(
-        (file) =>
-            file.path == path &&
-            file.kind == SendPickedFileKind.directory &&
-            file.sizeBytes == null,
+      final state = ref.read(sendControllerProvider);
+      final exists = state.items.any(
+        (item) => item.path == path && item.kind == SendPickedFileKind.directory,
       );
-      if (index == -1) {
+      if (!exists) {
         return;
       }
 
       setState(() {
-        final current = _files[index];
-        _files[index] = SendPickedFile(
-          path: current.path,
-          name: current.name,
-          kind: current.kind,
-          sizeBytes: sizeBytes,
-        );
+        _resolvedDirectorySizes[path] = sizeBytes;
       });
     } finally {
       _pendingDirectorySizes.remove(path);
     }
   }
 
-  void _updateCode(String value) {
-    setState(() {
-      _code = value;
-    });
+  List<SendPickedFile> _displayFilesFor(SendState state) {
+    return state.items.map((item) {
+      final sizeBytes = item.kind == SendPickedFileKind.directory
+          ? (_resolvedDirectorySizes[item.path] ?? item.sizeBytes)
+          : item.sizeBytes;
+      return SendPickedFile(
+        path: item.path,
+        name: item.name,
+        kind: item.kind,
+        sizeBytes: sizeBytes,
+      );
+    }).toList(growable: false);
   }
 
   String _selectionSummaryLabel(List<SendPickedFile> files) {
@@ -167,8 +175,36 @@ class _SendDraftPreviewState extends ConsumerState<SendDraftPreview> {
 
   @override
   Widget build(BuildContext context) {
-    final summary = _selectionSummaryLabel(_files);
-    final previewHeight = _previewHeightFor(context, _files);
+    final state = ref.watch(sendControllerProvider);
+    ref.listen<SendState>(sendControllerProvider, (previous, next) {
+      if (previous?.items != next.items) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            _hydrateDirectorySizes();
+          }
+        });
+      }
+      if (previous?.phase == SendSessionPhase.drafting &&
+          next.phase == SendSessionPhase.idle &&
+          mounted) {
+        context.pop();
+      }
+    });
+
+    if (state.phase == SendSessionPhase.idle) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && Navigator.of(context).canPop()) {
+          context.pop();
+        }
+      });
+      return const SizedBox.shrink();
+    }
+
+    final files = _displayFilesFor(state);
+    final summary = _selectionSummaryLabel(files);
+    final previewHeight = _previewHeightFor(context, files);
+    final code = state.destination ?? '';
+    final controller = ref.read(sendControllerProvider.notifier);
 
     return Scaffold(
       backgroundColor: kBg,
@@ -238,7 +274,7 @@ class _SendDraftPreviewState extends ConsumerState<SendDraftPreview> {
                       child: SizedBox(
                         height: previewHeight,
                         child: _PreviewTableViewport(
-                          files: _files,
+                          files: files,
                           maxHeight: previewHeight,
                           onRemove: _removeFile,
                         ),
@@ -273,7 +309,10 @@ class _SendDraftPreviewState extends ConsumerState<SendDraftPreview> {
                       ),
                     ),
                     const SizedBox(height: 18),
-                    _SendDraftExtras(code: _code, onCodeChanged: _updateCode),
+                    _SendDraftExtras(
+                      code: code,
+                      onCodeChanged: controller.updateDestinationCode,
+                    ),
                   ],
                 ),
               ),
@@ -290,7 +329,7 @@ class _SendDraftPreviewState extends ConsumerState<SendDraftPreview> {
                   ),
                 ),
                 child: FilledButton(
-                  onPressed: () {},
+                  onPressed: state.items.isEmpty ? null : () {},
                   style: FilledButton.styleFrom(
                     minimumSize: const Size.fromHeight(48),
                     shape: RoundedRectangleBorder(
@@ -311,7 +350,10 @@ class _SendDraftPreviewState extends ConsumerState<SendDraftPreview> {
 }
 
 class _SendDraftExtras extends ConsumerStatefulWidget {
-  const _SendDraftExtras({required this.code, required this.onCodeChanged});
+  const _SendDraftExtras({
+    required this.code,
+    required this.onCodeChanged,
+  });
 
   final String code;
   final ValueChanged<String> onCodeChanged;
@@ -370,6 +412,7 @@ class _SendDraftExtrasState extends ConsumerState<_SendDraftExtras> {
 
   @override
   Widget build(BuildContext context) {
+    final state = ref.watch(sendControllerProvider);
     final titleStyle = driftSans(
       fontSize: 17,
       fontWeight: FontWeight.w700,
@@ -402,7 +445,7 @@ class _SendDraftExtrasState extends ConsumerState<_SendDraftExtras> {
               itemBuilder: (context, index) {
                 final receiver = _nearbyDevices[index];
                 final selected =
-                    _normalizedCode(widget.code) ==
+                    _normalizedCode(state.destination ?? widget.code) ==
                     _normalizedCode(receiver.code);
                 return _NearbyDeviceTile(
                   receiver: receiver,
@@ -422,7 +465,7 @@ class _SendDraftExtrasState extends ConsumerState<_SendDraftExtras> {
         ),
         const SizedBox(height: 16),
         ReceiveCodeField(
-          code: widget.code,
+          code: state.destination ?? widget.code,
           onChanged: widget.onCodeChanged,
           hintText: 'AB12CD',
           understated: true,

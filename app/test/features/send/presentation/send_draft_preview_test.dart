@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:app/app/app_router.dart';
+import 'package:app/features/send/application/controller.dart';
 import 'package:app/features/send/application/directory_size.dart';
 import 'package:app/features/receive/application/service.dart';
 import 'package:app/features/receive/application/state.dart';
@@ -30,42 +31,51 @@ Future<void> _pumpPreview(WidgetTester tester) async {
   await tester.pump();
 }
 
+ProviderContainer _buildContainer({
+  required DirectorySizeCalculator directorySizeCalculator,
+  required SendSelectionPicker picker,
+  required FakeReceiverServiceSource receiverSource,
+}) {
+  return ProviderContainer(
+    overrides: [
+      directorySizeCalculatorProvider.overrideWithValue(directorySizeCalculator),
+      receiverServiceSourceProvider.overrideWithValue(receiverSource),
+      sendSelectionPickerProvider.overrideWithValue(picker),
+    ],
+  );
+}
+
 void main() {
   testWidgets('shows the send draft preview', (WidgetTester tester) async {
+    final container = _buildContainer(
+      directorySizeCalculator: FakeDirectorySizeCalculator({
+        '/tmp/photos': BigInt.from(1024),
+      }),
+      receiverSource: FakeReceiverServiceSource(),
+      picker: FakeSendSelectionPicker(),
+    );
+    addTearDown(container.dispose);
+    container.read(sendControllerProvider.notifier).beginDraft([
+      SendPickedFile(
+        path: '/tmp/report.pdf',
+        name: 'report.pdf',
+        sizeBytes: BigInt.from(1024),
+      ),
+      SendPickedFile(
+        path: '/tmp/photos',
+        name: 'photos',
+        kind: SendPickedFileKind.directory,
+      ),
+      SendPickedFile(
+        path: '/tmp/photo.jpg',
+        name: 'photo.jpg',
+        sizeBytes: BigInt.from(2048),
+      ),
+    ]);
     await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          directorySizeCalculatorProvider.overrideWithValue(
-            FakeDirectorySizeCalculator({'/tmp/photos': BigInt.from(1024)}),
-          ),
-          receiverServiceSourceProvider.overrideWithValue(
-            FakeReceiverServiceSource(),
-          ),
-          sendSelectionPickerProvider.overrideWithValue(
-            FakeSendSelectionPicker(),
-          ),
-        ],
-        child: MaterialApp(
-          home: SendDraftPreview(
-            files: [
-              SendPickedFile(
-                path: '/tmp/report.pdf',
-                name: 'report.pdf',
-                sizeBytes: BigInt.from(1024),
-              ),
-              SendPickedFile(
-                path: '/tmp/photos',
-                name: 'photos',
-                kind: SendPickedFileKind.directory,
-              ),
-              SendPickedFile(
-                path: '/tmp/photo.jpg',
-                name: 'photo.jpg',
-                sizeBytes: BigInt.from(2048),
-              ),
-            ],
-          ),
-        ),
+      UncontrolledProviderScope(
+        container: container,
+        child: const MaterialApp(home: SendDraftPreview()),
       ),
     );
     await _pumpPreview(tester);
@@ -106,28 +116,23 @@ void main() {
       ],
     );
 
+    final container = _buildContainer(
+      directorySizeCalculator: FakeDirectorySizeCalculator({}),
+      receiverSource: FakeReceiverServiceSource(),
+      picker: picker,
+    );
+    addTearDown(container.dispose);
+    container.read(sendControllerProvider.notifier).beginDraft([
+      SendPickedFile(
+        path: '/tmp/report.pdf',
+        name: 'report.pdf',
+        sizeBytes: BigInt.from(1024),
+      ),
+    ]);
     await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          directorySizeCalculatorProvider.overrideWithValue(
-            FakeDirectorySizeCalculator({}),
-          ),
-          receiverServiceSourceProvider.overrideWithValue(
-            FakeReceiverServiceSource(),
-          ),
-          sendSelectionPickerProvider.overrideWithValue(picker),
-        ],
-        child: MaterialApp(
-          home: SendDraftPreview(
-            files: [
-              SendPickedFile(
-                path: '/tmp/report.pdf',
-                name: 'report.pdf',
-                sizeBytes: BigInt.from(1024),
-              ),
-            ],
-          ),
-        ),
+      UncontrolledProviderScope(
+        container: container,
+        child: const MaterialApp(home: SendDraftPreview()),
       ),
     );
     await _pumpPreview(tester);
@@ -157,28 +162,25 @@ void main() {
       ],
     );
 
+    final container = _buildContainer(
+      directorySizeCalculator: FakeDirectorySizeCalculator({
+        '/tmp/photos': BigInt.from(2048),
+      }),
+      receiverSource: FakeReceiverServiceSource(),
+      picker: picker,
+    );
+    addTearDown(container.dispose);
+    container.read(sendControllerProvider.notifier).beginDraft([
+      SendPickedFile(
+        path: '/tmp/report.pdf',
+        name: 'report.pdf',
+        sizeBytes: BigInt.from(1024),
+      ),
+    ]);
     await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          directorySizeCalculatorProvider.overrideWithValue(
-            FakeDirectorySizeCalculator({'/tmp/photos': BigInt.from(2048)}),
-          ),
-          receiverServiceSourceProvider.overrideWithValue(
-            FakeReceiverServiceSource(),
-          ),
-          sendSelectionPickerProvider.overrideWithValue(picker),
-        ],
-        child: MaterialApp(
-          home: SendDraftPreview(
-            files: [
-              SendPickedFile(
-                path: '/tmp/report.pdf',
-                name: 'report.pdf',
-                sizeBytes: BigInt.from(1024),
-              ),
-            ],
-          ),
-        ),
+      UncontrolledProviderScope(
+        container: container,
+        child: const MaterialApp(home: SendDraftPreview()),
       ),
     );
     await _pumpPreview(tester);
@@ -208,28 +210,23 @@ void main() {
         ],
       );
 
+      final container = _buildContainer(
+        directorySizeCalculator: FakeDirectorySizeCalculator({}),
+        receiverSource: receiverSource,
+        picker: FakeSendSelectionPicker(),
+      );
+      addTearDown(container.dispose);
+      container.read(sendControllerProvider.notifier).beginDraft([
+        SendPickedFile(
+          path: '/tmp/report.pdf',
+          name: 'report.pdf',
+          sizeBytes: BigInt.from(1024),
+        ),
+      ]);
       await tester.pumpWidget(
-        ProviderScope(
-          overrides: [
-            directorySizeCalculatorProvider.overrideWithValue(
-              FakeDirectorySizeCalculator({}),
-            ),
-            receiverServiceSourceProvider.overrideWithValue(receiverSource),
-            sendSelectionPickerProvider.overrideWithValue(
-              FakeSendSelectionPicker(),
-            ),
-          ],
-          child: MaterialApp(
-            home: SendDraftPreview(
-              files: [
-                SendPickedFile(
-                  path: '/tmp/report.pdf',
-                  name: 'report.pdf',
-                  sizeBytes: BigInt.from(1024),
-                ),
-              ],
-            ),
-          ),
+        UncontrolledProviderScope(
+          container: container,
+          child: const MaterialApp(home: SendDraftPreview()),
         ),
       );
       await _pumpPreview(tester);
@@ -255,7 +252,6 @@ void main() {
   ) async {
     final router = GoRouter(
       initialLocation: AppRoutePaths.sendDraft,
-      initialExtra: const <SendPickedFile>[],
       routes: [
         GoRoute(
           path: AppRoutePaths.home,
@@ -263,17 +259,32 @@ void main() {
           routes: [
             GoRoute(
               path: AppRoutePaths.sendDraftSegment,
-              builder: (context, state) {
-                final files = state.extra as List<SendPickedFile>? ?? const [];
-                return SendDraftPreview(files: files);
-              },
+              builder: (context, state) => const SendDraftPreview(),
             ),
           ],
         ),
       ],
     );
 
-    await tester.pumpWidget(MaterialApp.router(routerConfig: router));
+    final container = _buildContainer(
+      directorySizeCalculator: FakeDirectorySizeCalculator({}),
+      receiverSource: FakeReceiverServiceSource(),
+      picker: FakeSendSelectionPicker(),
+    );
+    addTearDown(container.dispose);
+    container.read(sendControllerProvider.notifier).beginDraft([
+      SendPickedFile(
+        path: '/tmp/report.pdf',
+        name: 'report.pdf',
+        sizeBytes: BigInt.from(1024),
+      ),
+    ]);
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp.router(routerConfig: router),
+      ),
+    );
     await _pumpPreview(tester);
 
     expect(find.byType(SendDraftPreview), findsOneWidget);
@@ -298,13 +309,6 @@ void main() {
   ) async {
     final router = GoRouter(
       initialLocation: AppRoutePaths.sendDraft,
-      initialExtra: [
-        SendPickedFile(
-          path: '/tmp/report.pdf',
-          name: 'report.pdf',
-          sizeBytes: BigInt.from(1024),
-        ),
-      ],
       routes: [
         GoRoute(
           path: AppRoutePaths.home,
@@ -312,29 +316,29 @@ void main() {
           routes: [
             GoRoute(
               path: AppRoutePaths.sendDraftSegment,
-              builder: (context, state) {
-                final files = state.extra as List<SendPickedFile>? ?? const [];
-                return SendDraftPreview(files: files);
-              },
+              builder: (context, state) => const SendDraftPreview(),
             ),
           ],
         ),
       ],
     );
 
+    final container = _buildContainer(
+      directorySizeCalculator: FakeDirectorySizeCalculator({}),
+      receiverSource: FakeReceiverServiceSource(),
+      picker: FakeSendSelectionPicker(),
+    );
+    addTearDown(container.dispose);
+    container.read(sendControllerProvider.notifier).beginDraft([
+      SendPickedFile(
+        path: '/tmp/report.pdf',
+        name: 'report.pdf',
+        sizeBytes: BigInt.from(1024),
+      ),
+    ]);
     await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          directorySizeCalculatorProvider.overrideWithValue(
-            FakeDirectorySizeCalculator({}),
-          ),
-          receiverServiceSourceProvider.overrideWithValue(
-            FakeReceiverServiceSource(),
-          ),
-          sendSelectionPickerProvider.overrideWithValue(
-            FakeSendSelectionPicker(),
-          ),
-        ],
+      UncontrolledProviderScope(
+        container: container,
         child: MaterialApp.router(routerConfig: router),
       ),
     );

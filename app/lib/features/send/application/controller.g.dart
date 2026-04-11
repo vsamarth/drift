@@ -20,7 +20,7 @@ final class SendControllerProvider
         argument: null,
         retry: null,
         name: r'sendControllerProvider',
-        isAutoDispose: true,
+        isAutoDispose: false,
         dependencies: null,
         $allTransitiveDependencies: null,
       );

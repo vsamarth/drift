@@ -252,7 +252,7 @@ packages:
   drift_bridge:
     dependency: "direct main"
     description:
-      path: "../flutter/rust_builder"
+      path: "../ref-app/rust_builder"
       relative: true
     source: path
     version: "0.0.1"

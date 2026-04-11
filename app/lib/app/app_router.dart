@@ -41,7 +41,7 @@ GoRouter buildAppRouter({List<NavigatorObserver> observers = const []}) {
             path: AppRoutePaths.sendDraftSegment,
             builder: (context, state) {
               final files = state.extra as List<SendPickedFile>? ?? const [];
-              return SendDraftPreview(files: files);
+              return SendDraftRoutePage(files: files);
             },
           ),
         ],

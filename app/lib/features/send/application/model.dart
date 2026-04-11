@@ -22,11 +22,22 @@ class SendDraftItem {
   const SendDraftItem({
     required this.path,
     required this.name,
+    required this.kind,
     required this.sizeBytes,
   });
 
+  factory SendDraftItem.fromPickedFile(SendPickedFile file) {
+    return SendDraftItem(
+      path: file.path,
+      name: file.name,
+      kind: file.kind,
+      sizeBytes: file.sizeBytes ?? BigInt.zero,
+    );
+  }
+
   final String path;
   final String name;
+  final SendPickedFileKind kind;
   final BigInt sizeBytes;
 }
 

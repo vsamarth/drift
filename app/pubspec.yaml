@@ -43,7 +43,7 @@ dependencies:
   riverpod_annotation: ^4.0.2
   window_manager: ^0.5.1
   drift_bridge:
-    path: ../flutter/rust_builder
+    path: ../ref-app/rust_builder
 
 dev_dependencies:
   flutter_test:
