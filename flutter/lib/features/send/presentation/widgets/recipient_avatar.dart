@@ -24,35 +24,38 @@ class RecipientAvatar extends StatefulWidget {
 
 class _RecipientAvatarState extends State<RecipientAvatar>
     with SingleTickerProviderStateMixin {
-  late AnimationController _pulseController;
+  late AnimationController _rippleController;
 
   @override
   void initState() {
     super.initState();
-    _pulseController = AnimationController(
+    _rippleController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 2000),
+      duration: const Duration(milliseconds: 2500),
     );
-    if (widget.animate && widget.mode == SendingStripMode.waitingOnRecipient) {
-      _pulseController.repeat(reverse: true);
-    }
+    _updateAnimation();
   }
 
   @override
   void didUpdateWidget(RecipientAvatar oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.animate &&
-        widget.mode == SendingStripMode.waitingOnRecipient &&
-        !_pulseController.isAnimating) {
-      _pulseController.repeat(reverse: true);
-    } else if (widget.mode != SendingStripMode.waitingOnRecipient) {
-      _pulseController.stop();
+    _updateAnimation();
+  }
+
+  void _updateAnimation() {
+    final shouldAnimate = widget.animate &&
+        (widget.mode == SendingStripMode.waitingOnRecipient ||
+            widget.mode == SendingStripMode.looping);
+    if (shouldAnimate && !_rippleController.isAnimating) {
+      _rippleController.repeat();
+    } else if (!shouldAnimate && _rippleController.isAnimating) {
+      _rippleController.stop();
     }
   }
 
   @override
   void dispose() {
-    _pulseController.dispose();
+    _rippleController.dispose();
     super.dispose();
   }
 
@@ -60,81 +63,93 @@ class _RecipientAvatarState extends State<RecipientAvatar>
   Widget build(BuildContext context) {
     final isPhone = widget.deviceType.toLowerCase() == 'phone';
     final icon = isPhone ? Icons.smartphone_rounded : Icons.laptop_mac_rounded;
-    
+    final isRippling = _rippleController.isAnimating;
+
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Stack(
-          alignment: Alignment.center,
-          children: [
-            // Pulse effect for waiting state
-            if (widget.mode == SendingStripMode.waitingOnRecipient)
-              AnimatedBuilder(
-                animation: _pulseController,
-                builder: (context, child) {
-                  return Container(
-                    width: 100 + (20 * _pulseController.value),
-                    height: 100 + (20 * _pulseController.value),
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: kAccentCyan.withValues(
-                        alpha: 0.15 * (1.0 - _pulseController.value),
-                      ),
-                    ),
-                  );
-                },
-              ),
-            
-            // Background circle
-            Container(
-              width: 90,
-              height: 90,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: kSurface,
-                border: Border.all(color: kBorder.withValues(alpha: 0.5)),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.04),
-                    blurRadius: 12,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-              ),
-            ),
-            
-            // Progress Ring
-            if (widget.mode == SendingStripMode.transferring)
-              SizedBox(
-                width: 96,
-                height: 96,
-                child: CircularProgressIndicator(
-                  value: widget.progress.clamp(0.01, 1.0),
-                  strokeWidth: 4,
-                  strokeCap: StrokeCap.round,
-                  backgroundColor: kBorder.withValues(alpha: 0.3),
-                  valueColor: const AlwaysStoppedAnimation<Color>(kAccentCyan),
+        SizedBox(
+          width: 112,
+          height: 112,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              // Ripple animation
+              if (isRippling)
+                AnimatedBuilder(
+                  animation: _rippleController,
+                  builder: (context, child) {
+                    return Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        for (int i = 0; i < 2; i++)
+                          _buildRipple((_rippleController.value + (i * 0.5)) % 1.0),
+                      ],
+                    );
+                  },
                 ),
-              ),
-            
-            // Success Ring (Implicitly when progress is 1.0 or state is Result)
-            if (widget.mode == SendingStripMode.transferring && widget.progress >= 1.0)
-               Container(
-                width: 96,
-                height: 96,
+
+              // Static base ring (always shown for layout stability)
+              Container(
+                width: 112,
+                height: 112,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  border: Border.all(color: kAccentCyan, width: 4),
+                  color: kAccentCyan.withValues(alpha: 0.12),
                 ),
               ),
 
-            // Icon
-            Icon(
-              icon,
-              size: 40,
-              color: kInk.withValues(alpha: 0.9),
-            ),
-          ],
+              // Background circle
+              Container(
+                width: 90,
+                height: 90,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: kSurface,
+                  border: Border.all(color: kBorder.withValues(alpha: 0.5)),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.04),
+                      blurRadius: 12,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+              ),
+
+              // Progress Ring
+              if (widget.mode == SendingStripMode.transferring)
+                SizedBox(
+                  width: 96,
+                  height: 96,
+                  child: CircularProgressIndicator(
+                    value: widget.progress.clamp(0.01, 1.0),
+                    strokeWidth: 4,
+                    strokeCap: StrokeCap.round,
+                    backgroundColor: kBorder.withValues(alpha: 0.3),
+                    valueColor: const AlwaysStoppedAnimation<Color>(kAccentCyan),
+                  ),
+                ),
+
+              // Success Ring
+              if (widget.mode == SendingStripMode.transferring && widget.progress >= 1.0)
+                Container(
+                  width: 96,
+                  height: 96,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(color: kAccentCyan, width: 4),
+                  ),
+                ),
+
+              // Icon
+              Icon(
+                icon,
+                size: 40,
+                color: kInk.withValues(alpha: 0.9),
+              ),
+            ],
+          ),
         ),
         const SizedBox(height: 16),
         Text(
@@ -148,6 +163,24 @@ class _RecipientAvatarState extends State<RecipientAvatar>
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildRipple(double t) {
+    // Starts at avatar edge (90) and expands to edge of footprint (112)
+    final size = 90 + (22 * t);
+    final opacity = (1.0 - t) * 0.25;
+
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        border: Border.all(
+          color: kAccentCyan.withValues(alpha: opacity),
+          width: 1.5,
+        ),
+      ),
     );
   }
 }

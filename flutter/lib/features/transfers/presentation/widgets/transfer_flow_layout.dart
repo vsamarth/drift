@@ -83,7 +83,7 @@ class TransferFlowLayout extends StatelessWidget {
                   const SizedBox(height: 24),
                   explainer!,
                 ],
-                const SizedBox(height: 48),
+                const SizedBox(height: 64),
                 if (manifest != null) ...[
                   manifest!,
                   const SizedBox(height: 32),

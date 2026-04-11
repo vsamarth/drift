@@ -133,13 +133,23 @@ class _TransferStateCard extends StatelessWidget {
         (isSuccessResult
             ? SendingStripMode.transferring
             : SendingStripMode.waitingOnRecipient);
-    final activeLine = _activeFileLine(viewData.files);
+
+    String subtitle = viewData.visual.subtitle;
+    if (progress != null && state is SendStateTransferring) {
+      final extras = <String>[
+        if (progress.speedLabel != null) progress.speedLabel!,
+        if (progress.etaLabel != null) progress.etaLabel!,
+      ];
+      if (extras.isNotEmpty) {
+        subtitle = extras.join(' | ');
+      }
+    }
 
     return TransferFlowLayout(
       statusLabel: viewData.visual.statusLabel,
       statusColor: accent,
-      subtitle: viewData.visual.subtitle,
-      explainer: _SendExplainer(progress: progress, activeLine: activeLine),
+      subtitle: subtitle,
+      explainer: null,
       illustration: RecipientAvatar(
         deviceName: viewData.remoteLabel,
         deviceType: viewData.remoteDeviceType ?? 'phone',
@@ -194,35 +204,6 @@ class _TransferStateCard extends StatelessWidget {
   }
 }
 
-class _SendExplainer extends StatelessWidget {
-  const _SendExplainer({required this.progress, this.activeLine});
-
-  final transfer_state.TransferTransferProgress? progress;
-  final String? activeLine;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        if (progress != null) TransferLiveStats(progress: progress!),
-        if (activeLine != null) ...[
-          if (progress != null) const SizedBox(height: 12),
-          Text(
-            activeLine!,
-            textAlign: TextAlign.center,
-            style: driftSans(
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-              color: kInk,
-            ),
-          ),
-        ],
-      ],
-    );
-  }
-}
-
 transfer_state.TransferTransferProgress? _buildSharedTransferProgress(
   SendTransferState? transfer,
   int fallbackFileCount,
@@ -240,17 +221,6 @@ transfer_state.TransferTransferProgress? _buildSharedTransferProgress(
     speedLabel: viewSpeedLabel(transfer),
     etaLabel: viewEtaLabel(transfer),
   );
-}
-
-String? _activeFileLine(List<SendTransferFileViewData> files) {
-  final activeIndex = files.indexWhere(
-    (file) => file.state == SendTransferFileState.active,
-  );
-  if (activeIndex == -1) {
-    return null;
-  }
-  final activeFile = files[activeIndex];
-  return 'Now sending: ${activeFile.path} (${activeIndex + 1} of ${files.length})';
 }
 
 String? viewSpeedLabel(SendTransferState transfer) {
