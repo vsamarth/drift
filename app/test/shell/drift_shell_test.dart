@@ -1,12 +1,17 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:app/app/app_router.dart';
+import 'package:app/features/send/application/model.dart';
+import 'package:app/features/send/application/send_selection_picker.dart';
 import 'package:app/features/settings/feature.dart';
 import 'package:app/features/send/presentation/send_draft_preview.dart';
 import 'package:app/features/send/send_drop_zone.dart';
 import '../support/settings_test_overrides.dart';
+import '../support/fake_send_selection_picker.dart';
 
 void main() {
   testWidgets('shows the receiver card above the send dropzone', (
@@ -18,9 +23,7 @@ void main() {
         overrides: [
           initialAppSettingsProvider.overrideWithValue(testAppSettings),
         ],
-        child: MaterialApp.router(
-          routerConfig: router,
-        ),
+        child: MaterialApp.router(routerConfig: router),
       ),
     );
 
@@ -40,9 +43,7 @@ void main() {
         overrides: [
           initialAppSettingsProvider.overrideWithValue(testAppSettings),
         ],
-        child: MaterialApp.router(
-          routerConfig: router,
-        ),
+        child: MaterialApp.router(routerConfig: router),
       ),
     );
 
@@ -65,15 +66,16 @@ void main() {
   testWidgets('dropping files navigates to /send/draft and shows preview', (
     WidgetTester tester,
   ) async {
+    final tempDir = Directory.systemTemp.createTempSync('drift_shell_test');
+    final droppedFile = File('${tempDir.path}/report.pdf')
+      ..writeAsStringSync('preview');
     final router = buildAppRouter();
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
           initialAppSettingsProvider.overrideWithValue(testAppSettings),
         ],
-        child: MaterialApp.router(
-          routerConfig: router,
-        ),
+        child: MaterialApp.router(routerConfig: router),
       ),
     );
 
@@ -83,11 +85,9 @@ void main() {
     );
 
     final dropZone = tester.widget<SendDropZone>(find.byType(SendDropZone));
-    await tester.runAsync(() async {
-      dropZone.onDropPaths(const ['/tmp/report.pdf']);
-      await Future<void>.delayed(const Duration(milliseconds: 1));
-    });
-    await tester.pumpAndSettle();
+    dropZone.onDropPaths([droppedFile.path]);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
 
     expect(
       router.routeInformationProvider.value.uri.toString(),
@@ -95,5 +95,81 @@ void main() {
     );
     expect(find.byType(SendDraftPreview), findsOneWidget);
     expect(find.text('report.pdf'), findsOneWidget);
+  });
+
+  testWidgets('choosing Files routes to send draft preview', (
+    WidgetTester tester,
+  ) async {
+    final picker = FakeSendSelectionPicker(
+      filesResult: [
+        SendPickedFile(
+          path: '/tmp/report.pdf',
+          name: 'report.pdf',
+          sizeBytes: BigInt.from(1024),
+        ),
+      ],
+    );
+    final router = buildAppRouter();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          initialAppSettingsProvider.overrideWithValue(testAppSettings),
+          sendSelectionPickerProvider.overrideWithValue(picker),
+        ],
+        child: MaterialApp.router(routerConfig: router),
+      ),
+    );
+
+    await tester.tap(find.text('Select files'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Files'));
+    await tester.pumpAndSettle();
+
+    expect(picker.filesPickCount, 1);
+    expect(picker.folderPickCount, 0);
+    expect(
+      router.routeInformationProvider.value.uri.toString(),
+      AppRoutePaths.sendDraft,
+    );
+    expect(find.byType(SendDraftPreview), findsOneWidget);
+    expect(find.text('report.pdf'), findsOneWidget);
+  });
+
+  testWidgets('choosing Folder routes to send draft preview', (
+    WidgetTester tester,
+  ) async {
+    final picker = FakeSendSelectionPicker(
+      folderResult: const [
+        SendPickedFile(
+          path: '/tmp/photos',
+          name: 'photos',
+          kind: SendPickedFileKind.directory,
+        ),
+      ],
+    );
+    final router = buildAppRouter();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          initialAppSettingsProvider.overrideWithValue(testAppSettings),
+          sendSelectionPickerProvider.overrideWithValue(picker),
+        ],
+        child: MaterialApp.router(routerConfig: router),
+      ),
+    );
+
+    await tester.tap(find.text('Select files'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Folder'));
+    await tester.pumpAndSettle();
+
+    expect(picker.filesPickCount, 0);
+    expect(picker.folderPickCount, 1);
+    expect(
+      router.routeInformationProvider.value.uri.toString(),
+      AppRoutePaths.sendDraft,
+    );
+    expect(find.byType(SendDraftPreview), findsOneWidget);
+    expect(find.text('photos'), findsOneWidget);
   });
 }

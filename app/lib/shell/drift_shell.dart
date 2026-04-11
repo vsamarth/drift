@@ -1,6 +1,6 @@
 import 'dart:async';
+import 'dart:io';
 
-import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -8,6 +8,8 @@ import '../features/receive/application/controller.dart';
 import '../features/receive/presentation/widgets/idle_card.dart';
 import '../app/app_router.dart';
 import '../features/send/application/model.dart';
+import '../features/send/application/send_selection_picker.dart';
+import '../features/send/presentation/send_selection_source_sheet.dart';
 import '../features/send/send_drop_zone.dart';
 import '../theme/drift_theme.dart';
 
@@ -21,33 +23,13 @@ class DriftShell extends ConsumerWidget {
     context.goSendDraft(files: files);
   }
 
-  Future<List<SendPickedFile>> _loadPickedFiles() async {
-    final pickedFiles = await openFiles();
-    if (pickedFiles.isEmpty) {
-      return const [];
-    }
-
-    return Future.wait(
-      pickedFiles.map((file) async {
-        final path = file.path.isNotEmpty ? file.path : file.name;
-        final name = file.name.trim().isEmpty
-            ? Uri.file(path).pathSegments.isNotEmpty
-                ? Uri.file(path).pathSegments.last
-                : path
-            : file.name;
-        BigInt? sizeBytes;
-        try {
-          sizeBytes = BigInt.from(await file.length());
-        } catch (_) {
-          sizeBytes = null;
-        }
-        return SendPickedFile(path: path, name: name, sizeBytes: sizeBytes);
-      }),
-    );
-  }
-
-  Future<void> _pickFiles(BuildContext context) async {
-    final files = await _loadPickedFiles();
+  Future<void> _pickSelection(
+    BuildContext context,
+    WidgetRef ref,
+    Future<List<SendPickedFile>> Function(SendSelectionPicker picker) pick,
+  ) async {
+    final pickerService = ref.read(sendSelectionPickerProvider);
+    final files = await pick(pickerService);
     if (files.isEmpty) {
       return;
     }
@@ -59,23 +41,37 @@ class DriftShell extends ConsumerWidget {
     await _openSelectedFiles(context, files);
   }
 
+  Future<void> _pickFiles(BuildContext context, WidgetRef ref) {
+    return _pickSelection(context, ref, (picker) => picker.pickFiles());
+  }
+
+  Future<void> _pickFolder(BuildContext context, WidgetRef ref) {
+    return _pickSelection(context, ref, (picker) => picker.pickFolder());
+  }
+
   Future<List<SendPickedFile>> _loadDroppedFiles(List<String> paths) async {
-    return Future.wait(
-      paths.map((path) async {
-        final picked = SendPickedFile.fromPath(path);
-        BigInt? sizeBytes;
-        try {
-          sizeBytes = BigInt.from(await XFile(path).length());
-        } catch (_) {
-          sizeBytes = null;
-        }
-        return SendPickedFile(
-          path: picked.path,
-          name: picked.name,
-          sizeBytes: sizeBytes,
-        );
-      }),
-    );
+    return paths
+        .map((path) {
+          final entityType = FileSystemEntity.typeSync(path);
+          final picked = entityType == FileSystemEntityType.directory
+              ? SendPickedFile.directory(path)
+              : SendPickedFile.fromPath(path);
+          BigInt? sizeBytes;
+          if (picked.kind == SendPickedFileKind.file) {
+            try {
+              sizeBytes = BigInt.from(File(path).lengthSync());
+            } catch (_) {
+              sizeBytes = null;
+            }
+          }
+          return SendPickedFile(
+            path: picked.path,
+            name: picked.name,
+            kind: picked.kind,
+            sizeBytes: sizeBytes,
+          );
+        })
+        .toList(growable: false);
   }
 
   @override
@@ -98,20 +94,24 @@ class DriftShell extends ConsumerWidget {
               const SizedBox(height: 12),
               Expanded(
                 child: SendDropZone(
-                  onChooseFiles: () => _pickFiles(context),
+                  onChooseFiles: () {
+                    return showSendSelectionSourceSheet(
+                      context,
+                      onChooseFiles: () => _pickFiles(context, ref),
+                      onChooseFolder: () => _pickFolder(context, ref),
+                    );
+                  },
                   onDropPaths: (paths) {
                     if (paths.isEmpty) {
                       return;
                     }
                     unawaited(
-                      _loadDroppedFiles(paths).then(
-                        (files) async {
-                          if (!context.mounted) {
-                            return;
-                          }
-                          await _openSelectedFiles(context, files);
-                        },
-                      ),
+                      _loadDroppedFiles(paths).then((files) async {
+                        if (!context.mounted) {
+                          return;
+                        }
+                        await _openSelectedFiles(context, files);
+                      }),
                     );
                   },
                 ),
