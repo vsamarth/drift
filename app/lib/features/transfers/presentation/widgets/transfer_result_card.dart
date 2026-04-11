@@ -1,55 +1,40 @@
 import 'package:flutter/material.dart';
 
 import '../../../../theme/drift_theme.dart';
-import '../../application/state.dart';
+import '../../application/result_view_data.dart';
 import 'transfer_flow_layout.dart';
-import 'transfer_presentation_helpers.dart';
-
-enum TransferResultOutcome {
-  success,
-  cancelled,
-  failed,
-}
 
 class TransferResultCard extends StatelessWidget {
   const TransferResultCard({
     super.key,
-    required this.outcome,
-    required this.title,
-    required this.message,
-    this.metrics,
-    this.primaryLabel,
+    required this.viewData,
     this.onPrimary,
   });
 
-  final TransferResultOutcome outcome;
-  final String title;
-  final String message;
-  final List<ResultMetric>? metrics;
-  final String? primaryLabel;
+  final TransferResultViewData viewData;
   final VoidCallback? onPrimary;
 
   @override
   Widget build(BuildContext context) {
-    final visual = _visualForOutcome(outcome);
+    final visual = _visualForOutcome(viewData.outcome);
 
     return SizedBox.expand(
       child: TransferFlowLayout(
         statusLabel: visual.statusLabel,
         statusColor: visual.accentColor,
-        title: title,
-        subtitle: message,
-        explainer: _completionExplainer(metrics),
+        title: viewData.title,
+        subtitle: viewData.message,
+        explainer: _completionExplainer(viewData.metrics),
         illustration: _TransferResultIllustration(
           icon: visual.icon,
           color: visual.accentColor,
         ),
-        manifest: metrics == null || metrics!.isEmpty
+        manifest: viewData.metrics == null || viewData.metrics!.isEmpty
             ? null
-            : _ResultMetricList(metrics: metrics!),
+            : _ResultMetricList(metrics: viewData.metrics!),
         footer: Row(
           children: [
-            if (primaryLabel != null && onPrimary != null)
+            if (viewData.primaryLabel.isNotEmpty && onPrimary != null)
               Expanded(
                 child: FilledButton(
                   onPressed: onPrimary,
@@ -61,7 +46,7 @@ class TransferResultCard extends StatelessWidget {
                       borderRadius: BorderRadius.circular(12),
                     ),
                   ),
-                  child: Text(primaryLabel!),
+                  child: Text(viewData.primaryLabel),
                 ),
               ),
           ],
@@ -69,13 +54,6 @@ class TransferResultCard extends StatelessWidget {
       ),
     );
   }
-}
-
-class ResultMetric {
-  const ResultMetric({required this.label, required this.value});
-
-  final String label;
-  final String value;
 }
 
 class _ResultMetricList extends StatelessWidget {
@@ -213,16 +191,4 @@ String? _metricValue(List<ResultMetric> metrics, String label) {
     }
   }
   return null;
-}
-
-List<ResultMetric> buildReceiveCompletionMetrics({
-  required TransferIncomingOffer offer,
-  required TransferTransferResult result,
-}) {
-  return <ResultMetric>[
-    ResultMetric(label: 'From', value: displaySender(offer.sender.displayName)),
-    ResultMetric(label: 'Saved to', value: offer.destinationLabel),
-    ResultMetric(label: 'Files', value: '${result.completedFiles}'),
-    ResultMetric(label: 'Size', value: formatBytes(result.totalBytes)),
-  ];
 }

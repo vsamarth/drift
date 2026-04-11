@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../application/controller.dart';
 import '../application/service.dart';
+import '../application/result_view_data.dart';
 import '../application/state.dart';
 import 'widgets/receiving_card.dart';
 import 'widgets/offer_card.dart';
@@ -33,35 +34,11 @@ class TransfersFeature extends ConsumerWidget {
           onCancel: () =>
               ref.read(transfersServiceProvider.notifier).cancelTransfer(),
         ),
-        TransferSessionPhase.completed =>
-          _buildTransferResultCard(
-            outcome: TransferResultOutcome.success,
-            offer: state.incomingOffer!,
-            result: state.result!,
-            message: state.incomingOffer?.statusMessage ?? 'Transfer complete',
-            title: 'Files saved',
-            onDone: () =>
-                ref.read(transfersServiceProvider.notifier).dismissTransferResult(),
-          ),
-        TransferSessionPhase.cancelled =>
-          _buildTransferResultCard(
-            outcome: TransferResultOutcome.cancelled,
-            offer: state.incomingOffer!,
-            result: state.result,
-            message:
-                state.errorMessage ??
-                'Drift stopped receiving before all files were saved.',
-            title: 'Receive cancelled',
-            onDone: () =>
-                ref.read(transfersServiceProvider.notifier).dismissTransferResult(),
-          ),
+        TransferSessionPhase.completed ||
+        TransferSessionPhase.cancelled ||
         TransferSessionPhase.failed =>
           _buildTransferResultCard(
-            outcome: TransferResultOutcome.failed,
-            offer: state.incomingOffer!,
-            result: state.result,
-            message: state.errorMessage ?? 'Couldn\'t finish receiving files.',
-            title: 'Couldn\'t finish receiving files',
+            viewData: buildTransferResultViewData(state),
             onDone: () =>
                 ref.read(transfersServiceProvider.notifier).dismissTransferResult(),
           ),
@@ -72,23 +49,11 @@ class TransfersFeature extends ConsumerWidget {
 }
 
 Widget _buildTransferResultCard({
-  required TransferResultOutcome outcome,
-  required TransferIncomingOffer offer,
-  required TransferTransferResult? result,
-  required String title,
-  required String message,
+  required TransferResultViewData viewData,
   required VoidCallback onDone,
 }) {
-  final metrics = outcome == TransferResultOutcome.success && result != null
-      ? buildReceiveCompletionMetrics(offer: offer, result: result)
-      : null;
-
   return TransferResultCard(
-    outcome: outcome,
-    title: title,
-    message: message,
-    metrics: metrics,
-    primaryLabel: 'Done',
+    viewData: viewData,
     onPrimary: onDone,
   );
 }
