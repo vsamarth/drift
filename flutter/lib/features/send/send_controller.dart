@@ -1,9 +1,9 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import '../../core/models/transfer_models.dart';
+import '../../shared/logging/transfer_logging.dart';
 import '../../state/drift_app_state.dart';
 import '../../state/drift_providers.dart';
 import 'send_dependencies.dart' as send_deps;
@@ -70,39 +70,27 @@ class SendController extends _$SendController
   }
 
   void pickSendItems() {
-    unawaited(
-      _sendSelectionCoordinator.pickSendItems(this),
-    );
+    unawaited(_sendSelectionCoordinator.pickSendItems(this));
   }
 
   void appendSendItemsFromPicker() {
-    unawaited(
-      _sendSelectionCoordinator.appendSendItemsFromPicker(this),
-    );
+    unawaited(_sendSelectionCoordinator.appendSendItemsFromPicker(this));
   }
 
   void rescanNearbySendDestinations() {
-    unawaited(
-      _sendNearbyCoordinator.runScanOnce(this),
-    );
+    unawaited(_sendNearbyCoordinator.runScanOnce(this));
   }
 
   void acceptDroppedSendItems(List<String> paths) {
-    unawaited(
-      _sendSelectionCoordinator.acceptDroppedSendItems(this, paths),
-    );
+    unawaited(_sendSelectionCoordinator.acceptDroppedSendItems(this, paths));
   }
 
   void appendDroppedSendItems(List<String> paths) {
-    unawaited(
-      _sendSelectionCoordinator.appendDroppedSendItems(this, paths),
-    );
+    unawaited(_sendSelectionCoordinator.appendDroppedSendItems(this, paths));
   }
 
   void removeSendItem(String path) {
-    unawaited(
-      _sendSelectionCoordinator.removeSendItem(this, path),
-    );
+    unawaited(_sendSelectionCoordinator.removeSendItem(this, path));
   }
 
   void updateSendDestinationCode(String value) {
@@ -217,7 +205,8 @@ class SendController extends _$SendController
   String get currentDeviceType => _sendState.deviceType;
 
   @override
-  String? get currentServerUrl => _appState?.serverUrl ?? ref.read(driftAppNotifierProvider).serverUrl;
+  String? get currentServerUrl =>
+      _appState?.serverUrl ?? ref.read(driftAppNotifierProvider).serverUrl;
 
   @override
   bool get isInspectingSendItems => _sendState.isInspectingSendItems;
@@ -298,8 +287,12 @@ class SendController extends _$SendController
   ) {
     _sendSetupErrorMessage = userMessage;
     _publishState();
-    debugPrint('Failed to inspect selected send items: $error');
-    debugPrintStack(stackTrace: stackTrace);
+    logTransferError(
+      scope: 'send',
+      action: 'inspect selected send items',
+      error: error,
+      stackTrace: stackTrace,
+    );
   }
 
   @override
@@ -350,8 +343,12 @@ class SendController extends _$SendController
 
   @override
   void logNearbyScanFailure(Object error, StackTrace stackTrace) {
-    debugPrint('[drift/send] nearby scan failed: $error');
-    debugPrintStack(stackTrace: stackTrace);
+    logTransferError(
+      scope: 'send',
+      action: 'nearby scan',
+      error: error,
+      stackTrace: stackTrace,
+    );
   }
 
   @override
@@ -361,8 +358,12 @@ class SendController extends _$SendController
 
   @override
   void logSendTransferFailure(Object error, StackTrace stackTrace) {
-    debugPrint('[drift/send] failed to send files: $error');
-    debugPrintStack(stackTrace: stackTrace);
+    logTransferError(
+      scope: 'send',
+      action: 'send files',
+      error: error,
+      stackTrace: stackTrace,
+    );
   }
 
   @override
@@ -398,10 +399,7 @@ class SendController extends _$SendController
   SendState get _sendState {
     final DriftAppState appState =
         _appState ?? ref.read(driftAppNotifierProvider);
-    return _buildSendState(
-      appState,
-      _sendSession ?? appState.session,
-    );
+    return _buildSendState(appState, _sendSession ?? appState.session);
   }
 
   SendState _buildSendState(DriftAppState appState, ShellSessionState session) {

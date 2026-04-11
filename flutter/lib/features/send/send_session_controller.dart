@@ -1,11 +1,11 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../platform/send_transfer_source.dart';
 import '../receive/receive_mapper.dart';
 import '../../state/shell_session_state.dart';
+import '../../shared/logging/transfer_logging.dart';
 import 'send_dependencies.dart';
 import '../../state/drift_sample_data.dart';
 import 'send_flow_state.dart';
@@ -69,6 +69,25 @@ class SendSessionController {
     SendSessionHost host,
     SendTransferUpdate update,
   ) {
+    switch (update.phase) {
+      case SendTransferUpdatePhase.cancelled:
+      case SendTransferUpdatePhase.failed:
+        logTransferTerminalOutcome(
+          scope: 'send',
+          phase: update.phase.name,
+          destinationLabel: update.destinationLabel,
+          statusMessage: update.statusMessage,
+          errorMessage: update.errorMessage,
+        );
+        break;
+      case SendTransferUpdatePhase.connecting:
+      case SendTransferUpdatePhase.waitingForDecision:
+      case SendTransferUpdatePhase.accepted:
+      case SendTransferUpdatePhase.declined:
+      case SendTransferUpdatePhase.sending:
+      case SendTransferUpdatePhase.completed:
+        break;
+    }
     final progress = progressFromSnapshot(update.snapshot);
     final bytesTransferred =
         progress.bytesTransferred ??
@@ -90,8 +109,12 @@ class SendSessionController {
     try {
       await _transferSource.cancelTransfer();
     } catch (error, stackTrace) {
-      debugPrint('cancelTransfer failed: $error');
-      debugPrintStack(stackTrace: stackTrace);
+      logTransferError(
+        scope: 'send',
+        action: 'cancelTransfer',
+        error: error,
+        stackTrace: stackTrace,
+      );
       host.logSendTransferFailure(error, stackTrace);
       applySendTransferUpdate(
         host,

@@ -1,11 +1,11 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/models/transfer_models.dart';
 import '../platform/app_focus.dart';
 import '../features/receive/receive_mapper.dart';
+import '../shared/logging/transfer_logging.dart';
 import '../src/rust/api/receiver.dart' as rust_receiver;
 import '../features/settings/settings_state.dart';
 import '../features/settings/settings_providers.dart';
@@ -14,8 +14,7 @@ import 'drift_dependencies.dart';
 import 'drift_app_state.dart';
 import 'receiver_service_source.dart';
 
-class DriftAppNotifier extends Notifier<DriftAppState>
-{
+class DriftAppNotifier extends Notifier<DriftAppState> {
   late DriftAppIdentity _identity;
   late final ReceiverServiceSource _receiverServiceSource;
   late final bool _animateSendingConnection;
@@ -137,8 +136,12 @@ class DriftAppNotifier extends Notifier<DriftAppState>
             state = state.copyWith(receiverBadge: badge);
           },
           onError: (Object error, StackTrace stackTrace) {
-            debugPrint('watchBadge failed: $error');
-            debugPrintStack(stackTrace: stackTrace);
+            logTransferError(
+              scope: 'receive',
+              action: 'watchBadge',
+              error: error,
+              stackTrace: stackTrace,
+            );
             state = state.copyWith(
               receiverBadge: const ReceiverBadgeState.unavailable(),
             );
@@ -155,8 +158,12 @@ class DriftAppNotifier extends Notifier<DriftAppState>
         .listen(
           _onIncomingEvent,
           onError: (Object error, StackTrace stackTrace) {
-            debugPrint('watchIncomingTransfers failed: $error');
-            debugPrintStack(stackTrace: stackTrace);
+            logTransferError(
+              scope: 'receive',
+              action: 'watchIncomingTransfers',
+              error: error,
+              stackTrace: stackTrace,
+            );
             _applyIncomingFailure(
               errorMessage: 'Drift lost the connection while receiving files.',
             );
@@ -181,9 +188,13 @@ class DriftAppNotifier extends Notifier<DriftAppState>
         _applyIncomingCancelled(event);
         return;
       case rust_receiver.ReceiverTransferPhase.failed:
-        debugPrint(
-          '[drift/notifier] incoming receive failed: '
-          '${event.error?.message ?? event.statusMessage}',
+        logTransferTerminalOutcome(
+          scope: 'receive',
+          phase: 'failed',
+          senderName: event.senderName,
+          destinationLabel: event.saveRootLabel,
+          statusMessage: event.statusMessage,
+          errorMessage: event.error?.message,
         );
         _applyIncomingFailed(event);
         return;
@@ -307,6 +318,14 @@ class DriftAppNotifier extends Notifier<DriftAppState>
   }
 
   void _applyIncomingCancelled(rust_receiver.ReceiverTransferEvent event) {
+    logTransferTerminalOutcome(
+      scope: 'receive',
+      phase: 'cancelled',
+      senderName: event.senderName,
+      destinationLabel: event.saveRootLabel,
+      statusMessage: event.statusMessage,
+      errorMessage: event.error?.message,
+    );
     final progress = progressFromSnapshot(event.snapshot);
     final bytesReceived =
         progress.bytesTransferred ?? _bigIntToInt(event.bytesReceived);
@@ -346,6 +365,14 @@ class DriftAppNotifier extends Notifier<DriftAppState>
   }
 
   void _applyIncomingFailed(rust_receiver.ReceiverTransferEvent event) {
+    logTransferTerminalOutcome(
+      scope: 'receive',
+      phase: 'failed',
+      senderName: event.senderName,
+      destinationLabel: event.saveRootLabel,
+      statusMessage: event.statusMessage,
+      errorMessage: event.error?.message,
+    );
     _applyIncomingFailure(
       errorMessage: event.error?.message ?? event.statusMessage,
       event: event,
@@ -460,8 +487,12 @@ class DriftAppNotifier extends Notifier<DriftAppState>
     try {
       await _receiverServiceSource.respondToOffer(accept: accept);
     } catch (error, stackTrace) {
-      debugPrint('respondToOffer failed: $error');
-      debugPrintStack(stackTrace: stackTrace);
+      logTransferError(
+        scope: 'receive',
+        action: accept ? 'respondToOffer(accept)' : 'respondToOffer(decline)',
+        error: error,
+        stackTrace: stackTrace,
+      );
       _applyIncomingFailure(
         errorMessage: accept
             ? 'Drift couldn\'t accept the transfer.'
@@ -474,8 +505,12 @@ class DriftAppNotifier extends Notifier<DriftAppState>
     try {
       await _receiverServiceSource.cancelTransfer();
     } catch (error, stackTrace) {
-      debugPrint('cancelReceiveTransfer failed: $error');
-      debugPrintStack(stackTrace: stackTrace);
+      logTransferError(
+        scope: 'receive',
+        action: 'cancelTransfer',
+        error: error,
+        stackTrace: stackTrace,
+      );
       _applyIncomingFailure(
         errorMessage: 'Drift couldn\'t cancel the transfer.',
       );
@@ -500,8 +535,12 @@ class DriftAppNotifier extends Notifier<DriftAppState>
     try {
       await _receiverServiceSource.setDiscoverable(enabled: desired);
     } catch (error, stackTrace) {
-      debugPrint('setDiscoverable($desired) failed: $error');
-      debugPrintStack(stackTrace: stackTrace);
+      logTransferError(
+        scope: 'receive',
+        action: 'setDiscoverable($desired)',
+        error: error,
+        stackTrace: stackTrace,
+      );
     }
   }
 
