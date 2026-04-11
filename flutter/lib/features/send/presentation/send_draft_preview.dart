@@ -283,7 +283,7 @@ class _SendDraftPreviewState extends ConsumerState<SendDraftPreview> {
                     ),
                     const SizedBox(height: 12),
                     Container(
-                      padding: const EdgeInsets.all(20),
+                      padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
                         color: kSurface,
                         borderRadius: BorderRadius.circular(20),
@@ -782,7 +782,7 @@ class _PreviewTableRow extends StatelessWidget {
         : Icons.insert_drive_file_outlined;
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
       child: Row(
         children: [
           SizedBox(
