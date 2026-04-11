@@ -6,6 +6,7 @@ import '../features/send/presentation/send_draft_preview.dart';
 import '../features/send/presentation/send_transfer_route.dart';
 import '../features/settings/feature.dart';
 import '../shell/drift_shell.dart';
+import '../shell/title_bar_shell.dart';
 
 abstract final class AppRoutePaths {
   static const String home = '/';
@@ -35,27 +36,32 @@ GoRouter buildAppRouter({List<NavigatorObserver> observers = const []}) {
   return GoRouter(
     observers: observers,
     routes: [
-      GoRoute(
-        path: AppRoutePaths.home,
-        builder: (context, state) => const DriftShell(),
+      ShellRoute(
+        builder: (context, state, child) => TitleBarShell(child: child),
         routes: [
           GoRoute(
-            path: AppRoutePaths.settingsSegment,
-            builder: (context, state) => const SettingsFeature(),
-          ),
-          GoRoute(
-            path: AppRoutePaths.sendDraftSegment,
-            builder: (context, state) {
-              final files = state.extra as List<SendPickedFile>? ?? const [];
-              return SendDraftRoutePage(files: files);
-            },
-          ),
-          GoRoute(
-            path: AppRoutePaths.sendTransferSegment,
-            builder: (context, state) {
-              final request = state.extra as SendRequestData;
-              return SendTransferRoutePage(request: request);
-            },
+            path: AppRoutePaths.home,
+            builder: (context, state) => const DriftShell(),
+            routes: [
+              GoRoute(
+                path: AppRoutePaths.settingsSegment,
+                builder: (context, state) => const SettingsFeature(),
+              ),
+              GoRoute(
+                path: AppRoutePaths.sendDraftSegment,
+                builder: (context, state) {
+                  final files = state.extra as List<SendPickedFile>? ?? const [];
+                  return SendDraftRoutePage(files: files);
+                },
+              ),
+              GoRoute(
+                path: AppRoutePaths.sendTransferSegment,
+                builder: (context, state) {
+                  final request = state.extra as SendRequestData;
+                  return SendTransferRoutePage(request: request);
+                },
+              ),
+            ],
           ),
         ],
       ),
