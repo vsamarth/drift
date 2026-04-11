@@ -1,13 +1,21 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../state/drift_dependencies.dart';
-import 'settings_controller.dart';
-import 'settings_repository.dart';
-import 'settings_state.dart';
+import 'application/repository.dart';
+import 'application/state.dart';
+import '../../platform/storage_access_source.dart';
 
 final settingsRepositoryProvider = Provider<SettingsRepository>((ref) {
-  return SettingsRepository(ref.watch(driftSettingsStoreProvider));
+  throw UnimplementedError(
+    'settingsRepositoryProvider must be overridden at bootstrap',
+  );
 });
 
-final settingsControllerProvider =
-    NotifierProvider<SettingsController, SettingsState>(SettingsController.new);
+final initialAppSettingsProvider = Provider<AppSettings>((ref) {
+  throw UnimplementedError(
+    'initialAppSettingsProvider must be overridden at bootstrap',
+  );
+});
+
+final storageAccessSourceProvider = Provider<StorageAccessSource>((ref) {
+  return const StorageAccessSource();
+});

@@ -1,73 +1,98 @@
-import 'package:drift_app/features/settings/settings_providers.dart';
-import 'package:drift_app/state/app_identity.dart';
-import 'package:drift_app/state/drift_dependencies.dart';
-import 'package:drift_app/state/settings_store.dart';
+import 'package:app/features/settings/feature.dart';
+import 'package:app/features/receive/application/service.dart';
+import 'package:app/platform/rust/receiver/fake_source.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-
-ProviderContainer _buildContainer({
-  DriftSettingsStore? store,
-  DriftAppIdentity? initialIdentity,
-}) {
-  return ProviderContainer(
-    overrides: [
-      driftSettingsStoreProvider.overrideWith(
-        (ref) => store ?? DriftSettingsStore.inMemory(),
-      ),
-      initialDriftAppIdentityProvider.overrideWith(
-        (ref) =>
-            initialIdentity ??
-            const DriftAppIdentity(
-              deviceName: 'Drift Device',
-              deviceType: 'laptop',
-              downloadRoot: '/tmp/Downloads',
-              discoverableByDefault: true,
-              serverUrl: 'https://drift.samarthv.com',
-            ),
-      ),
-    ],
-  );
-}
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
-  test('saveSettings persists changes and updates feature state', () async {
-    final store = DriftSettingsStore.inMemory();
-    final container = _buildContainer(store: store);
-    addTearDown(container.dispose);
+  setUp(() => SharedPreferences.setMockInitialValues({}));
 
-    final controller = container.read(settingsControllerProvider.notifier);
-    await controller.saveSettings(
-      deviceName: 'My MacBook',
-      downloadRoot: '/Users/me/Downloads/Drift',
-      discoverableByDefault: false,
-      serverUrl: 'https://example.test',
+  test('starts from the seeded settings', () async {
+    final prefs = await SharedPreferences.getInstance();
+    final repo = SettingsRepository(
+      prefs: prefs,
+      randomDeviceName: () => 'Rusty Ridge',
+      defaultDownloadRoot: '/tmp/Drift',
     );
+    final initialSettings = await repo.loadOrCreate();
+    final container = ProviderContainer(
+      overrides: [
+        settingsRepositoryProvider.overrideWithValue(repo),
+        initialAppSettingsProvider.overrideWithValue(initialSettings),
+      ],
+    );
+    addTearDown(container.dispose);
 
     final state = container.read(settingsControllerProvider);
-    expect(state.identity.deviceName, 'My MacBook');
-    expect(state.identity.downloadRoot, '/Users/me/Downloads/Drift');
-    expect(state.identity.discoverableByDefault, isFalse);
-    expect(state.identity.serverUrl, 'https://example.test');
-    expect(store.load(), state.identity);
+
+    expect(state.settings.deviceName, 'Rusty Ridge');
+    expect(state.settings.downloadRoot, '/tmp/Drift');
+    expect(state.settings.discoverableByDefault, isTrue);
+    expect(state.settings.discoveryServerUrl, isNull);
   });
 
-  test('saveSettings short-circuits when nothing changed', () async {
-    final container = _buildContainer();
+  test('saveSettings updates the stored settings', () async {
+    final prefs = await SharedPreferences.getInstance();
+    final repo = SettingsRepository(
+      prefs: prefs,
+      randomDeviceName: () => 'Rusty Ridge',
+      defaultDownloadRoot: '/tmp/Drift',
+    );
+    final initialSettings = await repo.loadOrCreate();
+    final container = ProviderContainer(
+      overrides: [
+        settingsRepositoryProvider.overrideWithValue(repo),
+        initialAppSettingsProvider.overrideWithValue(initialSettings),
+      ],
+    );
     addTearDown(container.dispose);
 
-    final before = container.read(settingsControllerProvider);
-    await container
-        .read(settingsControllerProvider.notifier)
-        .saveSettings(
-          deviceName: before.identity.deviceName,
-          downloadRoot: before.identity.downloadRoot,
-          discoverableByDefault: before.identity.discoverableByDefault,
-          serverUrl: before.identity.serverUrl,
+    await container.read(settingsControllerProvider.notifier).saveSettings(
+          deviceName: 'Maya MacBook',
+          downloadRoot: '/Users/maya/Downloads',
+          serverUrl: 'https://example.com',
+          discoverableByDefault: false,
         );
 
-    final after = container.read(settingsControllerProvider);
-    expect(after.identity, before.identity);
-    expect(after.isSaving, isFalse);
-    expect(after.errorMessage, isNull);
+    final state = container.read(settingsControllerProvider);
+
+    expect(state.settings.deviceName, 'Maya MacBook');
+    expect(state.settings.downloadRoot, '/Users/maya/Downloads');
+    expect(state.settings.discoverableByDefault, isFalse);
+    expect(state.settings.discoveryServerUrl, 'https://example.com');
+    expect(prefs.getString('settings.device_name'), 'Maya MacBook');
+    expect(prefs.getString('settings.download_root'), '/Users/maya/Downloads');
+    expect(prefs.getBool('settings.discoverable'), isFalse);
+    expect(prefs.getString('settings.server_url'), 'https://example.com');
+  });
+
+  test('saveSettings refreshes the live receiver identity', () async {
+    final prefs = await SharedPreferences.getInstance();
+    final repo = SettingsRepository(
+      prefs: prefs,
+      randomDeviceName: () => 'Rusty Ridge',
+      defaultDownloadRoot: '/tmp/Drift',
+    );
+    final initialSettings = await repo.loadOrCreate();
+    final receiverSource = FakeReceiverServiceSource();
+    final container = ProviderContainer(
+      overrides: [
+        settingsRepositoryProvider.overrideWithValue(repo),
+        initialAppSettingsProvider.overrideWithValue(initialSettings),
+        receiverServiceSourceProvider.overrideWithValue(receiverSource),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await container.read(settingsControllerProvider.notifier).saveSettings(
+          deviceName: 'Maya MacBook',
+          downloadRoot: '/Users/maya/Downloads',
+          serverUrl: 'https://example.com',
+          discoverableByDefault: false,
+        );
+
+    expect(receiverSource.lastUpdatedDeviceName, 'Maya MacBook');
+    expect(receiverSource.lastUpdatedServerUrl, 'https://example.com');
   });
 }

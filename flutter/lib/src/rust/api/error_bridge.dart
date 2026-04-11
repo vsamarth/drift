@@ -56,6 +56,7 @@ UserFacingErrorKindData _decodeKind(String value) {
     'FileConflict' => UserFacingErrorKindData.fileConflict,
     'ProtocolIncompatible' => UserFacingErrorKindData.protocolIncompatible,
     'Cancelled' => UserFacingErrorKindData.cancelled,
+    'Other' => UserFacingErrorKindData.other,
     _ => UserFacingErrorKindData.internal,
   };
 }

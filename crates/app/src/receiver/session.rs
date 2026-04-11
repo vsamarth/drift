@@ -105,6 +105,7 @@ impl ReceiverSession {
                         offer_id,
                         final_event: failed_offer_event(
                             &save_root_label,
+                            String::new(),
                             device_type,
                             "Transfer failed.".to_owned(),
                             UserFacingError::from(error),
@@ -119,6 +120,7 @@ impl ReceiverSession {
                         offer_id,
                         final_event: failed_offer_event(
                             &save_root_label,
+                            String::new(),
                             device_type,
                             "Transfer failed.".to_owned(),
                             UserFacingError::internal("Transfer failed", format!("{error}")),
@@ -151,6 +153,7 @@ impl ReceiverSession {
                         offer_id,
                         final_event: failed_offer_event(
                             &save_root_label,
+                            sender_label.clone(),
                             sender_device_type,
                             "Transfer failed.".to_owned(),
                             UserFacingError::internal(
@@ -292,6 +295,7 @@ impl ReceiverSession {
                         offer_id,
                         final_event: failed_offer_event(
                             &save_root_label,
+                            sender_label.clone(),
                             sender_device_type,
                             "Transfer failed.".to_owned(),
                             UserFacingError::from(error),
@@ -307,7 +311,7 @@ impl ReceiverSession {
             Ok(Ok(outcome)) => match outcome {
                 CoreTransferOutcome::Completed => ReceiverOfferEvent {
                     phase: ReceiverOfferPhase::Completed,
-                    sender_name: String::new(),
+                    sender_name: sender_label.clone(),
                     sender_device_type: device_type_to_str(sender_device_type),
                     destination_label: sender_label,
                     save_root_label,
@@ -335,7 +339,7 @@ impl ReceiverSession {
                 },
                 CoreTransferOutcome::Declined { .. } => ReceiverOfferEvent {
                     phase: ReceiverOfferPhase::Declined,
-                    sender_name: String::new(),
+                    sender_name: sender_label.clone(),
                     sender_device_type: device_type_to_str(sender_device_type),
                     destination_label: sender_label,
                     save_root_label,
@@ -352,7 +356,7 @@ impl ReceiverSession {
                 },
                 CoreTransferOutcome::Cancelled(cancellation) => ReceiverOfferEvent {
                     phase: ReceiverOfferPhase::Cancelled,
-                    sender_name: String::new(),
+                    sender_name: sender_label.clone(),
                     sender_device_type: device_type_to_str(sender_device_type),
                     destination_label: sender_label,
                     save_root_label,
@@ -374,12 +378,14 @@ impl ReceiverSession {
             },
             Ok(Err(error)) => failed_offer_event(
                 &save_root_label,
+                sender_label,
                 sender_device_type,
                 "Transfer failed.".to_owned(),
                 UserFacingError::from(error),
             ),
             Err(error) => failed_offer_event(
                 &save_root_label,
+                sender_label,
                 sender_device_type,
                 "Transfer failed.".to_owned(),
                 UserFacingError::internal("Transfer failed", format!("{error}")),
@@ -438,13 +444,14 @@ fn build_offer_event(
 
 fn failed_offer_event(
     save_root_label: &str,
+    sender_name: String,
     sender_device_type: DeviceType,
     status_message: String,
     error: UserFacingError,
 ) -> ReceiverOfferEvent {
     ReceiverOfferEvent {
         phase: ReceiverOfferPhase::Failed,
-        sender_name: String::new(),
+        sender_name,
         sender_device_type: device_type_to_str(sender_device_type),
         destination_label: String::new(),
         save_root_label: save_root_label.to_owned(),
@@ -472,11 +479,13 @@ mod tests {
     fn failed_offer_event_uses_structured_error() {
         let event = failed_offer_event(
             "Downloads",
+            "Maya".to_owned(),
             DeviceType::Laptop,
             "Transfer failed.".to_owned(),
             crate::error::UserFacingError::internal("Transfer failed", "boom"),
         );
 
+        assert_eq!(event.sender_name, "Maya");
         let error = event.error.expect("structured error");
         assert_eq!(error.kind(), UserFacingErrorKind::Internal);
         assert_eq!(error.title(), "Transfer failed");

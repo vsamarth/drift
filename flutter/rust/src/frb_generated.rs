@@ -1238,6 +1238,7 @@ impl SseDecode for crate::api::error::UserFacingErrorKindData {
             7 => crate::api::error::UserFacingErrorKindData::ProtocolIncompatible,
             8 => crate::api::error::UserFacingErrorKindData::Cancelled,
             9 => crate::api::error::UserFacingErrorKindData::Internal,
+            10 => crate::api::error::UserFacingErrorKindData::Other,
             _ => unreachable!("Invalid variant for UserFacingErrorKindData: {}", inner),
         };
     }
@@ -1738,6 +1739,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::error::UserFacingErrorKindDat
             Self::ProtocolIncompatible => 7.into_dart(),
             Self::Cancelled => 8.into_dart(),
             Self::Internal => 9.into_dart(),
+            Self::Other => 10.into_dart(),
             _ => unreachable!(),
         }
     }
@@ -2202,6 +2204,7 @@ impl SseEncode for crate::api::error::UserFacingErrorKindData {
                 crate::api::error::UserFacingErrorKindData::ProtocolIncompatible => 7,
                 crate::api::error::UserFacingErrorKindData::Cancelled => 8,
                 crate::api::error::UserFacingErrorKindData::Internal => 9,
+                crate::api::error::UserFacingErrorKindData::Other => 10,
                 _ => {
                     unimplemented!("");
                 }
