@@ -5,7 +5,7 @@ members = [
     "crates/core",
     "crates/server",
 ]
-exclude = ["flutter/rust", "app/rust"]
+exclude = ["flutter/rust"]
 resolver = "2"
 
 [workspace.package]
