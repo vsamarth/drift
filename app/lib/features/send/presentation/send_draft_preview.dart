@@ -19,12 +19,11 @@ class SendDraftPreview extends StatelessWidget {
       BigInt.zero,
       (sum, item) => sum + (item.sizeBytes ?? BigInt.zero),
     );
-    final fileLabel = count == 1 ? '1 file' : '$count files';
     if (count == 0 || totalBytes == BigInt.zero) {
-      return count == 1 ? '1 file ready' : '$count files ready';
+      return count == 1 ? '1 item ready' : '$count items ready';
     }
 
-    return '$fileLabel, ${formatBytes(totalBytes)}';
+    return '${count == 1 ? '1 item' : '$count items'}, ${formatBytes(totalBytes)}';
   }
 
   double _previewHeightFor(BuildContext context) {
@@ -220,7 +219,7 @@ class _PreviewTableViewport extends StatelessWidget {
                           const SizedBox(width: 28),
                           Expanded(
                             child: Text(
-                              '${files.length} files ready to preview',
+                              '${files.length} items ready to preview',
                               textAlign: TextAlign.right,
                               maxLines: 2,
                               overflow: TextOverflow.ellipsis,
