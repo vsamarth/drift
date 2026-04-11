@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../application/state.dart';
-import '../../../settings/feature.dart';
-import 'preview_table.dart';
+import 'package:app/features/send/presentation/widgets/content_summary_card.dart';
+import 'package:app/features/send/presentation/widgets/recipient_avatar.dart';
 import 'sending_connection_strip.dart';
 import 'transfer_flow_layout.dart';
 import 'transfer_live_stats.dart';
@@ -26,10 +26,6 @@ class ReceivingCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final senderName = displaySender(offer.sender.displayName);
-    final localDeviceName = ref.watch(settingsControllerProvider).settings.deviceName;
-    final itemCount = offer.manifest.itemCount;
-    final totalSize = formatBytes(offer.manifest.totalSizeBytes);
-    final itemSummary = '${fileCountLabel(itemCount)} · $totalSize';
     final subtitle = offer.statusMessage.trim().isEmpty
         ? 'Receiving files...'
         : offer.statusMessage.trim();
@@ -38,21 +34,17 @@ class ReceivingCard extends ConsumerWidget {
       child: TransferFlowLayout(
         statusLabel: 'Receiving',
         statusColor: const Color(0xFFD4A824),
-        title: senderName,
         subtitle: subtitle,
         explainer: TransferLiveStats(progress: progress),
-        illustration: SendingConnectionStrip(
-          localLabel: senderName,
-          localDeviceType: deviceTypeLabel(offer.sender.deviceType),
-          remoteLabel: localDeviceName,
-          remoteDeviceType: 'laptop',
+        illustration: RecipientAvatar(
+          deviceName: senderName,
+          deviceType: deviceTypeLabel(offer.sender.deviceType),
           animate: animate,
           mode: SendingStripMode.transferring,
-          transferProgress: progress.progressFraction,
+          progress: progress.progressFraction,
         ),
-        manifest: PreviewTable(
+        manifest: ContentSummaryCard(
           items: offer.manifest.items,
-          footerSummary: itemSummary,
         ),
         footer: Row(
           children: [

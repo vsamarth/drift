@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../application/state.dart';
-import '../../../settings/feature.dart';
 import '../../../../theme/drift_theme.dart';
-import 'preview_table.dart';
+import 'package:app/features/send/presentation/widgets/content_summary_card.dart';
+import 'package:app/features/send/presentation/widgets/recipient_avatar.dart';
 import 'sending_connection_strip.dart';
 import 'transfer_flow_layout.dart';
 import 'transfer_presentation_helpers.dart';
@@ -26,32 +26,27 @@ class OfferCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final senderName = displaySender(offer.sender.displayName);
-    final localDeviceName = ref.watch(settingsControllerProvider).settings.deviceName;
     final itemCount = offer.manifest.itemCount;
     final totalSize = formatBytes(offer.manifest.totalSizeBytes);
-    final itemSummary = '${fileCountLabel(itemCount)} · $totalSize';
 
     return SizedBox.expand(
       child: TransferFlowLayout(
         statusLabel: 'Incoming',
         statusColor: const Color(0xFF4B98AA),
-        title: senderName,
         subtitle: incomingSubtitle(itemCount, totalSize),
         explainer: Text(
           'Review the files and accept only if you trust the sender.',
+          textAlign: TextAlign.center,
           style: driftSans(fontSize: 12, color: kSubtle, height: 1.4),
         ),
-        illustration: SendingConnectionStrip(
-          localLabel: senderName,
-          localDeviceType: deviceTypeLabel(offer.sender.deviceType),
-          remoteLabel: localDeviceName,
-          remoteDeviceType: 'laptop',
+        illustration: RecipientAvatar(
+          deviceName: senderName,
+          deviceType: deviceTypeLabel(offer.sender.deviceType),
           animate: animate,
           mode: SendingStripMode.waitingOnRecipient,
         ),
-        manifest: PreviewTable(
+        manifest: ContentSummaryCard(
           items: offer.manifest.items,
-          footerSummary: itemSummary,
         ),
         footer: Row(
           children: [

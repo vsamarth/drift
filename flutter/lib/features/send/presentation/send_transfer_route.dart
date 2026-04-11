@@ -4,7 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../theme/drift_theme.dart';
 import '../../transfers/application/manifest.dart';
 import '../../transfers/application/state.dart' as transfer_state;
-import '../../transfers/presentation/widgets/preview_table.dart';
 import '../../transfers/presentation/widgets/sending_connection_strip.dart';
 import '../../transfers/presentation/widgets/transfer_flow_layout.dart';
 import '../../transfers/presentation/widgets/transfer_live_stats.dart';
@@ -14,6 +13,8 @@ import '../application/model.dart';
 import '../application/state.dart';
 import '../application/transfer_state.dart';
 import 'send_transfer_view_data.dart';
+import 'package:app/features/send/presentation/widgets/content_summary_card.dart';
+import 'package:app/features/send/presentation/widgets/recipient_avatar.dart';
 
 class SendTransferRoutePage extends ConsumerStatefulWidget {
   const SendTransferRoutePage({super.key, required this.request});
@@ -127,8 +128,6 @@ class _TransferStateCard extends StatelessWidget {
               TransferManifestItem(path: file.path, sizeBytes: file.sizeBytes),
         )
         .toList(growable: false);
-    final itemSummary =
-        '${fileCountLabel(manifestItems.length)} · ${formatBytes(_totalManifestSize(manifestItems))}';
     final stripMode =
         viewData.stripMode ??
         (isSuccessResult
@@ -139,21 +138,18 @@ class _TransferStateCard extends StatelessWidget {
     return TransferFlowLayout(
       statusLabel: viewData.visual.statusLabel,
       statusColor: accent,
-      title: viewData.remoteLabel,
       subtitle: viewData.visual.subtitle,
       explainer: _SendExplainer(progress: progress, activeLine: activeLine),
-      illustration: SendingConnectionStrip(
-        localLabel: viewData.localLabel,
-        localDeviceType: viewData.localDeviceType,
-        remoteLabel: viewData.remoteLabel,
-        remoteDeviceType: viewData.remoteDeviceType,
-        animate: viewData.visual.showSpinner,
+      illustration: RecipientAvatar(
+        deviceName: viewData.remoteLabel,
+        deviceType: viewData.remoteDeviceType ?? 'phone',
         mode: stripMode,
-        transferProgress: (viewData.progressFraction ?? 0.0).clamp(0.0, 1.0),
+        progress: (viewData.progressFraction ?? 0.0).clamp(0.0, 1.0),
+        animate: viewData.visual.showSpinner,
       ),
       manifest: manifestItems.isEmpty
           ? null
-          : PreviewTable(items: manifestItems, footerSummary: itemSummary),
+          : ContentSummaryCard(items: manifestItems),
       footer: Row(
         children: [
           Expanded(
@@ -207,15 +203,16 @@ class _SendExplainer extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         if (progress != null) TransferLiveStats(progress: progress!),
         if (activeLine != null) ...[
-          if (progress != null) const SizedBox(height: 8),
+          if (progress != null) const SizedBox(height: 12),
           Text(
             activeLine!,
+            textAlign: TextAlign.center,
             style: driftSans(
-              fontSize: 12.5,
+              fontSize: 13,
               fontWeight: FontWeight.w600,
               color: kInk,
             ),
@@ -254,10 +251,6 @@ String? _activeFileLine(List<SendTransferFileViewData> files) {
   }
   final activeFile = files[activeIndex];
   return 'Now sending: ${activeFile.path} (${activeIndex + 1} of ${files.length})';
-}
-
-BigInt _totalManifestSize(List<TransferManifestItem> items) {
-  return items.fold(BigInt.zero, (sum, item) => sum + item.sizeBytes);
 }
 
 String? viewSpeedLabel(SendTransferState transfer) {

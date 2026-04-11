@@ -7,7 +7,6 @@ class TransferFlowLayout extends StatelessWidget {
     super.key,
     required this.statusLabel,
     required this.statusColor,
-    required this.title,
     required this.subtitle,
     this.explainer,
     required this.illustration,
@@ -17,7 +16,6 @@ class TransferFlowLayout extends StatelessWidget {
 
   final String statusLabel;
   final Color statusColor;
-  final String title;
   final String subtitle;
   final Widget? explainer;
   final Widget illustration;
@@ -31,106 +29,71 @@ class TransferFlowLayout extends StatelessWidget {
         Expanded(
           child: SingleChildScrollView(
             physics: const BouncingScrollPhysics(),
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+            padding: const EdgeInsets.fromLTRB(24, 40, 24, 0),
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.start,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 3,
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: statusColor.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 6,
+                        height: 6,
+                        decoration: BoxDecoration(
+                          color: statusColor,
+                          shape: BoxShape.circle,
+                        ),
                       ),
-                      decoration: BoxDecoration(
-                        color: statusColor.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(6),
+                      const SizedBox(width: 8),
+                      Text(
+                        statusLabel.toUpperCase(),
+                        style: driftSans(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w800,
+                          color: statusColor,
+                          letterSpacing: 0.8,
+                        ),
                       ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Container(
-                            width: 6,
-                            height: 6,
-                            decoration: BoxDecoration(
-                              color: statusColor,
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                          const SizedBox(width: 6),
-                          Text(
-                            statusLabel,
-                            style: driftSans(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                              color: statusColor,
-                              letterSpacing: 0.2,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 20),
-                Text(
-                  title,
-                  style: driftSans(
-                    fontSize: 26,
-                    fontWeight: FontWeight.w700,
-                    color: kInk,
-                    letterSpacing: -0.6,
-                    height: 1.1,
+                    ],
                   ),
                 ),
-                const SizedBox(height: 14),
+                const SizedBox(height: 32),
+                illustration,
+                const SizedBox(height: 24),
                 Text(
                   subtitle,
+                  textAlign: TextAlign.center,
                   style: driftSans(
-                    fontSize: 13.5,
+                    fontSize: 14,
                     fontWeight: FontWeight.w500,
                     color: kMuted,
                     height: 1.4,
                   ),
                 ),
                 if (explainer != null) ...[
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 24),
                   explainer!,
                 ],
-                const SizedBox(height: 20),
-                Center(
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxHeight: 100),
-                    child: illustration,
-                  ),
-                ),
-                const SizedBox(height: 24),
+                const SizedBox(height: 48),
                 if (manifest != null) ...[
-                  Container(
-                    decoration: BoxDecoration(
-                      color: kSurface2,
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: kBorder.withValues(alpha: 0.8)),
-                    ),
-                    child: Column(
-                      children: [
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(18, 16, 18, 0),
-                          child: manifest!,
-                        ),
-                        const SizedBox(height: 16),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 24),
+                  manifest!,
+                  const SizedBox(height: 32),
                 ],
               ],
             ),
           ),
         ),
         Container(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+          padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
           decoration: BoxDecoration(
             color: kBg,
             border: Border(

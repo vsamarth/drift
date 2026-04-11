@@ -19,10 +19,11 @@ class TransferLiveStats extends StatelessWidget {
     ];
 
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         Text(
           progressLabel,
+          textAlign: TextAlign.center,
           style: driftSans(
             fontSize: 13,
             fontWeight: FontWeight.w600,
@@ -34,6 +35,7 @@ class TransferLiveStats extends StatelessWidget {
           const SizedBox(height: 6),
           Text(
             extras.join(' · '),
+            textAlign: TextAlign.center,
             style: driftSans(
               fontSize: 12,
               fontWeight: FontWeight.w500,

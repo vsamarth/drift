@@ -22,12 +22,27 @@ class TransferResultCard extends StatelessWidget {
       child: TransferFlowLayout(
         statusLabel: visual.statusLabel,
         statusColor: visual.accentColor,
-        title: viewData.title,
         subtitle: viewData.message,
         explainer: _completionExplainer(viewData.metrics),
-        illustration: _TransferResultIllustration(
-          icon: visual.icon,
-          color: visual.accentColor,
+        illustration: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _TransferResultIllustration(
+              icon: visual.icon,
+              color: visual.accentColor,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              viewData.title,
+              textAlign: TextAlign.center,
+              style: driftSans(
+                fontSize: 20,
+                fontWeight: FontWeight.w700,
+                color: kInk,
+                letterSpacing: -0.4,
+              ),
+            ),
+          ],
         ),
         manifest: viewData.metrics == null || viewData.metrics!.isEmpty
             ? null
@@ -180,6 +195,7 @@ Widget? _completionExplainer(List<ResultMetric>? metrics) {
 
   return Text(
     '$count file${count == 1 ? '' : 's'} finished in $size.',
+    textAlign: TextAlign.center,
     style: driftSans(fontSize: 12, color: kMuted, height: 1.4),
   );
 }
