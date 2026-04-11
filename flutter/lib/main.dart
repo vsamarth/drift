@@ -15,11 +15,7 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   if (Platform.isMacOS || Platform.isWindows || Platform.isLinux) {
     await windowManager.ensureInitialized();
-    if (Platform.isMacOS) {
-      await windowManager.setTitleBarStyle(TitleBarStyle.hiddenInset);
-    } else {
-      await windowManager.setTitleBarStyle(TitleBarStyle.hidden);
-    }
+    await windowManager.setTitleBarStyle(TitleBarStyle.hidden);
   }
   await RustLib.init();
 

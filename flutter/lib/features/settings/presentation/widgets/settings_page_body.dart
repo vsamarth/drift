@@ -174,150 +174,149 @@ class _SettingsPageBodyState extends ConsumerState<SettingsPageBody> {
       );
     });
   }
-@override
-Widget build(BuildContext context) {
-  final state = ref.watch(settingsControllerProvider);
-  final saving = _saving || state.isSaving;
 
-  return PopScope(
-    canPop: !_isDirty,
-    onPopInvokedWithResult: (didPop, _) {
-      if (!didPop) {
-        unawaited(_handleBack());
-      }
-    },
-    child: Scaffold(
-      backgroundColor: kBg,
-      body: Padding(
-        padding: const EdgeInsets.fromLTRB(24, 10, 24, 16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-...
-              children: [
-                Row(
-                  children: [
-                    IconButton(
-                      onPressed: _handleBack,
-                      icon: const Icon(Icons.arrow_back_rounded),
-                      tooltip: 'Back',
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      'Settings',
-                      style: driftSans(
-                        fontSize: 22,
-                        fontWeight: FontWeight.w700,
-                        color: kInk,
-                        letterSpacing: -0.35,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Expanded(
-                  child: SingleChildScrollView(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        if (state.errorMessage != null) ...[
-                          SettingsErrorBanner(message: state.errorMessage!),
-                          const SizedBox(height: 16),
-                        ],
-                        SettingsSectionField(
-                          label: 'Device name',
-                          child: TextField(
-                            controller: _deviceNameController,
-                            decoration: const InputDecoration(
-                              hintText: 'Alex\'s MacBook',
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 22),
-                        SettingsSectionField(
-                          label: 'Save received files to',
-                          child: SettingsDownloadRootField(
-                            controller: _downloadRootController,
-                            onChoose: _pickDownloadRoot,
-                          ),
-                        ),
-                        const SizedBox(height: 22),
-                        SettingsToggleField(
-                          title: 'Nearby discoverability',
-                          subtitle:
-                              'Make this device visible to others on your network.',
-                          value: _discoverable,
-                          onChanged: (value) {
-                            setState(() => _discoverable = value);
-                          },
-                        ),
-                        const SizedBox(height: 28),
-                        const Divider(color: kBorder, height: 1),
-                        const SizedBox(height: 18),
-                        Text(
-                          'Advanced',
-                          style: driftSans(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w700,
-                            color: kInk,
-                            letterSpacing: -0.35,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          'Only needed for self-hosted setups.',
-                          style: driftSans(
-                            fontSize: 12.5,
-                            fontWeight: FontWeight.w400,
-                            color: kMuted,
-                            height: 1.45,
-                          ),
-                        ),
-                        const SizedBox(height: 18),
-                        SettingsSectionField(
-                          label: 'Discovery Server',
-                          child: TextField(
-                            controller: _serverUrlController,
-                            decoration: const InputDecoration(
-                              hintText: 'https://drift.samarthv.com',
-                            ),
-                          ),
-                        ),
-                      ],
+  @override
+  Widget build(BuildContext context) {
+    final state = ref.watch(settingsControllerProvider);
+    final saving = _saving || state.isSaving;
+
+    return PopScope(
+      canPop: !_isDirty,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) {
+          unawaited(_handleBack());
+        }
+      },
+      child: Scaffold(
+        backgroundColor: kBg,
+        body: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 10, 24, 16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  IconButton(
+                    onPressed: _handleBack,
+                    icon: const Icon(Icons.arrow_back_rounded),
+                    tooltip: 'Back',
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    'Settings',
+                    style: driftSans(
+                      fontSize: 22,
+                      fontWeight: FontWeight.w700,
+                      color: kInk,
+                      letterSpacing: -0.35,
                     ),
                   ),
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        'Changes apply after you save.',
+                ],
+              ),
+              const SizedBox(height: 8),
+              Expanded(
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      if (state.errorMessage != null) ...[
+                        SettingsErrorBanner(message: state.errorMessage!),
+                        const SizedBox(height: 16),
+                      ],
+                      SettingsSectionField(
+                        label: 'Device name',
+                        child: TextField(
+                          controller: _deviceNameController,
+                          decoration: const InputDecoration(
+                            hintText: 'Alex\'s MacBook',
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 22),
+                      SettingsSectionField(
+                        label: 'Save received files to',
+                        child: SettingsDownloadRootField(
+                          controller: _downloadRootController,
+                          onChoose: _pickDownloadRoot,
+                        ),
+                      ),
+                      const SizedBox(height: 22),
+                      SettingsToggleField(
+                        title: 'Nearby discoverability',
+                        subtitle:
+                            'Make this device visible to others on your network.',
+                        value: _discoverable,
+                        onChanged: (value) {
+                          setState(() => _discoverable = value);
+                        },
+                      ),
+                      const SizedBox(height: 28),
+                      const Divider(color: kBorder, height: 1),
+                      const SizedBox(height: 18),
+                      Text(
+                        'Advanced',
                         style: driftSans(
-                          fontSize: 11.5,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w700,
+                          color: kInk,
+                          letterSpacing: -0.35,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Only needed for self-hosted setups.',
+                        style: driftSans(
+                          fontSize: 12.5,
                           fontWeight: FontWeight.w400,
                           color: kMuted,
+                          height: 1.45,
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 12),
-                    FilledButton(
-                      onPressed: _isDirty && !saving ? _saveSettings : null,
-                      style: FilledButton.styleFrom(
-                        backgroundColor: const Color(0xFF4A8E9E),
-                        foregroundColor: Colors.white,
-                        minimumSize: const Size(0, 48),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
+                      const SizedBox(height: 18),
+                      SettingsSectionField(
+                        label: 'Discovery Server',
+                        child: TextField(
+                          controller: _serverUrlController,
+                          decoration: const InputDecoration(
+                            hintText: 'https://drift.samarthv.com',
+                          ),
                         ),
                       ),
-                      child: saving
-                          ? const Text('Saving...')
-                          : const Text('Save Changes'),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ],
-            ),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Changes apply after you save.',
+                      style: driftSans(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w400,
+                        color: kMuted,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  FilledButton(
+                    onPressed: _isDirty && !saving ? _saveSettings : null,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: const Color(0xFF4A8E9E),
+                      foregroundColor: Colors.white,
+                      minimumSize: const Size(0, 48),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: saving
+                        ? const Text('Saving...')
+                        : const Text('Save Changes'),
+                  ),
+                ],
+              ),
+            ],
           ),
         ),
       ),
