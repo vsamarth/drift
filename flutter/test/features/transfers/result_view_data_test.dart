@@ -46,7 +46,7 @@ void main() {
 
     expect(viewData.outcome, TransferResultOutcome.success);
     expect(viewData.title, 'Files saved');
-    expect(viewData.message, 'Files saved successfully.');
+    expect(viewData.message, 'Saved to Downloads');
     expect(viewData.primaryLabel, 'Done');
     expect(viewData.metrics, isNotNull);
     expect(viewData.metrics, hasLength(4));

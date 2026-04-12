@@ -9,10 +9,10 @@ import 'package:app/features/send/application/controller.dart';
 import 'package:app/features/send/application/model.dart';
 import 'package:app/features/send/application/state.dart';
 import 'package:app/features/send/presentation/send_transfer_route.dart';
+import 'package:app/features/send/presentation/widgets/recipient_avatar.dart';
 import 'package:app/features/settings/settings_providers.dart';
 import 'package:app/platform/send_transfer_source.dart';
 import 'package:app/src/rust/api/transfer.dart' as rust_transfer;
-import 'package:app/features/transfers/presentation/widgets/sending_connection_strip.dart';
 import '../../../support/settings_test_overrides.dart';
 
 class FakeSendTransferSource implements SendTransferSource {
@@ -135,8 +135,8 @@ void main() {
     await _pumpRoute(tester);
 
     expect(container.read(sendControllerProvider), isA<SendStateTransferring>());
-    expect(find.byType(SendingConnectionStrip), findsOneWidget);
-    expect(find.text('Connecting to recipient'), findsOneWidget);
+    expect(find.byType(RecipientAvatar), findsOneWidget);
+    expect(find.text('CONNECTING'), findsOneWidget);
     expect(find.text('Cancel transfer'), findsOneWidget);
 
     fakeSource.emit(
@@ -151,8 +151,7 @@ void main() {
       ),
     );
     await _pumpRoute(tester);
-    expect(find.text('Waiting for confirmation'), findsOneWidget);
-    expect(find.text('Waiting'), findsWidgets);
+    expect(find.text('WAITING'), findsWidgets);
 
     fakeSource.emit(
       SendTransferUpdate(
@@ -166,8 +165,7 @@ void main() {
       ),
     );
     await _pumpRoute(tester);
-    expect(find.text('Receiver accepted'), findsOneWidget);
-    expect(find.text('Accepted'), findsWidgets);
+    expect(find.text('ACCEPTED'), findsWidgets);
 
     final plan = _buildPlan();
     final snapshot = _buildSnapshot(
@@ -191,9 +189,9 @@ void main() {
       ),
     );
     await _pumpRoute(tester);
-    expect(find.text('Sending files'), findsOneWidget);
-    expect(find.text('512 B of 1.0 KB'), findsWidgets);
-    expect(find.text('/tmp/report.pdf'), findsWidgets);
+    expect(find.textContaining('256 B/s'), findsOneWidget);
+    expect(find.textContaining('4 s left'), findsOneWidget);
+    expect(find.text('SENDING'), findsWidgets);
 
     fakeSource.emit(
       SendTransferUpdate.completed(
@@ -212,9 +210,10 @@ void main() {
       ),
     );
     await _pumpRoute(tester);
-    expect(find.text('Sent'), findsWidgets);
+    expect(find.text('SUCCESS'), findsWidgets);
+    expect(find.text('Files finished transferring successfully.'), findsOneWidget);
     expect(find.text('Done'), findsWidgets);
-    expect(find.byType(SendingConnectionStrip), findsNothing);
+    expect(find.byType(RecipientAvatar), findsOneWidget);
   });
 
   testWidgets('send transfer route shows declined cancelled and failed results', (
@@ -222,7 +221,8 @@ void main() {
   ) async {
     final fixtures = <({
       SendTransferUpdate update,
-      String expectedTitle,
+      String expectedStatusLabel,
+      String expectedSubtitle,
     })>[
       (
         update: SendTransferUpdate.declined(
@@ -233,7 +233,8 @@ void main() {
           bytesSent: BigInt.zero,
           totalBytes: BigInt.from(1024),
         ),
-        expectedTitle: 'Transfer declined',
+        expectedStatusLabel: 'DECLINED',
+        expectedSubtitle: 'Receiver declined',
       ),
       (
         update: SendTransferUpdate.cancelled(
@@ -244,7 +245,8 @@ void main() {
           bytesSent: BigInt.zero,
           totalBytes: BigInt.from(1024),
         ),
-        expectedTitle: 'Transfer cancelled',
+        expectedStatusLabel: 'CANCELLED',
+        expectedSubtitle: 'Cancelled',
       ),
       (
         update: SendTransferUpdate.failed(
@@ -261,7 +263,8 @@ void main() {
             retryable: false,
           ),
         ),
-        expectedTitle: 'Send failed',
+        expectedStatusLabel: 'FAILED',
+        expectedSubtitle: 'boom',
       ),
     ];
 
@@ -298,9 +301,10 @@ void main() {
       fakeSource.emit(fixture.update);
       await _pumpRoute(tester);
 
-      expect(find.text(fixture.expectedTitle), findsOneWidget);
+      expect(find.text(fixture.expectedStatusLabel), findsOneWidget);
+      expect(find.text(fixture.expectedSubtitle), findsOneWidget);
       expect(find.text('Done'), findsOneWidget);
-      expect(find.byType(SendingConnectionStrip), findsNothing);
+      expect(find.byType(RecipientAvatar), findsOneWidget);
     }
   });
 }
