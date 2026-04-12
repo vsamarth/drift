@@ -13,10 +13,14 @@ class TransferResultCard extends StatelessWidget {
     super.key,
     required this.viewData,
     this.onPrimary,
+    this.onSecondary,
+    this.secondaryLabel,
   });
 
   final TransferResultViewData viewData;
   final VoidCallback? onPrimary;
+  final VoidCallback? onSecondary;
+  final String? secondaryLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -34,10 +38,13 @@ class TransferResultCard extends StatelessWidget {
               ? deviceTypeLabel(viewData.deviceType!)
               : 'laptop',
           mode: SendingStripMode.transferring,
-          progress: viewData.outcome == TransferResultOutcome.success ? 1.0 : 0.0,
+          progress: viewData.outcome == TransferResultOutcome.success
+              ? 1.0
+              : 0.0,
           animate: false,
         ),
-        manifest: viewData.manifestItems == null || viewData.manifestItems!.isEmpty
+        manifest:
+            viewData.manifestItems == null || viewData.manifestItems!.isEmpty
             ? null
             : ManifestTreeCard(
                 items: viewData.manifestItems!,
@@ -45,8 +52,32 @@ class TransferResultCard extends StatelessWidget {
               ),
         footer: Row(
           children: [
+            if (secondaryLabel != null && onSecondary != null) ...[
+              Expanded(
+                flex: 2,
+                child: OutlinedButton(
+                  onPressed: onSecondary,
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: kInk,
+                    side: BorderSide(color: kBorder.withValues(alpha: 0.8)),
+                    minimumSize: const Size(0, 52),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                  ),
+                  child: Text(
+                    secondaryLabel!,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: driftSans(fontWeight: FontWeight.w700, fontSize: 15),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+            ],
             if (viewData.primaryLabel.isNotEmpty && onPrimary != null)
               Expanded(
+                flex: secondaryLabel != null && onSecondary != null ? 3 : 1,
                 child: FilledButton(
                   onPressed: onPrimary,
                   style: FilledButton.styleFrom(
@@ -60,6 +91,8 @@ class TransferResultCard extends StatelessWidget {
                   ),
                   child: Text(
                     viewData.primaryLabel,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: driftSans(fontWeight: FontWeight.w700, fontSize: 15),
                   ),
                 ),
@@ -164,22 +197,22 @@ class _TransferResultVisualData {
 _TransferResultVisualData _visualForOutcome(TransferResultOutcome outcome) {
   return switch (outcome) {
     TransferResultOutcome.success => const _TransferResultVisualData(
-        statusLabel: 'Success',
-        accentColor: Color(0xFF49B36C),
-        buttonColor: Color(0xFF5FA7B7),
-        icon: Icons.check_circle_rounded,
-      ),
+      statusLabel: 'Success',
+      accentColor: Color(0xFF49B36C),
+      buttonColor: Color(0xFF5FA7B7),
+      icon: Icons.check_circle_rounded,
+    ),
     TransferResultOutcome.cancelled => const _TransferResultVisualData(
-        statusLabel: 'Cancelled',
-        accentColor: Color(0xFFC0912C),
-        buttonColor: Color(0xFF617B87),
-        icon: Icons.do_not_disturb_on_rounded,
-      ),
+      statusLabel: 'Cancelled',
+      accentColor: Color(0xFFC0912C),
+      buttonColor: Color(0xFF617B87),
+      icon: Icons.do_not_disturb_on_rounded,
+    ),
     TransferResultOutcome.failed => const _TransferResultVisualData(
-        statusLabel: 'Failed',
-        accentColor: Color(0xFFCC3333),
-        buttonColor: Color(0xFFB34A4A),
-        icon: Icons.error_rounded,
-      ),
+      statusLabel: 'Failed',
+      accentColor: Color(0xFFCC3333),
+      buttonColor: Color(0xFFB34A4A),
+      icon: Icons.error_rounded,
+    ),
   };
 }

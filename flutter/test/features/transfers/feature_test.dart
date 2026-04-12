@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -8,6 +9,7 @@ import 'package:app/app/app_router.dart';
 import 'package:app/features/receive/feature.dart';
 import 'package:app/features/settings/feature.dart';
 import 'package:app/features/transfers/feature.dart';
+import 'package:app/features/transfers/application/saved_folder_opener.dart';
 import 'package:app/theme/drift_theme.dart';
 import 'package:app/platform/rust/receiver/fake_source.dart';
 import 'package:app/src/rust/api/receiver.dart' as rust_receiver;
@@ -45,6 +47,22 @@ Future<void> _waitForReceiveTransferRoute(
       return;
     }
     await tester.pump(const Duration(milliseconds: 50));
+  }
+}
+
+String _expectedOpenFolderLabel([TargetPlatform? platform]) {
+  final targetPlatform = platform ?? defaultTargetPlatform;
+  switch (targetPlatform) {
+    case TargetPlatform.macOS:
+      return 'Open in Finder';
+    case TargetPlatform.windows:
+      return 'Open in Explorer';
+    case TargetPlatform.linux:
+      return 'Open in Files';
+    case TargetPlatform.android:
+    case TargetPlatform.iOS:
+    case TargetPlatform.fuchsia:
+      return 'Open folder';
   }
 }
 
@@ -373,7 +391,6 @@ void main() {
     await tester.tap(find.text('Cancel'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Receive cancelled'), findsOneWidget);
     expect(
       find.text('Drift stopped receiving before all files were saved.'),
       findsOneWidget,
@@ -385,7 +402,10 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('No offers yet'), findsNothing);
-    expect(find.text('Receive cancelled'), findsNothing);
+    expect(
+      find.text('Drift stopped receiving before all files were saved.'),
+      findsNothing,
+    );
   });
 
   testWidgets('completing a receiving transfer shows the completed state', (
@@ -416,14 +436,12 @@ void main() {
 
     source.emitCompletedTransfer(
       senderName: 'Maya',
-      destinationLabel: 'Pictures',
       saveRootLabel: 'Downloads',
     );
     await tester.pumpAndSettle();
 
     expect(find.text('SUCCESS'), findsOneWidget);
-    expect(find.text('Files saved'), findsOneWidget);
-    expect(find.text('Pictures'), findsOneWidget);
+    expect(find.text('Saved to Downloads'), findsOneWidget);
     expect(find.text('Done'), findsOneWidget);
     expect(find.text('RECEIVING'), findsNothing);
 
@@ -432,6 +450,55 @@ void main() {
       doneButton.style?.backgroundColor?.resolve(<WidgetState>{}),
       kPrimary,
     );
+  });
+
+  testWidgets('successful receive shows an open saved folder action', (
+    tester,
+  ) async {
+    final source = FakeReceiverServiceSource();
+    final openedPaths = <String>[];
+    final router = _buildReceiveFeatureRouter(size: const Size(440, 560));
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          transferReviewAnimationProvider.overrideWithValue(false),
+          initialAppSettingsProvider.overrideWithValue(testAppSettings),
+          receiverServiceSourceProvider.overrideWithValue(source),
+          transfersServiceSourceProvider.overrideWithValue(source),
+          transferTargetPlatformProvider.overrideWithValue(
+            TargetPlatform.macOS,
+          ),
+          savedFolderOpenerProvider.overrideWithValue((path) async {
+            openedPaths.add(path);
+          }),
+        ],
+        child: MaterialApp.router(routerConfig: router),
+      ),
+    );
+
+    source.emitIncomingOffer(senderName: 'Maya');
+    await tester.pumpAndSettle();
+    await _waitForReceiveTransferRoute(tester, router);
+
+    await tester.tap(find.text('Save to Downloads'));
+    await tester.pumpAndSettle();
+    await tester.pump();
+
+    source.emitCompletedTransfer(
+      senderName: 'Maya',
+      saveRootLabel: 'Downloads',
+    );
+    await tester.pumpAndSettle();
+
+    final openLabel = _expectedOpenFolderLabel(TargetPlatform.macOS);
+    expect(find.text(openLabel), findsOneWidget);
+
+    await tester.tap(find.text(openLabel));
+    await tester.pumpAndSettle();
+
+    expect(openedPaths, equals(<String>[testAppSettings.downloadRoot]));
+    expect(find.text('Done'), findsOneWidget);
   });
 
   testWidgets('done on a completed transfer returns to idle', (tester) async {
@@ -459,7 +526,6 @@ void main() {
 
     source.emitCompletedTransfer(
       senderName: 'Maya',
-      destinationLabel: 'Pictures',
       saveRootLabel: 'Downloads',
     );
     await tester.pumpAndSettle();
