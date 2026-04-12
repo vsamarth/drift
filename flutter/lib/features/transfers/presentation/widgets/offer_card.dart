@@ -33,7 +33,7 @@ class OfferCard extends ConsumerWidget {
       child: TransferFlowLayout(
         statusLabel: 'Incoming',
         statusColor: const Color(0xFF4B98AA),
-        subtitle: incomingSubtitle(itemCount, totalSize),
+        subtitle: buildSubtitleText(incomingSubtitle(itemCount, totalSize)),
         explainer: Text(
           'Review the files and accept only if you trust the sender.',
           textAlign: TextAlign.center,

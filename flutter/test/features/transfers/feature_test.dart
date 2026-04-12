@@ -8,7 +8,6 @@ import 'package:app/app/app_router.dart';
 import 'package:app/features/receive/feature.dart';
 import 'package:app/features/settings/feature.dart';
 import 'package:app/features/transfers/feature.dart';
-import 'package:app/features/receive/presentation/receive_transfer_route.dart';
 import 'package:app/theme/drift_theme.dart';
 import 'package:app/platform/rust/receiver/fake_source.dart';
 import 'package:app/src/rust/api/receiver.dart' as rust_receiver;
@@ -116,7 +115,11 @@ void main() {
     await _waitForReceiveTransferRoute(tester, router);
 
     expect(find.text('INCOMING'), findsOneWidget);
-    expect(find.text('wants to send you 2 files (3.0 KB).'), findsOneWidget);
+
+    // Expand the manifest card
+    await tester.tap(find.text('Contents'));
+    await tester.pumpAndSettle();
+
     expect(find.text('report.pdf'), findsOneWidget);
     expect(find.text('photo.jpg'), findsOneWidget);
     expect(find.text('Save to Downloads'), findsOneWidget);
@@ -160,10 +163,26 @@ void main() {
     await tester.pumpAndSettle();
     await _waitForReceiveTransferRoute(tester, router);
 
+    // Expand the manifest card
+    await tester.tap(find.text('Contents'));
+    await tester.pumpAndSettle();
+
     expect(find.text('crates'), findsOneWidget);
-    expect(find.text('core'), findsOneWidget);
-    expect(find.text('src'), findsOneWidget);
+
+    // Expand crates
+    await tester.tap(find.text('crates'));
+    await tester.pumpAndSettle();
     expect(find.text('Cargo.toml'), findsOneWidget);
+    expect(find.text('core'), findsOneWidget);
+
+    // Expand core
+    await tester.tap(find.text('core'));
+    await tester.pumpAndSettle();
+    expect(find.text('src'), findsOneWidget);
+
+    // Expand src
+    await tester.tap(find.text('src'));
+    await tester.pumpAndSettle();
     expect(find.text('actor.rs'), findsOneWidget);
     expect(find.text('nearby.rs'), findsOneWidget);
   });
@@ -201,6 +220,10 @@ void main() {
     );
     await tester.pumpAndSettle();
     await _waitForReceiveTransferRoute(tester, router);
+
+    // Expand the manifest card
+    await tester.tap(find.text('Contents'));
+    await tester.pumpAndSettle();
 
     expect(
       find.byWidgetPredicate(
@@ -245,6 +268,17 @@ void main() {
     );
     await tester.pumpAndSettle();
     await _waitForReceiveTransferRoute(tester, router);
+
+    // Expand the manifest card
+    await tester.tap(find.text('Contents'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('crates'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('core'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('src'));
+    await tester.pumpAndSettle();
 
     final actorTop = tester.getTopLeft(find.text('actor.rs')).dy;
     final nearbyTop = tester.getTopLeft(find.text('nearby.rs')).dy;

@@ -25,16 +25,19 @@ class ReceivingCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final senderName = displaySender(offer.sender.displayName);
-    String subtitle = offer.statusMessage.trim().isEmpty
-        ? 'Receiving files...'
-        : offer.statusMessage.trim();
 
-    final extras = <String>[
-      if (progress.speedLabel != null) progress.speedLabel!,
-      if (progress.etaLabel != null) progress.etaLabel!,
-    ];
-    if (extras.isNotEmpty) {
-      subtitle = extras.join(' | ');
+    final Widget subtitle;
+    if (progress.speedLabel != null) {
+      subtitle = buildSpeedLine(
+        speedLabel: progress.speedLabel!,
+        etaLabel: progress.etaLabel,
+      );
+    } else {
+      subtitle = buildSubtitleText(
+        offer.statusMessage.trim().isEmpty
+            ? 'Receiving files...'
+            : offer.statusMessage.trim(),
+      );
     }
 
     return SizedBox.expand(
@@ -43,6 +46,7 @@ class ReceivingCard extends ConsumerWidget {
         statusColor: const Color(0xFFD4A824),
         subtitle: subtitle,
         explainer: null,
+
         illustration: RecipientAvatar(
           deviceName: senderName,
           deviceType: deviceTypeLabel(offer.sender.deviceType),

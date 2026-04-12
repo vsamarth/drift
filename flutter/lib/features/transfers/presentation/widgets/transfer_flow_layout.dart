@@ -16,7 +16,7 @@ class TransferFlowLayout extends StatelessWidget {
 
   final String statusLabel;
   final Color statusColor;
-  final String subtitle;
+  final Widget subtitle;
   final Widget? explainer;
   final Widget illustration;
   final Widget? manifest;
@@ -72,17 +72,8 @@ class TransferFlowLayout extends StatelessWidget {
                 ),
                 const SizedBox(height: 24),
                 illustration,
-                const SizedBox(height: 12),
-                Text(
-                  subtitle,
-                  textAlign: TextAlign.center,
-                  style: driftSans(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                    color: kMuted,
-                    height: 1.4,
-                  ),
-                ),
+                const SizedBox(height: 8),
+                subtitle,
                 if (explainer != null) ...[
                   const SizedBox(height: 16),
                   explainer!,

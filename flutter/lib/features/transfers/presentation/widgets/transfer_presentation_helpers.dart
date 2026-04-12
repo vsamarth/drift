@@ -1,4 +1,8 @@
+import 'package:flutter/material.dart';
+import '../../../../theme/drift_theme.dart';
 import '../../application/identity.dart';
+
+export '../../application/format_utils.dart';
 
 String displaySender(String value) {
   final trimmed = value.trim();
@@ -21,17 +25,54 @@ String deviceTypeLabel(DeviceType type) {
   };
 }
 
-String formatBytes(BigInt bytes) {
-  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-  var value = bytes.toDouble();
-  var unitIndex = 0;
+Widget buildSubtitleText(String text) {
+  return Text(
+    text,
+    textAlign: TextAlign.center,
+    style: driftSans(
+      fontSize: 14,
+      fontWeight: FontWeight.w500,
+      color: kMuted,
+      height: 1.4,
+    ),
+  );
+}
 
-  while (value >= 1024 && unitIndex < units.length - 1) {
-    value /= 1024;
-    unitIndex += 1;
-  }
-
-  final decimals = value >= 10 || unitIndex == 0 ? 0 : 1;
-  final formatted = value.toStringAsFixed(decimals);
-  return '$formatted ${units[unitIndex]}';
+Widget buildSpeedLine({
+  required String speedLabel,
+  required String? etaLabel,
+}) {
+  return Text.rich(
+    TextSpan(
+      children: [
+        TextSpan(
+          text: speedLabel,
+          style: driftSans(
+            fontSize: 14,
+            fontWeight: FontWeight.w700,
+            color: kInk,
+          ),
+        ),
+        if (etaLabel != null) ...[
+          TextSpan(
+            text: '  ·  ',
+            style: driftSans(
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+              color: kSubtle,
+            ),
+          ),
+          TextSpan(
+            text: etaLabel,
+            style: driftSans(
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+              color: kMuted,
+            ),
+          ),
+        ],
+      ],
+    ),
+    textAlign: TextAlign.center,
+  );
 }

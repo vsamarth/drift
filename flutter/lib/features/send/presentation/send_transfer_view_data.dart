@@ -72,6 +72,8 @@ class SendTransferPageData {
     required this.remoteLabel,
     required this.remoteDeviceType,
     required this.stripMode,
+    this.durationLabel,
+    this.averageSpeedLabel,
   });
 
   final SendTransferPhaseVisualData visual;
@@ -86,6 +88,8 @@ class SendTransferPageData {
   final String remoteLabel;
   final String? remoteDeviceType;
   final SendingStripMode? stripMode;
+  final String? durationLabel;
+  final String? averageSpeedLabel;
 }
 
 SendTransferPageData buildSendTransferPageData({
@@ -113,6 +117,8 @@ SendTransferPageData buildSendTransferPageData({
       remoteLabel: request.lanDestinationLabel ?? request.code ?? 'Recipient',
       remoteDeviceType: null,
       stripMode: null,
+      durationLabel: null,
+      averageSpeedLabel: null,
     ),
     SendStateTransferring(:final transfer) ||
     SendStateResult(:final transfer) => SendTransferPageData(
@@ -128,8 +134,18 @@ SendTransferPageData buildSendTransferPageData({
       remoteLabel: transfer.destinationLabel,
       remoteDeviceType: transfer.remoteDeviceType,
       stripMode: _stripModeFor(transfer),
+      durationLabel: state is SendStateResult ? _formatDuration(state.result.duration) : null,
+      averageSpeedLabel: state is SendStateResult ? state.result.averageSpeedLabel : null,
     ),
   };
+}
+
+String? _formatDuration(Duration? duration) {
+  if (duration == null) return null;
+  if (duration.inSeconds < 60) {
+    return '${duration.inSeconds}s';
+  }
+  return '${duration.inMinutes}m ${duration.inSeconds % 60}s';
 }
 
 SendTransferPhaseVisualData _visualForState(SendState state) {

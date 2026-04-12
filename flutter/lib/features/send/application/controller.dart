@@ -7,6 +7,7 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'model.dart';
 import 'directory_size.dart';
 import '../../../platform/send_transfer_source.dart';
+import '../../transfers/application/format_utils.dart';
 import '../../settings/application/controller.dart';
 import 'state.dart';
 import 'transfer_state.dart';
@@ -17,6 +18,7 @@ part 'controller.g.dart';
 class SendController extends _$SendController {
   StreamSubscription<SendTransferUpdate>? _transferSubscription;
   final Set<String> _pendingDirectorySizes = <String>{};
+  DateTime? _transferStartTime;
 
   @override
   SendState build() {
@@ -167,6 +169,7 @@ class SendController extends _$SendController {
     }
 
     final transferSource = ref.read(sendTransferSourceProvider);
+    _transferStartTime = DateTime.now();
     state = SendStateTransferring(
       items: currentState.items,
       destination: currentState.destination,
@@ -313,6 +316,24 @@ class SendController extends _$SendController {
       error: update.error ?? currentState.transfer.error,
     );
 
+    Duration? duration;
+    String? avgSpeedLabel;
+    if (update.phase == SendTransferUpdatePhase.completed ||
+        update.phase == SendTransferUpdatePhase.failed ||
+        update.phase == SendTransferUpdatePhase.cancelled ||
+        update.phase == SendTransferUpdatePhase.declined) {
+      if (_transferStartTime != null) {
+        duration = DateTime.now().difference(_transferStartTime!);
+        if (duration.inMilliseconds > 0) {
+          final avgSpeed = (update.bytesSent.toDouble() /
+                  (duration.inMilliseconds / 1000.0))
+              .round();
+          avgSpeedLabel = '${formatBytes(BigInt.from(avgSpeed))}/s';
+        }
+        _transferStartTime = null;
+      }
+    }
+
     switch (update.phase) {
       case SendTransferUpdatePhase.completed:
         _completeTransfer(
@@ -320,6 +341,8 @@ class SendController extends _$SendController {
             outcome: SendTransferOutcome.success,
             title: 'Sent',
             message: update.statusMessage,
+            duration: duration,
+            averageSpeedLabel: avgSpeedLabel,
           ),
           transfer: nextTransfer,
         );
@@ -329,6 +352,8 @@ class SendController extends _$SendController {
             outcome: SendTransferOutcome.cancelled,
             title: 'Cancelled',
             message: update.statusMessage,
+            duration: duration,
+            averageSpeedLabel: avgSpeedLabel,
           ),
           transfer: nextTransfer,
         );
@@ -338,6 +363,8 @@ class SendController extends _$SendController {
             outcome: SendTransferOutcome.declined,
             title: 'Declined',
             message: update.statusMessage,
+            duration: duration,
+            averageSpeedLabel: avgSpeedLabel,
           ),
           transfer: nextTransfer,
         );
@@ -347,6 +374,8 @@ class SendController extends _$SendController {
             outcome: SendTransferOutcome.failed,
             title: update.error?.title ?? 'Send failed',
             message: update.error?.message ?? update.statusMessage,
+            duration: duration,
+            averageSpeedLabel: avgSpeedLabel,
           ),
           transfer: nextTransfer,
           errorMessage: update.error?.message ?? update.statusMessage,

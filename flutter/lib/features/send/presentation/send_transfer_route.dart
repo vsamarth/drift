@@ -133,22 +133,21 @@ class _TransferStateCard extends StatelessWidget {
             ? SendingStripMode.transferring
             : SendingStripMode.waitingOnRecipient);
 
-    String subtitle = viewData.visual.subtitle;
+    final Widget subtitle;
     if (progress != null && state is SendStateTransferring) {
-      final extras = <String>[
-        if (progress.speedLabel != null) progress.speedLabel!,
-        if (progress.etaLabel != null) progress.etaLabel!,
-      ];
-      if (extras.isNotEmpty) {
-        subtitle = extras.join(' | ');
-      }
+      subtitle = buildSpeedLine(
+        speedLabel: progress.speedLabel ?? '',
+        etaLabel: progress.etaLabel,
+      );
+    } else {
+      subtitle = buildSubtitleText(viewData.visual.subtitle);
     }
 
     return TransferFlowLayout(
       statusLabel: viewData.visual.statusLabel,
       statusColor: accent,
       subtitle: subtitle,
-      explainer: null,
+      explainer: state is SendStateResult ? _SendStatsGrid(viewData: viewData) : null,
       illustration: RecipientAvatar(
         deviceName: viewData.remoteLabel,
         deviceType: viewData.remoteDeviceType ?? 'phone',
@@ -158,7 +157,10 @@ class _TransferStateCard extends StatelessWidget {
       ),
       manifest: manifestItems.isEmpty
           ? null
-          : ManifestTreeCard(items: manifestItems),
+          : ManifestTreeCard(
+              items: manifestItems,
+              initiallyExpanded: state is SendStateResult,
+            ),
       footer: Row(
         children: [
           Expanded(
@@ -203,6 +205,77 @@ class _TransferStateCard extends StatelessWidget {
   }
 }
 
+class _SendStatsGrid extends StatelessWidget {
+  const _SendStatsGrid({required this.viewData});
+
+  final SendTransferPageData viewData;
+
+  @override
+  Widget build(BuildContext context) {
+    // Only show stats if we have at least one valid metric
+    final displayStats = <_StatItem>[
+      if (viewData.durationLabel != null)
+        _StatItem(label: 'TIME', value: viewData.durationLabel!),
+      if (viewData.averageSpeedLabel != null)
+        _StatItem(label: 'SPEED', value: viewData.averageSpeedLabel!),
+    ];
+
+    if (displayStats.isEmpty) return const SizedBox.shrink();
+
+    return Container(
+      margin: const EdgeInsets.only(top: 8),
+      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+      decoration: BoxDecoration(
+        color: kFill.withValues(alpha: 0.4),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceAround,
+        children: [
+          for (int i = 0; i < displayStats.length; i++) ...[
+            if (i > 0)
+              Container(
+                width: 1,
+                height: 24,
+                color: kBorder.withValues(alpha: 0.5),
+              ),
+            Expanded(
+              child: Column(
+                children: [
+                  Text(
+                    displayStats[i].label,
+                    style: driftSans(
+                      fontSize: 9,
+                      fontWeight: FontWeight.w800,
+                      color: kMuted,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    displayStats[i].value,
+                    style: driftSans(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: kInk,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _StatItem {
+  const _StatItem({required this.label, required this.value});
+  final String label;
+  final String value;
+}
+
 transfer_state.TransferTransferProgress? _buildSharedTransferProgress(
   SendTransferState? transfer,
   int fallbackFileCount,
@@ -236,22 +309,5 @@ String? viewEtaLabel(SendTransferState transfer) {
     return null;
   }
 
-  final seconds = eta.toInt();
-  if (seconds < 60) {
-    return '$seconds s left';
-  }
-
-  final minutes = seconds ~/ 60;
-  final remainingSeconds = seconds % 60;
-  if (minutes < 60) {
-    return remainingSeconds == 0
-        ? '$minutes m left'
-        : '$minutes m $remainingSeconds s left';
-  }
-
-  final hours = minutes ~/ 60;
-  final remainingMinutes = minutes % 60;
-  return remainingMinutes == 0
-      ? '$hours h left'
-      : '$hours h $remainingMinutes m left';
+  return formatEta(eta);
 }

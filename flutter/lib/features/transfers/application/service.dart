@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../platform/rust/receiver/fake_source.dart';
 import '../../../platform/rust/receiver/source.dart';
 import '../../../src/rust/api/receiver.dart' as rust_receiver;
+import 'format_utils.dart';
 import 'identity.dart';
 import 'manifest.dart';
 import 'state.dart';
@@ -21,6 +22,7 @@ final transfersServiceProvider =
 class TransfersServiceController extends Notifier<TransferSessionState> {
   StreamSubscription<rust_receiver.ReceiverTransferEvent>? _subscription;
   TransferIncomingOffer? _incomingOffer;
+  DateTime? _transferStartTime;
 
   @override
   TransferSessionState build() {
@@ -39,6 +41,7 @@ class TransfersServiceController extends Notifier<TransferSessionState> {
           return;
         case rust_receiver.ReceiverTransferPhase.receiving:
           _incomingOffer ??= _mapIncomingOffer(event);
+          _transferStartTime ??= DateTime.now();
           state = TransferSessionState.receiving(
             offer: _incomingOffer!,
             progress: _mapProgress(event),
@@ -51,6 +54,7 @@ class TransfersServiceController extends Notifier<TransferSessionState> {
             result: _mapResult(event),
           );
           _incomingOffer = null;
+          _transferStartTime = null;
           return;
         case rust_receiver.ReceiverTransferPhase.cancelled:
           final offer = _mapIncomingOffer(event);
@@ -59,6 +63,7 @@ class TransfersServiceController extends Notifier<TransferSessionState> {
             errorMessage: event.error?.message ?? event.statusMessage,
           );
           _incomingOffer = null;
+          _transferStartTime = null;
           return;
         case rust_receiver.ReceiverTransferPhase.failed:
           final offer = _mapIncomingOffer(event);
@@ -67,10 +72,12 @@ class TransfersServiceController extends Notifier<TransferSessionState> {
             errorMessage: event.error?.message ?? event.statusMessage,
           );
           _incomingOffer = null;
+          _transferStartTime = null;
           return;
         case rust_receiver.ReceiverTransferPhase.declined:
           state = const TransferSessionState.idle();
           _incomingOffer = null;
+          _transferStartTime = null;
           return;
       }
     });
@@ -157,17 +164,33 @@ class TransfersServiceController extends Notifier<TransferSessionState> {
 
   TransferTransferResult _mapResult(rust_receiver.ReceiverTransferEvent event) {
     final snapshot = event.snapshot;
+    final totalBytes =
+        snapshot == null ? event.totalSizeBytes : snapshot.totalBytes;
+    final bytesTransferred =
+        snapshot == null ? event.bytesReceived : snapshot.bytesTransferred;
+
+    Duration? duration;
+    String? avgSpeedLabel;
+
+    if (_transferStartTime != null) {
+      duration = DateTime.now().difference(_transferStartTime!);
+      if (duration.inMilliseconds > 0) {
+        final avgSpeed = (bytesTransferred.toDouble() /
+                (duration.inMilliseconds / 1000.0))
+            .round();
+        avgSpeedLabel = '${formatBytes(BigInt.from(avgSpeed))}/s';
+      }
+    }
+
     return TransferTransferResult(
-      bytesTransferred: snapshot == null
-          ? event.bytesReceived
-          : snapshot.bytesTransferred,
-      totalBytes: snapshot == null ? event.totalSizeBytes : snapshot.totalBytes,
-      completedFiles: snapshot == null
-          ? event.itemCount.toInt()
-          : snapshot.completedFiles,
-      totalFiles: snapshot == null
-          ? event.itemCount.toInt()
-          : snapshot.totalFiles,
+      bytesTransferred: bytesTransferred,
+      totalBytes: totalBytes,
+      completedFiles:
+          snapshot == null ? event.itemCount.toInt() : snapshot.completedFiles,
+      totalFiles:
+          snapshot == null ? event.itemCount.toInt() : snapshot.totalFiles,
+      duration: duration,
+      averageSpeedLabel: avgSpeedLabel,
     );
   }
 
@@ -185,15 +208,16 @@ class TransfersServiceController extends Notifier<TransferSessionState> {
     if (bytesPerSec == null) {
       return null;
     }
-    return '$bytesPerSec B/s';
+    return '${formatBytes(bytesPerSec)}/s';
   }
 
   String? _formatEta(BigInt? etaSeconds) {
     if (etaSeconds == null) {
       return null;
     }
-    return '${etaSeconds}s left';
+    return formatEta(etaSeconds);
   }
+
 
   TransferIncomingOffer? _offerFromFakeSource(ReceiverServiceSource source) {
     if (source is! FakeReceiverServiceSource) {

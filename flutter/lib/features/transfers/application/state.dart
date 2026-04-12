@@ -48,12 +48,16 @@ class TransferTransferResult {
     required this.totalBytes,
     required this.completedFiles,
     required this.totalFiles,
+    this.duration,
+    this.averageSpeedLabel,
   });
 
   final BigInt bytesTransferred;
   final BigInt totalBytes;
   final int completedFiles;
   final int totalFiles;
+  final Duration? duration;
+  final String? averageSpeedLabel;
 }
 
 @immutable

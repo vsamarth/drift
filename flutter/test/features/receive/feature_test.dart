@@ -7,7 +7,6 @@ import 'package:app/app/app_router.dart';
 import 'package:app/features/receive/feature.dart';
 import 'package:app/features/settings/feature.dart';
 import 'package:app/features/transfers/feature.dart';
-import 'package:app/features/receive/presentation/receive_transfer_route.dart';
 import 'package:app/platform/rust/receiver/fake_source.dart';
 import '../../support/settings_test_overrides.dart';
 

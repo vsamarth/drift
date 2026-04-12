@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
 
-import '../../../../theme/drift_theme.dart';
-import '../../application/result_view_data.dart';
+import 'package:app/theme/drift_theme.dart';
+import 'package:app/features/send/presentation/widgets/recipient_avatar.dart';
+import 'package:app/features/transfers/application/result_view_data.dart';
+import 'package:app/features/transfers/presentation/widgets/manifest_tree_card.dart';
+import 'sending_connection_strip.dart';
 import 'transfer_flow_layout.dart';
+import 'transfer_presentation_helpers.dart';
 
 class TransferResultCard extends StatelessWidget {
   const TransferResultCard({
@@ -22,31 +26,23 @@ class TransferResultCard extends StatelessWidget {
       child: TransferFlowLayout(
         statusLabel: visual.statusLabel,
         statusColor: visual.accentColor,
-        subtitle: viewData.message,
-        explainer: _completionExplainer(viewData.metrics),
-        illustration: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _TransferResultIllustration(
-              icon: visual.icon,
-              color: visual.accentColor,
-            ),
-            const SizedBox(height: 16),
-            Text(
-              viewData.title,
-              textAlign: TextAlign.center,
-              style: driftSans(
-                fontSize: 20,
-                fontWeight: FontWeight.w700,
-                color: kInk,
-                letterSpacing: -0.4,
-              ),
-            ),
-          ],
+        subtitle: buildSubtitleText(viewData.message),
+        explainer: _StatsGrid(viewData: viewData),
+        illustration: RecipientAvatar(
+          deviceName: viewData.deviceName,
+          deviceType: viewData.deviceType != null
+              ? deviceTypeLabel(viewData.deviceType!)
+              : 'laptop',
+          mode: SendingStripMode.transferring,
+          progress: viewData.outcome == TransferResultOutcome.success ? 1.0 : 0.0,
+          animate: false,
         ),
-        manifest: viewData.metrics == null || viewData.metrics!.isEmpty
+        manifest: viewData.manifestItems == null || viewData.manifestItems!.isEmpty
             ? null
-            : _ResultMetricList(metrics: viewData.metrics!),
+            : ManifestTreeCard(
+                items: viewData.manifestItems!,
+                initiallyExpanded: true,
+              ),
         footer: Row(
           children: [
             if (viewData.primaryLabel.isNotEmpty && onPrimary != null)
@@ -75,73 +71,80 @@ class TransferResultCard extends StatelessWidget {
   }
 }
 
-class _ResultMetricList extends StatelessWidget {
-  const _ResultMetricList({required this.metrics});
+class _StatsGrid extends StatelessWidget {
+  const _StatsGrid({required this.viewData});
 
-  final List<ResultMetric> metrics;
+  final TransferResultViewData viewData;
 
   @override
   Widget build(BuildContext context) {
-    final labelStyle = driftSans(
-      fontSize: 12,
-      fontWeight: FontWeight.w500,
-      color: kMuted,
-    );
-    final valueStyle = driftSans(
-      fontSize: 12.5,
-      fontWeight: FontWeight.w600,
-      color: kInk,
-    );
+    if (viewData.outcome != TransferResultOutcome.success) {
+      return const SizedBox.shrink();
+    }
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        for (int i = 0; i < metrics.length; i++) ...[
-          if (i > 0) const SizedBox(height: 10),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(flex: 2, child: Text(metrics[i].label, style: labelStyle)),
-              Expanded(
-                flex: 3,
-                child: Text(
-                  metrics[i].value,
-                  textAlign: TextAlign.end,
-                  style: valueStyle,
-                  maxLines: 3,
-                  overflow: TextOverflow.ellipsis,
-                ),
+    final stats = <_StatItem>[
+      if (viewData.totalSizeLabel != null)
+        _StatItem(label: 'SIZE', value: viewData.totalSizeLabel!),
+      if (viewData.durationLabel != null)
+        _StatItem(label: 'TIME', value: viewData.durationLabel!),
+      if (viewData.averageSpeedLabel != null)
+        _StatItem(label: 'SPEED', value: viewData.averageSpeedLabel!),
+    ];
+
+    if (stats.isEmpty) return const SizedBox.shrink();
+
+    return Container(
+      margin: const EdgeInsets.only(top: 8),
+      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+      decoration: BoxDecoration(
+        color: kFill.withValues(alpha: 0.4),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceAround,
+        children: [
+          for (int i = 0; i < stats.length; i++) ...[
+            if (i > 0)
+              Container(
+                width: 1,
+                height: 24,
+                color: kBorder.withValues(alpha: 0.5),
               ),
-            ],
-          ),
+            Expanded(
+              child: Column(
+                children: [
+                  Text(
+                    stats[i].label,
+                    style: driftSans(
+                      fontSize: 9,
+                      fontWeight: FontWeight.w800,
+                      color: kMuted,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    stats[i].value,
+                    style: driftSans(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: kInk,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ],
-      ],
+      ),
     );
   }
 }
 
-class _TransferResultIllustration extends StatelessWidget {
-  const _TransferResultIllustration({
-    required this.icon,
-    required this.color,
-  });
-
-  final IconData icon;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.1),
-        shape: BoxShape.circle,
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(18),
-        child: Icon(icon, size: 42, color: color),
-      ),
-    );
-  }
+class _StatItem {
+  const _StatItem({required this.label, required this.value});
+  final String label;
+  final String value;
 }
 
 class _TransferResultVisualData {
@@ -179,36 +182,4 @@ _TransferResultVisualData _visualForOutcome(TransferResultOutcome outcome) {
         icon: Icons.error_rounded,
       ),
   };
-}
-
-Widget? _completionExplainer(List<ResultMetric>? metrics) {
-  if (metrics == null || metrics.isEmpty) {
-    return null;
-  }
-
-  final files = _metricValue(metrics, 'Files');
-  final size = _metricValue(metrics, 'Size');
-  if (files == null || size == null) {
-    return null;
-  }
-
-  final count = int.tryParse(files.trim());
-  if (count == null || count <= 0) {
-    return null;
-  }
-
-  return Text(
-    '$count file${count == 1 ? '' : 's'} finished in $size.',
-    textAlign: TextAlign.center,
-    style: driftSans(fontSize: 12, color: kMuted, height: 1.4),
-  );
-}
-
-String? _metricValue(List<ResultMetric> metrics, String label) {
-  for (final metric in metrics) {
-    if (metric.label == label) {
-      return metric.value;
-    }
-  }
-  return null;
 }

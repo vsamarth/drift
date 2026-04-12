@@ -60,11 +60,15 @@ class SendTransferResult {
     required this.outcome,
     required this.title,
     required this.message,
+    this.duration,
+    this.averageSpeedLabel,
   });
 
   final SendTransferOutcome outcome;
   final String title;
   final String message;
+  final Duration? duration;
+  final String? averageSpeedLabel;
 }
 
 @immutable

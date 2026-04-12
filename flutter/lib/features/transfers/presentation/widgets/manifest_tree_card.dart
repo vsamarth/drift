@@ -40,9 +40,16 @@ class _ManifestTreeCardState extends State<ManifestTreeCard> {
 
     return Container(
       decoration: BoxDecoration(
-        color: kSurface.withValues(alpha: 0.5),
+        color: kSurface,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: kBorder.withValues(alpha: 0.5)),
+        border: Border.all(color: kBorder),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.03),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,

@@ -42,56 +42,75 @@ class ManifestTree extends StatelessWidget {
         color: kBorder.withValues(alpha: 0.75),
       ),
       onTreeReady: (controller) {
-        controller.expandAllChildren(controller.tree, recursive: true);
+        // Only expand the top-level items by default.
+        controller.expandAllChildren(controller.tree, recursive: false);
       },
       builder: (context, node) {
         final data = node.data!;
-        return Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-          child: Row(
-            children: [
-              SizedBox(
-                width: 26,
-                child: Icon(
-                  data.isFolder
-                      ? Icons.folder_outlined
-                      : Icons.insert_drive_file_outlined,
-                  size: 18,
-                  color: data.isFolder ? const Color(0xFF6C8590) : kMuted,
+        final isTopLevel = node.level == 1;
+
+        return InkWell(
+          onTap: data.isFolder
+              ? () => node.expansionNotifier.value = !node.isExpanded
+              : null,
+          borderRadius: BorderRadius.circular(4),
+          child: Padding(
+            padding: EdgeInsets.symmetric(
+              horizontal: 4,
+              vertical: isTopLevel ? 4 : 2.5,
+            ),
+            child: Row(
+              children: [
+                SizedBox(
+                  width: 26,
+                  child: Icon(
+                    data.isFolder
+                        ? (isTopLevel
+                            ? Icons.folder_rounded
+                            : Icons.folder_outlined)
+                        : Icons.insert_drive_file_outlined,
+                    size: 18,
+                    color: data.isFolder
+                        ? (isTopLevel
+                            ? const Color(0xFF4A5D65)
+                            : const Color(0xFF6C8590))
+                        : kMuted,
+                  ),
                 ),
-              ),
-              Expanded(
-                child: Tooltip(
-                  message: data.fullPath,
-                  child: Text(
-                    data.label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: driftSans(
-                      fontSize: data.isFolder ? 13.5 : 13,
-                      fontWeight:
-                          data.isFolder ? FontWeight.w600 : FontWeight.w500,
-                      color: kInk,
+                Expanded(
+                  child: Tooltip(
+                    message: data.fullPath,
+                    child: Text(
+                      data.label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: driftSans(
+                        fontSize: isTopLevel && data.isFolder ? 14 : (data.isFolder ? 13.5 : 13),
+                        fontWeight: isTopLevel && data.isFolder
+                            ? FontWeight.w700
+                            : (data.isFolder ? FontWeight.w600 : FontWeight.w500),
+                        color: kInk,
+                      ),
                     ),
                   ),
                 ),
-              ),
-              const SizedBox(width: 12),
-              SizedBox(
-                width: 108,
-                child: Text(
-                  formatBytes(data.sizeBytes),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.right,
-                  style: driftSans(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                    color: kMuted,
+                const SizedBox(width: 12),
+                SizedBox(
+                  width: 108,
+                  child: Text(
+                    formatBytes(data.sizeBytes),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.right,
+                    style: driftSans(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                      color: kMuted,
+                    ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         );
       },

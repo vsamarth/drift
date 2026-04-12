@@ -72,10 +72,13 @@ class UtilityTransferFlowLayout extends StatelessWidget {
                 progressBar,
                 const SizedBox(height: 20),
                 // Activity Line
-                if (activityLine != null) activityLine!,
-                if (activityLine != null) const SizedBox(height: 32),
+                if (activityLine case final activityLine?) ...[
+                  activityLine,
+                  const SizedBox(height: 32),
+                ],
                 // Manifest (Flat list)
-                if (manifest != null) manifest!,
+                // ignore: use_null_aware_elements
+                if (manifest case final manifest?) manifest,
               ],
             ),
           ),
