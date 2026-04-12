@@ -9,21 +9,20 @@ import 'mapper.dart';
 import 'source.dart';
 
 typedef ReceiverPairingStreamFactory =
-    Stream<rust_receiver.ReceiverPairingState>
-    Function({
-  String? serverUrl,
-  required String downloadRoot,
-  required String deviceName,
-  required String deviceType,
-});
+    Stream<rust_receiver.ReceiverPairingState> Function({
+      String? serverUrl,
+      required String downloadRoot,
+      required String deviceName,
+      required String deviceType,
+    });
 
 typedef ReceiverTransferStreamFactory =
     Stream<rust_receiver.ReceiverTransferEvent> Function({
-  String? serverUrl,
-  required String downloadRoot,
-  required String deviceName,
-  required String deviceType,
-});
+      String? serverUrl,
+      required String downloadRoot,
+      required String deviceName,
+      required String deviceType,
+    });
 
 class RustReceiverServiceSource implements ReceiverServiceSource {
   RustReceiverServiceSource({
@@ -46,13 +45,12 @@ class RustReceiverServiceSource implements ReceiverServiceSource {
   final StreamController<ReceiverServiceState> _stateController =
       StreamController<ReceiverServiceState>.broadcast(sync: true);
   final StreamController<rust_receiver.ReceiverTransferEvent>
-      _transferController =
+  _transferController =
       StreamController<rust_receiver.ReceiverTransferEvent>.broadcast(
         sync: true,
       );
 
-  StreamSubscription<rust_receiver.ReceiverPairingState>?
-  _pairingSubscription;
+  StreamSubscription<rust_receiver.ReceiverPairingState>? _pairingSubscription;
   StreamSubscription<rust_receiver.ReceiverTransferEvent>?
   _transferSubscription;
   int _configGeneration = 0;
@@ -121,22 +119,21 @@ class RustReceiverServiceSource implements ReceiverServiceSource {
       'to device="$deviceName" downloadRoot="$downloadRoot" '
       'serverUrl="${serverUrl ?? _resolvedServerUrl}"',
     );
+    final generation = ++_configGeneration;
 
     if (_pairingSubscription != null) {
       debugPrint('[receiver] restarting pairing stream');
-      _restartPairingSubscription();
+      _restartPairingSubscription(generation: generation);
     }
     if (_transferSubscription != null) {
       debugPrint('[receiver] restarting transfer stream');
-      _restartTransferSubscription();
+      _restartTransferSubscription(generation: generation);
     }
   }
 
   @override
   Future<void> setDiscoverable({required bool enabled}) {
-    debugPrint(
-      '[receiver] discoverable ${enabled ? 'enabled' : 'disabled'}',
-    );
+    debugPrint('[receiver] discoverable ${enabled ? 'enabled' : 'disabled'}');
     return rust_receiver.setReceiverDiscoverable(enabled: enabled);
   }
 
@@ -177,9 +174,8 @@ class RustReceiverServiceSource implements ReceiverServiceSource {
     await rust_receiver.setReceiverDiscoverable(enabled: false);
   }
 
-  void _restartPairingSubscription() {
+  void _restartPairingSubscription({required int generation}) {
     final oldSubscription = _pairingSubscription;
-    final generation = ++_configGeneration;
     debugPrint('[receiver] pairing stream generation=$generation start');
     _pairingSubscription = null;
     _currentState = const ReceiverServiceState.registering();
@@ -220,9 +216,8 @@ class RustReceiverServiceSource implements ReceiverServiceSource {
     unawaited(oldSubscription?.cancel());
   }
 
-  void _restartTransferSubscription() {
+  void _restartTransferSubscription({required int generation}) {
     final oldSubscription = _transferSubscription;
-    final generation = _configGeneration;
     debugPrint('[receiver] transfer stream generation=$generation start');
     _transferSubscription = null;
     final stream = _transferStreamFactory(
@@ -254,22 +249,23 @@ class RustReceiverServiceSource implements ReceiverServiceSource {
     if (_pairingSubscription != null) {
       return;
     }
-    _restartPairingSubscription();
+    _restartPairingSubscription(generation: ++_configGeneration);
   }
 
   void _ensureTransferSubscription() {
     if (_transferSubscription != null) {
       return;
     }
-    _restartTransferSubscription();
+    _restartTransferSubscription(generation: _configGeneration);
   }
 
   String get _resolvedServerUrl => serverUrl ?? 'http://127.0.0.1:8787';
 
   static String get _deviceType => switch (defaultTargetPlatform) {
     TargetPlatform.android || TargetPlatform.iOS => 'phone',
-    TargetPlatform.macOS || TargetPlatform.windows || TargetPlatform.linux =>
-      'laptop',
+    TargetPlatform.macOS ||
+    TargetPlatform.windows ||
+    TargetPlatform.linux => 'laptop',
     TargetPlatform.fuchsia => 'laptop',
   };
 }

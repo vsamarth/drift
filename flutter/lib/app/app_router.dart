@@ -60,10 +60,14 @@ GoRouter buildAppRouter({List<NavigatorObserver> observers = const []}) {
           GoRoute(
             path: AppRoutePaths.sendTransferSegment,
             builder: (context, state) {
-              final request = state.extra as SendRequestData;
-              return TitleBarShell(
-                child: SendTransferRoutePage(request: request),
-              );
+              final extra = state.extra;
+              if (extra is SendRequestData) {
+                return TitleBarShell(
+                  child: SendTransferRoutePage(request: extra),
+                );
+              }
+
+              return const TitleBarShell(child: SendDraftRoutePage(files: []));
             },
           ),
         ],

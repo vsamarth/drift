@@ -10,9 +10,7 @@ void main() {
       initialState: ReceiverServiceState.ready(code: 'ABC123'),
     );
     final container = ProviderContainer(
-      overrides: [
-        receiverServiceSourceProvider.overrideWithValue(source),
-      ],
+      overrides: [receiverServiceSourceProvider.overrideWithValue(source)],
     );
     addTearDown(container.dispose);
 
@@ -26,5 +24,6 @@ void main() {
     final updated = container.read(receiverServiceProvider);
     expect(updated.pairingCode.isAvailable, isFalse);
     expect(updated.snapshot.hasRegistration, isFalse);
+    expect(updated.snapshot.lifecycle, ReceiverLifecycle.stopped);
   });
 }

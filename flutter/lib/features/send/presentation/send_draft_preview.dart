@@ -74,17 +74,17 @@ class SendDraftPreview extends ConsumerWidget {
   List<SendPickedFile> _displayFilesFor(SendState state) {
     final (items, resolvedSizes) = switch (state) {
       SendStateDrafting(:final items, :final resolvedDirectorySizes) => (
-          items,
-          resolvedDirectorySizes
-        ),
+        items,
+        resolvedDirectorySizes,
+      ),
       SendStateTransferring(:final items, :final resolvedDirectorySizes) => (
-          items,
-          resolvedDirectorySizes
-        ),
+        items,
+        resolvedDirectorySizes,
+      ),
       SendStateResult(:final items, :final resolvedDirectorySizes) => (
-          items,
-          resolvedDirectorySizes
-        ),
+        items,
+        resolvedDirectorySizes,
+      ),
       SendStateIdle() => (const <SendDraftItem>[], const <String, BigInt>{}),
     };
 
@@ -125,7 +125,8 @@ class SendDraftPreview extends ConsumerWidget {
     final itemCount = files.length;
     final dividerCount = itemCount > 0 ? itemCount - 1 : 0;
 
-    final contentHeight = verticalPadding +
+    final contentHeight =
+        verticalPadding +
         (itemCount * rowHeight) +
         (dividerCount * dividerHeight);
 
@@ -148,12 +149,7 @@ class SendDraftPreview extends ConsumerWidget {
     });
 
     if (state is SendStateIdle) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (Navigator.of(context).canPop()) {
-          context.pop();
-        }
-      });
-      return const SizedBox.shrink();
+      return const _SendDraftIdleRecovery();
     }
 
     final files = _displayFilesFor(state);
@@ -242,7 +238,8 @@ class SendDraftPreview extends ConsumerWidget {
                         child: SendDraftFileList(
                           files: files,
                           maxHeight: previewHeight,
-                          onRemove: (SendPickedFile file) => _removeFile(ref, file),
+                          onRemove: (SendPickedFile file) =>
+                              _removeFile(ref, file),
                         ),
                       ),
                     ),
@@ -257,9 +254,9 @@ class SendDraftPreview extends ConsumerWidget {
                           TextButton.icon(
                             onPressed: canEditDraft
                                 ? () => _appendSelection(
-                                      ref,
-                                      (picker) => picker.pickFiles(),
-                                    )
+                                    ref,
+                                    (picker) => picker.pickFiles(),
+                                  )
                                 : null,
                             icon: const Icon(Icons.add_rounded, size: 16),
                             label: const Text('Add files'),
@@ -267,9 +264,9 @@ class SendDraftPreview extends ConsumerWidget {
                           TextButton.icon(
                             onPressed: canEditDraft
                                 ? () => _appendSelection(
-                                      ref,
-                                      (picker) => picker.pickFolder(),
-                                    )
+                                    ref,
+                                    (picker) => picker.pickFolder(),
+                                  )
                                 : null,
                             icon: const Icon(
                               Icons.create_new_folder_outlined,
@@ -305,14 +302,14 @@ class SendDraftPreview extends ConsumerWidget {
                   onPressed: state is SendStateResult
                       ? controller.clearDraft
                       : (canStartSend
-                          ? () {
-                              final request = controller.buildSendRequest();
-                              if (request == null) {
-                                return;
+                            ? () {
+                                final request = controller.buildSendRequest();
+                                if (request == null) {
+                                  return;
+                                }
+                                context.pushSendTransfer(request: request);
                               }
-                              context.pushSendTransfer(request: request);
-                            }
-                          : null),
+                            : null),
                   style: FilledButton.styleFrom(
                     minimumSize: const Size.fromHeight(48),
                     shape: RoundedRectangleBorder(
@@ -326,6 +323,77 @@ class SendDraftPreview extends ConsumerWidget {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SendDraftIdleRecovery extends StatelessWidget {
+  const _SendDraftIdleRecovery();
+
+  @override
+  Widget build(BuildContext context) {
+    void exitToHome() {
+      if (Navigator.of(context).canPop()) {
+        context.pop();
+        return;
+      }
+      context.goHome();
+    }
+
+    return Scaffold(
+      backgroundColor: kBg,
+      appBar: AppBar(
+        backgroundColor: kBg,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        leadingWidth: 72,
+        leading: Padding(
+          padding: const EdgeInsets.only(left: 8),
+          child: IconButton(
+            tooltip: 'Back',
+            icon: const Icon(Icons.arrow_back_rounded),
+            onPressed: exitToHome,
+          ),
+        ),
+      ),
+      body: SafeArea(
+        top: false,
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'No files selected',
+                  textAlign: TextAlign.center,
+                  style: driftSans(
+                    fontSize: 19,
+                    fontWeight: FontWeight.w700,
+                    color: kInk,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Start from home to pick files or folders, then try sending again.',
+                  textAlign: TextAlign.center,
+                  style: driftSans(fontSize: 13.5, color: kMuted, height: 1.35),
+                ),
+                const SizedBox(height: 20),
+                FilledButton(
+                  onPressed: exitToHome,
+                  style: FilledButton.styleFrom(
+                    minimumSize: const Size(160, 44),
+                    backgroundColor: kAccentCyanStrong,
+                    foregroundColor: Colors.white,
+                  ),
+                  child: const Text('Go to home'),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );

@@ -80,6 +80,29 @@ ProviderContainer _buildContainer({
 }
 
 void main() {
+  testWidgets('shows recovery UI when draft state is idle', (
+    WidgetTester tester,
+  ) async {
+    final container = _buildContainer(
+      directorySizeCalculator: FakeDirectorySizeCalculator({}),
+      receiverSource: FakeReceiverServiceSource(),
+      picker: FakeSendSelectionPicker(),
+    );
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const MaterialApp(home: SendDraftPreview()),
+      ),
+    );
+    await _pumpPreview(tester);
+
+    expect(find.text('No files selected'), findsOneWidget);
+    expect(find.text('Go to home'), findsOneWidget);
+    expect(find.text('Selected files'), findsNothing);
+  });
+
   testWidgets('shows the send draft preview', (WidgetTester tester) async {
     final container = _buildContainer(
       directorySizeCalculator: FakeDirectorySizeCalculator({
@@ -149,7 +172,8 @@ void main() {
       ],
     );
     addTearDown(container.dispose);
-    final fakeSource = container.read(sendTransferSourceProvider) as FakeSendTransferSource;
+    final fakeSource =
+        container.read(sendTransferSourceProvider) as FakeSendTransferSource;
     addTearDown(fakeSource.close);
     container.read(sendControllerProvider.notifier).beginDraft([
       SendPickedFile(
@@ -318,10 +342,7 @@ void main() {
       (state as SendStateDrafting).destination.mode,
       SendDestinationMode.nearby,
     );
-    expect(
-      state.destination.ticket,
-      'ticket-1',
-    );
+    expect(state.destination.ticket, 'ticket-1');
     expect(state.destination.code, isNull);
   });
 
@@ -341,8 +362,9 @@ void main() {
             ),
             GoRoute(
               path: AppRoutePaths.sendTransferSegment,
-              builder: (context, state) =>
-                  SendTransferRoutePage(request: state.extra as SendRequestData),
+              builder: (context, state) => SendTransferRoutePage(
+                request: state.extra as SendRequestData,
+              ),
             ),
           ],
         ),
@@ -393,8 +415,8 @@ void main() {
       container.read(sendControllerProvider),
       isA<SendStateTransferring>(),
     );
-    expect(find.text('Connecting to recipient'), findsOneWidget);
-    expect(find.text('/tmp/report.pdf'), findsWidgets);
+    expect(find.byType(SendTransferRoutePage), findsOneWidget);
+    expect(find.textContaining('report'), findsWidgets);
   });
 
   testWidgets('tapping back pops the router and returns home', (

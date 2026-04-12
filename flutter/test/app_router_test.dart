@@ -8,6 +8,7 @@ import 'package:app/features/send/application/send_selection_picker.dart';
 import 'package:app/platform/rust/receiver/fake_source.dart';
 import 'package:app/features/settings/settings_providers.dart';
 import 'package:app/features/send/presentation/send_draft_preview.dart';
+import 'package:app/features/send/presentation/send_transfer_route.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -27,17 +28,75 @@ void main() {
   test('router configuration stays consistent', () {
     final router = buildAppRouter();
 
-    expect(router.configuration.routes, hasLength(1));
-
-    final root = router.configuration.routes.single as GoRoute;
+    final allRoutes = router.configuration.routes.cast<GoRoute>().toList();
+    final root = allRoutes.firstWhere(
+      (route) => route.path == AppRoutePaths.home,
+    );
     expect(root.path, AppRoutePaths.home);
 
     final childPaths = root.routes.cast<GoRoute>().map((r) => r.path).toList();
-    expect(childPaths, containsAll(<String>[
-      AppRoutePaths.settingsSegment,
-      AppRoutePaths.sendDraftSegment,
-    ]));
+    expect(
+      childPaths,
+      containsAll(<String>[
+        AppRoutePaths.settingsSegment,
+        AppRoutePaths.sendDraftSegment,
+        AppRoutePaths.sendTransferSegment,
+      ]),
+    );
   });
+
+  testWidgets('send transfer route falls back safely when extra is missing', (
+    tester,
+  ) async {
+    final receiverSource = FakeReceiverServiceSource();
+    final router = buildAppRouter();
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          initialAppSettingsProvider.overrideWithValue(testAppSettings),
+          receiverServiceSourceProvider.overrideWithValue(receiverSource),
+        ],
+        child: MaterialApp.router(routerConfig: router),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    router.go(AppRoutePaths.sendTransfer);
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pump();
+
+    expect(find.text('No files selected'), findsOneWidget);
+    expect(find.byType(SendTransferRoutePage), findsNothing);
+  });
+
+  testWidgets(
+    'send transfer route falls back safely when extra has wrong type',
+    (tester) async {
+      final receiverSource = FakeReceiverServiceSource();
+      final router = buildAppRouter();
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            initialAppSettingsProvider.overrideWithValue(testAppSettings),
+            receiverServiceSourceProvider.overrideWithValue(receiverSource),
+          ],
+          child: MaterialApp.router(routerConfig: router),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      router.go(AppRoutePaths.sendTransfer, extra: 'invalid-extra');
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pump();
+
+      expect(find.text('No files selected'), findsOneWidget);
+      expect(find.byType(SendTransferRoutePage), findsNothing);
+    },
+  );
 
   testWidgets('app starts on the home route', (tester) async {
     final receiverSource = FakeReceiverServiceSource();
@@ -115,9 +174,7 @@ void main() {
           initialAppSettingsProvider.overrideWithValue(testAppSettings),
           receiverServiceSourceProvider.overrideWithValue(receiverSource),
         ],
-        child: MaterialApp.router(
-          routerConfig: router,
-        ),
+        child: MaterialApp.router(routerConfig: router),
       ),
     );
     await tester.pumpAndSettle();

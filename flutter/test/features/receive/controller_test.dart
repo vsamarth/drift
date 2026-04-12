@@ -27,4 +27,23 @@ void main() {
     expect(state.code, '......');
   });
 
+  test('maps unavailable receiver to unavailable lifecycle', () {
+    final container = ProviderContainer(
+      overrides: [
+        initialAppSettingsProvider.overrideWithValue(testAppSettings),
+        receiverServiceSourceProvider.overrideWithValue(
+          FakeReceiverServiceSource(
+            initialState: const ReceiverServiceState.unavailable(),
+          ),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    final state = container.read(receiverIdleViewStateProvider);
+
+    expect(state.badge.label, 'Unavailable');
+    expect(state.lifecycle, ReceiverLifecycle.stopped);
+    expect(state.code, '......');
+  });
 }

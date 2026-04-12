@@ -85,7 +85,7 @@ class TransfersServiceController extends Notifier<TransferSessionState> {
     return const TransferSessionState.idle();
   }
 
-  Future<void> acceptOffer() {
+  Future<void> acceptOffer() async {
     final source = ref.read(transfersServiceSourceProvider);
     final offer = state.offer ?? _incomingOffer ?? _offerFromFakeSource(source);
     if (offer != null) {
@@ -99,14 +99,34 @@ class TransfersServiceController extends Notifier<TransferSessionState> {
         ),
       );
     }
-    return source.respondToOffer(accept: true);
+    try {
+      await source.respondToOffer(accept: true);
+    } catch (_) {
+      if (offer != null) {
+        _incomingOffer = offer;
+        state = TransferSessionState.offerPending(offer: offer);
+      } else {
+        _incomingOffer = null;
+        state = const TransferSessionState.idle();
+      }
+      rethrow;
+    }
   }
 
-  Future<void> declineOffer() {
+  Future<void> declineOffer() async {
     final source = ref.read(transfersServiceSourceProvider);
+    final offer = state.offer ?? _incomingOffer ?? _offerFromFakeSource(source);
     state = const TransferSessionState.idle();
     _incomingOffer = null;
-    return source.respondToOffer(accept: false);
+    try {
+      await source.respondToOffer(accept: false);
+    } catch (_) {
+      if (offer != null) {
+        _incomingOffer = offer;
+        state = TransferSessionState.offerPending(offer: offer);
+      }
+      rethrow;
+    }
   }
 
   Future<void> cancelTransfer() {
@@ -164,10 +184,12 @@ class TransfersServiceController extends Notifier<TransferSessionState> {
 
   TransferTransferResult _mapResult(rust_receiver.ReceiverTransferEvent event) {
     final snapshot = event.snapshot;
-    final totalBytes =
-        snapshot == null ? event.totalSizeBytes : snapshot.totalBytes;
-    final bytesTransferred =
-        snapshot == null ? event.bytesReceived : snapshot.bytesTransferred;
+    final totalBytes = snapshot == null
+        ? event.totalSizeBytes
+        : snapshot.totalBytes;
+    final bytesTransferred = snapshot == null
+        ? event.bytesReceived
+        : snapshot.bytesTransferred;
 
     Duration? duration;
     String? avgSpeedLabel;
@@ -175,9 +197,9 @@ class TransfersServiceController extends Notifier<TransferSessionState> {
     if (_transferStartTime != null) {
       duration = DateTime.now().difference(_transferStartTime!);
       if (duration.inMilliseconds > 0) {
-        final avgSpeed = (bytesTransferred.toDouble() /
-                (duration.inMilliseconds / 1000.0))
-            .round();
+        final avgSpeed =
+            (bytesTransferred.toDouble() / (duration.inMilliseconds / 1000.0))
+                .round();
         avgSpeedLabel = '${formatBytes(BigInt.from(avgSpeed))}/s';
       }
     }
@@ -185,10 +207,12 @@ class TransfersServiceController extends Notifier<TransferSessionState> {
     return TransferTransferResult(
       bytesTransferred: bytesTransferred,
       totalBytes: totalBytes,
-      completedFiles:
-          snapshot == null ? event.itemCount.toInt() : snapshot.completedFiles,
-      totalFiles:
-          snapshot == null ? event.itemCount.toInt() : snapshot.totalFiles,
+      completedFiles: snapshot == null
+          ? event.itemCount.toInt()
+          : snapshot.completedFiles,
+      totalFiles: snapshot == null
+          ? event.itemCount.toInt()
+          : snapshot.totalFiles,
       duration: duration,
       averageSpeedLabel: avgSpeedLabel,
     );
@@ -217,7 +241,6 @@ class TransfersServiceController extends Notifier<TransferSessionState> {
     }
     return formatEta(etaSeconds);
   }
-
 
   TransferIncomingOffer? _offerFromFakeSource(ReceiverServiceSource source) {
     if (source is! FakeReceiverServiceSource) {

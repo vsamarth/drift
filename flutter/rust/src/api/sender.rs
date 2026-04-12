@@ -2,23 +2,22 @@ use std::path::PathBuf;
 use std::sync::{LazyLock, Mutex};
 
 use drift_app::{
-    SendConfig, SendDestination, SendDraft, SendEvent as AppSendEvent, SendPhase as AppSendPhase,
-    SendSession, SendSessionOutcome,
+    send::SendCancelHandle, AppError, SendConfig, SendDestination, SendDraft,
+    SendEvent as AppSendEvent, SendPhase as AppSendPhase, SendSession, SendSessionOutcome,
 };
 use drift_core::transfer::{TransferPhase, TransferPlan, TransferPlanFile, TransferSnapshot};
 use futures_lite::StreamExt;
-use tokio::sync::watch;
 
 use super::transfer::{
     TransferPhaseData, TransferPlanData, TransferPlanFileData, TransferSnapshotData,
 };
 use super::RUNTIME;
 use crate::api::error::internal_user_facing_error;
-use crate::frb_generated::StreamSink;
 use crate::api::error::map_optional_user_facing_error;
+use crate::frb_generated::StreamSink;
 
 const LOCAL_RENDEZVOUS_URL: &str = "http://127.0.0.1:8787";
-static ACTIVE_SEND_CANCEL: LazyLock<Mutex<Option<watch::Sender<bool>>>> =
+static ACTIVE_SEND_CANCEL: LazyLock<Mutex<Option<SendCancelHandle>>> =
     LazyLock::new(|| Mutex::new(None));
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -91,15 +90,16 @@ pub fn start_send_transfer(
     };
 
     let session = SendSession::new(draft, destination);
-    let (cancel_tx, _cancel_rx) = watch::channel(false);
+    let run = session.start();
+    let cancel_handle = run.cancel_handle();
+
     if let Ok(mut guard) = ACTIVE_SEND_CANCEL.lock() {
-        if let Some(existing) = guard.replace(cancel_tx.clone()) {
-            let _ = existing.send(true);
+        if let Some(existing) = guard.replace(cancel_handle) {
+            cancel_send_session(existing);
         }
     }
 
     RUNTIME.spawn(async move {
-        let run = session.start();
         let (mut events, outcome_rx) = run.into_parts();
 
         let event_updates = updates.clone();
@@ -119,23 +119,14 @@ pub fn start_send_transfer(
             Ok(Ok(SendSessionOutcome::Accepted { .. })) => {}
             Ok(Ok(SendSessionOutcome::Declined { .. })) => {}
             Ok(Err(error)) => {
-                let _ = updates.add(SendTransferEvent {
-                    phase: SendTransferPhase::Failed,
-                    destination_label: fallback_destination,
-                    status_message: "Transfer failed.".to_owned(),
-                    item_count: 0,
-                    total_size: 0,
-                    bytes_sent: 0,
-                    plan: None,
-                    snapshot: None,
-                    remote_device_type: None,
-                    error: Some(internal_user_facing_error(
-                        "Transfer failed",
-                        error.to_string(),
-                    )),
-                });
+                let _ = updates.add(terminal_event_for_app_error(fallback_destination, error));
             }
-            Err(_) => {}
+            Err(error) => {
+                let _ = updates.add(terminal_internal_failure_event(
+                    fallback_destination,
+                    format!("Waiting for send outcome failed: {error}"),
+                ));
+            }
         }
     });
 
@@ -146,20 +137,75 @@ pub fn cancel_active_send_transfer() -> Result<(), crate::api::error::UserFacing
     let guard = ACTIVE_SEND_CANCEL
         .lock()
         .map_err(|_| internal_user_facing_error("Send transfer unavailable", "mutex poisoned"))?;
-    let Some(cancel_tx) = guard.as_ref() else {
+    let Some(cancel_handle) = guard.as_ref().cloned() else {
         return Err(internal_user_facing_error(
             "No active send transfer",
             "There is no active send transfer to cancel.",
         ));
     };
-    cancel_tx
-        .send(true)
-        .map_err(|_| {
-            internal_user_facing_error(
+    drop(guard);
+
+    RUNTIME
+        .block_on(cancel_handle.cancel_transfer())
+        .map_err(|error| match error {
+            AppError::NoActiveTransfer => internal_user_facing_error(
+                "No active send transfer",
+                "There is no active send transfer to cancel.",
+            ),
+            _ => internal_user_facing_error(
                 "Send transfer unavailable",
-                "The active send transfer is no longer available.",
-            )
+                format!("The active send transfer could not be cancelled: {error}"),
+            ),
         })
+}
+
+fn cancel_send_session(cancel_handle: SendCancelHandle) {
+    RUNTIME.spawn(async move {
+        let _ = cancel_handle.cancel_transfer().await;
+    });
+}
+
+fn terminal_event_for_app_error(destination_label: String, error: AppError) -> SendTransferEvent {
+    let (phase, status_message, title) = match &error {
+        AppError::Cancelled { .. } => (
+            SendTransferPhase::Cancelled,
+            "Transfer cancelled.",
+            "Transfer cancelled",
+        ),
+        _ => (
+            SendTransferPhase::Failed,
+            "Transfer failed.",
+            "Transfer failed",
+        ),
+    };
+
+    SendTransferEvent {
+        phase,
+        destination_label,
+        status_message: status_message.to_owned(),
+        item_count: 0,
+        total_size: 0,
+        bytes_sent: 0,
+        plan: None,
+        snapshot: None,
+        remote_device_type: None,
+        error: Some(internal_user_facing_error(title, error.to_string())),
+    }
+}
+
+fn terminal_internal_failure_event(destination_label: String, detail: String) -> SendTransferEvent {
+    SendTransferEvent {
+        phase: SendTransferPhase::Failed,
+        destination_label,
+        status_message: "Transfer failed.".to_owned(),
+        item_count: 0,
+        total_size: 0,
+        bytes_sent: 0,
+        plan: None,
+        snapshot: None,
+        remote_device_type: None,
+        error: Some(internal_user_facing_error("Transfer failed", detail)),
+    }
 }
 
 fn fallback_destination_label(request: &SendTransferRequest) -> String {
@@ -249,5 +295,38 @@ fn map_phase(phase: TransferPhase) -> TransferPhaseData {
         TransferPhase::Completed => TransferPhaseData::Completed,
         TransferPhase::Cancelled => TransferPhaseData::Cancelled,
         TransferPhase::Failed => TransferPhaseData::Failed,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use drift_app::AppError;
+
+    use super::{terminal_event_for_app_error, terminal_internal_failure_event, SendTransferPhase};
+
+    #[test]
+    fn cancelled_app_error_maps_to_cancelled_terminal_event() {
+        let event = terminal_event_for_app_error(
+            "Code ABC 123".to_owned(),
+            AppError::Cancelled {
+                reason: "user requested cancel".to_owned(),
+            },
+        );
+
+        assert_eq!(event.phase, SendTransferPhase::Cancelled);
+        assert_eq!(event.status_message, "Transfer cancelled.");
+        assert!(event.error.is_some());
+    }
+
+    #[test]
+    fn internal_failure_terminal_event_is_failed_phase() {
+        let event = terminal_internal_failure_event(
+            "Code ABC 123".to_owned(),
+            "outcome channel closed".to_owned(),
+        );
+
+        assert_eq!(event.phase, SendTransferPhase::Failed);
+        assert_eq!(event.status_message, "Transfer failed.");
+        assert!(event.error.is_some());
     }
 }

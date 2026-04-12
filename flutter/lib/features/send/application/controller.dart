@@ -19,6 +19,7 @@ class SendController extends _$SendController {
   StreamSubscription<SendTransferUpdate>? _transferSubscription;
   final Set<String> _pendingDirectorySizes = <String>{};
   DateTime? _transferStartTime;
+  int _activeTransferToken = 0;
 
   @override
   SendState build() {
@@ -42,7 +43,10 @@ class SendController extends _$SendController {
     }
 
     state = currentState.copyWith(
-      items: [...currentState.items, ...files.map(SendDraftItem.fromPickedFile)],
+      items: [
+        ...currentState.items,
+        ...files.map(SendDraftItem.fromPickedFile),
+      ],
     );
     _hydrateDirectorySizes();
   }
@@ -112,8 +116,14 @@ class SendController extends _$SendController {
   SendRequestData? buildSendRequest() {
     final currentState = state;
     final (items, destination) = switch (currentState) {
-      SendStateDrafting(:final items, :final destination) => (items, destination),
-      SendStateTransferring(:final items, :final destination) => (items, destination),
+      SendStateDrafting(:final items, :final destination) => (
+        items,
+        destination,
+      ),
+      SendStateTransferring(:final items, :final destination) => (
+        items,
+        destination,
+      ),
       SendStateResult(:final items, :final destination) => (items, destination),
       SendStateIdle() => (null, null),
     };
@@ -169,12 +179,16 @@ class SendController extends _$SendController {
     }
 
     final transferSource = ref.read(sendTransferSourceProvider);
+    final transferToken = ++_activeTransferToken;
     _transferStartTime = DateTime.now();
     state = SendStateTransferring(
       items: currentState.items,
       destination: currentState.destination,
       request: validatedRequest,
-      transfer: _buildInitialTransferState(validatedRequest, currentState.items),
+      transfer: _buildInitialTransferState(
+        validatedRequest,
+        currentState.items,
+      ),
       resolvedDirectorySizes: currentState.resolvedDirectorySizes,
     );
     unawaited(_transferSubscription?.cancel());
@@ -190,7 +204,11 @@ class SendController extends _$SendController {
             lanDestinationLabel: validatedRequest.lanDestinationLabel,
           ),
         )
-        .listen(_handleTransferUpdate, onError: _handleTransferError);
+        .listen(
+          (update) => _handleTransferUpdate(update, transferToken),
+          onError: (Object error, StackTrace stackTrace) =>
+              _handleTransferError(error, stackTrace, transferToken),
+        );
   }
 
   void cancelTransfer() {
@@ -208,9 +226,18 @@ class SendController extends _$SendController {
   void _hydrateDirectorySizes() {
     final currentState = state;
     final (items, resolvedSizes) = switch (currentState) {
-      SendStateDrafting(:final items, :final resolvedDirectorySizes) => (items, resolvedDirectorySizes),
-      SendStateTransferring(:final items, :final resolvedDirectorySizes) => (items, resolvedDirectorySizes),
-      SendStateResult(:final items, :final resolvedDirectorySizes) => (items, resolvedDirectorySizes),
+      SendStateDrafting(:final items, :final resolvedDirectorySizes) => (
+        items,
+        resolvedDirectorySizes,
+      ),
+      SendStateTransferring(:final items, :final resolvedDirectorySizes) => (
+        items,
+        resolvedDirectorySizes,
+      ),
+      SendStateResult(:final items, :final resolvedDirectorySizes) => (
+        items,
+        resolvedDirectorySizes,
+      ),
       SendStateIdle() => (null, null),
     };
 
@@ -234,12 +261,21 @@ class SendController extends _$SendController {
       final sizeBytes = await ref
           .read(directorySizeCalculatorProvider)
           .sizeOfDirectory(path);
-      
+
       final currentState = state;
       final (items, resolvedSizes) = switch (currentState) {
-        SendStateDrafting(:final items, :final resolvedDirectorySizes) => (items, resolvedDirectorySizes),
-        SendStateTransferring(:final items, :final resolvedDirectorySizes) => (items, resolvedDirectorySizes),
-        SendStateResult(:final items, :final resolvedDirectorySizes) => (items, resolvedDirectorySizes),
+        SendStateDrafting(:final items, :final resolvedDirectorySizes) => (
+          items,
+          resolvedDirectorySizes,
+        ),
+        SendStateTransferring(:final items, :final resolvedDirectorySizes) => (
+          items,
+          resolvedDirectorySizes,
+        ),
+        SendStateResult(:final items, :final resolvedDirectorySizes) => (
+          items,
+          resolvedDirectorySizes,
+        ),
         SendStateIdle() => (null, null),
       };
 
@@ -285,7 +321,10 @@ class SendController extends _$SendController {
     unawaited(_cancelActiveTransfer());
   }
 
-  void _handleTransferUpdate(SendTransferUpdate update) {
+  void _handleTransferUpdate(SendTransferUpdate update, int transferToken) {
+    if (transferToken != _activeTransferToken) {
+      return;
+    }
     final currentState = state;
     if (currentState is! SendStateTransferring) {
       return;
@@ -325,9 +364,9 @@ class SendController extends _$SendController {
       if (_transferStartTime != null) {
         duration = DateTime.now().difference(_transferStartTime!);
         if (duration.inMilliseconds > 0) {
-          final avgSpeed = (update.bytesSent.toDouble() /
-                  (duration.inMilliseconds / 1000.0))
-              .round();
+          final avgSpeed =
+              (update.bytesSent.toDouble() / (duration.inMilliseconds / 1000.0))
+                  .round();
           avgSpeedLabel = '${formatBytes(BigInt.from(avgSpeed))}/s';
         }
         _transferStartTime = null;
@@ -388,7 +427,14 @@ class SendController extends _$SendController {
     }
   }
 
-  void _handleTransferError(Object error, StackTrace stackTrace) {
+  void _handleTransferError(
+    Object error,
+    StackTrace stackTrace,
+    int transferToken,
+  ) {
+    if (transferToken != _activeTransferToken) {
+      return;
+    }
     final currentState = state;
     if (currentState is! SendStateTransferring) {
       return;
@@ -429,10 +475,7 @@ class SendController extends _$SendController {
     }
   }
 
-  bool _sameSendRequest(
-    SendRequestData left,
-    SendRequestData right,
-  ) {
+  bool _sameSendRequest(SendRequestData left, SendRequestData right) {
     return left.destinationMode == right.destinationMode &&
         listEquals(left.paths, right.paths) &&
         left.deviceName == right.deviceName &&

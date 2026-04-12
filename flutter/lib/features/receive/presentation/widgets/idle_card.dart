@@ -136,46 +136,66 @@ class _ReceiveIdleCardState extends State<ReceiveIdleCard> {
                     ),
                   ),
                   const SizedBox(height: 6),
-                  MouseRegion(
-                    cursor: SystemMouseCursors.click,
-                    onEnter: (_) => setState(() => _codeHovering = true),
-                    onExit: (_) => setState(() => _codeHovering = false),
-                    child: GestureDetector(
-                      onTap: () => _copyCode(widget.state.clipboardCode),
-                      child: AnimatedContainer(
-                        key: const ValueKey<String>('idle-receive-code'),
-                        duration: const Duration(milliseconds: 160),
-                        curve: Curves.easeOutCubic,
-                        height: 38,
-                        padding: const EdgeInsets.symmetric(horizontal: 14),
-                        decoration: BoxDecoration(
-                          color: _codeHovering
-                              ? Colors.white
-                              : const Color(0xFFFDFDFD),
+                  Tooltip(
+                    message: 'Copy receive code',
+                    child: Semantics(
+                      button: true,
+                      label: 'Copy receive code',
+                      hint: 'Copies the receive code to clipboard',
+                      child: Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          key: const ValueKey<String>('idle-receive-code'),
+                          onTap: () => _copyCode(widget.state.clipboardCode),
+                          canRequestFocus: true,
+                          onHover: (value) {
+                            if (_codeHovering == value) {
+                              return;
+                            }
+                            setState(() => _codeHovering = value);
+                          },
+                          onFocusChange: (value) {
+                            if (_codeHovering == value) {
+                              return;
+                            }
+                            setState(() => _codeHovering = value);
+                          },
                           borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                            color: _codeHovering
-                                ? const Color(0xFFCFCFCF)
-                                : const Color(0xFFD7D7D7),
-                          ),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withValues(
-                                alpha: _codeHovering ? 0.028 : 0.018,
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 160),
+                            curve: Curves.easeOutCubic,
+                            height: 38,
+                            padding: const EdgeInsets.symmetric(horizontal: 14),
+                            decoration: BoxDecoration(
+                              color: _codeHovering
+                                  ? Colors.white
+                                  : const Color(0xFFFDFDFD),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: _codeHovering
+                                    ? const Color(0xFFCFCFCF)
+                                    : const Color(0xFFD7D7D7),
                               ),
-                              blurRadius: _codeHovering ? 10 : 6,
-                              offset: const Offset(0, 2),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(
+                                    alpha: _codeHovering ? 0.028 : 0.018,
+                                  ),
+                                  blurRadius: _codeHovering ? 10 : 6,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ],
                             ),
-                          ],
-                        ),
-                        child: Center(
-                          child: Text(
-                            _formatCode(widget.state.code),
-                            style: driftMono(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w700,
-                              color: const Color(0xFF111111),
-                              letterSpacing: 2.2,
+                            child: Center(
+                              child: Text(
+                                _formatCode(widget.state.code),
+                                style: driftMono(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w700,
+                                  color: const Color(0xFF111111),
+                                  letterSpacing: 2.2,
+                                ),
+                              ),
                             ),
                           ),
                         ),
