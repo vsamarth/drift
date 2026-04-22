@@ -13,6 +13,7 @@ import '../application/state.dart';
 import '../application/transfer_state.dart';
 import 'send_transfer_view_data.dart';
 import 'package:app/features/transfers/presentation/widgets/manifest_tree_card.dart';
+import 'package:app/features/transfers/presentation/widgets/active_transfer_file_list.dart';
 import 'package:app/features/send/presentation/widgets/recipient_avatar.dart';
 
 class SendTransferRoutePage extends ConsumerStatefulWidget {
@@ -157,10 +158,15 @@ class _TransferStateCard extends StatelessWidget {
       ),
       manifest: manifestItems.isEmpty
           ? null
-          : ManifestTreeCard(
-              items: manifestItems,
-              initiallyExpanded: state is SendStateResult,
-            ),
+          : (state is SendStateTransferring
+              ? ActiveTransferFileList(
+                  items: manifestItems,
+                  progress: progress,
+                )
+              : ManifestTreeCard(
+                  items: manifestItems,
+                  initiallyExpanded: state is SendStateResult,
+                )),
       footer: Row(
         children: [
           Expanded(

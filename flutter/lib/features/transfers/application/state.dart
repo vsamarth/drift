@@ -19,6 +19,8 @@ class TransferTransferProgress {
     required this.totalBytes,
     required this.completedFiles,
     required this.totalFiles,
+    this.activeFileIndex,
+    this.activeFileBytesTransferred,
     this.speedLabel,
     this.etaLabel,
   });
@@ -27,6 +29,8 @@ class TransferTransferProgress {
   final BigInt totalBytes;
   final int completedFiles;
   final int totalFiles;
+  final int? activeFileIndex;
+  final BigInt? activeFileBytesTransferred;
   final String? speedLabel;
   final String? etaLabel;
 

@@ -177,6 +177,8 @@ class TransfersServiceController extends Notifier<TransferSessionState> {
       totalFiles: snapshot == null
           ? event.itemCount.toInt()
           : snapshot.totalFiles,
+      activeFileIndex: snapshot?.activeFileId,
+      activeFileBytesTransferred: snapshot?.activeFileBytes,
       speedLabel: snapshot == null ? null : _formatRate(snapshot.bytesPerSec),
       etaLabel: snapshot == null ? null : _formatEta(snapshot.etaSeconds),
     );
