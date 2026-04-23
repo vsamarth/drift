@@ -14,8 +14,8 @@ import '../features/send/presentation/send_selection_source_sheet.dart';
 import '../features/send/send_drop_zone.dart';
 import '../theme/drift_theme.dart';
 
-class DriftShell extends ConsumerWidget {
-  const DriftShell({super.key});
+class DesktopShell extends ConsumerWidget {
+  const DesktopShell({super.key});
 
   Future<void> _openSelectedFiles(
     BuildContext context,
