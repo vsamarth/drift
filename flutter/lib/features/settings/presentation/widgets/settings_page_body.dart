@@ -189,9 +189,10 @@ class _SettingsPageBodyState extends ConsumerState<SettingsPageBody> {
       },
       child: Scaffold(
         backgroundColor: kBg,
-        body: Padding(
-          padding: const EdgeInsets.fromLTRB(24, 10, 24, 16),
-          child: Column(
+        body: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(24, 24, 24, 16),
+            child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Row(
@@ -320,6 +321,7 @@ class _SettingsPageBodyState extends ConsumerState<SettingsPageBody> {
           ),
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 }
