@@ -106,8 +106,6 @@ class _TransferStateCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final accent = viewData.visual.accentColor;
-    final showFooterButton =
-        state is SendStateTransferring || state is SendStateResult;
     final transfer = switch (state) {
       SendStateTransferring(:final transfer) => transfer,
       SendStateResult(:final transfer) => transfer,
@@ -122,6 +120,10 @@ class _TransferStateCard extends StatelessWidget {
       transfer,
       viewData.files.length,
     );
+
+    final showFooterButton = (state is SendStateTransferring &&
+            (progress?.progressFraction ?? 0.0) < 1.0) ||
+        state is SendStateResult;
     final manifestItems = viewData.files
         .map(
           (file) =>

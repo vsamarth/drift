@@ -45,7 +45,6 @@ class _ActiveTransferFileListState extends State<ActiveTransferFileList> {
     }
 
     final isSingleFile = widget.items.length == 1;
-    final progressFraction = widget.progress?.progressFraction ?? 0.0;
 
     return Container(
       decoration: BoxDecoration(
