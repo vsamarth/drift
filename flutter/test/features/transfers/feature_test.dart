@@ -54,11 +54,11 @@ String _expectedOpenFolderLabel([TargetPlatform? platform]) {
   final targetPlatform = platform ?? defaultTargetPlatform;
   switch (targetPlatform) {
     case TargetPlatform.macOS:
-      return 'Open in Finder';
+      return 'Show in Finder';
     case TargetPlatform.windows:
-      return 'Open in Explorer';
+      return 'Show in Explorer';
     case TargetPlatform.linux:
-      return 'Open in Files';
+      return 'Show in Files';
     case TargetPlatform.android:
     case TargetPlatform.iOS:
     case TargetPlatform.fuchsia:
