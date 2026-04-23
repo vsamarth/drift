@@ -6,7 +6,7 @@ import '../features/send/presentation/send_draft_preview.dart';
 import '../features/send/presentation/send_transfer_route.dart';
 import '../features/receive/presentation/receive_transfer_route.dart';
 import '../features/settings/feature.dart';
-import '../shell/drift_shell.dart';
+import '../shell/responsive_shell.dart';
 import '../shell/title_bar_shell.dart';
 
 abstract final class AppRoutePaths {
@@ -43,7 +43,8 @@ GoRouter buildAppRouter({List<NavigatorObserver> observers = const []}) {
     routes: [
       GoRoute(
         path: AppRoutePaths.home,
-        builder: (context, state) => const TitleBarShell(child: DriftShell()),
+        builder: (context, state) =>
+            const TitleBarShell(child: ResponsiveShell()),
         routes: [
           GoRoute(
             path: AppRoutePaths.settingsSegment,
