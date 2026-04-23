@@ -132,10 +132,11 @@ void main() {
         child: MaterialApp.router(routerConfig: _buildRouter(request)),
       ),
     );
-    await _pumpRoute(tester);
+    await tester.pump(const Duration(milliseconds: 600));
+    await tester.pump();
 
     expect(container.read(sendControllerProvider), isA<SendStateTransferring>());
-    expect(find.byType(RecipientAvatar), findsOneWidget);
+    expect(find.byType(RecipientAvatar).last, findsOneWidget);
     expect(find.text('CONNECTING'), findsOneWidget);
     expect(find.text('Cancel transfer'), findsOneWidget);
 
@@ -150,7 +151,8 @@ void main() {
         totalBytes: BigInt.from(1024),
       ),
     );
-    await _pumpRoute(tester);
+    await tester.pump(const Duration(milliseconds: 600));
+    await tester.pump();
     expect(find.text('WAITING'), findsWidgets);
 
     fakeSource.emit(
@@ -164,7 +166,8 @@ void main() {
         totalBytes: BigInt.from(1024),
       ),
     );
-    await _pumpRoute(tester);
+    await tester.pump(const Duration(milliseconds: 600));
+    await tester.pump();
     expect(find.text('ACCEPTED'), findsWidgets);
 
     final plan = _buildPlan();
@@ -188,7 +191,8 @@ void main() {
         remoteDeviceType: 'laptop',
       ),
     );
-    await _pumpRoute(tester);
+    await tester.pump(const Duration(milliseconds: 600));
+    await tester.pump();
     expect(find.textContaining('256 B/s'), findsOneWidget);
     expect(find.textContaining('4 s left'), findsOneWidget);
     expect(find.text('SENDING'), findsWidgets);
@@ -209,11 +213,13 @@ void main() {
         ),
       ),
     );
-    await _pumpRoute(tester);
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pump(const Duration(milliseconds: 600));
+    await tester.pump();
     expect(find.text('SUCCESS'), findsWidgets);
     expect(find.text('Files finished transferring successfully.'), findsOneWidget);
     expect(find.text('Done'), findsWidgets);
-    expect(find.byType(RecipientAvatar), findsOneWidget);
+    expect(find.byType(RecipientAvatar).last, findsOneWidget);
   });
 
   testWidgets('send transfer route shows declined cancelled and failed results', (
@@ -299,12 +305,12 @@ void main() {
       await _pumpRoute(tester);
 
       fakeSource.emit(fixture.update);
-      await _pumpRoute(tester);
-
+      await tester.pump(const Duration(milliseconds: 600));
+    await tester.pump();
       expect(find.text(fixture.expectedStatusLabel), findsOneWidget);
       expect(find.text(fixture.expectedSubtitle), findsOneWidget);
       expect(find.text('Done'), findsOneWidget);
-      expect(find.byType(RecipientAvatar), findsOneWidget);
+      expect(find.byType(RecipientAvatar).last, findsOneWidget);
     }
   });
 }

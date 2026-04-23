@@ -438,6 +438,7 @@ void main() {
       senderName: 'Maya',
       saveRootLabel: 'Downloads',
     );
+    await tester.pump(const Duration(seconds: 1));
     await tester.pumpAndSettle();
 
     expect(find.text('SUCCESS'), findsOneWidget);
@@ -489,6 +490,7 @@ void main() {
       senderName: 'Maya',
       saveRootLabel: 'Downloads',
     );
+    await tester.pump(const Duration(seconds: 1));
     await tester.pumpAndSettle();
 
     final openLabel = _expectedOpenFolderLabel(TargetPlatform.macOS);
@@ -528,6 +530,7 @@ void main() {
       senderName: 'Maya',
       saveRootLabel: 'Downloads',
     );
+    await tester.pump(const Duration(seconds: 1));
     await tester.pumpAndSettle();
 
     await tester.tap(find.text('Done'));

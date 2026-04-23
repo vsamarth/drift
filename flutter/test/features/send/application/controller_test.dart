@@ -228,9 +228,8 @@ void main() {
     },
   );
 
-  test(
-    'send controller starts transfer only for the currently validated request',
-    () {
+  test('send controller starts transfer only for the currently validated request', () async {
+
       final fakeSource = FakeSendTransferSource();
       final container = ProviderContainer(
         overrides: [
@@ -287,6 +286,7 @@ void main() {
           bytesSent: BigInt.from(1024),
         ),
       );
+      await Future<void>.delayed(const Duration(milliseconds: 1050));
       expect(container.read(sendControllerProvider), isA<SendStateResult>());
       expect(
         (container.read(sendControllerProvider) as SendStateResult)
@@ -387,7 +387,7 @@ void main() {
     expect(state.transfer.remoteDeviceType, 'laptop');
   });
 
-  test('send controller maps terminal transfer updates into result state', () {
+  test('send controller maps terminal transfer updates into result state', () async {
     final fixtures =
         <
           ({
@@ -474,6 +474,9 @@ void main() {
       controller.startTransfer(controller.buildSendRequest()!);
 
       fakeSource.emit(fixture.update);
+      if (fixture.update.phase == SendTransferUpdatePhase.completed) {
+        await Future<void>.delayed(const Duration(milliseconds: 1050));
+      }
       final state = container.read(sendControllerProvider) as SendStateResult;
       expect(
         state.transfer.phase,
@@ -588,6 +591,8 @@ void main() {
           bytesSent: BigInt.from(1024),
         ),
       );
+
+      await Future<void>.delayed(const Duration(milliseconds: 1050));
 
       final resultState = container.read(sendControllerProvider);
       expect(resultState, isA<SendStateResult>());

@@ -26,46 +26,55 @@ class TransfersFeature extends ConsumerWidget {
     final openSavedFolderLabel = savedFolderOpenLabel(platform: platform);
 
     return SizedBox.expand(
-      child: switch (state.phase) {
-        TransferSessionPhase.offerPending => OfferCard(
-          offer: state.incomingOffer!,
-          animate: animateReview,
-          onAccept: () =>
-              ref.read(transfersServiceProvider.notifier).acceptOffer(),
-          onDecline: () =>
-              ref.read(transfersServiceProvider.notifier).declineOffer(),
-        ),
-        TransferSessionPhase.receiving => ReceivingCard(
-          offer: state.incomingOffer!,
-          progress: state.progress!,
-          animate: animateReview,
-          onCancel: () =>
-              ref.read(transfersServiceProvider.notifier).cancelTransfer(),
-        ),
-        TransferSessionPhase.completed ||
-        TransferSessionPhase.cancelled ||
-        TransferSessionPhase.failed => _buildTransferResultCard(
-          viewData: buildTransferResultViewData(state),
-          onDone: () => ref
-              .read(transfersServiceProvider.notifier)
-              .dismissTransferResult(),
-          onOpenSavedFolder:
-              state.phase == TransferSessionPhase.completed &&
-                  canOpenSavedFolderAction
-              ? () {
-                  unawaited(
-                    ref.read(savedFolderOpenerProvider)(settings.downloadRoot),
-                  );
-                }
-              : null,
-          openSavedFolderLabel:
-              state.phase == TransferSessionPhase.completed &&
-                  canOpenSavedFolderAction
-              ? openSavedFolderLabel
-              : null,
-        ),
-        _ => const SizedBox.shrink(),
-      },
+      child: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 400),
+        switchInCurve: Curves.easeOut,
+        switchOutCurve: Curves.easeIn,
+        child: switch (state.phase) {
+          TransferSessionPhase.offerPending => OfferCard(
+              key: const ValueKey('offer'),
+              offer: state.incomingOffer!,
+              animate: animateReview,
+              onAccept: () =>
+                  ref.read(transfersServiceProvider.notifier).acceptOffer(),
+              onDecline: () =>
+                  ref.read(transfersServiceProvider.notifier).declineOffer(),
+            ),
+          TransferSessionPhase.receiving => ReceivingCard(
+              key: const ValueKey('receiving'),
+              offer: state.incomingOffer!,
+              progress: state.progress!,
+              animate: animateReview,
+              onCancel: () =>
+                  ref.read(transfersServiceProvider.notifier).cancelTransfer(),
+            ),
+          TransferSessionPhase.completed ||
+          TransferSessionPhase.cancelled ||
+          TransferSessionPhase.failed =>
+            _buildTransferResultCard(
+              viewData: buildTransferResultViewData(state),
+              onDone: () => ref
+                  .read(transfersServiceProvider.notifier)
+                  .dismissTransferResult(),
+              onOpenSavedFolder:
+                  state.phase == TransferSessionPhase.completed &&
+                          canOpenSavedFolderAction
+                      ? () {
+                          unawaited(
+                            ref.read(savedFolderOpenerProvider)(
+                                settings.downloadRoot),
+                          );
+                        }
+                      : null,
+              openSavedFolderLabel:
+                  state.phase == TransferSessionPhase.completed &&
+                          canOpenSavedFolderAction
+                      ? openSavedFolderLabel
+                      : null,
+            ),
+          _ => const SizedBox.shrink(key: ValueKey('idle')),
+        },
+      ),
     );
   }
 }
