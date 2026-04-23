@@ -39,9 +39,11 @@ class _ActiveTransferFileListState extends State<ActiveTransferFileList> {
     final String summary;
     if (widget.progress != null) {
       final p = widget.progress!;
-      summary = '${p.completedFiles}/${p.totalFiles} files · ${formatBytes(p.bytesTransferred)} of ${formatBytes(p.totalBytes)}';
+      summary =
+          '${p.completedFiles}/${p.totalFiles} files · ${formatBytes(p.bytesTransferred)} of ${formatBytes(p.totalBytes)}';
     } else {
-      summary = '${fileCountLabel(widget.items.length)} · ${formatBytes(totalSize)}';
+      summary =
+          '${fileCountLabel(widget.items.length)} · ${formatBytes(totalSize)}';
     }
 
     final isSingleFile = widget.items.length == 1;
@@ -63,11 +65,13 @@ class _ActiveTransferFileListState extends State<ActiveTransferFileList> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           InkWell(
-            onTap: () {
-              setState(() {
-                _isExpanded = !_isExpanded;
-              });
-            },
+            onTap: isSingleFile
+                ? null
+                : () {
+                    setState(() {
+                      _isExpanded = !_isExpanded;
+                    });
+                  },
             borderRadius: BorderRadius.circular(12),
             child: Padding(
               padding: EdgeInsets.symmetric(
@@ -76,12 +80,11 @@ class _ActiveTransferFileListState extends State<ActiveTransferFileList> {
               ),
               child: Row(
                 children: [
-                  Icon(
-                    isSingleFile
-                        ? Icons.insert_drive_file_rounded
-                        : Icons.copy_all_rounded,
-                    color: kMuted,
-                    size: 18,
+                  _FileIcon(
+                    isSingleFile: isSingleFile,
+                    progress: isSingleFile
+                        ? (widget.progress?.progressFraction ?? 0.0)
+                        : null,
                   ),
                   const SizedBox(width: 12),
                   Expanded(
@@ -182,42 +185,9 @@ class _ActiveTransferFileListState extends State<ActiveTransferFileList> {
                         const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     child: Row(
                       children: [
-                        Stack(
-                          alignment: Alignment.center,
-                          children: [
-                            Container(
-                              width: 32,
-                              height: 32,
-                              decoration: BoxDecoration(
-                                color: kFill.withValues(alpha: 0.5),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: Icon(
-                                itemProgress >= 1.0
-                                    ? Icons.check_circle_rounded
-                                    : Icons.insert_drive_file_outlined,
-                                size: 16,
-                                color: itemProgress >= 1.0
-                                    ? kAccentCyanStrong
-                                    : kMuted,
-                              ),
-                            ),
-                            if (itemProgress > 0 && itemProgress < 1.0)
-                              SizedBox(
-                                width: 32,
-                                height: 32,
-                                child: CircularProgressIndicator(
-                                  value: itemProgress,
-                                  strokeWidth: 2,
-                                  strokeCap: StrokeCap.round,
-                                  valueColor: const AlwaysStoppedAnimation(
-                                    kAccentCyanStrong,
-                                  ),
-                                  backgroundColor:
-                                      kAccentCyanStrong.withValues(alpha: 0.1),
-                                ),
-                              ),
-                          ],
+                        _FileIcon(
+                          isSingleFile: true,
+                          progress: itemProgress,
                         ),
                         const SizedBox(width: 12),
                         Expanded(
@@ -266,6 +236,57 @@ class _ActiveTransferFileListState extends State<ActiveTransferFileList> {
           ],
         ],
       ),
+    );
+  }
+}
+
+class _FileIcon extends StatelessWidget {
+  const _FileIcon({
+    required this.isSingleFile,
+    this.progress,
+  });
+
+  final bool isSingleFile;
+  final double? progress;
+
+  @override
+  Widget build(BuildContext context) {
+    final showProgress = progress != null && progress! > 0 && progress! < 1.0;
+    final isDone = progress != null && progress! >= 1.0;
+
+    return Stack(
+      alignment: Alignment.center,
+      children: [
+        Container(
+          width: 32,
+          height: 32,
+          decoration: BoxDecoration(
+            color: kFill.withValues(alpha: 0.5),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Icon(
+            isDone
+                ? Icons.check_circle_rounded
+                : (isSingleFile
+                    ? Icons.insert_drive_file_outlined
+                    : Icons.copy_all_rounded),
+            size: 16,
+            color: isDone ? kAccentCyanStrong : kMuted,
+          ),
+        ),
+        if (showProgress)
+          SizedBox(
+            width: 32,
+            height: 32,
+            child: CircularProgressIndicator(
+              value: progress,
+              strokeWidth: 2,
+              strokeCap: StrokeCap.round,
+              valueColor: const AlwaysStoppedAnimation(kAccentCyanStrong),
+              backgroundColor: kAccentCyanStrong.withValues(alpha: 0.1),
+            ),
+          ),
+      ],
     );
   }
 }
