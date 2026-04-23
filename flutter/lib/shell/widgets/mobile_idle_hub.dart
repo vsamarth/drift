@@ -120,6 +120,7 @@ class _MobileIdleHubState extends ConsumerState<MobileIdleHub> {
                 ),
               ),
               IconButton(
+                key: const ValueKey<String>('mobile-idle-settings-button'),
                 onPressed: widget.onOpenSettings,
                 icon: const Icon(Icons.tune_rounded),
                 tooltip: 'Settings',
@@ -145,18 +146,20 @@ class _MobileIdleHubState extends ConsumerState<MobileIdleHub> {
                 child: Column(
                   children: [
                     AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 200),
+                      duration: const Duration(milliseconds: 160),
                       transitionBuilder: (child, animation) => FadeTransition(
                         opacity: animation,
                         child: child,
                       ),
                       child: Text(
-                        _copied ? 'Copied to clipboard' : 'Receive Code',
+                        _copied ? 'Copied' : 'Receive Code',
                         key: ValueKey(_copied),
                         style: driftSans(
                           fontSize: 12,
                           fontWeight: FontWeight.w600,
-                          color: _copied ? const Color(0xFF49B36C) : kMuted,
+                          color: _copied
+                              ? const Color(0xFF5E9B70)
+                              : kMuted.withValues(alpha: 0.62),
                           letterSpacing: 0.5,
                         ),
                       ),
@@ -165,7 +168,7 @@ class _MobileIdleHubState extends ConsumerState<MobileIdleHub> {
                     Text(
                       _formatCode(widget.state.code),
                       style: driftMono(
-                        fontSize: 36,
+                        fontSize: 32,
                         fontWeight: FontWeight.w800,
                         color: kInk,
                         letterSpacing: 4,
