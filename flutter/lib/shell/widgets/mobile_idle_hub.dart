@@ -50,15 +50,15 @@ class _MobileIdleHubState extends ConsumerState<MobileIdleHub> {
     final badgeColor = widget.state.badge.color;
 
     return Container(
-      padding: const EdgeInsets.all(24),
+      padding: const EdgeInsets.all(32),
       decoration: BoxDecoration(
         color: kSurface,
         borderRadius: BorderRadius.circular(24),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
-            blurRadius: 20,
-            offset: const Offset(0, 8),
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 16,
+            offset: const Offset(0, 4),
           ),
         ],
         border: Border.all(color: kBorder.withValues(alpha: 0.5)),
@@ -142,15 +142,25 @@ class _MobileIdleHubState extends ConsumerState<MobileIdleHub> {
               onTap: () => _copyCode(widget.state.clipboardCode),
               borderRadius: BorderRadius.circular(20),
               child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+                padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 16),
                 child: Column(
                   children: [
                     AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 160),
-                      transitionBuilder: (child, animation) => FadeTransition(
-                        opacity: animation,
-                        child: child,
-                      ),
+                      duration: const Duration(milliseconds: 200),
+                      switchInCurve: Curves.easeOutCubic,
+                      switchOutCurve: Curves.easeInCubic,
+                      transitionBuilder: (child, animation) {
+                        return FadeTransition(
+                          opacity: animation,
+                          child: SlideTransition(
+                            position: Tween<Offset>(
+                              begin: const Offset(0, 0.2),
+                              end: Offset.zero,
+                            ).animate(animation),
+                            child: child,
+                          ),
+                        );
+                      },
                       child: Text(
                         _copied ? 'Copied' : 'Receive Code',
                         key: ValueKey(_copied),
