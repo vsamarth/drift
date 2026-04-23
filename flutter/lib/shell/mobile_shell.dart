@@ -6,8 +6,8 @@ import '../features/receive/presentation/receive_transfer_route_gate.dart';
 import '../features/send/presentation/send_selection_source_sheet.dart';
 import '../app/app_router.dart';
 import '../theme/drift_theme.dart';
-import 'widgets/v02_identity_card.dart';
-import 'widgets/v02_select_files_card.dart';
+import 'widgets/mobile_identity_card.dart';
+import 'widgets/select_files_card.dart';
 import 'widgets/shell_picking_actions.dart';
 
 class MobileShell extends ConsumerWidget with ShellPickingActions {
@@ -46,9 +46,9 @@ class MobileShell extends ConsumerWidget with ShellPickingActions {
               sliver: SliverList(
                 delegate: SliverChildListDelegate([
                   const SizedBox(height: 8),
-                  V02IdentityCard(state: receiverState),
+                  MobileIdentityCard(state: receiverState),
                   const SizedBox(height: 32),
-                  V02SelectFilesCard(
+                  SelectFilesCard(
                     onTap: () {
                       showSendSelectionSourceSheet(
                         context,

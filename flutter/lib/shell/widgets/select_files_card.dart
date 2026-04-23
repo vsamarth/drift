@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import '../../../theme/drift_theme.dart';
 
-class V02SelectFilesCard extends StatelessWidget {
+class SelectFilesCard extends StatelessWidget {
   final VoidCallback? onTap;
 
-  const V02SelectFilesCard({
+  const SelectFilesCard({
     super.key,
     required this.onTap,
   });

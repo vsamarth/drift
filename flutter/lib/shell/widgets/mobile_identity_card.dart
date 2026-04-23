@@ -4,16 +4,16 @@ import 'package:flutter/services.dart';
 import '../../../features/receive/application/state.dart';
 import '../../../theme/drift_theme.dart';
 
-class V02IdentityCard extends StatefulWidget {
-  const V02IdentityCard({super.key, required this.state});
+class MobileIdentityCard extends StatefulWidget {
+  const MobileIdentityCard({super.key, required this.state});
 
   final ReceiverIdleViewState state;
 
   @override
-  State<V02IdentityCard> createState() => _V02IdentityCardState();
+  State<MobileIdentityCard> createState() => _MobileIdentityCardState();
 }
 
-class _V02IdentityCardState extends State<V02IdentityCard> {
+class _MobileIdentityCardState extends State<MobileIdentityCard> {
   bool _copied = false;
   Timer? _timer;
 
