@@ -180,9 +180,10 @@ class _ActiveTransferFileListState extends State<ActiveTransferFileList> {
                   return Padding(
                     padding:
                         const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    child: Column(
+                    child: Row(
                       children: [
-                        Row(
+                        Stack(
+                          alignment: Alignment.center,
                           children: [
                             Container(
                               width: 32,
@@ -193,7 +194,7 @@ class _ActiveTransferFileListState extends State<ActiveTransferFileList> {
                               ),
                               child: Icon(
                                 itemProgress >= 1.0
-                                    ? Icons.check_circle_outline_rounded
+                                    ? Icons.check_circle_rounded
                                     : Icons.insert_drive_file_outlined,
                                 size: 16,
                                 color: itemProgress >= 1.0
@@ -201,60 +202,61 @@ class _ActiveTransferFileListState extends State<ActiveTransferFileList> {
                                     : kMuted,
                               ),
                             ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    fileName,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: driftSans(
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w600,
-                                      color: kInk,
-                                    ),
+                            if (itemProgress > 0 && itemProgress < 1.0)
+                              SizedBox(
+                                width: 32,
+                                height: 32,
+                                child: CircularProgressIndicator(
+                                  value: itemProgress,
+                                  strokeWidth: 2,
+                                  strokeCap: StrokeCap.round,
+                                  valueColor: const AlwaysStoppedAnimation(
+                                    kAccentCyanStrong,
                                   ),
-                                  if (dirPath != null && dirPath.isNotEmpty)
-                                    Text(
-                                      dirPath,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: driftSans(
-                                        fontSize: 10,
-                                        fontWeight: FontWeight.w500,
-                                        color: kSubtle,
-                                      ),
-                                    ),
-                                ],
+                                  backgroundColor:
+                                      kAccentCyanStrong.withValues(alpha: 0.1),
+                                ),
                               ),
-                            ),
-                            const SizedBox(width: 12),
-                            Text(
-                              formatBytes(item.sizeBytes),
-                              style: driftSans(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w500,
-                                color: kMuted,
-                              ),
-                            ),
                           ],
                         ),
-                        if (itemProgress > 0 && itemProgress < 1.0)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 8, left: 44),
-                            child: ClipRRect(
-                              borderRadius: BorderRadius.circular(2),
-                              child: LinearProgressIndicator(
-                                value: itemProgress,
-                                minHeight: 2,
-                                backgroundColor: kFill,
-                                valueColor: const AlwaysStoppedAnimation(
-                                    kAccentCyanStrong),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                fileName,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: driftSans(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  color: kInk,
+                                ),
                               ),
-                            ),
+                              if (dirPath != null && dirPath.isNotEmpty)
+                                Text(
+                                  dirPath,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: driftSans(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w500,
+                                    color: kSubtle,
+                                  ),
+                                ),
+                            ],
                           ),
+                        ),
+                        const SizedBox(width: 12),
+                        Text(
+                          formatBytes(item.sizeBytes),
+                          style: driftSans(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                            color: kMuted,
+                          ),
+                        ),
                       ],
                     ),
                   );
