@@ -28,7 +28,7 @@ class SendTransferRoutePage extends ConsumerStatefulWidget {
 }
 
 class _SendTransferRoutePageState extends ConsumerState<SendTransferRoutePage> {
-  bool _allowPop = false;
+  final bool _allowPop = false;
 
   @override
   void initState() {
