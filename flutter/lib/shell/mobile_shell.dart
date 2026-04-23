@@ -6,10 +6,8 @@ import '../features/receive/presentation/receive_transfer_route_gate.dart';
 import '../features/send/presentation/send_selection_source_sheet.dart';
 import '../app/app_router.dart';
 import '../theme/drift_theme.dart';
-import 'widgets/ambient_background.dart';
-import 'widgets/identity_header.dart';
-import 'widgets/hero_code.dart';
-import 'widgets/integrated_send_button.dart';
+import 'widgets/v02_identity_card.dart';
+import 'widgets/v02_select_files_card.dart';
 import 'widgets/shell_picking_actions.dart';
 
 class MobileShell extends ConsumerWidget with ShellPickingActions {
@@ -22,27 +20,36 @@ class MobileShell extends ConsumerWidget with ShellPickingActions {
     return ReceiveTransferRouteGate(
       child: Scaffold(
         backgroundColor: kBg,
-        body: Stack(
-          children: [
-            const AmbientBackground(),
-            SafeArea(
-              child: Column(
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-                    child: IdentityHeader(
-                      state: receiverState,
-                      onOpenSettings: () => context.goSettings(),
-                    ),
+        body: CustomScrollView(
+          physics: const BouncingScrollPhysics(),
+          slivers: [
+            SliverToBoxAdapter(
+              child: SafeArea(
+                bottom: false,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                  child: Row(
+                    children: [
+                      const Spacer(),
+                      IconButton(
+                        onPressed: () => context.goSettings(),
+                        icon: const Icon(Icons.tune_rounded),
+                        tooltip: 'Settings',
+                      ),
+                    ],
                   ),
-                  const Spacer(),
-                  HeroCode(
-                    code: receiverState.code,
-                    clipboardCode: receiverState.clipboardCode,
-                  ),
-                  const Spacer(),
-                  IntegratedSendButton(
-                    onPressed: () {
+                ),
+              ),
+            ),
+            SliverPadding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              sliver: SliverList(
+                delegate: SliverChildListDelegate([
+                  const SizedBox(height: 8),
+                  V02IdentityCard(state: receiverState),
+                  const SizedBox(height: 32),
+                  V02SelectFilesCard(
+                    onTap: () {
                       showSendSelectionSourceSheet(
                         context,
                         onChooseFiles: () => pickFiles(context, ref),
@@ -50,7 +57,8 @@ class MobileShell extends ConsumerWidget with ShellPickingActions {
                       );
                     },
                   ),
-                ],
+                  const SizedBox(height: 24),
+                ]),
               ),
             ),
           ],
