@@ -27,7 +27,6 @@ class _RecipientAvatarState extends State<RecipientAvatar>
   late AnimationController _rippleController;
   late AnimationController _successController;
   late Animation<double> _scaleAnimation;
-  late Animation<Color?> _colorAnimation;
   bool _hasPlayedSuccess = false;
 
   @override
@@ -55,14 +54,6 @@ class _RecipientAvatarState extends State<RecipientAvatar>
         weight: 60,
       ),
     ]).animate(_successController);
-
-    _colorAnimation = ColorTween(
-      begin: kAccentCyan,
-      end: const Color(0xFF49B36C), // Success Green
-    ).animate(CurvedAnimation(
-      parent: _successController,
-      curve: const Interval(0.0, 0.5, curve: Curves.easeIn),
-    ));
 
     _updateAnimation();
   }
@@ -145,19 +136,16 @@ class _RecipientAvatarState extends State<RecipientAvatar>
 
               // Progress Ring
               if (widget.mode == SendingStripMode.transferring)
-                AnimatedBuilder(
-                  animation: _successController,
-                  builder: (context, child) => SizedBox(
-                    width: 96,
-                    height: 96,
-                    child: CircularProgressIndicator(
-                      value: widget.progress.clamp(0.01, 1.0),
-                      strokeWidth: 4,
-                      strokeCap: StrokeCap.round,
-                      backgroundColor: kBorder.withValues(alpha: 0.3),
-                      valueColor: AlwaysStoppedAnimation<Color>(
-                        _colorAnimation.value ?? kAccentCyan,
-                      ),
+                SizedBox(
+                  width: 96,
+                  height: 96,
+                  child: CircularProgressIndicator(
+                    value: widget.progress.clamp(0.01, 1.0),
+                    strokeWidth: 4,
+                    strokeCap: StrokeCap.round,
+                    backgroundColor: kBorder.withValues(alpha: 0.3),
+                    valueColor: const AlwaysStoppedAnimation<Color>(
+                      kAccentCyan,
                     ),
                   ),
                 ),

@@ -40,14 +40,12 @@ void main() {
       ),
     );
 
-    // After updating to 1.0, the animation should start.
-    // We pump to advance the animation.
+    // After updating to 1.0, the animation (scale) should start, but color should stay cyan.
     await tester.pump(const Duration(milliseconds: 300));
     
     progressIndicator = tester.widget<CircularProgressIndicator>(find.byType(CircularProgressIndicator));
     final color = (progressIndicator.valueColor as AlwaysStoppedAnimation).value;
     
-    // In the current implementation, it's hardcoded to kAccentCyan, so this should FAIL once we add the expectation of change.
-    expect(color, isNot(kAccentCyan), reason: 'Color should change from kAccentCyan when progress reaches 1.0');
+    expect(color, kAccentCyan, reason: 'Color should stay kAccentCyan even when progress reaches 1.0');
   });
 }
