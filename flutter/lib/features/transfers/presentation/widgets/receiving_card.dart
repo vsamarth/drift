@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../application/state.dart';
 import 'package:app/features/send/presentation/widgets/recipient_avatar.dart';
-import 'manifest_tree_card.dart';
+import 'active_transfer_file_list.dart';
 import 'sending_connection_strip.dart';
 import 'transfer_flow_layout.dart';
 import 'transfer_presentation_helpers.dart';
@@ -54,29 +54,32 @@ class ReceivingCard extends ConsumerWidget {
           mode: SendingStripMode.transferring,
           progress: progress.progressFraction,
         ),
-        manifest: ManifestTreeCard(
+        manifest: ActiveTransferFileList(
           items: offer.manifest.items,
+          progress: progress,
         ),
-        footer: Row(
-          children: [
-            Expanded(
-              child: TextButton(
-                onPressed: onCancel,
-                style: TextButton.styleFrom(
-                  foregroundColor: const Color(0xFFB34A4A),
-                  minimumSize: const Size(0, 52),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
+        footer: progress.progressFraction >= 1.0
+            ? const SizedBox(height: 52)
+            : Row(
+                children: [
+                  Expanded(
+                    child: TextButton(
+                      onPressed: onCancel,
+                      style: TextButton.styleFrom(
+                        foregroundColor: const Color(0xFFB34A4A),
+                        minimumSize: const Size(0, 52),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                      ),
+                      child: const Text(
+                        'Cancel',
+                        style: TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                    ),
                   ),
-                ),
-                child: const Text(
-                  'Cancel',
-                  style: TextStyle(fontWeight: FontWeight.w600),
-                ),
+                ],
               ),
-            ),
-          ],
-        ),
       ),
     );
   }

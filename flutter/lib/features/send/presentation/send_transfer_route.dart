@@ -13,6 +13,7 @@ import '../application/state.dart';
 import '../application/transfer_state.dart';
 import 'send_transfer_view_data.dart';
 import 'package:app/features/transfers/presentation/widgets/manifest_tree_card.dart';
+import 'package:app/features/transfers/presentation/widgets/active_transfer_file_list.dart';
 import 'package:app/features/send/presentation/widgets/recipient_avatar.dart';
 
 class SendTransferRoutePage extends ConsumerStatefulWidget {
@@ -79,10 +80,16 @@ class _SendTransferRoutePageState extends ConsumerState<SendTransferRoutePage> {
         backgroundColor: kBg,
         body: SafeArea(
           child: SizedBox.expand(
-            child: _TransferStateCard(
-              state: state,
-              viewData: viewData,
-              onExit: exitRoute,
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 400),
+              switchInCurve: Curves.easeOut,
+              switchOutCurve: Curves.easeIn,
+              child: _TransferStateCard(
+                key: ValueKey(state.runtimeType),
+                state: state,
+                viewData: viewData,
+                onExit: exitRoute,
+              ),
             ),
           ),
         ),
@@ -93,6 +100,7 @@ class _SendTransferRoutePageState extends ConsumerState<SendTransferRoutePage> {
 
 class _TransferStateCard extends StatelessWidget {
   const _TransferStateCard({
+    super.key,
     required this.state,
     required this.viewData,
     required this.onExit,
@@ -105,8 +113,6 @@ class _TransferStateCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final accent = viewData.visual.accentColor;
-    final showFooterButton =
-        state is SendStateTransferring || state is SendStateResult;
     final transfer = switch (state) {
       SendStateTransferring(:final transfer) => transfer,
       SendStateResult(:final transfer) => transfer,
@@ -121,6 +127,10 @@ class _TransferStateCard extends StatelessWidget {
       transfer,
       viewData.files.length,
     );
+
+    final showFooterButton = (state is SendStateTransferring &&
+            (progress?.progressFraction ?? 0.0) < 1.0) ||
+        state is SendStateResult;
     final manifestItems = viewData.files
         .map(
           (file) =>
@@ -157,10 +167,15 @@ class _TransferStateCard extends StatelessWidget {
       ),
       manifest: manifestItems.isEmpty
           ? null
-          : ManifestTreeCard(
-              items: manifestItems,
-              initiallyExpanded: state is SendStateResult,
-            ),
+          : (state is SendStateTransferring
+              ? ActiveTransferFileList(
+                  items: manifestItems,
+                  progress: progress,
+                )
+              : ManifestTreeCard(
+                  items: manifestItems,
+                  initiallyExpanded: state is SendStateResult,
+                )),
       footer: Row(
         children: [
           Expanded(
@@ -229,42 +244,56 @@ class _SendStatsGrid extends StatelessWidget {
         color: kFill.withValues(alpha: 0.4),
         borderRadius: BorderRadius.circular(12),
       ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
-        children: [
-          for (int i = 0; i < displayStats.length; i++) ...[
-            if (i > 0)
-              Container(
-                width: 1,
-                height: 24,
-                color: kBorder.withValues(alpha: 0.5),
-              ),
-            Expanded(
-              child: Column(
-                children: [
-                  Text(
-                    displayStats[i].label,
-                    style: driftSans(
-                      fontSize: 9,
-                      fontWeight: FontWeight.w800,
-                      color: kMuted,
-                      letterSpacing: 0.5,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    displayStats[i].value,
-                    style: driftSans(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                      color: kInk,
-                    ),
-                  ),
-                ],
-              ),
+      child: TweenAnimationBuilder<double>(
+        tween: Tween(begin: 0.0, end: 1.0),
+        duration: const Duration(milliseconds: 600),
+        curve: Curves.easeOutCubic,
+        builder: (context, value, child) {
+          return Opacity(
+            opacity: value,
+            child: Transform.translate(
+              offset: Offset(0, 10 * (1 - value)),
+              child: child,
             ),
+          );
+        },
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceAround,
+          children: [
+            for (int i = 0; i < displayStats.length; i++) ...[
+              if (i > 0)
+                Container(
+                  width: 1,
+                  height: 24,
+                  color: kBorder.withValues(alpha: 0.5),
+                ),
+              Expanded(
+                child: Column(
+                  children: [
+                    Text(
+                      displayStats[i].label,
+                      style: driftSans(
+                        fontSize: 9,
+                        fontWeight: FontWeight.w800,
+                        color: kMuted,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      displayStats[i].value,
+                      style: driftSans(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: kInk,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }

@@ -486,14 +486,18 @@ class SendController extends _$SendController {
         left.serverUrl == right.serverUrl;
   }
 
-  void _completeTransfer(
+  Future<void> _completeTransfer(
     SendTransferResult result, {
     required SendTransferState transfer,
     String? errorMessage,
-  }) {
+  }) async {
     final currentState = state;
     if (currentState is! SendStateTransferring) {
       return;
+    }
+
+    if (result.outcome == SendTransferOutcome.success) {
+      await Future.delayed(const Duration(milliseconds: 1000));
     }
 
     state = SendStateResult(

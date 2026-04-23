@@ -28,9 +28,9 @@ bool canOpenSavedFolder({TargetPlatform? platform}) {
 String savedFolderOpenLabel({TargetPlatform? platform}) {
   final targetPlatform = platform ?? defaultTargetPlatform;
   return switch (targetPlatform) {
-    TargetPlatform.macOS => 'Open in Finder',
-    TargetPlatform.windows => 'Open in Explorer',
-    TargetPlatform.linux => 'Open in Files',
+    TargetPlatform.macOS => 'Show in Finder',
+    TargetPlatform.windows => 'Show in Explorer',
+    TargetPlatform.linux => 'Show in Files',
     TargetPlatform.android ||
     TargetPlatform.iOS ||
     TargetPlatform.fuchsia => 'Open folder',

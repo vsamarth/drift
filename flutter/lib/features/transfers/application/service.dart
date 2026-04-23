@@ -49,12 +49,17 @@ class TransfersServiceController extends Notifier<TransferSessionState> {
           return;
         case rust_receiver.ReceiverTransferPhase.completed:
           final offer = _mapIncomingOffer(event);
-          state = TransferSessionState.completed(
-            offer: offer,
-            result: _mapResult(event),
+          final result = _mapResult(event);
+          unawaited(
+            Future.delayed(const Duration(milliseconds: 1000)).then((_) {
+              state = TransferSessionState.completed(
+                offer: offer,
+                result: result,
+              );
+              _incomingOffer = null;
+              _transferStartTime = null;
+            }),
           );
-          _incomingOffer = null;
-          _transferStartTime = null;
           return;
         case rust_receiver.ReceiverTransferPhase.cancelled:
           final offer = _mapIncomingOffer(event);
@@ -177,6 +182,8 @@ class TransfersServiceController extends Notifier<TransferSessionState> {
       totalFiles: snapshot == null
           ? event.itemCount.toInt()
           : snapshot.totalFiles,
+      activeFileIndex: snapshot?.activeFileId,
+      activeFileBytesTransferred: snapshot?.activeFileBytes,
       speedLabel: snapshot == null ? null : _formatRate(snapshot.bytesPerSec),
       etaLabel: snapshot == null ? null : _formatEta(snapshot.etaSeconds),
     );

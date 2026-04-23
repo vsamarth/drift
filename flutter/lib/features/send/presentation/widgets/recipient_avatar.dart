@@ -23,8 +23,11 @@ class RecipientAvatar extends StatefulWidget {
 }
 
 class _RecipientAvatarState extends State<RecipientAvatar>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   late AnimationController _rippleController;
+  late AnimationController _successController;
+  late Animation<double> _scaleAnimation;
+  bool _hasPlayedSuccess = false;
 
   @override
   void initState() {
@@ -33,6 +36,25 @@ class _RecipientAvatarState extends State<RecipientAvatar>
       vsync: this,
       duration: const Duration(milliseconds: 2500),
     );
+
+    _successController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 600),
+    );
+
+    _scaleAnimation = TweenSequence<double>([
+      TweenSequenceItem(
+        tween: Tween<double>(begin: 1.0, end: 1.12)
+            .chain(CurveTween(curve: Curves.easeOut)),
+        weight: 40,
+      ),
+      TweenSequenceItem(
+        tween: Tween<double>(begin: 1.12, end: 1.0)
+            .chain(CurveTween(curve: Curves.easeOutBack)),
+        weight: 60,
+      ),
+    ]).animate(_successController);
+
     _updateAnimation();
   }
 
@@ -40,6 +62,18 @@ class _RecipientAvatarState extends State<RecipientAvatar>
   void didUpdateWidget(RecipientAvatar oldWidget) {
     super.didUpdateWidget(oldWidget);
     _updateAnimation();
+
+    if (widget.progress >= 1.0 &&
+        !_hasPlayedSuccess &&
+        widget.mode == SendingStripMode.transferring) {
+      _hasPlayedSuccess = true;
+      _successController.forward();
+    } else if (widget.progress < 1.0) {
+      _hasPlayedSuccess = false;
+      if (_successController.value > 0 && !widget.animate) {
+        _successController.reset();
+      }
+    }
   }
 
   void _updateAnimation() {
@@ -56,6 +90,7 @@ class _RecipientAvatarState extends State<RecipientAvatar>
   @override
   void dispose() {
     _rippleController.dispose();
+    _successController.dispose();
     super.dispose();
   }
 
@@ -99,32 +134,6 @@ class _RecipientAvatarState extends State<RecipientAvatar>
                 ),
               ),
 
-              // Background circle
-              Container(
-                width: 90,
-                height: 90,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: kSurface,
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [
-                      kSurface,
-                      kBg.withValues(alpha: 0.5),
-                    ],
-                  ),
-                  border: Border.all(color: kBorder.withValues(alpha: 0.6)),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.05),
-                      blurRadius: 14,
-                      offset: const Offset(0, 4),
-                    ),
-                  ],
-                ),
-              ),
-
               // Progress Ring
               if (widget.mode == SendingStripMode.transferring)
                 SizedBox(
@@ -135,26 +144,54 @@ class _RecipientAvatarState extends State<RecipientAvatar>
                     strokeWidth: 4,
                     strokeCap: StrokeCap.round,
                     backgroundColor: kBorder.withValues(alpha: 0.3),
-                    valueColor: const AlwaysStoppedAnimation<Color>(kAccentCyan),
+                    valueColor: const AlwaysStoppedAnimation<Color>(
+                      kAccentCyan,
+                    ),
                   ),
                 ),
 
-              // Success Ring
-              if (widget.mode == SendingStripMode.transferring && widget.progress >= 1.0)
-                Container(
-                  width: 96,
-                  height: 96,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    border: Border.all(color: kAccentCyan, width: 4),
-                  ),
-                ),
+              // The Pop Container (Background and Icon)
+              ScaleTransition(
+                scale: _scaleAnimation,
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    // Background circle
+                    Container(
+                      width: 90,
+                      height: 90,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: kSurface,
+                        gradient: LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [
+                            kSurface,
+                            kBg.withValues(alpha: 0.5),
+                          ],
+                        ),
+                        border: Border.all(
+                          color: kBorder.withValues(alpha: 0.6),
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.05),
+                            blurRadius: 14,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                    ),
 
-              // Icon
-              Icon(
-                icon,
-                size: 40,
-                color: kInk.withValues(alpha: 0.9),
+                    // Icon
+                    Icon(
+                      icon,
+                      size: 40,
+                      color: kInk.withValues(alpha: 0.9),
+                    ),
+                  ],
+                ),
               ),
             ],
           ),

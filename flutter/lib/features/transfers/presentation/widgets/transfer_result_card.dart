@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:app/theme/drift_theme.dart';
 import 'package:app/features/send/presentation/widgets/recipient_avatar.dart';
 import 'package:app/features/transfers/application/result_view_data.dart';
-import 'package:app/features/transfers/presentation/widgets/manifest_tree_card.dart';
+import 'package:app/features/transfers/presentation/widgets/active_transfer_file_list.dart';
 import 'sending_connection_strip.dart';
 import 'transfer_flow_layout.dart';
 import 'transfer_presentation_helpers.dart';
@@ -46,7 +46,7 @@ class TransferResultCard extends StatelessWidget {
         manifest:
             viewData.manifestItems == null || viewData.manifestItems!.isEmpty
             ? null
-            : ManifestTreeCard(
+            : ActiveTransferFileList(
                 items: viewData.manifestItems!,
                 initiallyExpanded: true,
               ),
@@ -133,42 +133,56 @@ class _StatsGrid extends StatelessWidget {
         color: kFill.withValues(alpha: 0.4),
         borderRadius: BorderRadius.circular(12),
       ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
-        children: [
-          for (int i = 0; i < stats.length; i++) ...[
-            if (i > 0)
-              Container(
-                width: 1,
-                height: 24,
-                color: kBorder.withValues(alpha: 0.5),
-              ),
-            Expanded(
-              child: Column(
-                children: [
-                  Text(
-                    stats[i].label,
-                    style: driftSans(
-                      fontSize: 9,
-                      fontWeight: FontWeight.w800,
-                      color: kMuted,
-                      letterSpacing: 0.5,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    stats[i].value,
-                    style: driftSans(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                      color: kInk,
-                    ),
-                  ),
-                ],
-              ),
+      child: TweenAnimationBuilder<double>(
+        tween: Tween(begin: 0.0, end: 1.0),
+        duration: const Duration(milliseconds: 600),
+        curve: Curves.easeOutCubic,
+        builder: (context, value, child) {
+          return Opacity(
+            opacity: value,
+            child: Transform.translate(
+              offset: Offset(0, 10 * (1 - value)),
+              child: child,
             ),
+          );
+        },
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceAround,
+          children: [
+            for (int i = 0; i < stats.length; i++) ...[
+              if (i > 0)
+                Container(
+                  width: 1,
+                  height: 24,
+                  color: kBorder.withValues(alpha: 0.5),
+                ),
+              Expanded(
+                child: Column(
+                  children: [
+                    Text(
+                      stats[i].label,
+                      style: driftSans(
+                        fontSize: 9,
+                        fontWeight: FontWeight.w800,
+                        color: kMuted,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      stats[i].value,
+                      style: driftSans(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: kInk,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }
