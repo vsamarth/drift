@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../theme/drift_theme.dart';
+import '../../../app/app_router.dart';
 import '../../transfers/application/manifest.dart';
 import '../../transfers/application/state.dart' as transfer_state;
 import '../../transfers/presentation/widgets/sending_connection_strip.dart';
@@ -27,7 +28,7 @@ class SendTransferRoutePage extends ConsumerStatefulWidget {
 }
 
 class _SendTransferRoutePageState extends ConsumerState<SendTransferRoutePage> {
-  bool _allowPop = false;
+  final bool _allowPop = false;
 
   @override
   void initState() {
@@ -53,10 +54,12 @@ class _SendTransferRoutePageState extends ConsumerState<SendTransferRoutePage> {
         return;
       }
 
-      setState(() {
-        _allowPop = true;
-      });
-      Navigator.of(context).pop();
+      final currentState = ref.read(sendControllerProvider);
+      if (currentState is SendStateResult) {
+        ref.read(sendControllerProvider.notifier).clearDraft();
+      }
+
+      context.goHome();
     }
 
     return PopScope(

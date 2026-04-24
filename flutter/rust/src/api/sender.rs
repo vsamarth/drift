@@ -90,7 +90,10 @@ pub fn start_send_transfer(
     };
 
     let session = SendSession::new(draft, destination);
-    let run = session.start();
+    let run = {
+        let _guard = RUNTIME.enter();
+        session.start()
+    };
     let cancel_handle = run.cancel_handle();
 
     if let Ok(mut guard) = ACTIVE_SEND_CANCEL.lock() {
