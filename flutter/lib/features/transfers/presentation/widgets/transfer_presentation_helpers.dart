@@ -14,6 +14,15 @@ String incomingSubtitle(int itemCount, String totalSize) {
   return 'wants to send you $itemCount $fileWord ($totalSize)';
 }
 
+String resumeSubtitle({
+  required int itemCount,
+  required String receivedSize,
+  required String totalSize,
+}) {
+  final fileWord = itemCount == 1 ? 'file' : 'files';
+  return 'will resume receiving $itemCount $fileWord ($receivedSize of $totalSize)';
+}
+
 String fileCountLabel(int itemCount) {
   return itemCount == 1 ? '1 file' : '$itemCount files';
 }
@@ -38,10 +47,7 @@ Widget buildSubtitleText(String text) {
   );
 }
 
-Widget buildSpeedLine({
-  required String speedLabel,
-  required String? etaLabel,
-}) {
+Widget buildSpeedLine({required String speedLabel, required String? etaLabel}) {
   return Text.rich(
     TextSpan(
       children: [

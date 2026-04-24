@@ -33,6 +33,7 @@ class FakeReceiverServiceSource implements ReceiverServiceSource {
   String? lastIncomingSenderName;
   String? lastIncomingSenderEndpointId;
   List<rust_receiver.ReceiverTransferFile>? lastIncomingFiles;
+  BigInt? lastIncomingBytesReceived;
   rust_receiver.ReceiverTransferEvent? _lastIncomingEvent;
   String? lastUpdatedDeviceName;
   String? lastUpdatedServerUrl;
@@ -72,6 +73,7 @@ class FakeReceiverServiceSource implements ReceiverServiceSource {
     String destinationLabel = 'Downloads',
     String saveRootLabel = 'Downloads',
     String statusMessage = 'Incoming offer',
+    BigInt? bytesReceived,
     List<rust_receiver.ReceiverTransferFile>? files,
   }) {
     if (_incomingController.isClosed) {
@@ -92,6 +94,8 @@ class FakeReceiverServiceSource implements ReceiverServiceSource {
     lastIncomingSenderEndpointId = senderEndpointId;
     lastIncomingSenderName = senderName;
     lastIncomingFiles = incomingFiles;
+    final received = bytesReceived ?? BigInt.zero;
+    lastIncomingBytesReceived = received;
     _lastIncomingEvent = rust_receiver.ReceiverTransferEvent(
       phase: rust_receiver.ReceiverTransferPhase.offerReady,
       senderName: senderName,
@@ -104,7 +108,7 @@ class FakeReceiverServiceSource implements ReceiverServiceSource {
         BigInt.zero,
         (sum, file) => sum + file.size,
       ),
-      bytesReceived: BigInt.zero,
+      bytesReceived: received,
       totalSizeLabel: '0 B',
       files: incomingFiles,
       error: null,

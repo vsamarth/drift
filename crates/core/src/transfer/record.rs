@@ -22,6 +22,8 @@ pub struct TransferRecord {
     pub output_dir: PathBuf,
     pub conflict_policy: ConflictPolicy,
     pub manifest: TransferManifest,
+    #[serde(default)]
+    pub bytes_received: u64,
     pub exported_files: HashSet<String>,
     pub created_at: std::time::SystemTime,
     pub updated_at: std::time::SystemTime,
@@ -41,6 +43,7 @@ impl TransferRecord {
             output_dir,
             conflict_policy,
             manifest,
+            bytes_received: 0,
             exported_files: HashSet::new(),
             created_at: now,
             updated_at: now,
@@ -88,5 +91,28 @@ mod tests {
         assert_eq!(record.collection_hash, loaded.collection_hash);
         assert_eq!(record.manifest, loaded.manifest);
         assert_eq!(record.status, loaded.status);
+        assert_eq!(loaded.bytes_received, 0);
+    }
+
+    #[test]
+    fn record_load_defaults_missing_bytes_received_for_older_records() {
+        let json = r#"{
+          "collection_hash": "0101010101010101010101010101010101010101010101010101010101010101",
+          "status": "Transferring",
+          "output_dir": "/tmp/out",
+          "conflict_policy": "Rename",
+          "manifest": {
+            "items": [
+              { "type": "file", "path": "test.txt", "size": 10 }
+            ]
+          },
+          "exported_files": [],
+          "created_at": { "secs_since_epoch": 0, "nanos_since_epoch": 0 },
+          "updated_at": { "secs_since_epoch": 0, "nanos_since_epoch": 0 }
+        }"#;
+
+        let loaded: TransferRecord = serde_json::from_str(json).unwrap();
+
+        assert_eq!(loaded.bytes_received, 0);
     }
 }

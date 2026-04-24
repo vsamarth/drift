@@ -34,6 +34,29 @@ void main() {
     expect(updated.offer?.manifest.totalSizeBytes, BigInt.from(3072));
   });
 
+  test(
+    'transfers service marks incoming offers with resume progress',
+    () async {
+      final source = FakeReceiverServiceSource();
+      final container = ProviderContainer(
+        overrides: [transfersServiceSourceProvider.overrideWithValue(source)],
+      );
+      addTearDown(container.dispose);
+
+      expect(container.read(transfersServiceProvider).offer, isNull);
+
+      source.emitIncomingOffer(
+        senderName: 'Maya',
+        bytesReceived: BigInt.from(1024),
+      );
+      await Future<void>.delayed(Duration.zero);
+
+      final offer = container.read(transfersServiceProvider).offer;
+      expect(offer?.bytesReceived, BigInt.from(1024));
+      expect(offer?.willResume, isTrue);
+    },
+  );
+
   test('transfers service forwards offer decisions to the source', () async {
     final source = FakeReceiverServiceSource();
     final container = ProviderContainer(

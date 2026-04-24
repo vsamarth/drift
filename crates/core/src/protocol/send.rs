@@ -403,6 +403,7 @@ mod tests {
                 &mut local_write,
                 &mut local_read,
                 TransferManifest { items: vec![] },
+                [0u8; 32].into(),
             )
             .await?;
 

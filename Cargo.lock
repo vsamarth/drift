@@ -902,6 +902,7 @@ dependencies = [
  "anyhow",
  "drift-core",
  "iroh",
+ "iroh-blobs",
  "rand 0.8.5",
  "reqwest",
  "thiserror 2.0.18",

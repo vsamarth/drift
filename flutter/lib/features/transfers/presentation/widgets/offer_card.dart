@@ -28,14 +28,24 @@ class OfferCard extends ConsumerWidget {
     final senderName = displaySender(offer.sender.displayName);
     final itemCount = offer.manifest.itemCount;
     final totalSize = formatBytes(offer.manifest.totalSizeBytes);
+    final willResume = offer.willResume;
+    final subtitle = willResume
+        ? resumeSubtitle(
+            itemCount: itemCount,
+            receivedSize: formatBytes(offer.bytesReceived),
+            totalSize: totalSize,
+          )
+        : incomingSubtitle(itemCount, totalSize);
 
     return SizedBox.expand(
       child: TransferFlowLayout(
-        statusLabel: 'Incoming',
+        statusLabel: willResume ? 'Resume' : 'Incoming',
         statusColor: const Color(0xFF4B98AA),
-        subtitle: buildSubtitleText(incomingSubtitle(itemCount, totalSize)),
+        subtitle: buildSubtitleText(subtitle),
         explainer: Text(
-          'Review the files and accept only if you trust the sender.',
+          willResume
+              ? 'Drift found a previous partial transfer. Resume only if you trust the sender.'
+              : 'Review the files and accept only if you trust the sender.',
           textAlign: TextAlign.center,
           style: driftSans(
             fontSize: 13,
@@ -50,9 +60,7 @@ class OfferCard extends ConsumerWidget {
           animate: animate,
           mode: SendingStripMode.waitingOnRecipient,
         ),
-        manifest: ManifestTreeCard(
-          items: offer.manifest.items,
-        ),
+        manifest: ManifestTreeCard(items: offer.manifest.items),
         footer: Row(
           children: [
             Expanded(
@@ -69,7 +77,9 @@ class OfferCard extends ConsumerWidget {
                   elevation: 0,
                 ),
                 child: Text(
-                  'Save to ${offer.saveRootLabel}',
+                  willResume
+                      ? 'Resume transfer'
+                      : 'Save to ${offer.saveRootLabel}',
                   style: driftSans(fontWeight: FontWeight.w700, fontSize: 15),
                 ),
               ),
@@ -94,7 +104,6 @@ class OfferCard extends ConsumerWidget {
             ),
           ],
         ),
-
       ),
     );
   }

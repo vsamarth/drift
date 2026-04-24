@@ -72,6 +72,7 @@ class TransferIncomingOffer {
     required this.destinationLabel,
     required this.saveRootLabel,
     required this.statusMessage,
+    required this.bytesReceived,
   });
 
   final TransferIdentity sender;
@@ -79,8 +80,10 @@ class TransferIncomingOffer {
   final String destinationLabel;
   final String saveRootLabel;
   final String statusMessage;
+  final BigInt bytesReceived;
 
   String get displaySenderName => sender.displayName;
+  bool get willResume => bytesReceived > BigInt.zero;
 }
 
 @immutable
@@ -94,67 +97,67 @@ class TransferSessionState {
   });
 
   const TransferSessionState.idle()
-      : this._(
-          phase: TransferSessionPhase.idle,
-          offer: null,
-          progress: null,
-          result: null,
-          errorMessage: null,
-        );
+    : this._(
+        phase: TransferSessionPhase.idle,
+        offer: null,
+        progress: null,
+        result: null,
+        errorMessage: null,
+      );
 
   const TransferSessionState.offerPending({
     required TransferIncomingOffer offer,
   }) : this._(
-          phase: TransferSessionPhase.offerPending,
-          offer: offer,
-          progress: null,
-          result: null,
-          errorMessage: null,
-        );
+         phase: TransferSessionPhase.offerPending,
+         offer: offer,
+         progress: null,
+         result: null,
+         errorMessage: null,
+       );
 
   const TransferSessionState.receiving({
     required TransferIncomingOffer offer,
     required TransferTransferProgress progress,
   }) : this._(
-          phase: TransferSessionPhase.receiving,
-          offer: offer,
-          progress: progress,
-          result: null,
-          errorMessage: null,
-        );
+         phase: TransferSessionPhase.receiving,
+         offer: offer,
+         progress: progress,
+         result: null,
+         errorMessage: null,
+       );
 
   const TransferSessionState.completed({
     required TransferIncomingOffer offer,
     required TransferTransferResult result,
   }) : this._(
-          phase: TransferSessionPhase.completed,
-          offer: offer,
-          progress: null,
-          result: result,
-          errorMessage: null,
-        );
+         phase: TransferSessionPhase.completed,
+         offer: offer,
+         progress: null,
+         result: result,
+         errorMessage: null,
+       );
 
   const TransferSessionState.cancelled({
     required TransferIncomingOffer offer,
     required String errorMessage,
   }) : this._(
-          phase: TransferSessionPhase.cancelled,
-          offer: offer,
-          progress: null,
-          result: null,
-          errorMessage: errorMessage,
-        );
+         phase: TransferSessionPhase.cancelled,
+         offer: offer,
+         progress: null,
+         result: null,
+         errorMessage: errorMessage,
+       );
 
   const TransferSessionState.failed({
     required TransferIncomingOffer offer,
     required String errorMessage,
   }) : this._(
-          phase: TransferSessionPhase.failed,
-          offer: offer,
-          progress: null,
-          result: null,
-          errorMessage: errorMessage,
-        );
+         phase: TransferSessionPhase.failed,
+         offer: offer,
+         progress: null,
+         result: null,
+         errorMessage: errorMessage,
+       );
 
   final TransferSessionPhase phase;
   final TransferIncomingOffer? offer;

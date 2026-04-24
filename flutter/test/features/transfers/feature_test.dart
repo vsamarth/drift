@@ -143,6 +143,43 @@ void main() {
     expect(find.text('Save to Downloads'), findsOneWidget);
   });
 
+  testWidgets('shows resume copy for resumable incoming offers', (
+    WidgetTester tester,
+  ) async {
+    final source = FakeReceiverServiceSource();
+    final router = _buildReceiveFeatureRouter(size: const Size(440, 560));
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          transferReviewAnimationProvider.overrideWithValue(false),
+          initialAppSettingsProvider.overrideWithValue(testAppSettings),
+          receiverServiceSourceProvider.overrideWithValue(source),
+          transfersServiceSourceProvider.overrideWithValue(source),
+        ],
+        child: MaterialApp.router(routerConfig: router),
+      ),
+    );
+
+    source.emitIncomingOffer(
+      senderName: 'Maya',
+      bytesReceived: BigInt.from(1024),
+    );
+    await tester.pumpAndSettle();
+    await _waitForReceiveTransferRoute(tester, router);
+
+    expect(find.text('RESUME'), findsOneWidget);
+    expect(
+      find.text('will resume receiving 2 files (1.0 KB of 3.0 KB)'),
+      findsOneWidget,
+    );
+    expect(find.text('Resume transfer'), findsOneWidget);
+    expect(
+      find.text('Review the files and accept only if you trust the sender.'),
+      findsNothing,
+    );
+  });
+
   testWidgets('renders nested manifest paths as a tree', (
     WidgetTester tester,
   ) async {

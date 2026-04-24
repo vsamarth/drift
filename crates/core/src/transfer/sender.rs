@@ -5,7 +5,7 @@ use rand::random;
 use tokio::sync::{mpsc, oneshot, watch};
 use tokio::time::Duration;
 use tokio_stream::wrappers::UnboundedReceiverStream;
-use tracing::instrument;
+use tracing::{info, instrument};
 
 use crate::{
     blobs::send::{BlobService, PreparedStore},
@@ -181,6 +181,14 @@ impl SenderSession {
         let scratch = ScratchDir::new("drift-send", &self.session_id).await?;
         let prepared = PreparedStore::prepare(&scratch.path, self.request.files.clone()).await?;
 
+        info!(
+            session_id = %self.session_id,
+            collection_hash = %prepared.collection_hash(),
+            file_count = prepared.manifest().count(),
+            total_size = prepared.manifest().total_size(),
+            "prepared manifest"
+        );
+
         self.events.emit(SenderEvent::Connecting {
             session_id: self.session_id.clone(),
             peer_endpoint_id: self.request.peer_endpoint_id,
@@ -270,11 +278,17 @@ impl SenderSession {
                 }),
             )
             .await;
+            finish_control_stream(&mut control_send).await;
         }
 
         let _ = registration.shutdown().await;
         Ok(outcome)
     }
+}
+
+async fn finish_control_stream(send: &mut iroh::endpoint::SendStream) {
+    let _ = send.finish();
+    let _ = tokio::time::timeout(Duration::from_secs(2), send.stopped()).await;
 }
 
 enum HandshakeResult {
@@ -333,24 +347,28 @@ async fn do_transfer(
     control_recv: &mut iroh::endpoint::RecvStream,
     events: &SenderEventSink,
 ) -> Result<TransferOutcome> {
+    let mut progress_active = true;
     loop {
         tokio::select! {
-            msg = protocol_wire::read_receiver_message(progress_recv) => {
-                match msg? {
-                    protocol_message::ReceiverMessage::TransferProgress(p) => {
+            msg = protocol_wire::read_receiver_message(progress_recv), if progress_active => {
+                match msg {
+                    Ok(protocol_message::ReceiverMessage::TransferProgress(p)) => {
                         events.emit(SenderEvent::TransferProgress {
                             session_id: session_id.to_owned(),
                             snapshot: from_wire_snapshot(p.snapshot, session_id),
                         });
                     }
-                    protocol_message::ReceiverMessage::TransferCompleted(c) => {
+                    Ok(protocol_message::ReceiverMessage::TransferCompleted(c)) => {
                         let snapshot = from_wire_snapshot(c.snapshot, session_id);
                         events.emit(SenderEvent::TransferCompleted {
                             session_id: session_id.to_owned(),
                             snapshot,
                         });
                     }
-                    other => return Err(ProtocolError::unexpected_message_kind("receiver progress", MessageKind::TransferProgress, other.kind()).into()),
+                    Ok(other) => return Err(ProtocolError::unexpected_message_kind("receiver progress", MessageKind::TransferProgress, other.kind()).into()),
+                    Err(_) => {
+                        progress_active = false;
+                    }
                 }
             }
             msg = protocol_wire::read_receiver_message(control_recv) => {

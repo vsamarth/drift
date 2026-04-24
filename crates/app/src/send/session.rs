@@ -1,9 +1,12 @@
 use std::sync::Arc;
 
+use drift_core::protocol::{Identity, TransferRole};
 use drift_core::transfer::{
     SendRequest, Sender, SenderEvent as CoreSenderEvent, TransferOutcome as CoreTransferOutcome,
     TransferPlan,
 };
+use iroh::{Endpoint, RelayMode, endpoint::presets};
+use rand::random;
 use tokio::sync::{Mutex, mpsc, oneshot, watch};
 use tokio_stream::StreamExt;
 use tokio_stream::wrappers::UnboundedReceiverStream;
@@ -117,9 +120,27 @@ impl SendSession {
         destination_label = resolved.destination_label;
 
         let device_type = parse_device_type(&self.draft.config().device_type)?;
-        let sender = Sender::new(
-            self.draft.config().device_name.clone(),
+        let endpoint = Endpoint::builder(presets::N0)
+            .alpns(vec![
+                drift_core::protocol::ALPN.to_vec(),
+                iroh_blobs::ALPN.to_vec(),
+            ])
+            .relay_mode(RelayMode::Default)
+            .secret_key(iroh::SecretKey::from_bytes(&random::<[u8; 32]>()))
+            .bind()
+            .await
+            .map_err(|e| AppError::BindingFailed {
+                context: format!("sender endpoint: {e}"),
+            })?;
+        let identity = Identity {
+            role: TransferRole::Sender,
+            endpoint_id: endpoint.addr().id,
+            device_name: self.draft.config().device_name.clone(),
             device_type,
+        };
+        let sender = Sender::new(
+            endpoint,
+            identity,
             SendRequest {
                 peer_endpoint_addr: resolved.peer_endpoint_addr.clone(),
                 peer_endpoint_id: resolved.peer_endpoint_id,

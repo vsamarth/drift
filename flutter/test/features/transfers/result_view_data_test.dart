@@ -21,13 +21,17 @@ void main() {
       ),
       manifest: TransferManifest(
         items: [
-          TransferManifestItem(path: 'report.pdf', sizeBytes: BigInt.from(1024)),
+          TransferManifestItem(
+            path: 'report.pdf',
+            sizeBytes: BigInt.from(1024),
+          ),
           TransferManifestItem(path: 'photo.jpg', sizeBytes: BigInt.from(2048)),
         ],
       ),
       destinationLabel: destinationLabel,
       saveRootLabel: saveRootLabel,
       statusMessage: statusMessage,
+      bytesReceived: BigInt.zero,
     );
   }
 
