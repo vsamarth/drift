@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 
 use tokio::io::{AsyncRead, AsyncWrite};
+use tracing::info;
 
 use super::error::{ProtocolError, Result};
 use super::message::{
@@ -203,6 +204,15 @@ impl Receiver {
         };
 
         ensure_session_id(&offer.session_id, expected_session_id)?;
+
+        info!(
+            session_id = %offer.session_id,
+            collection_hash = %offer.collection_hash,
+            file_count = offer.manifest.count(),
+            total_size = offer.manifest.total_size(),
+            "received manifest"
+        );
+
         self.machine.transition(ReceiverState::OfferReceived)?;
         self.machine.transition(ReceiverState::AwaitingDecision)?;
         Ok(offer)
@@ -355,6 +365,7 @@ mod tests {
                             size: 1,
                         }],
                     },
+                    collection_hash: [0u8; 32].into(),
                 }),
             )
             .await

@@ -11,7 +11,7 @@ class ResponsiveShell extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // We watch this here as requested by the plan, although the child shells 
+    // We watch this here as requested by the plan, although the child shells
     // also watch it for their own internal needs.
     ref.watch(receiverIdleViewStateProvider);
 

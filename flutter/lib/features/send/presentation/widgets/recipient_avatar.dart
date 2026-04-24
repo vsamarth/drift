@@ -44,13 +44,17 @@ class _RecipientAvatarState extends State<RecipientAvatar>
 
     _scaleAnimation = TweenSequence<double>([
       TweenSequenceItem(
-        tween: Tween<double>(begin: 1.0, end: 1.12)
-            .chain(CurveTween(curve: Curves.easeOut)),
+        tween: Tween<double>(
+          begin: 1.0,
+          end: 1.12,
+        ).chain(CurveTween(curve: Curves.easeOut)),
         weight: 40,
       ),
       TweenSequenceItem(
-        tween: Tween<double>(begin: 1.12, end: 1.0)
-            .chain(CurveTween(curve: Curves.easeOutBack)),
+        tween: Tween<double>(
+          begin: 1.12,
+          end: 1.0,
+        ).chain(CurveTween(curve: Curves.easeOutBack)),
         weight: 60,
       ),
     ]).animate(_successController);
@@ -77,7 +81,8 @@ class _RecipientAvatarState extends State<RecipientAvatar>
   }
 
   void _updateAnimation() {
-    final shouldAnimate = widget.animate &&
+    final shouldAnimate =
+        widget.animate &&
         (widget.mode == SendingStripMode.waitingOnRecipient ||
             widget.mode == SendingStripMode.looping);
     if (shouldAnimate && !_rippleController.isAnimating) {
@@ -118,7 +123,9 @@ class _RecipientAvatarState extends State<RecipientAvatar>
                       alignment: Alignment.center,
                       children: [
                         for (int i = 0; i < 2; i++)
-                          _buildRipple((_rippleController.value + (i * 0.5)) % 1.0),
+                          _buildRipple(
+                            (_rippleController.value + (i * 0.5)) % 1.0,
+                          ),
                       ],
                     );
                   },
@@ -166,10 +173,7 @@ class _RecipientAvatarState extends State<RecipientAvatar>
                         gradient: LinearGradient(
                           begin: Alignment.topLeft,
                           end: Alignment.bottomRight,
-                          colors: [
-                            kSurface,
-                            kBg.withValues(alpha: 0.5),
-                          ],
+                          colors: [kSurface, kBg.withValues(alpha: 0.5)],
                         ),
                         border: Border.all(
                           color: kBorder.withValues(alpha: 0.6),
@@ -185,11 +189,7 @@ class _RecipientAvatarState extends State<RecipientAvatar>
                     ),
 
                     // Icon
-                    Icon(
-                      icon,
-                      size: 40,
-                      color: kInk.withValues(alpha: 0.9),
-                    ),
+                    Icon(icon, size: 40, color: kInk.withValues(alpha: 0.9)),
                   ],
                 ),
               ),

@@ -82,6 +82,10 @@ impl PreparedStore {
         &self.collection_tag
     }
 
+    pub(crate) fn collection_hash(&self) -> iroh_blobs::Hash {
+        self.collection_tag.hash()
+    }
+
     pub(crate) fn manifest(&self) -> crate::protocol::message::TransferManifest {
         crate::protocol::message::TransferManifest {
             items: self

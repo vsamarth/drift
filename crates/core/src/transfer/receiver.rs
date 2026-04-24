@@ -13,6 +13,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 use tokio::fs;
+use tokio::io::AsyncRead;
 use tokio::sync::{mpsc, oneshot, watch};
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tracing::{info, instrument};
@@ -27,8 +28,12 @@ use crate::{
 };
 
 use super::error::{Result as TransferResult, TransferError};
-use super::path::{ensure_destination_available, resolve_output_dir, resolve_transfer_destination};
+use super::path::{
+    ensure_destination_available, local_record_dir, resolve_output_dir,
+    resolve_transfer_destination,
+};
 use super::progress::ProgressTracker;
+use super::record::{TransferRecord, TransferStatus};
 use super::types::{
     TransferOutcome, TransferPhase, TransferPlan, TransferSnapshot, wait_for_cancel,
 };
@@ -57,6 +62,8 @@ pub struct ReceiverOfferItem {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReceiverOffer {
     pub session_id: String,
+    pub collection_hash: iroh_blobs::Hash,
+    pub resume_from_bytes: u64,
     pub sender_device_name: String,
     pub sender_device_type: crate::protocol::DeviceType,
     pub sender_endpoint_id: iroh::EndpointId,
@@ -76,6 +83,7 @@ pub enum ReceiverEvent {
         sender_endpoint_id: iroh::EndpointId,
         file_count: u64,
         total_size: u64,
+        resume_from_bytes: u64,
     },
     TransferStarted {
         session_id: String,
@@ -206,24 +214,41 @@ async fn run_session(
 
     // --- Phase 2: Offer Processing ---
     let manifest = to_offer_manifest(&offer);
+    info!(
+        %session_id,
+        collection_hash = %offer.collection_hash,
+        file_count = manifest.file_count,
+        total_size = manifest.total_size,
+        "received manifest"
+    );
     let plan = TransferPlan::from_manifest(session_id.clone(), &offer.manifest)?;
-    let expected_files = match build_expected_files(&manifest, &request.out_dir).await {
-        Ok(f) => f,
-        Err(err) => {
-            let reason = err.to_string();
-            let _ = send_receiver_decline(&mut control_send, &session_id, reason.clone()).await;
-            finish_control_stream(&mut control_send).await;
-            let _ = offer_tx.send(Err(TransferError::other(
-                "building receiver offer",
-                std::io::Error::other(reason.clone()),
-            )));
-            return Err(err);
-        }
-    };
+    let record_dir =
+        local_record_dir(&request.out_dir, offer.collection_hash).map_err(TransferError::from)?;
+    let resume_record = load_resume_record(&record_dir, offer.collection_hash, &offer.manifest);
+    let resume_from_bytes = resume_record
+        .as_ref()
+        .map(|record| resume_offset_for_record(record, plan.total_bytes))
+        .unwrap_or(0);
+    let expected_files =
+        match build_expected_files(&manifest, &request.out_dir, resume_record.as_ref()).await {
+            Ok(f) => f,
+            Err(err) => {
+                let reason = err.to_string();
+                let _ = send_receiver_decline(&mut control_send, &session_id, reason.clone()).await;
+                finish_control_stream(&mut control_send).await;
+                let _ = offer_tx.send(Err(TransferError::other(
+                    "building receiver offer",
+                    std::io::Error::other(reason.clone()),
+                )));
+                return Err(err);
+            }
+        };
 
     let expected_transfer_files = build_expected_transfer_files(&manifest, expected_files)?;
     let receiver_offer = ReceiverOffer {
         session_id: session_id.clone(),
+        collection_hash: offer.collection_hash,
+        resume_from_bytes,
         sender_device_name: peer_hello.identity.device_name.clone(),
         sender_device_type: to_local_device_type(peer_hello.identity.device_type),
         sender_endpoint_id: peer_hello.identity.endpoint_id,
@@ -247,9 +272,10 @@ async fn run_session(
             sender_endpoint_id: receiver_offer.sender_endpoint_id,
             file_count: receiver_offer.file_count,
             total_size: receiver_offer.total_size,
+            resume_from_bytes,
         },
     );
-    let _ = offer_tx.send(Ok(receiver_offer));
+    let _ = offer_tx.send(Ok(receiver_offer.clone()));
 
     // --- Phase 3: User Decision ---
     let decision = tokio::select! {
@@ -273,6 +299,31 @@ async fn run_session(
     }
 
     // --- Phase 4: Data Transfer ---
+    fs::create_dir_all(&record_dir)
+        .await
+        .map_err(|e| TransferError::other("creating record directory", e))?;
+
+    let mut record = match resume_record {
+        Some(r) => {
+            info!(
+                "found existing transfer record for {}, resuming",
+                receiver_offer.collection_hash
+            );
+            r
+        }
+        None => {
+            let r = TransferRecord::new(
+                receiver_offer.collection_hash,
+                request.out_dir.clone(),
+                crate::fs_plan::ConflictPolicy::Rename, // Default
+                offer.manifest.clone(),
+            );
+            r.save(&record_dir)
+                .map_err(|e| TransferError::other("saving initial record", e))?;
+            r
+        }
+    };
+
     let _ = protocol_wire::write_receiver_message(
         &mut control_send,
         &protocol_message::ReceiverMessage::Accept(protocol_message::Accept {
@@ -281,83 +332,116 @@ async fn run_session(
     )
     .await?;
 
-    let ticket_message = tokio::select! {
-        res = protocol_wire::read_sender_message(&mut control_recv) => match res? {
-            protocol_message::SenderMessage::BlobTicket(msg) => msg,
-            protocol_message::SenderMessage::Cancel(c) => {
-                return Ok(TransferOutcome::from_remote_cancel(c, &session_id)?)
-            }
-            other => {
-                return Err(ProtocolError::unexpected_message_kind(
-                    "sender ticket",
-                    MessageKind::BlobTicket,
-                    other.kind(),
-                )
-                .into())
-            }
-        },
-        _ = wait_for_cancel(&mut cancel_rx) => return abort_session(&mut control_send, &session_id, protocol_message::CancelPhase::Transferring).await,
-        _ = connection.closed() => return Err(TransferError::connection_closed("waiting for blob ticket")),
-        _ = tokio::time::sleep(Duration::from_secs(30)) => return Err(TransferError::timeout("waiting for blob ticket")),
-    };
-
-    let blob_ticket: BlobTicket = ticket_message
-        .ticket
-        .parse()
-        .map_err(|source| TransferError::other("parsing blob ticket", source))?;
-    let blob_receiver = BlobReceiver::new(endpoint.clone());
-    let mut blob_download = blob_receiver
-        .start(&session_id, blob_ticket.clone())
-        .await
-        .map_err(|source| TransferError::other("starting blob download", source))?;
     let mut progress_send = connection
         .open_uni()
         .await
         .map_err(|source| TransferError::other("opening progress stream", source))?;
 
-    let (transfer_outcome, mut tracker) = match do_transfer(
-        &session_id,
-        &plan,
-        &mut blob_download,
-        &mut progress_send,
-        &mut control_recv,
-        &mut cancel_rx,
-        &event_tx,
-    )
-    .await
-    {
-        Ok(v) => v,
-        Err(error) => {
-            if let TransferError::Protocol(protocol_error) = &error {
-                let _ = send_transfer_result(
-                    &mut control_send,
-                    &session_id,
-                    protocol_error.transfer_status(),
-                )
-                .await;
+    let (_transfer_outcome, mut tracker) = if matches!(
+        record.status,
+        TransferStatus::DataComplete | TransferStatus::Finalizing | TransferStatus::Completed
+    ) {
+        info!(
+            "data already complete for {}, skipping download",
+            receiver_offer.collection_hash
+        );
+        let _ = match tokio::select! {
+            res = read_sender_blob_ticket_message(&mut control_recv, &session_id) => res?,
+            _ = wait_for_cancel(&mut cancel_rx) => return abort_session(&mut control_send, &session_id, protocol_message::CancelPhase::Transferring).await,
+            _ = connection.closed() => return Err(TransferError::connection_closed("waiting for resume blob ticket")),
+            _ = tokio::time::sleep(Duration::from_secs(30)) => return Err(TransferError::timeout("waiting for resume blob ticket")),
+        } {
+            SenderBlobTicketRead::Ticket(ticket) => ticket,
+            SenderBlobTicketRead::Cancel(cancel) => {
+                return Ok(TransferOutcome::from_remote_cancel(cancel, &session_id)?);
             }
+        };
+        let mut tracker = ProgressTracker::new(plan.clone());
+        tracker.set_bytes_transferred(resume_from_bytes, std::time::Instant::now());
+        (TransferOutcome::Completed, tracker)
+    } else {
+        let ticket_message = match tokio::select! {
+            res = read_sender_blob_ticket_message(&mut control_recv, &session_id) => res?,
+            _ = wait_for_cancel(&mut cancel_rx) => return abort_session(&mut control_send, &session_id, protocol_message::CancelPhase::Transferring).await,
+            _ = connection.closed() => return Err(TransferError::connection_closed("waiting for blob ticket")),
+            _ = tokio::time::sleep(Duration::from_secs(30)) => return Err(TransferError::timeout("waiting for blob ticket")),
+        } {
+            SenderBlobTicketRead::Ticket(ticket) => ticket,
+            SenderBlobTicketRead::Cancel(cancel) => {
+                return Ok(TransferOutcome::from_remote_cancel(cancel, &session_id)?);
+            }
+        };
+
+        let blob_ticket: BlobTicket = ticket_message
+            .ticket
+            .parse()
+            .map_err(|source| TransferError::other("parsing blob ticket", source))?;
+        let blob_receiver = BlobReceiver::new(endpoint.clone());
+        let mut blob_download = blob_receiver
+            .start(record_dir.join("store"), blob_ticket.clone(), false)
+            .await
+            .map_err(|source| TransferError::other("starting blob download", source))?;
+
+        let (outcome, tracker) = match do_transfer(
+            &session_id,
+            &plan,
+            &mut blob_download,
+            &mut progress_send,
+            &mut control_recv,
+            &mut cancel_rx,
+            &event_tx,
+            &mut record,
+            &record_dir,
+            resume_from_bytes,
+        )
+        .await
+        {
+            Ok(v) => v,
+            Err(error) => {
+                if let TransferError::Protocol(protocol_error) = &error {
+                    let _ = send_transfer_result(
+                        &mut control_send,
+                        &session_id,
+                        protocol_error.transfer_status(),
+                    )
+                    .await;
+                }
+                blob_download.abort();
+                let _ = blob_download.shutdown().await;
+                return Err(error);
+            }
+        };
+
+        if let TransferOutcome::Cancelled(c) = &outcome {
+            let _ = send_receiver_cancel(
+                &mut control_send,
+                &session_id,
+                c.by,
+                c.phase,
+                c.reason.clone(),
+            )
+            .await;
             blob_download.abort();
             let _ = blob_download.shutdown().await;
-            return Err(error);
+            return Ok(outcome);
         }
-    };
 
-    if let TransferOutcome::Cancelled(c) = &transfer_outcome {
-        let _ = send_receiver_cancel(
-            &mut control_send,
-            &session_id,
-            c.by,
-            c.phase,
-            c.reason.clone(),
-        )
-        .await;
-        blob_download.abort();
+        record.status = TransferStatus::DataComplete;
+        record.bytes_received = plan.total_bytes;
+        record
+            .save(&record_dir)
+            .map_err(|e| TransferError::other("saving record after download", e))?;
         let _ = blob_download.shutdown().await;
-        return Ok(transfer_outcome);
-    }
+        (outcome, tracker)
+    };
 
     // --- Phase 5: Export & Acknowledgement ---
     info!(%session_id, "exporting files to {}", request.out_dir.display());
+    record.status = TransferStatus::Finalizing;
+    record
+        .save(&record_dir)
+        .map_err(|e| TransferError::other("saving record before export", e))?;
+
     tracker.mark_finalizing(std::time::Instant::now());
     let finalizing_snapshot = tracker.snapshot(std::time::Instant::now());
     emit_receiver_event(
@@ -375,18 +459,26 @@ async fn run_session(
         }),
     )
     .await;
+
+    let blob_store = FsStore::load(record_dir.join("store"))
+        .await
+        .map_err(|e| TransferError::other("loading blob store for export", e))?;
+
     let final_snapshot = tokio::select! {
-        res = export_downloaded_collection(blob_download.store(), blob_ticket.hash(), &expected_transfer_files) => {
+        res = export_downloaded_collection(&blob_store, receiver_offer.collection_hash, &expected_transfer_files, &mut record, &record_dir) => {
             res?;
             tracker.mark_completed(std::time::Instant::now());
             tracker.snapshot(std::time::Instant::now())
         },
         _ = wait_for_cancel(&mut cancel_rx) => {
-            blob_download.abort();
-            let _ = blob_download.shutdown().await;
             return abort_session(&mut control_send, &session_id, protocol_message::CancelPhase::Transferring).await;
         },
     };
+
+    record.status = TransferStatus::Completed;
+    record
+        .save(&record_dir)
+        .map_err(|e| TransferError::other("saving final record", e))?;
 
     let _ = protocol_wire::write_receiver_message(
         &mut progress_send,
@@ -398,6 +490,10 @@ async fn run_session(
         ),
     )
     .await;
+
+    // Finish progress stream
+    let _ = progress_send.finish();
+
     let _ = send_transfer_result(
         &mut control_send,
         &session_id,
@@ -408,7 +504,7 @@ async fn run_session(
     // Final wait for Sender to acknowledge our result
     let outcome = match protocol_wire::read_sender_message(&mut control_recv).await {
         Ok(protocol_message::SenderMessage::TransferAck(_)) => {
-            let _ = control_send.finish();
+            finish_control_stream(&mut control_send).await;
             emit_receiver_event(
                 &event_tx,
                 ReceiverEvent::TransferCompleted {
@@ -425,21 +521,16 @@ async fn run_session(
             Ok(TransferOutcome::Completed)
         }
         Ok(_) => {
-            blob_download.abort();
-            let _ = blob_download.shutdown().await;
             return Err(TransferError::other(
                 "waiting for sender ack",
                 std::io::Error::other("missing final transfer ack from sender"),
             ));
         }
         Err(error) => {
-            blob_download.abort();
-            let _ = blob_download.shutdown().await;
             return Err(error.into());
         }
     };
 
-    let _ = blob_download.shutdown().await;
     outcome
 }
 
@@ -519,8 +610,12 @@ async fn do_transfer(
     control_recv: &mut iroh::endpoint::RecvStream,
     cancel_rx: &mut watch::Receiver<bool>,
     event_tx: &Option<mpsc::UnboundedSender<ReceiverEvent>>,
+    record: &mut TransferRecord,
+    record_dir: &Path,
+    resume_from_bytes: u64,
 ) -> Result<(TransferOutcome, ProgressTracker)> {
     let mut tracker = ProgressTracker::new(plan.clone());
+    tracker.set_bytes_transferred(resume_from_bytes, std::time::Instant::now());
     tracker.set_phase(TransferPhase::Transferring, std::time::Instant::now());
     emit_receiver_event(
         event_tx,
@@ -535,7 +630,14 @@ async fn do_transfer(
             item = download.events_mut().next() => match item {
                 Some(BlobDownloadUpdate::Progress { bytes_received: offset }) => {
                     let now = std::time::Instant::now();
-                    tracker.set_bytes_transferred(offset, now);
+                    let bytes_received = (resume_from_bytes + offset).min(plan.total_bytes);
+                    tracker.set_bytes_transferred(bytes_received, now);
+                    if record.bytes_received != bytes_received {
+                        record.bytes_received = bytes_received;
+                        record
+                            .save(record_dir)
+                            .map_err(|e| TransferError::other("saving record progress", e))?;
+                    }
                     let snapshot = tracker.snapshot(now);
                     emit_receiver_event(event_tx, ReceiverEvent::TransferProgress {
                         session_id: session_id.to_owned(),
@@ -606,12 +708,19 @@ pub async fn export_downloaded_collection(
     store: &FsStore,
     root_hash: iroh_blobs::Hash,
     expected_files: &[ExpectedTransferFile],
+    record: &mut TransferRecord,
+    record_dir: &std::path::Path,
 ) -> Result<()> {
     let collection = Collection::load(root_hash, store.as_ref())
         .await
         .map_err(|source| TransferError::other("loading downloaded collection", source))?;
     let hashes: BTreeMap<_, _> = collection.into_iter().collect();
     for exp in expected_files {
+        if record.exported_files.contains(&exp.path) {
+            info!("skipping already exported file: {}", exp.path);
+            continue;
+        }
+
         let hash = *hashes.get(&exp.path).ok_or_else(|| {
             TransferError::other(
                 "exporting downloaded collection",
@@ -632,6 +741,11 @@ pub async fn export_downloaded_collection(
             .finish()
             .await
             .map_err(|source| TransferError::other("exporting downloaded file", source))?;
+
+        record.exported_files.insert(exp.path.clone());
+        record
+            .save(record_dir)
+            .map_err(|e| TransferError::other("saving record during export", e))?;
     }
     Ok(())
 }
@@ -639,11 +753,20 @@ pub async fn export_downloaded_collection(
 async fn build_expected_files(
     manifest: &OfferManifest,
     out_dir: &Path,
+    resume_record: Option<&TransferRecord>,
 ) -> Result<BTreeMap<String, ExpectedTransferFile>> {
     let mut expected = BTreeMap::new();
     for file in &manifest.files {
         let destination = resolve_transfer_destination(out_dir, &file.path)?;
-        ensure_destination_available(out_dir, &destination).await?;
+        match ensure_destination_available(out_dir, &destination).await {
+            Ok(()) => {}
+            Err(super::path::TransferPathError::DestinationExists { path })
+                if resume_record
+                    .map(|record| record.exported_files.contains(&file.path))
+                    .unwrap_or(false)
+                    && path == destination => {}
+            Err(error) => return Err(error.into()),
+        }
         expected.insert(
             file.path.clone(),
             ExpectedTransferFile {
@@ -654,6 +777,189 @@ async fn build_expected_files(
         );
     }
     Ok(expected)
+}
+
+fn load_resume_record(
+    record_dir: &Path,
+    collection_hash: iroh_blobs::Hash,
+    manifest: &protocol_message::TransferManifest,
+) -> Option<TransferRecord> {
+    let record = TransferRecord::load(record_dir).ok()?;
+    if record.collection_hash == collection_hash && record.manifest == *manifest {
+        Some(record)
+    } else {
+        None
+    }
+}
+
+fn resume_offset_for_record(record: &TransferRecord, total_bytes: u64) -> u64 {
+    match record.status {
+        TransferStatus::DataComplete | TransferStatus::Finalizing | TransferStatus::Completed => {
+            total_bytes
+        }
+        TransferStatus::Transferring | TransferStatus::Paused | TransferStatus::Failed => {
+            record.bytes_received.min(total_bytes)
+        }
+    }
+}
+
+enum SenderBlobTicketRead {
+    Ticket(protocol_message::BlobTicketMessage),
+    Cancel(protocol_message::Cancel),
+}
+
+async fn read_sender_blob_ticket_message<R>(
+    recv: &mut R,
+    session_id: &str,
+) -> Result<SenderBlobTicketRead>
+where
+    R: AsyncRead + Unpin,
+{
+    match protocol_wire::read_sender_message(recv).await? {
+        protocol_message::SenderMessage::BlobTicket(msg) if msg.session_id == session_id => {
+            Ok(SenderBlobTicketRead::Ticket(msg))
+        }
+        protocol_message::SenderMessage::BlobTicket(msg) => {
+            Err(ProtocolError::session_id_mismatch(session_id, msg.session_id).into())
+        }
+        protocol_message::SenderMessage::Cancel(cancel) => Ok(SenderBlobTicketRead::Cancel(cancel)),
+        other => Err(ProtocolError::unexpected_message_kind(
+            "sender ticket",
+            MessageKind::BlobTicket,
+            other.kind(),
+        )
+        .into()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::blobs::send::PreparedStore;
+    use crate::fs_plan::ConflictPolicy;
+    use crate::protocol::message::{
+        BlobTicketMessage, ManifestItem, SenderMessage, TransferAck, TransferManifest, TransferRole,
+    };
+    use crate::protocol::wire::{read_sender_message, write_sender_message};
+    use crate::transfer::{SendRequest, Sender};
+    use tokio::io::duplex;
+
+    fn manifest_with(paths: &[(&str, u64)]) -> OfferManifest {
+        OfferManifest {
+            files: paths
+                .iter()
+                .map(|(path, size)| crate::rendezvous::OfferFile {
+                    path: (*path).to_owned(),
+                    size: *size,
+                })
+                .collect(),
+            collection_hash: Some([7u8; 32].into()),
+            file_count: paths.len() as u64,
+            total_size: paths.iter().map(|(_, size)| *size).sum(),
+        }
+    }
+
+    fn record_with_exported(paths: &[&str]) -> TransferRecord {
+        let mut record = TransferRecord::new(
+            [7u8; 32].into(),
+            PathBuf::from("/tmp/out"),
+            ConflictPolicy::Rename,
+            TransferManifest {
+                items: vec![ManifestItem::File {
+                    path: "already.txt".to_owned(),
+                    size: 5,
+                }],
+            },
+        );
+        record.status = TransferStatus::Finalizing;
+        record.exported_files = paths.iter().map(|path| (*path).to_owned()).collect();
+        record
+    }
+
+    #[test]
+    fn resume_offset_uses_persisted_progress_for_incomplete_records() {
+        let mut record = record_with_exported(&[]);
+        record.status = TransferStatus::Transferring;
+        record.bytes_received = 42;
+
+        assert_eq!(resume_offset_for_record(&record, 100), 42);
+    }
+
+    #[test]
+    fn resume_offset_clamps_progress_and_treats_data_complete_as_total() {
+        let mut record = record_with_exported(&[]);
+        record.status = TransferStatus::Paused;
+        record.bytes_received = 120;
+        assert_eq!(resume_offset_for_record(&record, 100), 100);
+
+        record.status = TransferStatus::DataComplete;
+        record.bytes_received = 40;
+        assert_eq!(resume_offset_for_record(&record, 100), 100);
+    }
+
+    #[tokio::test]
+    async fn resumed_export_allows_destinations_for_already_exported_files() {
+        let out = tempfile::tempdir().unwrap();
+        std::fs::write(out.path().join("already.txt"), b"done").unwrap();
+        let manifest = manifest_with(&[("already.txt", 4), ("remaining.txt", 9)]);
+        let record = record_with_exported(&["already.txt"]);
+
+        let expected = build_expected_files(&manifest, out.path(), Some(&record))
+            .await
+            .unwrap();
+
+        assert_eq!(
+            expected
+                .get("already.txt")
+                .map(|file| file.destination.as_path()),
+            Some(out.path().join("already.txt").as_path())
+        );
+        assert_eq!(
+            expected
+                .get("remaining.txt")
+                .map(|file| file.destination.as_path()),
+            Some(out.path().join("remaining.txt").as_path())
+        );
+    }
+
+    #[tokio::test]
+    async fn resume_control_path_consumes_blob_ticket_before_waiting_for_ack() {
+        let (local, remote) = duplex(4096);
+        let (mut local_read, _) = tokio::io::split(local);
+        let (_, mut remote_write) = tokio::io::split(remote);
+
+        tokio::spawn(async move {
+            write_sender_message(
+                &mut remote_write,
+                &SenderMessage::BlobTicket(BlobTicketMessage {
+                    session_id: "session-1".to_owned(),
+                    ticket: "ticket-text".to_owned(),
+                }),
+            )
+            .await
+            .unwrap();
+            write_sender_message(
+                &mut remote_write,
+                &SenderMessage::TransferAck(TransferAck {
+                    session_id: "session-1".to_owned(),
+                }),
+            )
+            .await
+            .unwrap();
+        });
+
+        let ticket = match read_sender_blob_ticket_message(&mut local_read, "session-1")
+            .await
+            .unwrap()
+        {
+            SenderBlobTicketRead::Ticket(ticket) => ticket,
+            SenderBlobTicketRead::Cancel(_) => panic!("expected blob ticket"),
+        };
+        assert_eq!(ticket.ticket, "ticket-text");
+
+        let next = read_sender_message(&mut local_read).await.unwrap();
+        assert!(matches!(next, SenderMessage::TransferAck(_)));
+    }
 }
 
 fn build_expected_transfer_files(
@@ -703,6 +1009,7 @@ fn to_offer_manifest(offer: &protocol_message::Offer) -> OfferManifest {
                 }
             })
             .collect(),
+        collection_hash: Some(offer.collection_hash),
         file_count: offer.manifest.count() as u64,
         total_size: offer.manifest.total_size(),
     }

@@ -97,7 +97,7 @@ class TransfersServiceController extends Notifier<TransferSessionState> {
       state = TransferSessionState.receiving(
         offer: offer,
         progress: TransferTransferProgress(
-          bytesTransferred: BigInt.zero,
+          bytesTransferred: offer.bytesReceived,
           totalBytes: offer.manifest.totalSizeBytes,
           completedFiles: 0,
           totalFiles: offer.manifest.itemCount,
@@ -166,6 +166,7 @@ class TransfersServiceController extends Notifier<TransferSessionState> {
       destinationLabel: event.destinationLabel,
       saveRootLabel: event.saveRootLabel,
       statusMessage: event.statusMessage,
+      bytesReceived: event.bytesReceived,
     );
   }
 
@@ -277,6 +278,7 @@ class TransfersServiceController extends Notifier<TransferSessionState> {
       destinationLabel: 'Downloads',
       saveRootLabel: 'Downloads',
       statusMessage: 'Incoming offer',
+      bytesReceived: source.lastIncomingBytesReceived ?? BigInt.zero,
     );
   }
 }

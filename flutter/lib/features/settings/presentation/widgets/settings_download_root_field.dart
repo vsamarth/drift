@@ -32,10 +32,7 @@ class SettingsDownloadRootField extends StatelessWidget {
             onPressed: onChoose,
             style: TextButton.styleFrom(
               minimumSize: const Size(0, 32),
-              padding: const EdgeInsets.symmetric(
-                horizontal: 10,
-                vertical: 6,
-              ),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
               foregroundColor: kInk,
               shape: RoundedRectangleBorder(

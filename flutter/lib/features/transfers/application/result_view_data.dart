@@ -5,11 +5,7 @@ import 'identity.dart';
 import 'manifest.dart';
 import 'state.dart';
 
-enum TransferResultOutcome {
-  success,
-  cancelled,
-  failed,
-}
+enum TransferResultOutcome { success, cancelled, failed }
 
 @immutable
 class ResultMetric {
@@ -44,7 +40,7 @@ class TransferResultViewData {
   final String deviceName;
   final DeviceType? deviceType;
   final List<TransferManifestItem>? manifestItems;
-  
+
   // High-level summary stats
   final String? durationLabel;
   final String? averageSpeedLabel;
@@ -78,7 +74,10 @@ TransferResultViewData buildTransferResultViewData(TransferSessionState state) {
         ResultMetric(label: 'From', value: deviceName),
         ResultMetric(label: 'Saved to', value: offer.destinationLabel),
         ResultMetric(label: 'Files', value: '${state.result!.completedFiles}'),
-        ResultMetric(label: 'Size', value: formatBytes(state.result!.totalBytes)),
+        ResultMetric(
+          label: 'Size',
+          value: formatBytes(state.result!.totalBytes),
+        ),
       ],
     ),
     TransferSessionPhase.cancelled => TransferResultViewData(
@@ -99,7 +98,9 @@ TransferResultViewData buildTransferResultViewData(TransferSessionState state) {
       deviceType: deviceType,
       manifestItems: manifestItems,
     ),
-    _ => throw StateError('transfer result view data requires a terminal state'),
+    _ => throw StateError(
+      'transfer result view data requires a terminal state',
+    ),
   };
 }
 

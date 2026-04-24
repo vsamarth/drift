@@ -133,6 +133,7 @@ impl ReceiverSession {
 
         let sender_label = display_sender_label(&offer.sender_device_name);
         let sender_device_type = offer.sender_device_type;
+        let resume_from_bytes = offer.resume_from_bytes;
         let plan = match TransferPlan::try_new(
             offer.session_id.clone(),
             offer
@@ -198,7 +199,7 @@ impl ReceiverSession {
             status_message: format!("{sender_label} wants to send you files."),
             item_count: offer.file_count,
             total_size_bytes: offer.total_size,
-            bytes_received: 0,
+            bytes_received: resume_from_bytes,
             plan: Some(plan.clone()),
             snapshot: None,
             connection_path: Some(connection_path_label(connection_path_kind)),
@@ -221,7 +222,7 @@ impl ReceiverSession {
         let mut last_progress_emit_at = std::time::Instant::now()
             .checked_sub(PROGRESS_EVENT_MIN_INTERVAL)
             .unwrap_or_else(std::time::Instant::now);
-        let mut last_progress_bytes = 0_u64;
+        let mut last_progress_bytes = resume_from_bytes;
         while let Some(event) = events.next().await {
             match event {
                 CoreReceiverEvent::TransferStarted {
@@ -238,7 +239,7 @@ impl ReceiverSession {
                             connection_path_kind,
                             plan.total_files as u64,
                             plan.total_bytes,
-                            0,
+                            resume_from_bytes,
                             Some(plan.clone()),
                             None,
                             Vec::new(),

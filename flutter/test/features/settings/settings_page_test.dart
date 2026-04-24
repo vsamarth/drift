@@ -108,9 +108,6 @@ void main() {
     );
 
     expect(downloadField.readOnly, isTrue);
-    expect(
-      downloadField.controller?.text,
-      '/Users/samarh/Downloads/Drift',
-    );
+    expect(downloadField.controller?.text, '/Users/samarh/Downloads/Drift');
   });
 }

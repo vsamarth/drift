@@ -16,6 +16,7 @@ pub struct OfferFile {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct OfferManifest {
     pub files: Vec<OfferFile>,
+    pub collection_hash: Option<iroh_blobs::Hash>,
     pub file_count: u64,
     pub total_size: u64,
 }

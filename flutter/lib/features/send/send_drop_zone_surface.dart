@@ -91,10 +91,7 @@ class SendDropZoneSurface extends StatelessWidget {
                     horizontal: 13,
                     vertical: 7,
                   ),
-                  side: const BorderSide(
-                    color: Color(0xFFE7E7E7),
-                    width: 0.9,
-                  ),
+                  side: const BorderSide(color: Color(0xFFE7E7E7), width: 0.9),
                   textStyle: driftSans(
                     fontSize: 12.5,
                     fontWeight: FontWeight.w600,

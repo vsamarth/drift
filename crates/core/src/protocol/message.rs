@@ -1,12 +1,13 @@
 #![allow(dead_code)]
 
 use iroh::EndpointId;
+use iroh_blobs::Hash;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::transfer::types::{TransferFileId, TransferPhase, TransferPlan};
 
-pub const PROTOCOL_VERSION: u32 = 2;
+pub const PROTOCOL_VERSION: u32 = 3;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
@@ -111,6 +112,7 @@ pub struct Hello {
 pub struct Offer {
     pub session_id: String,
     pub manifest: TransferManifest,
+    pub collection_hash: Hash,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -325,6 +327,7 @@ mod tests {
             SenderMessage::Offer(Offer {
                 session_id: "session-1".to_owned(),
                 manifest: manifest.clone(),
+                collection_hash: [0u8; 32].into(),
             }),
             SenderMessage::BlobTicket(BlobTicketMessage {
                 session_id: "session-1".to_owned(),

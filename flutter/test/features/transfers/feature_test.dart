@@ -143,6 +143,42 @@ void main() {
     expect(find.text('Save to Downloads'), findsOneWidget);
   });
 
+  testWidgets('shows resume copy for resumable incoming offers', (
+    WidgetTester tester,
+  ) async {
+    final source = FakeReceiverServiceSource();
+    final router = _buildReceiveFeatureRouter(size: const Size(440, 560));
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          transferReviewAnimationProvider.overrideWithValue(false),
+          initialAppSettingsProvider.overrideWithValue(testAppSettings),
+          receiverServiceSourceProvider.overrideWithValue(source),
+          transfersServiceSourceProvider.overrideWithValue(source),
+        ],
+        child: MaterialApp.router(routerConfig: router),
+      ),
+    );
+
+    source.emitIncomingOffer(
+      senderName: 'Maya',
+      bytesReceived: BigInt.from(1024),
+    );
+    await tester.pumpAndSettle();
+    await _waitForReceiveTransferRoute(tester, router);
+
+    expect(find.text('INCOMING'), findsOneWidget);
+    expect(find.text('wants to send you 2 files (3.0 KB)'), findsOneWidget);
+    expect(
+      find.text(
+        'Resuming previous transfer. Drift will skip files you already have and download the rest. Accept only if you trust the sender.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('Save to Downloads'), findsOneWidget);
+  });
+
   testWidgets('renders nested manifest paths as a tree', (
     WidgetTester tester,
   ) async {

@@ -167,9 +167,8 @@ class _ActiveTransferFileListState extends State<ActiveTransferFileList> {
                         itemProgress = 1.0;
                       } else if (index == p.activeFileIndex!) {
                         if (item.sizeBytes > BigInt.zero) {
-                          itemProgress = (p.activeFileBytesTransferred
-                                      ?.toDouble() ??
-                                  0) /
+                          itemProgress =
+                              (p.activeFileBytesTransferred?.toDouble() ?? 0) /
                               item.sizeBytes.toDouble();
                         } else {
                           itemProgress = 1.0;
@@ -181,14 +180,13 @@ class _ActiveTransferFileListState extends State<ActiveTransferFileList> {
                   }
 
                   return Padding(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 6,
+                    ),
                     child: Row(
                       children: [
-                        _FileIcon(
-                          isSingleFile: true,
-                          progress: itemProgress,
-                        ),
+                        _FileIcon(isSingleFile: true, progress: itemProgress),
                         const SizedBox(width: 12),
                         Expanded(
                           child: Column(
@@ -241,10 +239,7 @@ class _ActiveTransferFileListState extends State<ActiveTransferFileList> {
 }
 
 class _FileIcon extends StatelessWidget {
-  const _FileIcon({
-    required this.isSingleFile,
-    this.progress,
-  });
+  const _FileIcon({required this.isSingleFile, this.progress});
 
   final bool isSingleFile;
   final double? progress;
@@ -268,8 +263,8 @@ class _FileIcon extends StatelessWidget {
             isDone
                 ? Icons.check_circle_rounded
                 : (isSingleFile
-                    ? Icons.insert_drive_file_outlined
-                    : Icons.copy_all_rounded),
+                      ? Icons.insert_drive_file_outlined
+                      : Icons.copy_all_rounded),
             size: 16,
             color: isDone ? kAccentCyanStrong : kMuted,
           ),

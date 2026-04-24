@@ -49,6 +49,16 @@ pub enum TransferPathError {
     },
 }
 
+pub fn local_record_dir(
+    out_dir: &Path,
+    collection_hash: iroh_blobs::Hash,
+) -> std::result::Result<PathBuf, TransferPathError> {
+    Ok(out_dir
+        .join(".drift")
+        .join("transfers")
+        .join(collection_hash.to_hex()))
+}
+
 pub fn validate_transfer_path(path: &str) -> std::result::Result<Vec<&str>, TransferPathError> {
     if path.is_empty() {
         return Err(TransferPathError::Empty);

@@ -28,7 +28,9 @@ Future<void> main() async {
           bootstrap.settingsRepository,
         ),
         initialAppSettingsProvider.overrideWithValue(bootstrap.initialSettings),
-        receiverServiceSourceProvider.overrideWithValue(bootstrap.receiverSource),
+        receiverServiceSourceProvider.overrideWithValue(
+          bootstrap.receiverSource,
+        ),
         transfersServiceSourceProvider.overrideWithValue(
           bootstrap.receiverSource,
         ),

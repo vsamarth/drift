@@ -14,15 +14,15 @@ ReceiverIdleViewState receiverIdleViewState(Ref ref) {
 
   final badge = switch (snapshot.lifecycle) {
     ReceiverLifecycle.starting => const ReceiverBadgeState.registering(),
-    ReceiverLifecycle.ready => pairingCode.isAvailable
-        ? const ReceiverBadgeState.ready()
-        : const ReceiverBadgeState.unavailable(),
+    ReceiverLifecycle.ready =>
+      pairingCode.isAvailable
+          ? const ReceiverBadgeState.ready()
+          : const ReceiverBadgeState.unavailable(),
     ReceiverLifecycle.stopped => const ReceiverBadgeState.unavailable(),
     ReceiverLifecycle.failed => const ReceiverBadgeState.unavailable(),
   };
 
-  final code =
-      pairingCode.isAvailable ? pairingCode.formattedCode : '......';
+  final code = pairingCode.isAvailable ? pairingCode.formattedCode : '......';
   final deviceName = ref.watch(settingsControllerProvider).settings.deviceName;
 
   return ReceiverIdleViewState(

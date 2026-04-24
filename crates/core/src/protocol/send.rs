@@ -113,6 +113,7 @@ impl Sender {
         send: &mut W,
         recv: &mut R,
         manifest: super::message::TransferManifest,
+        collection_hash: iroh_blobs::Hash,
     ) -> Result<SenderControlOutcome>
     where
         R: AsyncRead + Unpin,
@@ -120,7 +121,7 @@ impl Sender {
     {
         self.send_hello(send).await?;
         self.read_peer_hello(recv).await?;
-        self.send_offer(send, manifest).await?;
+        self.send_offer(send, manifest, collection_hash).await?;
         self.await_decision(recv).await
     }
 
@@ -166,6 +167,7 @@ impl Sender {
         &mut self,
         send: &mut W,
         manifest: super::message::TransferManifest,
+        collection_hash: iroh_blobs::Hash,
     ) -> Result<()>
     where
         W: AsyncWrite + Unpin,
@@ -176,6 +178,7 @@ impl Sender {
             &SenderMessage::Offer(Offer {
                 session_id: self.session_id.clone(),
                 manifest,
+                collection_hash,
             }),
         )
         .await?;
@@ -335,6 +338,7 @@ mod tests {
                 &mut local_write,
                 &mut local_read,
                 TransferManifest { items: vec![] },
+                [0u8; 32].into(),
             )
             .await;
 
@@ -399,6 +403,7 @@ mod tests {
                 &mut local_write,
                 &mut local_read,
                 TransferManifest { items: vec![] },
+                [0u8; 32].into(),
             )
             .await?;
 

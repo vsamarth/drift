@@ -6,21 +6,21 @@ import 'transfer_state.dart';
 @immutable
 class SendDestinationState {
   const SendDestinationState.none()
-      : mode = SendDestinationMode.none,
-        code = null,
-        ticket = null,
-        lanDestinationLabel = null;
+    : mode = SendDestinationMode.none,
+      code = null,
+      ticket = null,
+      lanDestinationLabel = null;
 
   const SendDestinationState.code(this.code)
-      : mode = SendDestinationMode.code,
-        ticket = null,
-        lanDestinationLabel = null;
+    : mode = SendDestinationMode.code,
+      ticket = null,
+      lanDestinationLabel = null;
 
   const SendDestinationState.nearby({
     required this.ticket,
     required this.lanDestinationLabel,
-  })  : mode = SendDestinationMode.nearby,
-        code = null;
+  }) : mode = SendDestinationMode.nearby,
+       code = null;
 
   final SendDestinationMode mode;
   final String? code;

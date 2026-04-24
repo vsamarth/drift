@@ -5,7 +5,10 @@ import 'package:app/src/rust/api/error_bridge.dart';
 
 void main() {
   test('user facing error kinds include other', () {
-    expect(UserFacingErrorKindData.values, contains(UserFacingErrorKindData.other));
+    expect(
+      UserFacingErrorKindData.values,
+      contains(UserFacingErrorKindData.other),
+    );
   });
 
   test('bridge errors preserve the other kind', () {
