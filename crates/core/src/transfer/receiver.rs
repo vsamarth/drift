@@ -216,6 +216,7 @@ async fn run_session(
         Err(err) => {
             let reason = err.to_string();
             let _ = send_receiver_decline(&mut control_send, &session_id, reason.clone()).await;
+            finish_control_stream(&mut control_send).await;
             let _ = offer_tx.send(Err(TransferError::other(
                 "building receiver offer",
                 std::io::Error::other(reason.clone()),
@@ -270,6 +271,7 @@ async fn run_session(
             "declined by user".to_owned(),
         )
         .await;
+        finish_control_stream(&mut control_send).await;
         return Ok(TransferOutcome::Declined {
             reason: "receiver declined".to_owned(),
         });
@@ -672,8 +674,7 @@ async fn abort_session(
     let outcome = TransferOutcome::local_cancel(protocol_message::TransferRole::Receiver, phase);
     if let TransferOutcome::Cancelled(c) = &outcome {
         let _ = send_receiver_cancel(send, session_id, c.by, c.phase, c.reason.clone()).await;
-        let _ = send.finish();
-        let _ = tokio::time::timeout(Duration::from_secs(2), send.stopped()).await;
+        finish_control_stream(send).await;
     }
     Ok(outcome)
 }
@@ -865,6 +866,11 @@ async fn send_receiver_decline(
     )
     .await
     .map_err(Into::into)
+}
+
+async fn finish_control_stream(send: &mut iroh::endpoint::SendStream) {
+    let _ = send.finish();
+    let _ = tokio::time::timeout(Duration::from_secs(2), send.stopped()).await;
 }
 
 pub async fn bind_endpoint() -> Result<Endpoint> {

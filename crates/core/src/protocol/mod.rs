@@ -7,4 +7,4 @@ pub(crate) mod send;
 pub(crate) mod wire;
 
 pub use error::ProtocolError;
-pub use message::{DeviceType, Identity, PROTOCOL_VERSION, TransferRole};
+pub use message::{CancelPhase, DeviceType, Identity, PROTOCOL_VERSION, TransferRole};

@@ -2,5 +2,10 @@
 /downloads
 /sample.txt
 /tmp-test-recv
-docs/
+/.worktrees
+
+# Superpowers
 .superpowers/
+docs/superpowers/
+skills/
+*.skill

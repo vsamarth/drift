@@ -264,9 +264,9 @@ fn ensure_session_id(actual: &str, expected: &str) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Sender, SenderMachine, SenderState};
+    use super::{Sender, SenderControlOutcome, SenderMachine, SenderState};
     use crate::protocol::message::{
-        Accept, DeviceType, Identity, PROTOCOL_VERSION, ReceiverMessage, SenderMessage,
+        Accept, Decline, DeviceType, Identity, PROTOCOL_VERSION, ReceiverMessage, SenderMessage,
         TransferManifest, TransferRole,
     };
     use crate::protocol::wire::{read_sender_message, write_receiver_message};
@@ -344,6 +344,70 @@ mod tests {
 
         receiver_task.await.unwrap();
         assert!(outcome.is_ok());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn sender_handler_handles_decline() -> std::result::Result<(), Box<dyn std::error::Error>>
+    {
+        let (local, remote) = duplex(1024);
+        let (mut local_read, mut local_write) = tokio::io::split(local);
+        let (mut remote_read, mut remote_write) = tokio::io::split(remote);
+
+        let mut handler = Sender::new(
+            "session-1".to_owned(),
+            Identity {
+                role: TransferRole::Sender,
+                endpoint_id: SecretKey::from_bytes(&[1; 32]).public(),
+                device_name: "sender".to_owned(),
+                device_type: DeviceType::Laptop,
+            },
+        );
+
+        let receiver_task = tokio::spawn(async move {
+            let hello = read_sender_message(&mut remote_read).await.unwrap();
+            assert!(matches!(hello, SenderMessage::Hello(_)));
+
+            write_receiver_message(
+                &mut remote_write,
+                &ReceiverMessage::Hello(crate::protocol::message::Hello {
+                    version: PROTOCOL_VERSION,
+                    session_id: "session-1".to_owned(),
+                    identity: Identity {
+                        role: TransferRole::Receiver,
+                        endpoint_id: SecretKey::from_bytes(&[2; 32]).public(),
+                        device_name: "receiver".to_owned(),
+                        device_type: DeviceType::Phone,
+                    },
+                }),
+            )
+            .await
+            .unwrap();
+
+            let offer = read_sender_message(&mut remote_read).await.unwrap();
+            assert!(matches!(offer, SenderMessage::Offer(_)));
+
+            write_receiver_message(
+                &mut remote_write,
+                &ReceiverMessage::Decline(Decline {
+                    session_id: "session-1".to_owned(),
+                    reason: "declined by user".to_owned(),
+                }),
+            )
+            .await
+            .unwrap();
+        });
+
+        let outcome = handler
+            .run_control(
+                &mut local_write,
+                &mut local_read,
+                TransferManifest { items: vec![] },
+            )
+            .await?;
+
+        receiver_task.await.unwrap();
+        assert!(matches!(outcome, SenderControlOutcome::Declined(_)));
         Ok(())
     }
 }

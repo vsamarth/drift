@@ -203,6 +203,7 @@ async fn consume_sender_run(
     run: SendRun,
     progress_bar: &mut Option<ProgressBar>,
 ) -> Result<SendSessionOutcome> {
+    let cancel_handle = run.cancel_handle();
     let (mut events, outcome_rx) = run.into_parts();
 
     let mut outcome_rx = outcome_rx;
@@ -220,6 +221,7 @@ async fn consume_sender_run(
             }
             _ = tokio::signal::ctrl_c() => {
                 info!("send.cancel_requested");
+                let _ = cancel_handle.cancel_transfer().await;
                 return Err(anyhow!("cancelled"));
             }
             res = &mut outcome_rx => {

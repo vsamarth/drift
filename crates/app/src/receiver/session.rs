@@ -105,6 +105,7 @@ impl ReceiverSession {
                         offer_id,
                         final_event: failed_offer_event(
                             &save_root_label,
+                            String::new(),
                             device_type,
                             "Transfer failed.".to_owned(),
                             UserFacingError::from(error),
@@ -119,6 +120,7 @@ impl ReceiverSession {
                         offer_id,
                         final_event: failed_offer_event(
                             &save_root_label,
+                            String::new(),
                             device_type,
                             "Transfer failed.".to_owned(),
                             UserFacingError::internal("Transfer failed", format!("{error}")),
@@ -151,6 +153,7 @@ impl ReceiverSession {
                         offer_id,
                         final_event: failed_offer_event(
                             &save_root_label,
+                            sender_label.clone(),
                             sender_device_type,
                             "Transfer failed.".to_owned(),
                             UserFacingError::internal(
@@ -292,6 +295,7 @@ impl ReceiverSession {
                         offer_id,
                         final_event: failed_offer_event(
                             &save_root_label,
+                            sender_label.clone(),
                             sender_device_type,
                             "Transfer failed.".to_owned(),
                             UserFacingError::from(error),
@@ -305,37 +309,19 @@ impl ReceiverSession {
 
         let final_event = match outcome_rx.await {
             Ok(Ok(outcome)) => match outcome {
-                CoreTransferOutcome::Completed => ReceiverOfferEvent {
-                    phase: ReceiverOfferPhase::Completed,
-                    sender_name: String::new(),
-                    sender_device_type: device_type_to_str(sender_device_type),
-                    destination_label: sender_label,
+                CoreTransferOutcome::Completed => completed_offer_event(
+                    sender_label,
                     save_root_label,
-                    status_message: "Files saved.".to_owned(),
-                    item_count: offer.file_count,
-                    total_size_bytes: offer.total_size,
-                    bytes_received: offer.total_size,
-                    plan: Some(plan.clone()),
-                    snapshot: Some(TransferSnapshot {
-                        session_id: offer.session_id.clone(),
-                        phase: TransferPhase::Completed,
-                        total_files: plan.total_files,
-                        completed_files: plan.total_files,
-                        total_bytes: plan.total_bytes,
-                        bytes_transferred: offer.total_size,
-                        active_file_id: None,
-                        active_file_bytes: None,
-                        bytes_per_sec: None,
-                        eta_seconds: None,
-                    }),
-                    connection_path: Some(connection_path_label(connection_path_kind)),
-                    total_size_label: human_size(offer.total_size),
-                    files: Vec::new(),
-                    error: None,
-                },
+                    sender_device_type,
+                    connection_path_kind,
+                    offer.session_id.clone(),
+                    offer.file_count,
+                    offer.total_size,
+                    plan.clone(),
+                ),
                 CoreTransferOutcome::Declined { .. } => ReceiverOfferEvent {
                     phase: ReceiverOfferPhase::Declined,
-                    sender_name: String::new(),
+                    sender_name: sender_label.clone(),
                     sender_device_type: device_type_to_str(sender_device_type),
                     destination_label: sender_label,
                     save_root_label,
@@ -352,7 +338,7 @@ impl ReceiverSession {
                 },
                 CoreTransferOutcome::Cancelled(cancellation) => ReceiverOfferEvent {
                     phase: ReceiverOfferPhase::Cancelled,
-                    sender_name: String::new(),
+                    sender_name: sender_label.clone(),
                     sender_device_type: device_type_to_str(sender_device_type),
                     destination_label: sender_label,
                     save_root_label,
@@ -374,12 +360,14 @@ impl ReceiverSession {
             },
             Ok(Err(error)) => failed_offer_event(
                 &save_root_label,
+                sender_label,
                 sender_device_type,
                 "Transfer failed.".to_owned(),
                 UserFacingError::from(error),
             ),
             Err(error) => failed_offer_event(
                 &save_root_label,
+                sender_label,
                 sender_device_type,
                 "Transfer failed.".to_owned(),
                 UserFacingError::internal("Transfer failed", format!("{error}")),
@@ -392,6 +380,46 @@ impl ReceiverSession {
                 final_event,
             })
             .await;
+    }
+}
+
+fn completed_offer_event(
+    sender_name: String,
+    save_root_label: String,
+    sender_device_type: DeviceType,
+    connection_path_kind: ConnectionPathKind,
+    session_id: String,
+    item_count: u64,
+    total_size: u64,
+    plan: TransferPlan,
+) -> ReceiverOfferEvent {
+    ReceiverOfferEvent {
+        phase: ReceiverOfferPhase::Completed,
+        sender_name: sender_name.clone(),
+        sender_device_type: device_type_to_str(sender_device_type),
+        destination_label: save_root_label.clone(),
+        save_root_label,
+        status_message: "Files saved.".to_owned(),
+        item_count,
+        total_size_bytes: total_size,
+        bytes_received: total_size,
+        plan: Some(plan.clone()),
+        snapshot: Some(TransferSnapshot {
+            session_id,
+            phase: TransferPhase::Completed,
+            total_files: plan.total_files,
+            completed_files: plan.total_files,
+            total_bytes: plan.total_bytes,
+            bytes_transferred: total_size,
+            active_file_id: None,
+            active_file_bytes: None,
+            bytes_per_sec: None,
+            eta_seconds: None,
+        }),
+        connection_path: Some(connection_path_label(connection_path_kind)),
+        total_size_label: human_size(total_size),
+        files: Vec::new(),
+        error: None,
     }
 }
 
@@ -438,13 +466,14 @@ fn build_offer_event(
 
 fn failed_offer_event(
     save_root_label: &str,
+    sender_name: String,
     sender_device_type: DeviceType,
     status_message: String,
     error: UserFacingError,
 ) -> ReceiverOfferEvent {
     ReceiverOfferEvent {
         phase: ReceiverOfferPhase::Failed,
-        sender_name: String::new(),
+        sender_name,
         sender_device_type: device_type_to_str(sender_device_type),
         destination_label: String::new(),
         save_root_label: save_root_label.to_owned(),
@@ -463,20 +492,25 @@ fn failed_offer_event(
 
 #[cfg(test)]
 mod tests {
-    use super::{build_offer_event, connection_path_label, failed_offer_event};
+    use super::{
+        build_offer_event, completed_offer_event, connection_path_label, failed_offer_event,
+    };
     use crate::error::UserFacingErrorKind;
     use drift_core::protocol::DeviceType;
+    use drift_core::transfer::TransferPlan;
     use drift_core::util::ConnectionPathKind;
 
     #[test]
     fn failed_offer_event_uses_structured_error() {
         let event = failed_offer_event(
             "Downloads",
+            "Maya".to_owned(),
             DeviceType::Laptop,
             "Transfer failed.".to_owned(),
             crate::error::UserFacingError::internal("Transfer failed", "boom"),
         );
 
+        assert_eq!(event.sender_name, "Maya");
         let error = event.error.expect("structured error");
         assert_eq!(error.kind(), UserFacingErrorKind::Internal);
         assert_eq!(error.title(), "Transfer failed");
@@ -511,6 +545,35 @@ mod tests {
             event.error.as_ref().map(|error| error.kind()),
             Some(UserFacingErrorKind::Internal)
         );
+    }
+
+    #[test]
+    fn completed_offer_event_uses_save_root_as_destination_label() {
+        let plan = TransferPlan::try_new(
+            "session-1",
+            vec![drift_core::transfer::TransferPlanFile {
+                id: 0,
+                path: "report.pdf".to_owned(),
+                size: 1024,
+            }],
+        )
+        .expect("plan");
+
+        let event = completed_offer_event(
+            "Maya".to_owned(),
+            "Downloads".to_owned(),
+            DeviceType::Laptop,
+            ConnectionPathKind::Direct,
+            "session-1".to_owned(),
+            1,
+            1024,
+            plan,
+        );
+
+        assert_eq!(event.destination_label, "Downloads");
+        assert_eq!(event.save_root_label, "Downloads");
+        assert_eq!(event.sender_name, "Maya");
+        assert_eq!(event.phase, super::ReceiverOfferPhase::Completed);
     }
 }
 
