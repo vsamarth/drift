@@ -168,16 +168,15 @@ void main() {
     await tester.pumpAndSettle();
     await _waitForReceiveTransferRoute(tester, router);
 
-    expect(find.text('RESUME'), findsOneWidget);
+    expect(find.text('INCOMING'), findsOneWidget);
+    expect(find.text('wants to send you 2 files (3.0 KB)'), findsOneWidget);
     expect(
-      find.text('will resume receiving 2 files (1.0 KB of 3.0 KB)'),
+      find.text(
+        'Resuming previous transfer. Drift will skip files you already have and download the rest. Accept only if you trust the sender.',
+      ),
       findsOneWidget,
     );
-    expect(find.text('Resume transfer'), findsOneWidget);
-    expect(
-      find.text('Review the files and accept only if you trust the sender.'),
-      findsNothing,
-    );
+    expect(find.text('Save to Downloads'), findsOneWidget);
   });
 
   testWidgets('renders nested manifest paths as a tree', (

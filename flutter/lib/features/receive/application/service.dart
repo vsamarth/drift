@@ -10,10 +10,10 @@ final receiverServiceSourceProvider = Provider<ReceiverServiceSource>(
   (ref) => FakeReceiverServiceSource(),
 );
 
-final receiverServiceProvider = NotifierProvider<
-  ReceiverServiceController,
-  ReceiverServiceState
->(ReceiverServiceController.new);
+final receiverServiceProvider =
+    NotifierProvider<ReceiverServiceController, ReceiverServiceState>(
+      ReceiverServiceController.new,
+    );
 
 class ReceiverServiceController extends Notifier<ReceiverServiceState> {
   StreamSubscription<ReceiverServiceState>? _subscription;
@@ -46,16 +46,16 @@ class ReceiverServiceController extends Notifier<ReceiverServiceState> {
   }
 
   Future<void> respondToOffer({required bool accept}) {
-    return ref.read(receiverServiceSourceProvider).respondToOffer(accept: accept);
+    return ref
+        .read(receiverServiceSourceProvider)
+        .respondToOffer(accept: accept);
   }
 
   Future<void> cancelTransfer() {
     return ref.read(receiverServiceSourceProvider).cancelTransfer();
   }
 
-  Future<List<NearbyReceiver>> scanNearby({
-    required Duration timeout,
-  }) {
+  Future<List<NearbyReceiver>> scanNearby({required Duration timeout}) {
     return ref.read(receiverServiceSourceProvider).scanNearby(timeout: timeout);
   }
 

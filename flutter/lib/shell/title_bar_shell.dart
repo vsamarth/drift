@@ -17,10 +17,7 @@ class TitleBarShell extends StatelessWidget {
         children: [
           if (isDesktop)
             const DragToMoveArea(
-              child: SizedBox(
-                height: 32,
-                width: double.infinity,
-              ),
+              child: SizedBox(height: 32, width: double.infinity),
             ),
           Expanded(child: child),
         ],

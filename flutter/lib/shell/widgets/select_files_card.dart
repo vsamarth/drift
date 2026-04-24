@@ -4,10 +4,7 @@ import '../../../theme/drift_theme.dart';
 class SelectFilesCard extends StatelessWidget {
   final VoidCallback? onTap;
 
-  const SelectFilesCard({
-    super.key,
-    required this.onTap,
-  });
+  const SelectFilesCard({super.key, required this.onTap});
 
   @override
   Widget build(BuildContext context) {

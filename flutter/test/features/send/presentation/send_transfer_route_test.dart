@@ -58,7 +58,8 @@ GoRouter _buildRouter(SendRequestData request) {
         routes: [
           GoRoute(
             path: 'send/transfer',
-            builder: (context, state) => SendTransferRoutePage(request: request),
+            builder: (context, state) =>
+                SendTransferRoutePage(request: request),
           ),
         ],
       ),
@@ -102,179 +103,9 @@ rust_transfer.TransferSnapshotData _buildSnapshot({
 }
 
 void main() {
-  testWidgets('send transfer route shows connecting waiting accepted sending and completed states', (
-    WidgetTester tester,
-  ) async {
-    final fakeSource = FakeSendTransferSource();
-    final container = ProviderContainer(
-      overrides: [
-        initialAppSettingsProvider.overrideWithValue(testAppSettings),
-        sendTransferSourceProvider.overrideWithValue(fakeSource),
-      ],
-    );
-    addTearDown(container.dispose);
-    addTearDown(fakeSource.close);
-
-    final controller = container.read(sendControllerProvider.notifier);
-    controller.beginDraft([
-      SendPickedFile(
-        path: '/tmp/report.pdf',
-        name: 'report.pdf',
-        sizeBytes: BigInt.from(1024),
-      ),
-    ]);
-    controller.updateDestinationCode('ABC123');
-    final request = controller.buildSendRequest()!;
-
-    await tester.pumpWidget(
-      UncontrolledProviderScope(
-        container: container,
-        child: MaterialApp.router(routerConfig: _buildRouter(request)),
-      ),
-    );
-    await tester.pump(const Duration(milliseconds: 600));
-    await tester.pump();
-
-    expect(container.read(sendControllerProvider), isA<SendStateTransferring>());
-    expect(find.byType(RecipientAvatar).last, findsOneWidget);
-    expect(find.text('CONNECTING'), findsOneWidget);
-    expect(find.text('Cancel transfer'), findsOneWidget);
-
-    fakeSource.emit(
-      SendTransferUpdate(
-        phase: SendTransferUpdatePhase.waitingForDecision,
-        destinationLabel: 'Laptop',
-        statusMessage: 'Waiting for confirmation.',
-        itemCount: BigInt.one,
-        totalSize: BigInt.from(1024),
-        bytesSent: BigInt.zero,
-        totalBytes: BigInt.from(1024),
-      ),
-    );
-    await tester.pump(const Duration(milliseconds: 600));
-    await tester.pump();
-    expect(find.text('WAITING'), findsWidgets);
-
-    fakeSource.emit(
-      SendTransferUpdate(
-        phase: SendTransferUpdatePhase.accepted,
-        destinationLabel: 'Laptop',
-        statusMessage: 'Receiver confirmed.',
-        itemCount: BigInt.one,
-        totalSize: BigInt.from(1024),
-        bytesSent: BigInt.zero,
-        totalBytes: BigInt.from(1024),
-      ),
-    );
-    await tester.pump(const Duration(milliseconds: 600));
-    await tester.pump();
-    expect(find.text('ACCEPTED'), findsWidgets);
-
-    final plan = _buildPlan();
-    final snapshot = _buildSnapshot(
-      phase: rust_transfer.TransferPhaseData.transferring,
-      bytesTransferred: BigInt.from(512),
-      bytesPerSec: BigInt.from(256),
-      etaSeconds: BigInt.from(4),
-    );
-    fakeSource.emit(
-      SendTransferUpdate(
-        phase: SendTransferUpdatePhase.sending,
-        destinationLabel: 'Laptop',
-        statusMessage: 'Sending files.',
-        itemCount: BigInt.one,
-        totalSize: BigInt.from(1024),
-        bytesSent: BigInt.from(512),
-        totalBytes: BigInt.from(1024),
-        plan: plan,
-        snapshot: snapshot,
-        remoteDeviceType: 'laptop',
-      ),
-    );
-    await tester.pump(const Duration(milliseconds: 600));
-    await tester.pump();
-    expect(find.textContaining('256 B/s'), findsOneWidget);
-    expect(find.textContaining('4 s left'), findsOneWidget);
-    expect(find.text('SENDING'), findsWidgets);
-
-    fakeSource.emit(
-      SendTransferUpdate.completed(
-        destinationLabel: 'Laptop',
-        statusMessage: 'Sent successfully',
-        itemCount: BigInt.one,
-        totalSize: BigInt.from(1024),
-        bytesSent: BigInt.from(1024),
-        plan: plan,
-        snapshot: _buildSnapshot(
-          phase: rust_transfer.TransferPhaseData.completed,
-          bytesTransferred: BigInt.from(1024),
-          bytesPerSec: BigInt.from(256),
-          etaSeconds: BigInt.zero,
-        ),
-      ),
-    );
-    await tester.pump(const Duration(seconds: 1));
-    await tester.pump(const Duration(milliseconds: 600));
-    await tester.pump();
-    expect(find.text('SUCCESS'), findsWidgets);
-    expect(find.text('Files finished transferring successfully.'), findsOneWidget);
-    expect(find.text('Done'), findsWidgets);
-    expect(find.byType(RecipientAvatar).last, findsOneWidget);
-  });
-
-  testWidgets('send transfer route shows declined cancelled and failed results', (
-    WidgetTester tester,
-  ) async {
-    final fixtures = <({
-      SendTransferUpdate update,
-      String expectedStatusLabel,
-      String expectedSubtitle,
-    })>[
-      (
-        update: SendTransferUpdate.declined(
-          destinationLabel: 'Laptop',
-          statusMessage: 'Receiver declined',
-          itemCount: BigInt.one,
-          totalSize: BigInt.from(1024),
-          bytesSent: BigInt.zero,
-          totalBytes: BigInt.from(1024),
-        ),
-        expectedStatusLabel: 'DECLINED',
-        expectedSubtitle: 'Receiver declined',
-      ),
-      (
-        update: SendTransferUpdate.cancelled(
-          destinationLabel: 'Laptop',
-          statusMessage: 'Cancelled',
-          itemCount: BigInt.one,
-          totalSize: BigInt.from(1024),
-          bytesSent: BigInt.zero,
-          totalBytes: BigInt.from(1024),
-        ),
-        expectedStatusLabel: 'CANCELLED',
-        expectedSubtitle: 'Cancelled',
-      ),
-      (
-        update: SendTransferUpdate.failed(
-          destinationLabel: 'Laptop',
-          statusMessage: 'Failed',
-          itemCount: BigInt.one,
-          totalSize: BigInt.from(1024),
-          bytesSent: BigInt.zero,
-          totalBytes: BigInt.from(1024),
-          error: const SendTransferErrorData(
-            kind: SendTransferErrorKind.internal,
-            title: 'Send failed',
-            message: 'boom',
-            retryable: false,
-          ),
-        ),
-        expectedStatusLabel: 'FAILED',
-        expectedSubtitle: 'boom',
-      ),
-    ];
-
-    for (final fixture in fixtures) {
+  testWidgets(
+    'send transfer route shows connecting waiting accepted sending and completed states',
+    (WidgetTester tester) async {
       final fakeSource = FakeSendTransferSource();
       final container = ProviderContainer(
         overrides: [
@@ -302,15 +133,196 @@ void main() {
           child: MaterialApp.router(routerConfig: _buildRouter(request)),
         ),
       );
-      await _pumpRoute(tester);
-
-      fakeSource.emit(fixture.update);
       await tester.pump(const Duration(milliseconds: 600));
-    await tester.pump();
-      expect(find.text(fixture.expectedStatusLabel), findsOneWidget);
-      expect(find.text(fixture.expectedSubtitle), findsOneWidget);
-      expect(find.text('Done'), findsOneWidget);
+      await tester.pump();
+
+      expect(
+        container.read(sendControllerProvider),
+        isA<SendStateTransferring>(),
+      );
       expect(find.byType(RecipientAvatar).last, findsOneWidget);
-    }
-  });
+      expect(find.text('CONNECTING'), findsOneWidget);
+      expect(find.text('Cancel transfer'), findsOneWidget);
+
+      fakeSource.emit(
+        SendTransferUpdate(
+          phase: SendTransferUpdatePhase.waitingForDecision,
+          destinationLabel: 'Laptop',
+          statusMessage: 'Waiting for confirmation.',
+          itemCount: BigInt.one,
+          totalSize: BigInt.from(1024),
+          bytesSent: BigInt.zero,
+          totalBytes: BigInt.from(1024),
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 600));
+      await tester.pump();
+      expect(find.text('WAITING'), findsWidgets);
+
+      fakeSource.emit(
+        SendTransferUpdate(
+          phase: SendTransferUpdatePhase.accepted,
+          destinationLabel: 'Laptop',
+          statusMessage: 'Receiver confirmed.',
+          itemCount: BigInt.one,
+          totalSize: BigInt.from(1024),
+          bytesSent: BigInt.zero,
+          totalBytes: BigInt.from(1024),
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 600));
+      await tester.pump();
+      expect(find.text('ACCEPTED'), findsWidgets);
+
+      final plan = _buildPlan();
+      final snapshot = _buildSnapshot(
+        phase: rust_transfer.TransferPhaseData.transferring,
+        bytesTransferred: BigInt.from(512),
+        bytesPerSec: BigInt.from(256),
+        etaSeconds: BigInt.from(4),
+      );
+      fakeSource.emit(
+        SendTransferUpdate(
+          phase: SendTransferUpdatePhase.sending,
+          destinationLabel: 'Laptop',
+          statusMessage: 'Sending files.',
+          itemCount: BigInt.one,
+          totalSize: BigInt.from(1024),
+          bytesSent: BigInt.from(512),
+          totalBytes: BigInt.from(1024),
+          plan: plan,
+          snapshot: snapshot,
+          remoteDeviceType: 'laptop',
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 600));
+      await tester.pump();
+      expect(find.textContaining('256 B/s'), findsOneWidget);
+      expect(find.textContaining('4 s left'), findsOneWidget);
+      expect(find.text('SENDING'), findsWidgets);
+
+      fakeSource.emit(
+        SendTransferUpdate.completed(
+          destinationLabel: 'Laptop',
+          statusMessage: 'Sent successfully',
+          itemCount: BigInt.one,
+          totalSize: BigInt.from(1024),
+          bytesSent: BigInt.from(1024),
+          plan: plan,
+          snapshot: _buildSnapshot(
+            phase: rust_transfer.TransferPhaseData.completed,
+            bytesTransferred: BigInt.from(1024),
+            bytesPerSec: BigInt.from(256),
+            etaSeconds: BigInt.zero,
+          ),
+        ),
+      );
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pump(const Duration(milliseconds: 600));
+      await tester.pump();
+      expect(find.text('SUCCESS'), findsWidgets);
+      expect(
+        find.text('Files finished transferring successfully.'),
+        findsOneWidget,
+      );
+      expect(find.text('Done'), findsWidgets);
+      expect(find.byType(RecipientAvatar).last, findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'send transfer route shows declined cancelled and failed results',
+    (WidgetTester tester) async {
+      final fixtures =
+          <
+            ({
+              SendTransferUpdate update,
+              String expectedStatusLabel,
+              String expectedSubtitle,
+            })
+          >[
+            (
+              update: SendTransferUpdate.declined(
+                destinationLabel: 'Laptop',
+                statusMessage: 'Receiver declined',
+                itemCount: BigInt.one,
+                totalSize: BigInt.from(1024),
+                bytesSent: BigInt.zero,
+                totalBytes: BigInt.from(1024),
+              ),
+              expectedStatusLabel: 'DECLINED',
+              expectedSubtitle: 'Receiver declined',
+            ),
+            (
+              update: SendTransferUpdate.cancelled(
+                destinationLabel: 'Laptop',
+                statusMessage: 'Cancelled',
+                itemCount: BigInt.one,
+                totalSize: BigInt.from(1024),
+                bytesSent: BigInt.zero,
+                totalBytes: BigInt.from(1024),
+              ),
+              expectedStatusLabel: 'CANCELLED',
+              expectedSubtitle: 'Cancelled',
+            ),
+            (
+              update: SendTransferUpdate.failed(
+                destinationLabel: 'Laptop',
+                statusMessage: 'Failed',
+                itemCount: BigInt.one,
+                totalSize: BigInt.from(1024),
+                bytesSent: BigInt.zero,
+                totalBytes: BigInt.from(1024),
+                error: const SendTransferErrorData(
+                  kind: SendTransferErrorKind.internal,
+                  title: 'Send failed',
+                  message: 'boom',
+                  retryable: false,
+                ),
+              ),
+              expectedStatusLabel: 'FAILED',
+              expectedSubtitle: 'boom',
+            ),
+          ];
+
+      for (final fixture in fixtures) {
+        final fakeSource = FakeSendTransferSource();
+        final container = ProviderContainer(
+          overrides: [
+            initialAppSettingsProvider.overrideWithValue(testAppSettings),
+            sendTransferSourceProvider.overrideWithValue(fakeSource),
+          ],
+        );
+        addTearDown(container.dispose);
+        addTearDown(fakeSource.close);
+
+        final controller = container.read(sendControllerProvider.notifier);
+        controller.beginDraft([
+          SendPickedFile(
+            path: '/tmp/report.pdf',
+            name: 'report.pdf',
+            sizeBytes: BigInt.from(1024),
+          ),
+        ]);
+        controller.updateDestinationCode('ABC123');
+        final request = controller.buildSendRequest()!;
+
+        await tester.pumpWidget(
+          UncontrolledProviderScope(
+            container: container,
+            child: MaterialApp.router(routerConfig: _buildRouter(request)),
+          ),
+        );
+        await _pumpRoute(tester);
+
+        fakeSource.emit(fixture.update);
+        await tester.pump(const Duration(milliseconds: 600));
+        await tester.pump();
+        expect(find.text(fixture.expectedStatusLabel), findsOneWidget);
+        expect(find.text(fixture.expectedSubtitle), findsOneWidget);
+        expect(find.text('Done'), findsOneWidget);
+        expect(find.byType(RecipientAvatar).last, findsOneWidget);
+      }
+    },
+  );
 }

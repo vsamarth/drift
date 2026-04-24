@@ -200,10 +200,7 @@ void main() {
 
 class _DelayedSettingsRepository extends SettingsRepository {
   _DelayedSettingsRepository({required super.prefs})
-    : super(
-        randomDeviceName: () => 'Seed',
-        defaultDownloadRoot: '/tmp/Drift',
-      );
+    : super(randomDeviceName: () => 'Seed', defaultDownloadRoot: '/tmp/Drift');
 
   final List<Completer<void>> _saveCompleters = <Completer<void>>[];
   int saveCallCount = 0;

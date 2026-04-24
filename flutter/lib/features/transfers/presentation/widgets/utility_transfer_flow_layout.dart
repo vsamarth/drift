@@ -42,12 +42,20 @@ class UtilityTransferFlowLayout extends StatelessWidget {
                     Container(
                       width: 8,
                       height: 8,
-                      decoration: BoxDecoration(color: statusColor, shape: BoxShape.circle),
+                      decoration: BoxDecoration(
+                        color: statusColor,
+                        shape: BoxShape.circle,
+                      ),
                     ),
                     const SizedBox(width: 8),
                     Text(
                       statusLabel.toUpperCase(),
-                      style: driftSans(fontSize: 11, fontWeight: FontWeight.w800, color: statusColor, letterSpacing: 1.2),
+                      style: driftSans(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                        color: statusColor,
+                        letterSpacing: 1.2,
+                      ),
                     ),
                   ],
                 ),
@@ -55,12 +63,22 @@ class UtilityTransferFlowLayout extends StatelessWidget {
                 // Hero Section
                 Text(
                   heroText,
-                  style: driftSans(fontSize: 42, fontWeight: FontWeight.w800, color: kInk, letterSpacing: -1.2, height: 1.0),
+                  style: driftSans(
+                    fontSize: 42,
+                    fontWeight: FontWeight.w800,
+                    color: kInk,
+                    letterSpacing: -1.2,
+                    height: 1.0,
+                  ),
                 ),
                 const SizedBox(height: 8),
                 Text(
                   subtitle,
-                  style: driftSans(fontSize: 15, fontWeight: FontWeight.w500, color: kMuted),
+                  style: driftSans(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w500,
+                    color: kMuted,
+                  ),
                 ),
                 const SizedBox(height: 32),
                 // Utility Bar
@@ -84,10 +102,7 @@ class UtilityTransferFlowLayout extends StatelessWidget {
           ),
         ),
         // Integrated Footer
-        Padding(
-          padding: const EdgeInsets.all(24),
-          child: footer,
-        ),
+        Padding(padding: const EdgeInsets.all(24), child: footer),
       ],
     );
   }

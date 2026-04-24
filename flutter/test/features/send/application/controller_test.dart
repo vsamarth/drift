@@ -228,8 +228,9 @@ void main() {
     },
   );
 
-  test('send controller starts transfer only for the currently validated request', () async {
-
+  test(
+    'send controller starts transfer only for the currently validated request',
+    () async {
       final fakeSource = FakeSendTransferSource();
       final container = ProviderContainer(
         overrides: [
@@ -387,111 +388,114 @@ void main() {
     expect(state.transfer.remoteDeviceType, 'laptop');
   });
 
-  test('send controller maps terminal transfer updates into result state', () async {
-    final fixtures =
-        <
-          ({
-            SendTransferUpdate update,
-            SendTransferOutcome outcome,
-            String title,
-          })
-        >[
-          (
-            update: SendTransferUpdate.completed(
-              destinationLabel: 'Laptop',
-              statusMessage: 'Sent successfully',
-              itemCount: BigInt.one,
-              totalSize: BigInt.from(1024),
-              bytesSent: BigInt.from(1024),
-            ),
-            outcome: SendTransferOutcome.success,
-            title: 'Sent',
-          ),
-          (
-            update: SendTransferUpdate.declined(
-              destinationLabel: 'Laptop',
-              statusMessage: 'Receiver declined',
-              itemCount: BigInt.one,
-              totalSize: BigInt.from(1024),
-              bytesSent: BigInt.zero,
-              totalBytes: BigInt.from(1024),
-            ),
-            outcome: SendTransferOutcome.declined,
-            title: 'Declined',
-          ),
-          (
-            update: SendTransferUpdate.cancelled(
-              destinationLabel: 'Laptop',
-              statusMessage: 'Cancelled',
-              itemCount: BigInt.one,
-              totalSize: BigInt.from(1024),
-              bytesSent: BigInt.zero,
-              totalBytes: BigInt.from(1024),
-            ),
-            outcome: SendTransferOutcome.cancelled,
-            title: 'Cancelled',
-          ),
-          (
-            update: SendTransferUpdate.failed(
-              destinationLabel: 'Laptop',
-              statusMessage: 'Failed',
-              itemCount: BigInt.one,
-              totalSize: BigInt.from(1024),
-              bytesSent: BigInt.zero,
-              totalBytes: BigInt.from(1024),
-              error: const SendTransferErrorData(
-                kind: SendTransferErrorKind.internal,
-                title: 'Send failed',
-                message: 'boom',
-                retryable: false,
+  test(
+    'send controller maps terminal transfer updates into result state',
+    () async {
+      final fixtures =
+          <
+            ({
+              SendTransferUpdate update,
+              SendTransferOutcome outcome,
+              String title,
+            })
+          >[
+            (
+              update: SendTransferUpdate.completed(
+                destinationLabel: 'Laptop',
+                statusMessage: 'Sent successfully',
+                itemCount: BigInt.one,
+                totalSize: BigInt.from(1024),
+                bytesSent: BigInt.from(1024),
               ),
+              outcome: SendTransferOutcome.success,
+              title: 'Sent',
             ),
-            outcome: SendTransferOutcome.failed,
-            title: 'Send failed',
+            (
+              update: SendTransferUpdate.declined(
+                destinationLabel: 'Laptop',
+                statusMessage: 'Receiver declined',
+                itemCount: BigInt.one,
+                totalSize: BigInt.from(1024),
+                bytesSent: BigInt.zero,
+                totalBytes: BigInt.from(1024),
+              ),
+              outcome: SendTransferOutcome.declined,
+              title: 'Declined',
+            ),
+            (
+              update: SendTransferUpdate.cancelled(
+                destinationLabel: 'Laptop',
+                statusMessage: 'Cancelled',
+                itemCount: BigInt.one,
+                totalSize: BigInt.from(1024),
+                bytesSent: BigInt.zero,
+                totalBytes: BigInt.from(1024),
+              ),
+              outcome: SendTransferOutcome.cancelled,
+              title: 'Cancelled',
+            ),
+            (
+              update: SendTransferUpdate.failed(
+                destinationLabel: 'Laptop',
+                statusMessage: 'Failed',
+                itemCount: BigInt.one,
+                totalSize: BigInt.from(1024),
+                bytesSent: BigInt.zero,
+                totalBytes: BigInt.from(1024),
+                error: const SendTransferErrorData(
+                  kind: SendTransferErrorKind.internal,
+                  title: 'Send failed',
+                  message: 'boom',
+                  retryable: false,
+                ),
+              ),
+              outcome: SendTransferOutcome.failed,
+              title: 'Send failed',
+            ),
+          ];
+
+      for (final fixture in fixtures) {
+        final fakeSource = FakeSendTransferSource();
+        final container = ProviderContainer(
+          overrides: [
+            initialAppSettingsProvider.overrideWithValue(testAppSettings),
+            sendTransferSourceProvider.overrideWithValue(fakeSource),
+          ],
+        );
+        addTearDown(container.dispose);
+        addTearDown(fakeSource.close);
+
+        final controller = container.read(sendControllerProvider.notifier);
+        controller.beginDraft([
+          SendPickedFile(
+            path: '/tmp/report.pdf',
+            name: 'report.pdf',
+            sizeBytes: BigInt.from(1024),
           ),
-        ];
+        ]);
+        controller.updateDestinationCode('ABC123');
+        controller.startTransfer(controller.buildSendRequest()!);
 
-    for (final fixture in fixtures) {
-      final fakeSource = FakeSendTransferSource();
-      final container = ProviderContainer(
-        overrides: [
-          initialAppSettingsProvider.overrideWithValue(testAppSettings),
-          sendTransferSourceProvider.overrideWithValue(fakeSource),
-        ],
-      );
-      addTearDown(container.dispose);
-      addTearDown(fakeSource.close);
-
-      final controller = container.read(sendControllerProvider.notifier);
-      controller.beginDraft([
-        SendPickedFile(
-          path: '/tmp/report.pdf',
-          name: 'report.pdf',
-          sizeBytes: BigInt.from(1024),
-        ),
-      ]);
-      controller.updateDestinationCode('ABC123');
-      controller.startTransfer(controller.buildSendRequest()!);
-
-      fakeSource.emit(fixture.update);
-      if (fixture.update.phase == SendTransferUpdatePhase.completed) {
-        await Future<void>.delayed(const Duration(milliseconds: 1050));
+        fakeSource.emit(fixture.update);
+        if (fixture.update.phase == SendTransferUpdatePhase.completed) {
+          await Future<void>.delayed(const Duration(milliseconds: 1050));
+        }
+        final state = container.read(sendControllerProvider) as SendStateResult;
+        expect(
+          state.transfer.phase,
+          fixture.update.phase == SendTransferUpdatePhase.completed
+              ? SendTransferPhase.completed
+              : fixture.update.phase == SendTransferUpdatePhase.declined
+              ? SendTransferPhase.declined
+              : fixture.update.phase == SendTransferUpdatePhase.cancelled
+              ? SendTransferPhase.cancelled
+              : SendTransferPhase.failed,
+        );
+        expect(state.result.outcome, fixture.outcome);
+        expect(state.result.title, fixture.title);
       }
-      final state = container.read(sendControllerProvider) as SendStateResult;
-      expect(
-        state.transfer.phase,
-        fixture.update.phase == SendTransferUpdatePhase.completed
-            ? SendTransferPhase.completed
-            : fixture.update.phase == SendTransferUpdatePhase.declined
-            ? SendTransferPhase.declined
-            : fixture.update.phase == SendTransferUpdatePhase.cancelled
-            ? SendTransferPhase.cancelled
-            : SendTransferPhase.failed,
-      );
-      expect(state.result.outcome, fixture.outcome);
-      expect(state.result.title, fixture.title);
-    }
-  });
+    },
+  );
 
   test(
     'send controller cancelTransfer restores drafting and cancels source',

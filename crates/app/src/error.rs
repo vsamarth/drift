@@ -430,9 +430,11 @@ impl From<TransferError> for UserFacingError {
             TransferError::ChannelClosed { .. } => {
                 UserFacingError::from_kind(UserFacingErrorKind::Internal)
             }
-            TransferError::Other { context, source } => {
-                UserFacingError::new(UserFacingErrorKind::Other, "Transfer failed", format!("{context}: {source}"))
-            }
+            TransferError::Other { context, source } => UserFacingError::new(
+                UserFacingErrorKind::Other,
+                "Transfer failed",
+                format!("{context}: {source}"),
+            ),
         }
     }
 }

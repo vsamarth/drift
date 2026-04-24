@@ -8,10 +8,7 @@ import '../../application/manifest.dart';
 import 'transfer_presentation_helpers.dart';
 
 class ManifestTree extends StatelessWidget {
-  const ManifestTree({
-    super.key,
-    required this.items,
-  });
+  const ManifestTree({super.key, required this.items});
 
   final List<TransferManifestItem> items;
 
@@ -66,14 +63,14 @@ class ManifestTree extends StatelessWidget {
                   child: Icon(
                     data.isFolder
                         ? (isTopLevel
-                            ? Icons.folder_rounded
-                            : Icons.folder_outlined)
+                              ? Icons.folder_rounded
+                              : Icons.folder_outlined)
                         : Icons.insert_drive_file_outlined,
                     size: 18,
                     color: data.isFolder
                         ? (isTopLevel
-                            ? const Color(0xFF4A5D65)
-                            : const Color(0xFF6C8590))
+                              ? const Color(0xFF4A5D65)
+                              : const Color(0xFF6C8590))
                         : kMuted,
                   ),
                 ),
@@ -85,10 +82,14 @@ class ManifestTree extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: driftSans(
-                        fontSize: isTopLevel && data.isFolder ? 14 : (data.isFolder ? 13.5 : 13),
+                        fontSize: isTopLevel && data.isFolder
+                            ? 14
+                            : (data.isFolder ? 13.5 : 13),
                         fontWeight: isTopLevel && data.isFolder
                             ? FontWeight.w700
-                            : (data.isFolder ? FontWeight.w600 : FontWeight.w500),
+                            : (data.isFolder
+                                  ? FontWeight.w600
+                                  : FontWeight.w500),
                         color: kInk,
                       ),
                     ),
@@ -189,7 +190,9 @@ List<TreeNode<_ManifestNodeData>> _buildChildren(
   final fileEntries = <_PathEntry>[];
 
   for (final entry in entries) {
-    final remaining = entry.segments.skip(prefix.length).toList(growable: false);
+    final remaining = entry.segments
+        .skip(prefix.length)
+        .toList(growable: false);
     if (remaining.isEmpty) {
       continue;
     }

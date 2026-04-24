@@ -134,8 +134,12 @@ SendTransferPageData buildSendTransferPageData({
       remoteLabel: transfer.destinationLabel,
       remoteDeviceType: transfer.remoteDeviceType,
       stripMode: _stripModeFor(transfer),
-      durationLabel: state is SendStateResult ? _formatDuration(state.result.duration) : null,
-      averageSpeedLabel: state is SendStateResult ? state.result.averageSpeedLabel : null,
+      durationLabel: state is SendStateResult
+          ? _formatDuration(state.result.duration)
+          : null,
+      averageSpeedLabel: state is SendStateResult
+          ? state.result.averageSpeedLabel
+          : null,
     ),
   };
 }

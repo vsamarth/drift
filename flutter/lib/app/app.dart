@@ -46,16 +46,12 @@ class _DriftAppState extends ConsumerState<DriftApp> {
       '[app] receiver discovery ${enabled ? 'enabled' : 'disabled'} '
       'route="$routePath"',
     );
-    unawaited(
-      _receiverService.setDiscoverable(enabled: enabled),
-    );
+    unawaited(_receiverService.setDiscoverable(enabled: enabled));
   }
 
   @override
   void dispose() {
-    unawaited(
-      _receiverService.setDiscoverable(enabled: false),
-    );
+    unawaited(_receiverService.setDiscoverable(enabled: false));
     super.dispose();
   }
 
@@ -98,10 +94,7 @@ class DiscoveryRouterObserver extends NavigatorObserver {
   }
 
   @override
-  void didReplace({
-    Route<dynamic>? newRoute,
-    Route<dynamic>? oldRoute,
-  }) {
+  void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) {
     super.didReplace(newRoute: newRoute, oldRoute: oldRoute);
     _scheduleSync();
   }

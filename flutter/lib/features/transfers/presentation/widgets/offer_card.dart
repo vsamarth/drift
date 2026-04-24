@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../application/state.dart';
 import '../../../../theme/drift_theme.dart';
@@ -9,7 +8,7 @@ import 'sending_connection_strip.dart';
 import 'transfer_flow_layout.dart';
 import 'transfer_presentation_helpers.dart';
 
-class OfferCard extends ConsumerWidget {
+class OfferCard extends StatelessWidget {
   const OfferCard({
     super.key,
     required this.offer,
@@ -24,27 +23,21 @@ class OfferCard extends ConsumerWidget {
   final VoidCallback onDecline;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final senderName = displaySender(offer.sender.displayName);
     final itemCount = offer.manifest.itemCount;
     final totalSize = formatBytes(offer.manifest.totalSizeBytes);
     final willResume = offer.willResume;
-    final subtitle = willResume
-        ? resumeSubtitle(
-            itemCount: itemCount,
-            receivedSize: formatBytes(offer.bytesReceived),
-            totalSize: totalSize,
-          )
-        : incomingSubtitle(itemCount, totalSize);
+    final subtitle = incomingSubtitle(itemCount, totalSize);
 
     return SizedBox.expand(
       child: TransferFlowLayout(
-        statusLabel: willResume ? 'Resume' : 'Incoming',
+        statusLabel: 'Incoming',
         statusColor: const Color(0xFF4B98AA),
         subtitle: buildSubtitleText(subtitle),
         explainer: Text(
           willResume
-              ? 'Drift found a previous partial transfer. Resume only if you trust the sender.'
+              ? 'Resuming previous transfer. Drift will skip files you already have and download the rest. Accept only if you trust the sender.'
               : 'Review the files and accept only if you trust the sender.',
           textAlign: TextAlign.center,
           style: driftSans(
@@ -77,9 +70,7 @@ class OfferCard extends ConsumerWidget {
                   elevation: 0,
                 ),
                 child: Text(
-                  willResume
-                      ? 'Resume transfer'
-                      : 'Save to ${offer.saveRootLabel}',
+                  'Save to ${offer.saveRootLabel}',
                   style: driftSans(fontWeight: FontWeight.w700, fontSize: 15),
                 ),
               ),

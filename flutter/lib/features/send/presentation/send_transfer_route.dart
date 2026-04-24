@@ -131,7 +131,8 @@ class _TransferStateCard extends StatelessWidget {
       viewData.files.length,
     );
 
-    final showFooterButton = (state is SendStateTransferring &&
+    final showFooterButton =
+        (state is SendStateTransferring &&
             (progress?.progressFraction ?? 0.0) < 1.0) ||
         state is SendStateResult;
     final manifestItems = viewData.files
@@ -160,7 +161,9 @@ class _TransferStateCard extends StatelessWidget {
       statusLabel: viewData.visual.statusLabel,
       statusColor: accent,
       subtitle: subtitle,
-      explainer: state is SendStateResult ? _SendStatsGrid(viewData: viewData) : null,
+      explainer: state is SendStateResult
+          ? _SendStatsGrid(viewData: viewData)
+          : null,
       illustration: RecipientAvatar(
         deviceName: viewData.remoteLabel,
         deviceType: viewData.remoteDeviceType ?? 'phone',
@@ -171,14 +174,14 @@ class _TransferStateCard extends StatelessWidget {
       manifest: manifestItems.isEmpty
           ? null
           : (state is SendStateTransferring
-              ? ActiveTransferFileList(
-                  items: manifestItems,
-                  progress: progress,
-                )
-              : ManifestTreeCard(
-                  items: manifestItems,
-                  initiallyExpanded: state is SendStateResult,
-                )),
+                ? ActiveTransferFileList(
+                    items: manifestItems,
+                    progress: progress,
+                  )
+                : ManifestTreeCard(
+                    items: manifestItems,
+                    initiallyExpanded: state is SendStateResult,
+                  )),
       footer: Row(
         children: [
           Expanded(

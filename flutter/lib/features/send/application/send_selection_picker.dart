@@ -28,7 +28,9 @@ class FileSelectorSendSelectionPicker implements SendSelectionPicker {
         }
         return SendPickedFile(
           path: path,
-          name: file.name.trim().isEmpty ? SendPickedFile.fromPath(path).name : file.name,
+          name: file.name.trim().isEmpty
+              ? SendPickedFile.fromPath(path).name
+              : file.name,
           kind: SendPickedFileKind.file,
           sizeBytes: sizeBytes,
         );
