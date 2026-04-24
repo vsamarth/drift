@@ -3,3 +3,9 @@
 /sample.txt
 /tmp-test-recv
 /.worktrees
+
+# Superpowers
+.superpowers/
+docs/superpowers/
+skills/
+*.skill

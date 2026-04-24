@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:app/app/app.dart';
 import 'package:app/features/settings/feature.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -26,6 +27,11 @@ void main() {
 
     await tester.pumpAndSettle();
 
-    expect(find.text('Drop files to send'), findsOneWidget);
+    final isMobile = Platform.isAndroid || Platform.isIOS;
+    if (isMobile) {
+      expect(find.text('Select files'), findsOneWidget);
+    } else {
+      expect(find.text('Drop files to send'), findsOneWidget);
+    }
   });
 }
