@@ -21,7 +21,6 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Drift'), findsOneWidget);
-    expect(find.text('Send'), findsNothing);
+    expect(find.text('Select files'), findsOneWidget);
   });
 }

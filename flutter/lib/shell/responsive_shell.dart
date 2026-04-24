@@ -1,4 +1,5 @@
 import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -11,14 +12,18 @@ class ResponsiveShell extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // We watch this here as requested by the plan, although the child shells 
+    // also watch it for their own internal needs.
     ref.watch(receiverIdleViewStateProvider);
 
-    final isMobile = Platform.isAndroid || Platform.isIOS;
-
-    if (isMobile) {
-      return const MobileShell();
-    }
-
-    return const DesktopShell();
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isMobilePlatform = Platform.isAndroid || Platform.isIOS;
+        if (isMobilePlatform || constraints.maxWidth < 600) {
+          return const MobileShell();
+        }
+        return const DesktopShell();
+      },
+    );
   }
 }
