@@ -55,4 +55,5 @@ enum UserFacingErrorKindData {
   protocolIncompatible,
   cancelled,
   internal,
+  other,
 }

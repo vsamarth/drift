@@ -1,8 +1,21 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../src/rust/api/error.dart' as rust_error;
 import '../src/rust/api/sender.dart' as rust_sender;
 import '../src/rust/api/transfer.dart' as rust_transfer;
 
+final sendTransferSourceProvider = Provider<SendTransferSource>((_) {
+  return const LocalSendTransferSource();
+});
+
+abstract class SendTransferSource {
+  Stream<SendTransferUpdate> startTransfer(SendTransferRequestData request);
+
+  Future<void> cancelTransfer();
+}
+
+@immutable
 class SendTransferRequestData {
   const SendTransferRequestData({
     required this.code,
@@ -17,15 +30,9 @@ class SendTransferRequestData {
   final String code;
   final List<String> paths;
   final String deviceName;
-
-  /// `"phone"` or `"laptop"`.
   final String deviceType;
   final String? serverUrl;
-
-  /// When set, Rust uses LAN ticket path; [code] is only for UI / labels.
   final String? ticket;
-
-  /// Progress label when sending via [ticket].
   final String? lanDestinationLabel;
 }
 
@@ -40,6 +47,7 @@ enum SendTransferUpdatePhase {
   failed,
 }
 
+@immutable
 class SendTransferUpdate {
   const SendTransferUpdate({
     required this.phase,
@@ -52,71 +60,184 @@ class SendTransferUpdate {
     this.plan,
     this.snapshot,
     this.remoteDeviceType,
-    this.errorMessage,
+    this.error,
   });
+
+  const SendTransferUpdate.completed({
+    required String destinationLabel,
+    required String statusMessage,
+    required BigInt itemCount,
+    required BigInt totalSize,
+    required BigInt bytesSent,
+    String? remoteDeviceType,
+    rust_transfer.TransferPlanData? plan,
+    rust_transfer.TransferSnapshotData? snapshot,
+  }) : this(
+         phase: SendTransferUpdatePhase.completed,
+         destinationLabel: destinationLabel,
+         statusMessage: statusMessage,
+         itemCount: itemCount,
+         totalSize: totalSize,
+         bytesSent: bytesSent,
+         totalBytes: totalSize,
+         plan: plan,
+         snapshot: snapshot,
+         remoteDeviceType: remoteDeviceType,
+       );
+
+  const SendTransferUpdate.declined({
+    required String destinationLabel,
+    required String statusMessage,
+    required BigInt itemCount,
+    required BigInt totalSize,
+    required BigInt bytesSent,
+    required BigInt totalBytes,
+    SendTransferErrorData? error,
+    String? remoteDeviceType,
+    rust_transfer.TransferPlanData? plan,
+    rust_transfer.TransferSnapshotData? snapshot,
+  }) : this(
+         phase: SendTransferUpdatePhase.declined,
+         destinationLabel: destinationLabel,
+         statusMessage: statusMessage,
+         itemCount: itemCount,
+         totalSize: totalSize,
+         bytesSent: bytesSent,
+         totalBytes: totalBytes,
+         plan: plan,
+         snapshot: snapshot,
+         remoteDeviceType: remoteDeviceType,
+         error: error,
+       );
+
+  const SendTransferUpdate.failed({
+    required String destinationLabel,
+    required String statusMessage,
+    required BigInt itemCount,
+    required BigInt totalSize,
+    required BigInt bytesSent,
+    required BigInt totalBytes,
+    SendTransferErrorData? error,
+    String? remoteDeviceType,
+    rust_transfer.TransferPlanData? plan,
+    rust_transfer.TransferSnapshotData? snapshot,
+  }) : this(
+         phase: SendTransferUpdatePhase.failed,
+         destinationLabel: destinationLabel,
+         statusMessage: statusMessage,
+         itemCount: itemCount,
+         totalSize: totalSize,
+         bytesSent: bytesSent,
+         totalBytes: totalBytes,
+         plan: plan,
+         snapshot: snapshot,
+         remoteDeviceType: remoteDeviceType,
+         error: error,
+       );
+
+  const SendTransferUpdate.cancelled({
+    required String destinationLabel,
+    required String statusMessage,
+    required BigInt itemCount,
+    required BigInt totalSize,
+    required BigInt bytesSent,
+    required BigInt totalBytes,
+    SendTransferErrorData? error,
+    String? remoteDeviceType,
+    rust_transfer.TransferPlanData? plan,
+    rust_transfer.TransferSnapshotData? snapshot,
+  }) : this(
+         phase: SendTransferUpdatePhase.cancelled,
+         destinationLabel: destinationLabel,
+         statusMessage: statusMessage,
+         itemCount: itemCount,
+         totalSize: totalSize,
+         bytesSent: bytesSent,
+         totalBytes: totalBytes,
+         plan: plan,
+         snapshot: snapshot,
+         remoteDeviceType: remoteDeviceType,
+         error: error,
+       );
 
   final SendTransferUpdatePhase phase;
   final String destinationLabel;
   final String statusMessage;
-  final int itemCount;
-  final String totalSize;
-  final int bytesSent;
-  final int totalBytes;
+  final BigInt itemCount;
+  final BigInt totalSize;
+  final BigInt bytesSent;
+  final BigInt totalBytes;
   final rust_transfer.TransferPlanData? plan;
   final rust_transfer.TransferSnapshotData? snapshot;
-
-  /// `"phone"` or `"laptop"`, when known yet.
   final String? remoteDeviceType;
-  final String? errorMessage;
+  final SendTransferErrorData? error;
 }
 
-abstract class SendTransferSource {
-  Stream<SendTransferUpdate> startTransfer(SendTransferRequestData request);
+@immutable
+class SendTransferErrorData {
+  const SendTransferErrorData({
+    required this.kind,
+    required this.title,
+    required this.message,
+    required this.retryable,
+    this.recovery,
+  });
 
-  Future<void> cancelTransfer();
+  final SendTransferErrorKind kind;
+  final String title;
+  final String message;
+  final bool retryable;
+  final String? recovery;
+}
+
+enum SendTransferErrorKind {
+  invalidInput,
+  pairingUnavailable,
+  peerDeclined,
+  networkUnavailable,
+  connectionLost,
+  permissionDenied,
+  fileConflict,
+  protocolIncompatible,
+  cancelled,
+  internal,
+  other,
 }
 
 class LocalSendTransferSource implements SendTransferSource {
-  const LocalSendTransferSource();
+  const LocalSendTransferSource({
+    this.startTransferFn = rust_sender.startSendTransfer,
+    this.cancelTransferFn = rust_sender.cancelActiveSendTransfer,
+  });
+
+  final Stream<rust_sender.SendTransferEvent> Function({
+    required rust_sender.SendTransferRequest request,
+  })
+  startTransferFn;
+  final Future<void> Function() cancelTransferFn;
 
   @override
   Stream<SendTransferUpdate> startTransfer(SendTransferRequestData request) {
-    debugPrint(
-      '[drift/send] startTransfer code=${request.code} '
-      'ticket=${request.ticket == null ? 'no' : 'yes'} '
-      'files=${request.paths.length} server=${request.serverUrl ?? '(default)'}',
-    );
-    return rust_sender
-        .startSendTransfer(
-          request: rust_sender.SendTransferRequest(
-            code: request.code,
-            paths: request.paths,
-            serverUrl: request.serverUrl,
-            deviceName: request.deviceName,
-            deviceType: request.deviceType,
-            ticket: request.ticket,
-            lanDestinationLabel: request.lanDestinationLabel,
-          ),
-        )
-        .map((event) {
-          final mapped = _mapEvent(event);
-          debugPrint(
-            '[drift/send] update phase=${_phaseLabel(mapped.phase)} '
-            'destination=${mapped.destinationLabel} '
-            'items=${mapped.itemCount} total=${mapped.totalSize} '
-            'payload=${mapped.bytesSent}/${mapped.totalBytes} B'
-            '${mapped.errorMessage == null ? '' : ' error=${mapped.errorMessage}'}',
-          );
-          return mapped;
-        });
+    return startTransferFn(
+      request: rust_sender.SendTransferRequest(
+        code: request.code,
+        paths: request.paths,
+        serverUrl: request.serverUrl,
+        deviceName: request.deviceName,
+        deviceType: request.deviceType,
+        ticket: request.ticket,
+        lanDestinationLabel: request.lanDestinationLabel,
+      ),
+    ).map(_mapEvent);
   }
 
   @override
   Future<void> cancelTransfer() {
-    return rust_sender.cancelActiveSendTransfer();
+    return cancelTransferFn();
   }
 
   static SendTransferUpdate _mapEvent(rust_sender.SendTransferEvent event) {
+    final totalSize = event.totalSize;
     return SendTransferUpdate(
       phase: switch (event.phase) {
         rust_sender.SendTransferPhase.connecting =>
@@ -137,49 +258,52 @@ class LocalSendTransferSource implements SendTransferSource {
       },
       destinationLabel: event.destinationLabel,
       statusMessage: event.statusMessage,
-      itemCount: event.itemCount.toInt(),
-      totalSize: _formatBytes(event.totalSize.toInt()),
-      bytesSent: _asDartInt(event.bytesSent),
-      totalBytes: _asDartInt(event.totalSize),
+      itemCount: event.itemCount,
+      totalSize: totalSize,
+      bytesSent: event.bytesSent,
+      totalBytes: totalSize,
       plan: event.plan,
       snapshot: event.snapshot,
       remoteDeviceType: event.remoteDeviceType,
-      errorMessage: event.error?.message,
+      error: _mapError(event.error),
     );
   }
 
-  static int _asDartInt(BigInt v) {
-    if (v.bitLength > 63) {
-      return 0x7fffffffffffffff;
-    }
-    return v.toInt();
-  }
-
-  static String _formatBytes(int bytes) {
-    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-    var value = bytes.toDouble();
-    var unitIndex = 0;
-
-    while (value >= 1024 && unitIndex < units.length - 1) {
-      value /= 1024;
-      unitIndex += 1;
+  static SendTransferErrorData? _mapError(
+    rust_error.UserFacingErrorData? error,
+  ) {
+    if (error == null) {
+      return null;
     }
 
-    final decimals = value >= 10 || unitIndex == 0 ? 0 : 1;
-    final formatted = value.toStringAsFixed(decimals);
-    return '$formatted ${units[unitIndex]}';
-  }
-
-  static String _phaseLabel(SendTransferUpdatePhase phase) {
-    return switch (phase) {
-      SendTransferUpdatePhase.connecting => 'connecting',
-      SendTransferUpdatePhase.waitingForDecision => 'waiting_for_decision',
-      SendTransferUpdatePhase.accepted => 'accepted',
-      SendTransferUpdatePhase.declined => 'declined',
-      SendTransferUpdatePhase.sending => 'sending',
-      SendTransferUpdatePhase.completed => 'completed',
-      SendTransferUpdatePhase.cancelled => 'cancelled',
-      SendTransferUpdatePhase.failed => 'failed',
-    };
+    return SendTransferErrorData(
+      kind: switch (error.kind) {
+        rust_error.UserFacingErrorKindData.invalidInput =>
+          SendTransferErrorKind.invalidInput,
+        rust_error.UserFacingErrorKindData.pairingUnavailable =>
+          SendTransferErrorKind.pairingUnavailable,
+        rust_error.UserFacingErrorKindData.peerDeclined =>
+          SendTransferErrorKind.peerDeclined,
+        rust_error.UserFacingErrorKindData.networkUnavailable =>
+          SendTransferErrorKind.networkUnavailable,
+        rust_error.UserFacingErrorKindData.connectionLost =>
+          SendTransferErrorKind.connectionLost,
+        rust_error.UserFacingErrorKindData.permissionDenied =>
+          SendTransferErrorKind.permissionDenied,
+        rust_error.UserFacingErrorKindData.fileConflict =>
+          SendTransferErrorKind.fileConflict,
+        rust_error.UserFacingErrorKindData.protocolIncompatible =>
+          SendTransferErrorKind.protocolIncompatible,
+        rust_error.UserFacingErrorKindData.cancelled =>
+          SendTransferErrorKind.cancelled,
+        rust_error.UserFacingErrorKindData.internal =>
+          SendTransferErrorKind.internal,
+        rust_error.UserFacingErrorKindData.other => SendTransferErrorKind.other,
+      },
+      title: error.title,
+      message: error.message,
+      retryable: error.retryable,
+      recovery: error.recovery,
+    );
   }
 }
