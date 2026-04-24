@@ -16,14 +16,12 @@ class ResponsiveShell extends ConsumerWidget {
     // also watch it for their own internal needs.
     ref.watch(receiverIdleViewStateProvider);
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final isMobilePlatform = Platform.isAndroid || Platform.isIOS;
-        if (isMobilePlatform || constraints.maxWidth < 600) {
-          return const MobileShell();
-        }
-        return const DesktopShell();
-      },
-    );
+    final isMobile = Platform.isAndroid || Platform.isIOS;
+
+    if (isMobile) {
+      return const MobileShell();
+    }
+
+    return const DesktopShell();
   }
 }
