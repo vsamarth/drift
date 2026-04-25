@@ -5,3 +5,4 @@ export 'application/service.dart';
 export 'application/state.dart';
 export 'presentation/view.dart';
 export 'presentation/widgets/manifest_tree.dart';
+export 'presentation/widgets/transfer_manifest_panel.dart';
