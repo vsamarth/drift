@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import '../../../features/receive/application/state.dart';
 import '../../../src/rust/api/lan.dart' as rust_lan;
 import '../../../src/rust/api/receiver.dart' as rust_receiver;
+import '../rendezvous_defaults.dart';
 import 'mapper.dart';
 import 'source.dart';
 
@@ -259,7 +260,7 @@ class RustReceiverServiceSource implements ReceiverServiceSource {
     _restartTransferSubscription(generation: _configGeneration);
   }
 
-  String get _resolvedServerUrl => serverUrl ?? 'http://127.0.0.1:8787';
+  String get _resolvedServerUrl => serverUrl ?? defaultRendezvousUrl;
 
   static String get _deviceType => switch (defaultTargetPlatform) {
     TargetPlatform.android || TargetPlatform.iOS => 'phone',

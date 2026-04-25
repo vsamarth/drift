@@ -16,7 +16,7 @@ use crate::api::error::internal_user_facing_error;
 use crate::api::error::map_optional_user_facing_error;
 use crate::frb_generated::StreamSink;
 
-const LOCAL_RENDEZVOUS_URL: &str = "http://127.0.0.1:8787";
+const DEFAULT_RENDEZVOUS_URL: &str = "https://drift.samarthv.com";
 static ACTIVE_SEND_CANCEL: LazyLock<Mutex<Option<SendCancelHandle>>> =
     LazyLock::new(|| Mutex::new(None));
 
@@ -85,7 +85,9 @@ pub fn start_send_transfer(
         ),
         None => SendDestination::code(
             request.code,
-            request.server_url.or(Some(LOCAL_RENDEZVOUS_URL.to_owned())),
+            request
+                .server_url
+                .or(Some(DEFAULT_RENDEZVOUS_URL.to_owned())),
         ),
     };
 

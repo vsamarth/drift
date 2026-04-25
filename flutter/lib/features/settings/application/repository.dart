@@ -1,5 +1,6 @@
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../../platform/rust/rendezvous_defaults.dart';
 import 'state.dart';
 
 const String _deviceNameKey = 'settings.device_name';
@@ -28,7 +29,7 @@ class SettingsRepository {
       deviceName: randomDeviceName(),
       downloadRoot: defaultDownloadRoot,
       discoverableByDefault: true,
-      discoveryServerUrl: null,
+      discoveryServerUrl: defaultRendezvousUrl,
     );
     await save(seeded);
     return seeded;
@@ -56,7 +57,8 @@ class SettingsRepository {
       deviceName: prefs.getString(_deviceNameKey) ?? randomDeviceName(),
       downloadRoot: prefs.getString(_downloadRootKey) ?? defaultDownloadRoot,
       discoverableByDefault: prefs.getBool(_discoverableKey) ?? true,
-      discoveryServerUrl: _normalizeUrl(prefs.getString(_serverUrlKey)),
+      discoveryServerUrl:
+          _normalizeUrl(prefs.getString(_serverUrlKey)) ?? defaultRendezvousUrl,
     );
   }
 }

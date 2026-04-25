@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../theme/drift_theme.dart';
+import '../../../../platform/rust/rendezvous_defaults.dart';
 import '../../application/controller.dart';
 import '../../settings_providers.dart';
 import 'settings_error_banner.dart';
@@ -283,7 +284,7 @@ class _SettingsPageBodyState extends ConsumerState<SettingsPageBody> {
                           child: TextField(
                             controller: _serverUrlController,
                             decoration: const InputDecoration(
-                              hintText: 'https://drift.samarthv.com',
+                              hintText: defaultRendezvousUrl,
                             ),
                           ),
                         ),

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:app/platform/rust/receiver/rust_source.dart';
+import 'package:app/platform/rust/rendezvous_defaults.dart';
 import 'package:app/src/rust/api/receiver.dart' as rust_receiver;
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -21,6 +22,41 @@ void main() {
       files: const [],
     );
   }
+
+  test('uses the shared rendezvous URL when none is provided', () async {
+    final seenServerUrls = <String?>[];
+    final source = RustReceiverServiceSource(
+      deviceName: 'Old Device',
+      downloadRoot: '/tmp/Drift',
+      pairingStreamFactory:
+          ({
+            serverUrl,
+            required downloadRoot,
+            required deviceName,
+            required deviceType,
+          }) {
+            seenServerUrls.add(serverUrl);
+            return const Stream<rust_receiver.ReceiverPairingState>.empty();
+          },
+      transferStreamFactory:
+          ({
+            serverUrl,
+            required downloadRoot,
+            required deviceName,
+            required deviceType,
+          }) {
+            seenServerUrls.add(serverUrl);
+            return const Stream<rust_receiver.ReceiverTransferEvent>.empty();
+          },
+    );
+
+    final subscription = source.watchState().listen((_) {});
+    addTearDown(subscription.cancel);
+
+    await Future<void>.delayed(Duration.zero);
+
+    expect(seenServerUrls, contains(defaultRendezvousUrl));
+  });
 
   test(
     'updateIdentity restarts active receiver streams with new config',

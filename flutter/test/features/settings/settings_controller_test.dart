@@ -1,6 +1,7 @@
 import 'package:app/features/settings/feature.dart';
 import 'package:app/features/receive/application/service.dart';
 import 'package:app/platform/rust/receiver/fake_source.dart';
+import 'package:app/platform/rust/rendezvous_defaults.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -30,7 +31,7 @@ void main() {
     expect(state.settings.deviceName, 'Rusty Ridge');
     expect(state.settings.downloadRoot, '/tmp/Drift');
     expect(state.settings.discoverableByDefault, isTrue);
-    expect(state.settings.discoveryServerUrl, isNull);
+    expect(state.settings.discoveryServerUrl, defaultRendezvousUrl);
   });
 
   test('saveSettings updates the stored settings', () async {
