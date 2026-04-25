@@ -33,24 +33,29 @@ pub enum SenderEvent {
     Connecting {
         session_id: String,
         peer_endpoint_id: EndpointId,
+        prepared_plan: TransferPlan,
     },
     WaitingForDecision {
         session_id: String,
         receiver_device_name: String,
         receiver_endpoint_id: EndpointId,
+        prepared_plan: TransferPlan,
     },
     Accepted {
         session_id: String,
         receiver_device_name: String,
         receiver_endpoint_id: EndpointId,
+        prepared_plan: TransferPlan,
     },
     Declined {
         session_id: String,
         reason: String,
+        prepared_plan: TransferPlan,
     },
     Failed {
         session_id: String,
         error: TransferError,
+        prepared_plan: TransferPlan,
     },
     TransferStarted {
         session_id: String,
@@ -106,6 +111,12 @@ impl SenderEventSink {
         self.emit(SenderEvent::Failed {
             session_id: self.session_id.clone(),
             error,
+            prepared_plan: TransferPlan {
+                session_id: self.session_id.clone(),
+                total_files: 0,
+                total_bytes: 0,
+                files: Vec::new(),
+            },
         });
     }
 }
@@ -180,6 +191,7 @@ impl SenderSession {
     async fn run(self, mut cancel_rx: watch::Receiver<bool>) -> Result<TransferOutcome> {
         let scratch = ScratchDir::new("drift-send", &self.session_id).await?;
         let prepared = PreparedStore::prepare(&scratch.path, self.request.files.clone()).await?;
+        let prepared_plan = build_prepared_plan(&self.session_id, &prepared)?;
 
         info!(
             session_id = %self.session_id,
@@ -192,6 +204,7 @@ impl SenderSession {
         self.events.emit(SenderEvent::Connecting {
             session_id: self.session_id.clone(),
             peer_endpoint_id: self.request.peer_endpoint_id,
+            prepared_plan: prepared_plan.clone(),
         });
         let connection = self
             .endpoint
@@ -220,12 +233,14 @@ impl SenderSession {
                     session_id: self.session_id.clone(),
                     receiver_device_name: peer.identity.device_name.clone(),
                     receiver_endpoint_id: peer.identity.endpoint_id,
+                    prepared_plan: prepared_plan.clone(),
                 });
             }
             protocol_sender::SenderControlOutcome::Declined(declined) => {
                 self.events.emit(SenderEvent::Declined {
                     session_id: self.session_id.clone(),
                     reason: declined.reason,
+                    prepared_plan: prepared_plan.clone(),
                 });
                 return Ok(TransferOutcome::Declined {
                     reason: "receiver declined".to_owned(),
@@ -389,6 +404,16 @@ async fn do_transfer(
             }
         }
     }
+}
+
+fn build_prepared_plan(
+    session_id: &str,
+    prepared: &crate::blobs::send::PreparedStore,
+) -> Result<TransferPlan> {
+    Ok(TransferPlan::from_manifest(
+        session_id.to_owned(),
+        &prepared.manifest(),
+    )?)
 }
 
 fn from_wire_snapshot(

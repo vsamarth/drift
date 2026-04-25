@@ -269,14 +269,14 @@ fn map_sender_event(
     event: CoreSenderEvent,
 ) -> SendEvent {
     match event {
-        CoreSenderEvent::Connecting { .. } => SendEvent {
+        CoreSenderEvent::Connecting { prepared_plan, .. } => SendEvent {
             phase: SendPhase::Connecting,
             destination_label: current_label.clone(),
             status_message: "Request sent".to_owned(),
             item_count: preview.file_count,
             total_size: preview.total_size,
             bytes_sent: 0,
-            plan: None,
+            plan: Some(prepared_plan),
             snapshot: None,
             remote_device_type: None,
             connection_path: None,
@@ -285,6 +285,7 @@ fn map_sender_event(
         CoreSenderEvent::WaitingForDecision {
             receiver_device_name,
             receiver_endpoint_id: _,
+            prepared_plan,
             ..
         } => {
             *current_label = display_destination_label(&receiver_device_name);
@@ -295,7 +296,7 @@ fn map_sender_event(
                 item_count: preview.file_count,
                 total_size: preview.total_size,
                 bytes_sent: 0,
-                plan: None,
+                plan: Some(prepared_plan),
                 snapshot: None,
                 remote_device_type: None,
                 connection_path: None,
@@ -305,6 +306,7 @@ fn map_sender_event(
         CoreSenderEvent::Accepted {
             receiver_device_name,
             receiver_endpoint_id: _,
+            prepared_plan,
             ..
         } => {
             *current_label = display_destination_label(&receiver_device_name);
@@ -315,21 +317,25 @@ fn map_sender_event(
                 item_count: preview.file_count,
                 total_size: preview.total_size,
                 bytes_sent: 0,
-                plan: None,
+                plan: Some(prepared_plan),
                 snapshot: None,
                 remote_device_type: None,
                 connection_path: None,
                 error: None,
             }
         }
-        CoreSenderEvent::Declined { reason, .. } => SendEvent {
+        CoreSenderEvent::Declined {
+            reason,
+            prepared_plan,
+            ..
+        } => SendEvent {
             phase: SendPhase::Declined,
             destination_label: current_label.clone(),
             status_message: "Transfer declined.".to_owned(),
             item_count: preview.file_count,
             total_size: preview.total_size,
             bytes_sent: 0,
-            plan: None,
+            plan: Some(prepared_plan),
             snapshot: None,
             remote_device_type: None,
             connection_path: None,
@@ -339,14 +345,18 @@ fn map_sender_event(
                 reason,
             )),
         },
-        CoreSenderEvent::Failed { error, .. } => SendEvent {
+        CoreSenderEvent::Failed {
+            error,
+            prepared_plan,
+            ..
+        } => SendEvent {
             phase: SendPhase::Failed,
             destination_label: current_label.clone(),
             status_message: format!("Starting transfer to {current_label}."),
             item_count: preview.file_count,
             total_size: preview.total_size,
             bytes_sent: 0,
-            plan: None,
+            plan: Some(prepared_plan),
             snapshot: None,
             remote_device_type: None,
             connection_path: None,

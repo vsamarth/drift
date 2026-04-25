@@ -321,17 +321,21 @@ List<SendTransferMetricData> _metricsForState(SendState state) {
 }
 
 List<SendTransferFileViewData> _filesForState(SendState state) {
-  final (transfer, items, request) = switch (state) {
-    SendStateTransferring(:final transfer, :final items, :final request) => (
-      transfer,
-      items,
-      request,
-    ),
-    SendStateResult(:final transfer, :final items, :final request) => (
-      transfer,
-      items,
-      request,
-    ),
+  final (transfer, items, request, resolvedDirectorySizes) = switch (state) {
+    SendStateTransferring(
+      :final transfer,
+      :final items,
+      :final request,
+      :final resolvedDirectorySizes,
+    ) =>
+      (transfer, items, request, resolvedDirectorySizes),
+    SendStateResult(
+      :final transfer,
+      :final items,
+      :final request,
+      :final resolvedDirectorySizes,
+    ) =>
+      (transfer, items, request, resolvedDirectorySizes),
     _ => throw StateError('Files requires an active or completed transfer'),
   };
 
@@ -343,17 +347,7 @@ List<SendTransferFileViewData> _filesForState(SendState state) {
   );
 
   if (plan == null) {
-    return items
-        .map(
-          (item) => SendTransferFileViewData(
-            name: item.name,
-            path: _relativeDisplayPath(item.path, roots),
-            sizeBytes: item.sizeBytes,
-            sizeLabel: formatBytes(item.sizeBytes),
-            state: SendTransferFileState.pending,
-          ),
-        )
-        .toList(growable: false);
+    return const <SendTransferFileViewData>[];
   }
 
   return plan.files

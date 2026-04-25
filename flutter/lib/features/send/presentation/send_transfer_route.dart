@@ -8,13 +8,12 @@ import '../../transfers/application/state.dart' as transfer_state;
 import '../../transfers/presentation/widgets/sending_connection_strip.dart';
 import '../../transfers/presentation/widgets/transfer_flow_layout.dart';
 import '../../transfers/presentation/widgets/transfer_presentation_helpers.dart';
+import '../../transfers/presentation/widgets/transfer_manifest_panel.dart';
 import '../application/controller.dart';
 import '../application/model.dart';
 import '../application/state.dart';
 import '../application/transfer_state.dart';
 import 'send_transfer_view_data.dart';
-import 'package:app/features/transfers/presentation/widgets/manifest_tree_card.dart';
-import 'package:app/features/transfers/presentation/widgets/active_transfer_file_list.dart';
 import 'package:app/features/send/presentation/widgets/recipient_avatar.dart';
 
 class SendTransferRoutePage extends ConsumerStatefulWidget {
@@ -141,6 +140,14 @@ class _TransferStateCard extends StatelessWidget {
               TransferManifestItem(path: file.path, sizeBytes: file.sizeBytes),
         )
         .toList(growable: false);
+    final manifestMode = switch (state) {
+      SendStateTransferring(:final transfer)
+          when transfer.phase == SendTransferPhase.sending =>
+        TransferManifestPanelMode.liveList,
+      SendStateResult() => TransferManifestPanelMode.liveList,
+      SendStateTransferring() => TransferManifestPanelMode.previewTree,
+      _ => TransferManifestPanelMode.previewTree,
+    };
     final stripMode =
         viewData.stripMode ??
         (isSuccessResult
@@ -173,15 +180,12 @@ class _TransferStateCard extends StatelessWidget {
       ),
       manifest: manifestItems.isEmpty
           ? null
-          : (state is SendStateTransferring
-                ? ActiveTransferFileList(
-                    items: manifestItems,
-                    progress: progress,
-                  )
-                : ManifestTreeCard(
-                    items: manifestItems,
-                    initiallyExpanded: state is SendStateResult,
-                  )),
+          : TransferManifestPanel(
+              mode: manifestMode,
+              items: manifestItems,
+              progress: progress,
+              initiallyExpanded: state is SendStateResult,
+            ),
       footer: Row(
         children: [
           Expanded(
