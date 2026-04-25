@@ -5,5 +5,5 @@ const AppSettings testAppSettings = AppSettings(
   deviceName: 'Drift',
   downloadRoot: '/tmp/Drift',
   discoverableByDefault: true,
-  discoveryServerUrl: defaultRendezvousUrl,
+  discoveryServerUrl: null,
 );
