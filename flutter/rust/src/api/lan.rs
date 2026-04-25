@@ -7,6 +7,7 @@ use drift_app::NearbyReceiver;
 pub struct NearbyReceiverInfo {
     pub fullname: String,
     pub label: String,
+    pub device_type: String,
     pub code: String,
     pub ticket: String,
 }
@@ -21,6 +22,7 @@ pub(crate) fn map_nearby_receiver(item: NearbyReceiver) -> NearbyReceiverInfo {
     NearbyReceiverInfo {
         fullname: item.fullname,
         label: item.label,
+        device_type: item.device_type,
         code: item.code,
         ticket: item.ticket,
     }

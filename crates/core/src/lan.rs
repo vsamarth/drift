@@ -13,6 +13,8 @@ use mdns_sd::{ServiceDaemon, ServiceEvent, ServiceInfo, TxtProperties};
 use rand::seq::SliceRandom;
 use thiserror::Error;
 use tracing::info;
+
+use crate::protocol::DeviceType;
 /// DNS-SD type for drift receivers on the LAN (`drift` ≤ 15 bytes per RFC 6763).
 pub const DRIFT_MDNS_SERVICE_TYPE: &str = "_drift._udp.local.";
 
@@ -111,6 +113,20 @@ fn ticket_from_txt(txt: &TxtProperties) -> Option<String> {
         out.push_str(piece);
     }
     Some(out)
+}
+
+fn device_type_from_txt(txt: &TxtProperties) -> DeviceType {
+    match txt.get_property_val_str("dt") {
+        Some("phone") => DeviceType::Phone,
+        Some("laptop") | None | Some(_) => DeviceType::Laptop,
+    }
+}
+
+fn device_type_to_txt(device_type: DeviceType) -> &'static str {
+    match device_type {
+        DeviceType::Phone => "phone",
+        DeviceType::Laptop => "laptop",
+    }
 }
 
 fn build_presence_packet(op: u8, nonce: u64) -> [u8; PRESENCE_PKT_LEN] {
@@ -279,7 +295,11 @@ impl LanReceiveAdvertisement {
     /// Publishes the given iroh `ticket` (same string as rendezvous) on the LAN.
     ///
     /// Returns `Ok(None)` when there is no usable IPv4 default route (LAN advertising skipped).
-    pub fn start(ticket: &str, device_label: &str) -> std::result::Result<Option<Self>, LanError> {
+    pub fn start(
+        ticket: &str,
+        device_label: &str,
+        device_type: DeviceType,
+    ) -> std::result::Result<Option<Self>, LanError> {
         let ip = match default_route_ipv4() {
             Ok(ip) => ip,
             Err(_) => return Ok(None),
@@ -296,6 +316,7 @@ impl LanReceiveAdvertisement {
         let mut properties: Vec<(String, String)> = vec![
             ("ver".into(), DRIFT_MDNS_TXT_VER.into()),
             ("label".into(), device_label.to_owned()),
+            ("dt".into(), device_type_to_txt(device_type).into()),
             ("tc".into(), chunks.len().to_string()),
         ];
         for (i, c) in chunks.iter().enumerate() {
@@ -356,6 +377,7 @@ impl Drop for LanReceiveAdvertisement {
 pub struct NearbyReceiver {
     pub fullname: String,
     pub label: String,
+    pub device_type: DeviceType,
     /// Always empty for current advertisers (pairing code is not published on LAN).
     pub code: String,
     pub ticket: String,
@@ -411,6 +433,7 @@ pub fn browse_nearby_receivers(
                     NearbyReceiver {
                         fullname: info.get_fullname().to_owned(),
                         label,
+                        device_type: device_type_from_txt(info.get_properties()),
                         code: String::new(),
                         ticket,
                     },
@@ -470,6 +493,7 @@ mod tests {
 
         let mut m: HashMap<String, String> = HashMap::new();
         m.insert("ver".into(), DRIFT_MDNS_TXT_VER.into());
+        m.insert("dt".into(), "phone".into());
         m.insert("tc".into(), chunks.len().to_string());
         for (i, c) in chunks.iter().enumerate() {
             m.insert(format!("t{i}"), c.clone());
@@ -477,6 +501,13 @@ mod tests {
         let txt = m.into_txt_properties();
         let got = ticket_from_txt(&txt).expect("reassembled");
         assert_eq!(got, ticket);
+        assert_eq!(device_type_from_txt(&txt), DeviceType::Phone);
+    }
+
+    #[test]
+    fn missing_device_type_defaults_to_laptop() {
+        let txt = HashMap::<String, String>::new().into_txt_properties();
+        assert_eq!(device_type_from_txt(&txt), DeviceType::Laptop);
     }
 
     #[test]

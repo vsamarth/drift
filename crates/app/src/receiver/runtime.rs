@@ -12,7 +12,7 @@ use crate::error::{AppError, AppResult};
 use crate::types::{PairingCodeState, ReceiverConfig, ReceiverRegistration};
 
 use super::session::ReceiverRun;
-use super::{OfferDecision, ReceiverEvent};
+use super::{OfferDecision, ReceiverEvent, parse_device_type};
 
 pub(super) struct ReceiverRuntime {
     config: ReceiverConfig,
@@ -354,7 +354,19 @@ impl ReceiverRuntime {
             }
         };
 
-        match LanReceiveAdvertisement::start(&ticket, &self.config.device_name) {
+        let device_type = match parse_device_type(&self.config.device_type) {
+            Ok(device_type) => device_type,
+            Err(error) => {
+                warn!(
+                    device = %self.config.device_name,
+                    error = %error,
+                    "receiver.lan_advertising_invalid_device_type"
+                );
+                return;
+            }
+        };
+
+        match LanReceiveAdvertisement::start(&ticket, &self.config.device_name, device_type) {
             Ok(Some(advertising)) => {
                 self.advertising = Some(advertising);
             }

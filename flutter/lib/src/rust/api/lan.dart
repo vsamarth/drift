@@ -19,19 +19,25 @@ Future<List<NearbyReceiverInfo>> scanNearbyReceivers({
 class NearbyReceiverInfo {
   final String fullname;
   final String label;
+  final String deviceType;
   final String code;
   final String ticket;
 
   const NearbyReceiverInfo({
     required this.fullname,
     required this.label,
+    required this.deviceType,
     required this.code,
     required this.ticket,
   });
 
   @override
   int get hashCode =>
-      fullname.hashCode ^ label.hashCode ^ code.hashCode ^ ticket.hashCode;
+      fullname.hashCode ^
+      label.hashCode ^
+      deviceType.hashCode ^
+      code.hashCode ^
+      ticket.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -40,6 +46,7 @@ class NearbyReceiverInfo {
           runtimeType == other.runtimeType &&
           fullname == other.fullname &&
           label == other.label &&
+          deviceType == other.deviceType &&
           code == other.code &&
           ticket == other.ticket;
 }

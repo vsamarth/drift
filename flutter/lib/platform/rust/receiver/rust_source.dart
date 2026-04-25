@@ -158,6 +158,7 @@ class RustReceiverServiceSource implements ReceiverServiceSource {
           (peer) => NearbyReceiver(
             fullname: peer.fullname,
             label: peer.label,
+            deviceType: peer.deviceType,
             code: peer.code,
             ticket: peer.ticket,
           ),

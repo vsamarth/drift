@@ -3,6 +3,8 @@ name = "drift_bridge"
 version = "0.3.0"
 edition = "2021"
 
+[workspace]
+
 [lib]
 crate-type = ["cdylib", "staticlib"]
 

@@ -43,6 +43,7 @@ pub struct SendEvent {
 pub struct NearbyReceiver {
     pub fullname: String,
     pub label: String,
+    pub device_type: String,
     pub code: String,
     pub ticket: String,
 }

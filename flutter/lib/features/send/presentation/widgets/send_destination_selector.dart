@@ -113,7 +113,7 @@ class _SendDestinationSelectorState
                 return _NearbyDeviceTile(
                   receiver: receiver,
                   isSelected: selected,
-                  icon: Icons.devices_rounded,
+                  icon: _deviceIconForType(receiver.deviceType),
                   onTap: () => widget.controller.selectNearbyReceiver(receiver),
                 );
               },
@@ -246,6 +246,12 @@ class _NearbyStatusCard extends StatelessWidget {
       ),
     );
   }
+}
+
+IconData _deviceIconForType(String deviceType) {
+  return deviceType.toLowerCase() == 'phone'
+      ? Icons.smartphone_rounded
+      : Icons.laptop_mac_rounded;
 }
 
 class _NearbyDeviceTile extends StatelessWidget {

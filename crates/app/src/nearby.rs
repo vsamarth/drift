@@ -20,6 +20,10 @@ pub async fn scan_nearby_receivers(timeout_secs: u64) -> AppResult<Vec<NearbyRec
             NearbyReceiver {
                 fullname: receiver.fullname,
                 label: receiver.label,
+                device_type: match receiver.device_type {
+                    drift_core::protocol::DeviceType::Phone => "phone".to_owned(),
+                    drift_core::protocol::DeviceType::Laptop => "laptop".to_owned(),
+                },
                 code: receiver.code,
                 ticket: receiver.ticket,
             },

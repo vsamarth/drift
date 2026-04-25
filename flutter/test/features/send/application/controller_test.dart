@@ -215,7 +215,7 @@ void main() {
       controller.selectNearbyReceiver(
         const NearbyReceiver(
           fullname: 'samarth-laptop',
-          label: 'Laptop',
+          label: 'Laptop', deviceType: 'laptop',
           code: 'ABC123',
           ticket: 'ticket-1',
         ),

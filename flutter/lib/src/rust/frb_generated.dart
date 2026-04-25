@@ -867,13 +867,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   NearbyReceiverInfo dco_decode_nearby_receiver_info(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 4)
-      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
+    if (arr.length != 5)
+      throw Exception('unexpected arr length: expect 5 but see ${arr.length}');
     return NearbyReceiverInfo(
       fullname: dco_decode_String(arr[0]),
       label: dco_decode_String(arr[1]),
-      code: dco_decode_String(arr[2]),
-      ticket: dco_decode_String(arr[3]),
+      deviceType: dco_decode_String(arr[2]),
+      code: dco_decode_String(arr[3]),
+      ticket: dco_decode_String(arr[4]),
     );
   }
 
@@ -1351,11 +1352,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_fullname = sse_decode_String(deserializer);
     var var_label = sse_decode_String(deserializer);
+    var var_deviceType = sse_decode_String(deserializer);
     var var_code = sse_decode_String(deserializer);
     var var_ticket = sse_decode_String(deserializer);
     return NearbyReceiverInfo(
       fullname: var_fullname,
       label: var_label,
+      deviceType: var_deviceType,
       code: var_code,
       ticket: var_ticket,
     );
@@ -1946,6 +1949,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_String(self.fullname, serializer);
     sse_encode_String(self.label, serializer);
+    sse_encode_String(self.deviceType, serializer);
     sse_encode_String(self.code, serializer);
     sse_encode_String(self.ticket, serializer);
   }
