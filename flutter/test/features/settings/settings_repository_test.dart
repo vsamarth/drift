@@ -1,4 +1,5 @@
 import 'package:app/features/settings/application/repository.dart';
+import 'package:app/platform/rust/rendezvous_defaults.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -18,6 +19,6 @@ void main() {
     expect(settings.deviceName, 'Rusty Ridge');
     expect(settings.downloadRoot, '/tmp/Drift');
     expect(settings.discoverableByDefault, isTrue);
-    expect(settings.discoveryServerUrl, isNull);
+    expect(settings.discoveryServerUrl, defaultRendezvousUrl);
   });
 }
