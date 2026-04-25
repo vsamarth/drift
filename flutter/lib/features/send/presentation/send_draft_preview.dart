@@ -9,6 +9,7 @@ import '../../../app/app_router.dart';
 import '../application/controller.dart';
 import '../../transfers/presentation/widgets/transfer_presentation_helpers.dart';
 import '../application/model.dart';
+import '../application/item_size.dart';
 import '../application/send_selection_picker.dart';
 import '../application/state.dart';
 import 'widgets/send_destination_selector.dart';
@@ -90,9 +91,7 @@ class SendDraftPreview extends ConsumerWidget {
 
     return items
         .map((item) {
-          final sizeBytes = item.kind == SendPickedFileKind.directory
-              ? (resolvedSizes[item.path] ?? item.sizeBytes)
-              : item.sizeBytes;
+          final sizeBytes = effectiveDraftItemSize(item, resolvedSizes);
           return SendPickedFile(
             path: item.path,
             name: item.name,

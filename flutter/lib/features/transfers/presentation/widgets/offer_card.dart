@@ -3,9 +3,9 @@ import 'package:flutter/material.dart';
 import '../../application/state.dart';
 import '../../../../theme/drift_theme.dart';
 import 'package:app/features/send/presentation/widgets/recipient_avatar.dart';
-import 'manifest_tree_card.dart';
 import 'sending_connection_strip.dart';
 import 'transfer_flow_layout.dart';
+import 'transfer_manifest_panel.dart';
 import 'transfer_presentation_helpers.dart';
 
 class OfferCard extends StatelessWidget {
@@ -53,7 +53,10 @@ class OfferCard extends StatelessWidget {
           animate: animate,
           mode: SendingStripMode.waitingOnRecipient,
         ),
-        manifest: ManifestTreeCard(items: offer.manifest.items),
+        manifest: TransferManifestPanel(
+          mode: TransferManifestPanelMode.previewTree,
+          items: offer.manifest.items,
+        ),
         footer: Row(
           children: [
             Expanded(

@@ -34,24 +34,29 @@ pub enum SenderEvent {
     Connecting {
         session_id: String,
         peer_endpoint_id: EndpointId,
+        prepared_plan: TransferPlan,
     },
     WaitingForDecision {
         session_id: String,
         receiver_device_name: String,
         receiver_endpoint_id: EndpointId,
+        prepared_plan: TransferPlan,
     },
     Accepted {
         session_id: String,
         receiver_device_name: String,
         receiver_endpoint_id: EndpointId,
+        prepared_plan: TransferPlan,
     },
     Declined {
         session_id: String,
         reason: String,
+        prepared_plan: TransferPlan,
     },
     Failed {
         session_id: String,
         error: TransferError,
+        prepared_plan: TransferPlan,
     },
     TransferStarted {
         session_id: String,
@@ -107,6 +112,12 @@ impl SenderEventSink {
         self.emit(SenderEvent::Failed {
             session_id: self.session_id.clone(),
             error,
+            prepared_plan: TransferPlan {
+                session_id: self.session_id.clone(),
+                total_files: 0,
+                total_bytes: 0,
+                files: Vec::new(),
+            },
         });
     }
 }
@@ -181,8 +192,8 @@ impl SenderSession {
     async fn run(self, mut cancel_rx: watch::Receiver<bool>) -> Result<TransferOutcome> {
         let scratch = ScratchDir::new("drift-send", &self.session_id).await?;
         let prepared = PreparedStore::prepare(&scratch.path, self.request.files.clone()).await?;
+        let prepared_plan = build_prepared_plan(&self.session_id, &prepared)?;
         let manifest = prepared.manifest();
-        let plan = TransferPlan::from_manifest(self.session_id.clone(), &manifest)?;
         let collection_hash = prepared.collection_hash();
 
         info!(
@@ -196,6 +207,7 @@ impl SenderSession {
         self.events.emit(SenderEvent::Connecting {
             session_id: self.session_id.clone(),
             peer_endpoint_id: self.request.peer_endpoint_id,
+            prepared_plan: prepared_plan.clone(),
         });
         let connection = self
             .endpoint
@@ -212,6 +224,7 @@ impl SenderSession {
             &connection,
             &mut cancel_rx,
             &self.events,
+            prepared_plan.clone(),
         )
         .await?;
         let (mut control_send, mut control_recv, outcome) = match handshake_res {
@@ -225,12 +238,14 @@ impl SenderSession {
                     session_id: self.session_id.clone(),
                     receiver_device_name: peer.identity.device_name.clone(),
                     receiver_endpoint_id: peer.identity.endpoint_id,
+                    prepared_plan: prepared_plan.clone(),
                 });
             }
             protocol_sender::SenderControlOutcome::Declined(declined) => {
                 self.events.emit(SenderEvent::Declined {
                     session_id: self.session_id.clone(),
                     reason: declined.reason,
+                    prepared_plan: prepared_plan.clone(),
                 });
                 return Ok(TransferOutcome::Declined {
                     reason: "receiver declined".to_owned(),
@@ -259,7 +274,7 @@ impl SenderSession {
             .map_err(|source| TransferError::other("accepting progress stream", source))?;
 
         let outcome = tokio::select! {
-            res = do_transfer(&self.session_id, &plan, &mut progress_recv, &mut control_recv, &self.events) => res?,
+            res = do_transfer(&self.session_id, &prepared_plan, &mut progress_recv, &mut control_recv, &self.events) => res?,
             _ = wait_for_cancel(&mut cancel_rx) => {
                 let _ = protocol_wire::write_sender_message(
                     &mut control_send,
@@ -313,6 +328,7 @@ async fn do_handshake(
     connection: &Connection,
     cancel_rx: &mut watch::Receiver<bool>,
     events: &SenderEventSink,
+    prepared_plan: TransferPlan,
 ) -> Result<HandshakeResult> {
     tokio::select! {
         res = async {
@@ -329,6 +345,7 @@ async fn do_handshake(
                 &mut send,
                 &mut recv,
                 events,
+                prepared_plan,
             )
             .await?;
 
@@ -352,6 +369,7 @@ async fn run_handshake_on_streams<R, W>(
     send: &mut W,
     recv: &mut R,
     events: &SenderEventSink,
+    prepared_plan: TransferPlan,
 ) -> Result<protocol_sender::SenderControlOutcome>
 where
     R: AsyncRead + Unpin,
@@ -365,6 +383,7 @@ where
         session_id: session_id.to_owned(),
         receiver_device_name: peer_hello.identity.device_name,
         receiver_endpoint_id: peer_hello.identity.endpoint_id,
+        prepared_plan,
     });
     Ok(handler.await_decision(recv).await?)
 }
@@ -427,6 +446,16 @@ where
             }
         }
     }
+}
+
+fn build_prepared_plan(
+    session_id: &str,
+    prepared: &crate::blobs::send::PreparedStore,
+) -> Result<TransferPlan> {
+    Ok(TransferPlan::from_manifest(
+        session_id.to_owned(),
+        &prepared.manifest(),
+    )?)
 }
 
 fn from_wire_snapshot(
@@ -507,14 +536,17 @@ mod tests {
         });
 
         let events = event_sink("session-1");
+        let test_manifest = manifest();
+        let plan = TransferPlan::from_manifest("session-1".to_owned(), &test_manifest)?;
         let outcome = run_handshake_on_streams(
             "session-1",
             &sender_identity(),
-            manifest(),
+            test_manifest,
             [3u8; 32].into(),
             &mut sender_write,
             &mut sender_read,
             &events.sink,
+            plan.clone(),
         )
         .await?;
 
@@ -531,9 +563,11 @@ mod tests {
                 session_id,
                 receiver_device_name,
                 receiver_endpoint_id: endpoint_id,
+                prepared_plan,
             }] if session_id == "session-1"
                 && receiver_device_name == "receiver"
                 && *endpoint_id == expected_receiver_endpoint_id
+                && prepared_plan == &plan
         ));
 
         Ok(())

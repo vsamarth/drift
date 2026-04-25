@@ -6,9 +6,13 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:app/features/send/application/controller.dart';
+import 'package:app/features/send/application/directory_size.dart';
 import 'package:app/features/send/application/model.dart';
 import 'package:app/features/send/application/state.dart';
+import 'package:app/features/send/presentation/send_transfer_view_data.dart';
 import 'package:app/features/send/presentation/send_transfer_route.dart';
+import 'package:app/features/transfers/presentation/widgets/active_transfer_file_list.dart';
+import 'package:app/features/transfers/presentation/widgets/manifest_tree_card.dart';
 import 'package:app/features/send/presentation/widgets/recipient_avatar.dart';
 import 'package:app/features/settings/settings_providers.dart';
 import 'package:app/platform/send_transfer_source.dart';
@@ -42,6 +46,17 @@ class FakeSendTransferSource implements SendTransferSource {
   }
 }
 
+class FakeDirectorySizeCalculator implements DirectorySizeCalculator {
+  FakeDirectorySizeCalculator(this.sizes);
+
+  final Map<String, BigInt> sizes;
+
+  @override
+  Future<BigInt> sizeOfDirectory(String path) async {
+    return sizes[path] ?? BigInt.zero;
+  }
+}
+
 Future<void> _pumpRoute(WidgetTester tester) async {
   await tester.pump();
   await tester.pump(const Duration(milliseconds: 200));
@@ -67,16 +82,33 @@ GoRouter _buildRouter(SendRequestData request) {
   );
 }
 
+ProviderContainer _buildContainer(FakeSendTransferSource fakeSource) {
+  return ProviderContainer(
+    overrides: [
+      initialAppSettingsProvider.overrideWithValue(testAppSettings),
+      directorySizeCalculatorProvider.overrideWithValue(
+        FakeDirectorySizeCalculator({'/tmp/photos': BigInt.from(2048)}),
+      ),
+      sendTransferSourceProvider.overrideWithValue(fakeSource),
+    ],
+  );
+}
+
 rust_transfer.TransferPlanData _buildPlan() {
   return rust_transfer.TransferPlanData(
     sessionId: 'session-1',
-    totalFiles: 1,
-    totalBytes: BigInt.from(1024),
+    totalFiles: 2,
+    totalBytes: BigInt.from(3072),
     files: [
       rust_transfer.TransferPlanFileData(
         id: 0,
-        path: '/tmp/report.pdf',
+        path: '/tmp/photos/a/report.pdf',
         size: BigInt.from(1024),
+      ),
+      rust_transfer.TransferPlanFileData(
+        id: 1,
+        path: '/tmp/photos/b/notes.txt',
+        size: BigInt.from(2048),
       ),
     ],
   );
@@ -104,15 +136,107 @@ rust_transfer.TransferSnapshotData _buildSnapshot({
 
 void main() {
   testWidgets(
+    'send transfer route shows a tree preview before sending and a live list after',
+    (WidgetTester tester) async {
+      final fakeSource = FakeSendTransferSource();
+      final container = _buildContainer(fakeSource);
+      addTearDown(container.dispose);
+      addTearDown(fakeSource.close);
+
+      final controller = container.read(sendControllerProvider.notifier);
+      controller.beginDraft([SendPickedFile.directory('/tmp/photos')]);
+      controller.updateDestinationCode('ABC123');
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pump();
+
+      expect(
+        (container.read(sendControllerProvider) as SendStateDrafting)
+            .resolvedDirectorySizes['/tmp/photos'],
+        BigInt.from(2048),
+      );
+
+      final request = controller.buildSendRequest()!;
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp.router(routerConfig: _buildRouter(request)),
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 600));
+      await tester.pump();
+      expect(find.byType(ManifestTreeCard), findsNothing);
+      expect(find.byType(ActiveTransferFileList), findsNothing);
+
+      fakeSource.emit(
+        SendTransferUpdate(
+          phase: SendTransferUpdatePhase.connecting,
+          destinationLabel: 'Laptop',
+          statusMessage: 'Preparing offer.',
+          itemCount: BigInt.two,
+          totalSize: BigInt.from(3072),
+          bytesSent: BigInt.zero,
+          totalBytes: BigInt.from(3072),
+          plan: _buildPlan(),
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 600));
+      await tester.pump();
+
+      expect(find.byType(ManifestTreeCard), findsOneWidget);
+      expect(find.byType(ActiveTransferFileList), findsNothing);
+
+      fakeSource.emit(
+        SendTransferUpdate(
+          phase: SendTransferUpdatePhase.waitingForDecision,
+          destinationLabel: 'Laptop',
+          statusMessage: 'Waiting for confirmation.',
+          itemCount: BigInt.two,
+          totalSize: BigInt.from(3072),
+          bytesSent: BigInt.zero,
+          totalBytes: BigInt.from(3072),
+          plan: _buildPlan(),
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 600));
+      await tester.pump();
+
+      expect(find.byType(ManifestTreeCard), findsOneWidget);
+      expect(find.byType(ActiveTransferFileList), findsNothing);
+      final waitingState =
+          container.read(sendControllerProvider) as SendStateTransferring;
+      final pageData = buildSendTransferPageData(
+        state: waitingState,
+        request: request,
+      );
+      expect(pageData.files, hasLength(2));
+      expect(pageData.files.first.sizeBytes, BigInt.from(1024));
+      expect(pageData.files.last.sizeBytes, BigInt.from(2048));
+
+      fakeSource.emit(
+        SendTransferUpdate(
+          phase: SendTransferUpdatePhase.sending,
+          destinationLabel: 'Laptop',
+          statusMessage: 'Sending files.',
+          itemCount: BigInt.two,
+          totalSize: BigInt.from(3072),
+          bytesSent: BigInt.from(256),
+          totalBytes: BigInt.from(3072),
+          plan: _buildPlan(),
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 600));
+      await tester.pump();
+
+      expect(find.byType(ManifestTreeCard), findsNothing);
+      expect(find.byType(ActiveTransferFileList), findsOneWidget);
+    },
+  );
+
+  testWidgets(
     'send transfer route shows connecting waiting accepted sending and completed states',
     (WidgetTester tester) async {
       final fakeSource = FakeSendTransferSource();
-      final container = ProviderContainer(
-        overrides: [
-          initialAppSettingsProvider.overrideWithValue(testAppSettings),
-          sendTransferSourceProvider.overrideWithValue(fakeSource),
-        ],
-      );
+      final container = _buildContainer(fakeSource);
       addTearDown(container.dispose);
       addTearDown(fakeSource.close);
 
@@ -287,12 +411,7 @@ void main() {
 
       for (final fixture in fixtures) {
         final fakeSource = FakeSendTransferSource();
-        final container = ProviderContainer(
-          overrides: [
-            initialAppSettingsProvider.overrideWithValue(testAppSettings),
-            sendTransferSourceProvider.overrideWithValue(fakeSource),
-          ],
-        );
+        final container = _buildContainer(fakeSource);
         addTearDown(container.dispose);
         addTearDown(fakeSource.close);
 

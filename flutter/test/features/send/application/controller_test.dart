@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:app/features/receive/application/state.dart';
 import 'package:app/features/send/application/controller.dart';
+import 'package:app/features/send/application/directory_size.dart';
 import 'package:app/features/send/application/model.dart';
 import 'package:app/features/send/application/state.dart';
 import 'package:app/features/send/application/transfer_state.dart';
@@ -66,6 +67,17 @@ class SequencedSendTransferSource implements SendTransferSource {
     for (final stream in _streams) {
       await stream.close();
     }
+  }
+}
+
+class FakeDirectorySizeCalculator implements DirectorySizeCalculator {
+  FakeDirectorySizeCalculator(this.sizes);
+
+  final Map<String, BigInt> sizes;
+
+  @override
+  Future<BigInt> sizeOfDirectory(String path) async {
+    return sizes[path] ?? BigInt.zero;
   }
 }
 
@@ -301,6 +313,37 @@ void main() {
             .phase,
         SendTransferPhase.completed,
       );
+    },
+  );
+
+  test(
+    'send controller uses resolved directory sizes when starting transfer',
+    () async {
+      final fakeSource = FakeSendTransferSource();
+      final container = ProviderContainer(
+        overrides: [
+          initialAppSettingsProvider.overrideWithValue(testAppSettings),
+          directorySizeCalculatorProvider.overrideWithValue(
+            FakeDirectorySizeCalculator({'/tmp/photos': BigInt.from(2048)}),
+          ),
+          sendTransferSourceProvider.overrideWithValue(fakeSource),
+        ],
+      );
+      addTearDown(container.dispose);
+      addTearDown(fakeSource.close);
+
+      final controller = container.read(sendControllerProvider.notifier);
+      controller.beginDraft([SendPickedFile.directory('/tmp/photos')]);
+      controller.updateDestinationCode('ABC123');
+
+      await Future<void>.delayed(Duration.zero);
+
+      controller.startTransfer(controller.buildSendRequest()!);
+
+      final state =
+          container.read(sendControllerProvider) as SendStateTransferring;
+      expect(state.transfer.totalSize, BigInt.from(2048));
+      expect(state.resolvedDirectorySizes['/tmp/photos'], BigInt.from(2048));
     },
   );
 

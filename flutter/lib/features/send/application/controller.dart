@@ -5,6 +5,7 @@ import 'package:app/features/receive/application/state.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import 'model.dart';
+import 'item_size.dart';
 import 'directory_size.dart';
 import '../../../platform/send_transfer_source.dart';
 import '../../transfers/application/format_utils.dart';
@@ -188,6 +189,7 @@ class SendController extends _$SendController {
       transfer: _buildInitialTransferState(
         validatedRequest,
         currentState.items,
+        currentState.resolvedDirectorySizes,
       ),
       resolvedDirectorySizes: currentState.resolvedDirectorySizes,
     );
@@ -291,13 +293,20 @@ class SendController extends _$SendController {
 
       final nextSizes = Map<String, BigInt>.from(resolvedSizes);
       nextSizes[path] = sizeBytes;
+      final totalSize = totalDraftItemSize(items, nextSizes);
 
       if (currentState is SendStateDrafting) {
         state = currentState.copyWith(resolvedDirectorySizes: nextSizes);
       } else if (currentState is SendStateTransferring) {
-        state = currentState.copyWith(resolvedDirectorySizes: nextSizes);
+        state = currentState.copyWith(
+          resolvedDirectorySizes: nextSizes,
+          transfer: currentState.transfer.copyWith(totalSize: totalSize),
+        );
       } else if (currentState is SendStateResult) {
-        state = currentState.copyWith(resolvedDirectorySizes: nextSizes);
+        state = currentState.copyWith(
+          resolvedDirectorySizes: nextSizes,
+          transfer: currentState.transfer.copyWith(totalSize: totalSize),
+        );
       }
     } finally {
       _pendingDirectorySizes.remove(path);
@@ -517,11 +526,9 @@ class SendController extends _$SendController {
   SendTransferState _buildInitialTransferState(
     SendRequestData request,
     List<SendDraftItem> items,
+    Map<String, BigInt> resolvedDirectorySizes,
   ) {
-    final totalSize = items.fold<BigInt>(
-      BigInt.zero,
-      (sum, item) => sum + item.sizeBytes,
-    );
+    final totalSize = totalDraftItemSize(items, resolvedDirectorySizes);
     return SendTransferState.connecting(
       destinationLabel:
           request.lanDestinationLabel ?? request.code ?? 'Recipient device',

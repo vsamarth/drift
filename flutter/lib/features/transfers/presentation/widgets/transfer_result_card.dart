@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:app/theme/drift_theme.dart';
 import 'package:app/features/send/presentation/widgets/recipient_avatar.dart';
 import 'package:app/features/transfers/application/result_view_data.dart';
-import 'package:app/features/transfers/presentation/widgets/active_transfer_file_list.dart';
+import 'package:app/features/transfers/presentation/widgets/transfer_manifest_panel.dart';
 import 'sending_connection_strip.dart';
 import 'transfer_flow_layout.dart';
 import 'transfer_presentation_helpers.dart';
@@ -46,7 +46,8 @@ class TransferResultCard extends StatelessWidget {
         manifest:
             viewData.manifestItems == null || viewData.manifestItems!.isEmpty
             ? null
-            : ActiveTransferFileList(
+            : TransferManifestPanel(
+                mode: TransferManifestPanelMode.liveList,
                 items: viewData.manifestItems!,
                 initiallyExpanded: true,
               ),
