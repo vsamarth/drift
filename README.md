@@ -1,15 +1,18 @@
 
-
-# Drift
-
-> Send files to anyone, anywhere. Like AirDrop, but even more magical.
+> [!WARNING]
+> Drift is currently in **Beta**. While we strive for stability, you may encounter bugs. We appreciate your patience and feedback!
 
 <p align="center">
-  <img src="flutter/assets/demo.png" width="400" alt="Drift Demo">
+  <img src="flutter/assets/logo_rounded.png" width="96" alt="Drift Logo">
 </p>
 
+# <p align="center">Drift</p>
 
+<p align="center"><strong>Drift is your free, open-source alternative to AirDrop—built to work across every device you own.</strong></p>
 
+<p align="center">
+  <img src="flutter/assets/demo.png" width="600" alt="Drift Demo">
+</p>
 
 ## Features
 
@@ -23,13 +26,17 @@
 
 | Platform | Download |
 | --- | --- |
-| macOS | [drift-macos-v0.2.0.dmg](https://github.com/vsamarth/drift/releases/download/v0.2.0/drift-macos-v0.2.0.dmg) |
-| Windows | [drift-windows-setup-v0.2.0.exe](https://github.com/vsamarth/drift/releases/download/v0.2.0/drift-windows-setup-v0.2.0.exe) |
-| Linux | [drift-linux-v0.2.0.zip](https://github.com/vsamarth/drift/releases/download/v0.2.0/drift-linux-v0.2.0.zip) |
-| Android | [drift-android-v0.2.0.apk](https://github.com/vsamarth/drift/releases/download/v0.2.0/drift-android-v0.2.0.apk) |
+| macOS | [drift-macos-v0.3.0.dmg](https://github.com/vsamarth/drift/releases/download/v0.3.0/drift-macos-v0.3.0.dmg) |
+| Windows | [drift-windows-setup-v0.3.0.exe](https://github.com/vsamarth/drift/releases/download/v0.3.0/drift-windows-setup-v0.3.0.exe) |
+| Linux | [drift-linux-v0.3.0.deb](https://github.com/vsamarth/drift/releases/download/v0.3.0/drift-linux-v0.3.0.deb) |
+| Android | [drift-android-v0.3.0.apk](https://github.com/vsamarth/drift/releases/download/v0.3.0/drift-android-v0.3.0.apk) |
 | iOS | *Coming soon* |
 
-**From source:** Build the app in [`flutter/`](flutter/); see [`flutter/README.md`](flutter/README.md). A concise guide here is coming soon.
+> [!TIP]
+> **macOS Gatekeeper:** If macOS blocks the app because it is currently unsigned, move it to your Applications folder and run:
+> `xattr -rd com.apple.quarantine /Applications/Drift.app`
+
+**From source:** Build the app in [`flutter/`](flutter/); see [`flutter/README.md`](flutter/README.md).
 
 ## Getting Started
 
@@ -45,12 +52,6 @@ Drift is simple by design. To get started, follow these quick steps:
 - **Direct P2P:** We establish a direct, **[end-to-end encrypted](https://docs.iroh.computer/deployment/security-privacy)** connection between devices.
 - **Explicit Consent:** No data moves until the receiver reviews the file manifest and accepts the transfer.
 
-## Security & Privacy
-
-- Your files belong to you. Drift establishes a direct, **[end-to-end encrypted](https://docs.iroh.computer/deployment/security-privacy)** connection between devices with no servers in between.
-- We use a simple discovery server and DNS-SD to help devices find each other by sharing their endpoint address.
-- If a direct connection fails, an encrypted relay is used. Relays may see metadata (like IP addresses), but they can never decrypt your files.
-
 ## Roadmap
 
 Drift is still in its early stages. We are focused on stability and UX, and we will continue shipping essential features. Feel free to open a discussion with suggestions. Here are some ideas we are working on:
@@ -58,10 +59,6 @@ Drift is still in its early stages. We are focused on stability and UX, and we w
 - Remember trusted devices as favorites for faster repeat transfers.
 - Add resumable downloads/transfers for interrupted sessions.
 - Keep Drift listening in the background so it is always ready to receive files.
-
-## Acknowledgments
-
-Special thanks to [iroh](https://github.com/n0-computer/iroh) for abstracting away the complex networking details that power Drift. We are also grateful to [LocalSend](https://github.com/localsend/localsend) and [croc](https://github.com/schollz/croc) for inspiring our design.
 
 ## License
 
