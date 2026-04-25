@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import '../../../theme/drift_theme.dart';
 import '../../transfers/presentation/widgets/sending_connection_strip.dart';
 import '../../transfers/presentation/widgets/transfer_presentation_helpers.dart';
-import '../application/item_size.dart';
 import '../application/model.dart';
 import '../application/state.dart';
 import '../application/transfer_state.dart';
