@@ -135,6 +135,42 @@ jobs:
       - name: Build Linux app
         run: flutter build linux --release
 
+      - name: Package Linux .deb
+        run: |
+          VERSION=$(grep "version: " pubspec.yaml | cut -d' ' -f2 | cut -d'+' -f1)
+          ARCH=$(dpkg --print-architecture)
+          PACKAGE_DIR="drift_${VERSION}_${ARCH}"
+          mkdir -p "${PACKAGE_DIR}/usr/lib/drift"
+          mkdir -p "${PACKAGE_DIR}/usr/bin"
+          mkdir -p "${PACKAGE_DIR}/usr/share/applications"
+          mkdir -p "${PACKAGE_DIR}/usr/share/icons/hicolor/512x512/apps"
+          mkdir -p "${PACKAGE_DIR}/DEBIAN"
+
+          # Copy bundle
+          cp -r build/linux/x64/release/bundle/* "${PACKAGE_DIR}/usr/lib/drift/"
+          
+          # Create symlink
+          ln -s /usr/lib/drift/Drift "${PACKAGE_DIR}/usr/bin/drift"
+
+          # Copy desktop file and icon
+          cp linux/sh.vs.drift.desktop "${PACKAGE_DIR}/usr/share/applications/"
+          cp macos/Runner/Assets.xcassets/AppIcon.appiconset/app_icon_512.png "${PACKAGE_DIR}/usr/share/icons/hicolor/512x512/apps/sh.vs.drift.png"
+
+          # Create control file
+          cat <<EOF > "${PACKAGE_DIR}/DEBIAN/control"
+          Package: drift
+          Version: ${VERSION}
+          Section: utils
+          Priority: optional
+          Architecture: ${ARCH}
+          Maintainer: Samarth <hi@samarthv.com>
+          Description: Send files to anyone, anywhere. Like AirDrop, but even more magical.
+          Depends: libgtk-3-0, libwebkit2gtk-4.1-0
+          EOF
+
+          dpkg-deb --build "${PACKAGE_DIR}"
+          mv "${PACKAGE_DIR}.deb" "../drift-linux-${{ env.SAFE_VERSION }}.deb"
+
       - name: Package Linux zip
         run: |
           cd build/linux/x64/release
@@ -144,7 +180,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: drift-linux
-          path: flutter/drift-linux-${{ env.SAFE_VERSION }}.zip
+          path: |
+            drift-linux-${{ env.SAFE_VERSION }}.deb
+            flutter/drift-linux-${{ env.SAFE_VERSION }}.zip
           if-no-files-found: error
 
       - name: Upload Linux bundle for Flatpak
@@ -343,6 +381,7 @@ jobs:
           find artifacts -name "*.apk" -exec mv {} release-dist/ \;
           find artifacts -name "*.dmg" -exec mv {} release-dist/ \;
           find artifacts -name "*.flatpak" -exec mv {} release-dist/ \;
+          find artifacts -name "*.deb" -exec mv {} release-dist/ \;
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
