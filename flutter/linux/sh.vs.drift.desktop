@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Drift
+Comment=Send files to anyone, anywhere. Like AirDrop, but even more magical.
+Exec=drift
+Icon=sh.vs.drift
+Terminal=false
+Categories=Utility;FileTransfer;
+Keywords=transfer;file;iroh;drift;

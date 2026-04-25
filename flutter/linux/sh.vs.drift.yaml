@@ -1,0 +1,28 @@
+app-id: sh.vs.drift
+runtime: org.gnome.Platform
+runtime-version: '45'
+sdk: org.gnome.Sdk
+command: Drift
+finish-args:
+  - --share=ipc
+  - --socket=fallback-x11
+  - --socket=wayland
+  - --device=dri
+  - --share=network
+  - --filesystem=xdg-download
+modules:
+  - name: drift
+    buildsystem: simple
+    build-commands:
+      - install -d /app/bin
+      - cp -r * /app/bin/
+      - install -D sh.vs.drift.desktop /app/share/applications/sh.vs.drift.desktop
+      - install -D sh.vs.drift.png /app/share/icons/hicolor/512x512/apps/sh.vs.drift.png
+    sources:
+      - type: dir
+        path: ../../build/linux/x64/release/bundle
+      - type: file
+        path: sh.vs.drift.desktop
+      - type: file
+        path: ../assets/logo.png
+        dest-filename: sh.vs.drift.png

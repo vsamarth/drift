@@ -135,6 +135,14 @@ jobs:
       - name: Build Linux app
         run: flutter build linux --release
 
+      - name: Build Flatpak
+        uses: flatpak/flatpak-github-actions/flatpak-builder@v6
+        with:
+          bundle: drift-${{ env.SAFE_VERSION }}.flatpak
+          manifest-path: flutter/linux/sh.vs.drift.yaml
+          cache: false
+          branch: main
+
       - name: Package Linux zip
         run: |
           cd build/linux/x64/release
@@ -144,7 +152,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: drift-linux
-          path: flutter/drift-linux-${{ env.SAFE_VERSION }}.zip
+          path: |
+            flutter/drift-linux-${{ env.SAFE_VERSION }}.zip
+            flutter/drift-${{ env.SAFE_VERSION }}.flatpak
           if-no-files-found: error
 
   windows:
@@ -299,6 +309,7 @@ jobs:
           find artifacts -name "*.exe" -exec mv {} release-dist/ \;
           find artifacts -name "*.apk" -exec mv {} release-dist/ \;
           find artifacts -name "*.dmg" -exec mv {} release-dist/ \;
+          find artifacts -name "*.flatpak" -exec mv {} release-dist/ \;
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
