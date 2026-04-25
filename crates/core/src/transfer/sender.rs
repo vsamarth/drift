@@ -2,6 +2,7 @@
 
 use iroh::{Endpoint, EndpointAddr, EndpointId, endpoint::Connection};
 use rand::random;
+use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::sync::{mpsc, oneshot, watch};
 use tokio::time::Duration;
 use tokio_stream::wrappers::UnboundedReceiverStream;
@@ -192,12 +193,14 @@ impl SenderSession {
         let scratch = ScratchDir::new("drift-send", &self.session_id).await?;
         let prepared = PreparedStore::prepare(&scratch.path, self.request.files.clone()).await?;
         let prepared_plan = build_prepared_plan(&self.session_id, &prepared)?;
+        let manifest = prepared.manifest();
+        let collection_hash = prepared.collection_hash();
 
         info!(
             session_id = %self.session_id,
-            collection_hash = %prepared.collection_hash(),
-            file_count = prepared.manifest().count(),
-            total_size = prepared.manifest().total_size(),
+            collection_hash = %collection_hash,
+            file_count = manifest.count(),
+            total_size = manifest.total_size(),
             "prepared manifest"
         );
 
@@ -216,10 +219,12 @@ impl SenderSession {
         let handshake_res = do_handshake(
             &self.session_id,
             &self.identity,
-            &prepared,
+            manifest,
+            collection_hash,
             &connection,
             &mut cancel_rx,
             &self.events,
+            prepared_plan.clone(),
         )
         .await?;
         let (mut control_send, mut control_recv, outcome) = match handshake_res {
@@ -269,7 +274,7 @@ impl SenderSession {
             .map_err(|source| TransferError::other("accepting progress stream", source))?;
 
         let outcome = tokio::select! {
-            res = do_transfer(&self.session_id, &mut progress_recv, &mut control_recv, &self.events) => res?,
+            res = do_transfer(&self.session_id, &prepared_plan, &mut progress_recv, &mut control_recv, &self.events) => res?,
             _ = wait_for_cancel(&mut cancel_rx) => {
                 let _ = protocol_wire::write_sender_message(
                     &mut control_send,
@@ -318,10 +323,12 @@ enum HandshakeResult {
 async fn do_handshake(
     session_id: &str,
     identity: &protocol_message::Identity,
-    prepared: &PreparedStore,
+    manifest: protocol_message::TransferManifest,
+    collection_hash: iroh_blobs::Hash,
     connection: &Connection,
     cancel_rx: &mut watch::Receiver<bool>,
-    _events: &SenderEventSink,
+    events: &SenderEventSink,
+    prepared_plan: TransferPlan,
 ) -> Result<HandshakeResult> {
     tokio::select! {
         res = async {
@@ -330,19 +337,17 @@ async fn do_handshake(
                 .await
                 .map_err(|source| TransferError::other("opening bi-stream", source))?;
 
-            let mut handler = protocol_sender::Sender::new(
-                session_id.to_owned(),
-                identity.clone(),
-            );
-
-            let outcome = handler
-                .run_control(
-                    &mut send,
-                    &mut recv,
-                    prepared.manifest(),
-                    prepared.collection_hash(),
-                )
-                .await?;
+            let outcome = run_handshake_on_streams(
+                session_id,
+                identity,
+                manifest,
+                collection_hash,
+                &mut send,
+                &mut recv,
+                events,
+                prepared_plan,
+            )
+            .await?;
 
             Ok(HandshakeResult::Ok(send, recv, outcome))
         } => res,
@@ -356,12 +361,49 @@ async fn do_handshake(
     }
 }
 
-async fn do_transfer(
+async fn run_handshake_on_streams<R, W>(
     session_id: &str,
-    progress_recv: &mut iroh::endpoint::RecvStream,
-    control_recv: &mut iroh::endpoint::RecvStream,
+    identity: &protocol_message::Identity,
+    manifest: protocol_message::TransferManifest,
+    collection_hash: iroh_blobs::Hash,
+    send: &mut W,
+    recv: &mut R,
     events: &SenderEventSink,
-) -> Result<TransferOutcome> {
+    prepared_plan: TransferPlan,
+) -> Result<protocol_sender::SenderControlOutcome>
+where
+    R: AsyncRead + Unpin,
+    W: AsyncWrite + Unpin,
+{
+    let mut handler = protocol_sender::Sender::new(session_id.to_owned(), identity.clone());
+    handler.send_hello(send).await?;
+    let peer_hello = handler.read_peer_hello(recv).await?;
+    handler.send_offer(send, manifest, collection_hash).await?;
+    events.emit(SenderEvent::WaitingForDecision {
+        session_id: session_id.to_owned(),
+        receiver_device_name: peer_hello.identity.device_name,
+        receiver_endpoint_id: peer_hello.identity.endpoint_id,
+        prepared_plan,
+    });
+    Ok(handler.await_decision(recv).await?)
+}
+
+async fn do_transfer<R, C>(
+    session_id: &str,
+    plan: &TransferPlan,
+    progress_recv: &mut R,
+    control_recv: &mut C,
+    events: &SenderEventSink,
+) -> Result<TransferOutcome>
+where
+    R: AsyncRead + Unpin,
+    C: AsyncRead + Unpin,
+{
+    events.emit(SenderEvent::TransferStarted {
+        session_id: session_id.to_owned(),
+        plan: plan.clone(),
+    });
+
     let mut progress_active = true;
     loop {
         tokio::select! {
@@ -431,5 +473,229 @@ fn from_wire_snapshot(
         active_file_bytes: snapshot.active_file_bytes,
         bytes_per_sec: None,
         eta_seconds: None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::protocol::message::{
+        Accept, DeviceType, Hello, Identity, ManifestItem, PROTOCOL_VERSION, ReceiverMessage,
+        SenderMessage, TransferCompleted, TransferManifest, TransferProgress,
+        TransferProgressPayload, TransferResult as TransferResultMessage, TransferRole,
+        TransferStatus,
+    };
+    use crate::protocol::wire::{read_sender_message, write_receiver_message};
+    use crate::transfer::TransferPhase;
+    use iroh::SecretKey;
+    use tokio::io::{AsyncWriteExt, duplex};
+    use tokio::sync::mpsc;
+    use tokio::time::{Duration, sleep};
+
+    type TestResult<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
+
+    #[tokio::test]
+    async fn handshake_emits_waiting_for_decision_after_offer() -> TestResult<()> {
+        let (sender_io, receiver_io) = duplex(4096);
+        let (mut sender_read, mut sender_write) = tokio::io::split(sender_io);
+        let (mut receiver_read, mut receiver_write) = tokio::io::split(receiver_io);
+        let expected_receiver_endpoint_id = SecretKey::from_bytes(&[2; 32]).public();
+
+        let receiver_task = tokio::spawn(async move {
+            let hello = match read_sender_message(&mut receiver_read).await? {
+                SenderMessage::Hello(hello) => hello,
+                other => panic!("expected sender hello, got {:?}", other.kind()),
+            };
+            write_receiver_message(
+                &mut receiver_write,
+                &ReceiverMessage::Hello(Hello {
+                    version: PROTOCOL_VERSION,
+                    session_id: hello.session_id.clone(),
+                    identity: Identity {
+                        role: TransferRole::Receiver,
+                        endpoint_id: expected_receiver_endpoint_id,
+                        device_name: "receiver".to_owned(),
+                        device_type: DeviceType::Laptop,
+                    },
+                }),
+            )
+            .await?;
+
+            match read_sender_message(&mut receiver_read).await? {
+                SenderMessage::Offer(_) => {}
+                other => panic!("expected sender offer, got {:?}", other.kind()),
+            }
+            write_receiver_message(
+                &mut receiver_write,
+                &ReceiverMessage::Accept(Accept {
+                    session_id: hello.session_id.clone(),
+                }),
+            )
+            .await?;
+            TestResult::Ok(())
+        });
+
+        let events = event_sink("session-1");
+        let test_manifest = manifest();
+        let plan = TransferPlan::from_manifest("session-1".to_owned(), &test_manifest)?;
+        let outcome = run_handshake_on_streams(
+            "session-1",
+            &sender_identity(),
+            test_manifest,
+            [3u8; 32].into(),
+            &mut sender_write,
+            &mut sender_read,
+            &events.sink,
+            plan.clone(),
+        )
+        .await?;
+
+        assert!(matches!(
+            outcome,
+            protocol_sender::SenderControlOutcome::Accepted(_)
+        ));
+        receiver_task.await??;
+
+        let observed = events.collect();
+        assert!(matches!(
+            observed.as_slice(),
+            [SenderEvent::WaitingForDecision {
+                session_id,
+                receiver_device_name,
+                receiver_endpoint_id: endpoint_id,
+                prepared_plan,
+            }] if session_id == "session-1"
+                && receiver_device_name == "receiver"
+                && *endpoint_id == expected_receiver_endpoint_id
+                && prepared_plan == &plan
+        ));
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn transfer_started_event_precedes_progress_and_carries_plan() -> TestResult<()> {
+        let (mut progress_write, mut progress_read) = duplex(4096);
+        let (mut control_write, mut control_read) = duplex(4096);
+        let plan = TransferPlan::from_manifest("session-1", &manifest())?;
+
+        let receiver_task = tokio::spawn(async move {
+            write_receiver_message(
+                &mut progress_write,
+                &ReceiverMessage::TransferProgress(TransferProgress {
+                    session_id: "session-1".to_owned(),
+                    snapshot: TransferProgressPayload {
+                        phase: TransferPhase::Transferring,
+                        completed_files: 1,
+                        total_files: 2,
+                        bytes_transferred: 5,
+                        total_bytes: 11,
+                        active_file_id: Some(1),
+                        active_file_bytes: Some(0),
+                    },
+                }),
+            )
+            .await?;
+            write_receiver_message(
+                &mut progress_write,
+                &ReceiverMessage::TransferCompleted(TransferCompleted {
+                    session_id: "session-1".to_owned(),
+                    snapshot: TransferProgressPayload {
+                        phase: TransferPhase::Completed,
+                        completed_files: 2,
+                        total_files: 2,
+                        bytes_transferred: 11,
+                        total_bytes: 11,
+                        active_file_id: None,
+                        active_file_bytes: None,
+                    },
+                }),
+            )
+            .await?;
+            progress_write.shutdown().await?;
+            sleep(Duration::from_millis(10)).await;
+
+            write_receiver_message(
+                &mut control_write,
+                &ReceiverMessage::TransferResult(TransferResultMessage {
+                    session_id: "session-1".to_owned(),
+                    status: TransferStatus::Ok,
+                }),
+            )
+            .await?;
+            TestResult::Ok(())
+        });
+
+        let events = event_sink("session-1");
+        let outcome = do_transfer(
+            "session-1",
+            &plan,
+            &mut progress_read,
+            &mut control_read,
+            &events.sink,
+        )
+        .await?;
+
+        assert!(matches!(outcome, TransferOutcome::Completed));
+        receiver_task.await??;
+
+        let observed = events.collect();
+        assert!(matches!(
+            observed.as_slice(),
+            [
+                SenderEvent::TransferStarted { plan: started_plan, .. },
+                SenderEvent::TransferProgress { .. },
+                SenderEvent::TransferCompleted { .. },
+            ] if started_plan == &plan
+        ));
+        Ok(())
+    }
+
+    struct EventHarness {
+        sink: SenderEventSink,
+        rx: mpsc::UnboundedReceiver<SenderEvent>,
+    }
+
+    impl EventHarness {
+        fn collect(mut self) -> Vec<SenderEvent> {
+            drop(self.sink);
+            let mut observed = Vec::new();
+            while let Ok(event) = self.rx.try_recv() {
+                observed.push(event);
+            }
+            observed
+        }
+    }
+
+    fn event_sink(session_id: &str) -> EventHarness {
+        let (tx, rx) = mpsc::unbounded_channel();
+        EventHarness {
+            sink: SenderEventSink::new(session_id.to_owned(), Some(tx)),
+            rx,
+        }
+    }
+
+    fn sender_identity() -> Identity {
+        Identity {
+            role: TransferRole::Sender,
+            endpoint_id: SecretKey::from_bytes(&[1; 32]).public(),
+            device_name: "sender".to_owned(),
+            device_type: DeviceType::Laptop,
+        }
+    }
+
+    fn manifest() -> TransferManifest {
+        TransferManifest {
+            items: vec![
+                ManifestItem::File {
+                    path: "album/a.txt".to_owned(),
+                    size: 5,
+                },
+                ManifestItem::File {
+                    path: "album/b.txt".to_owned(),
+                    size: 6,
+                },
+            ],
+        }
     }
 }
