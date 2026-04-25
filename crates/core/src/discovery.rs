@@ -167,6 +167,7 @@ mod tests {
         let receiver = lan::NearbyReceiver {
             fullname: "recv-1".to_owned(),
             label: "Receiver".to_owned(),
+            device_type: crate::protocol::DeviceType::Laptop,
             code: String::new(),
             ticket: "bad-ticket".to_owned(),
         };

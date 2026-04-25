@@ -811,11 +811,13 @@ impl SseDecode for crate::api::lan::NearbyReceiverInfo {
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         let mut var_fullname = <String>::sse_decode(deserializer);
         let mut var_label = <String>::sse_decode(deserializer);
+        let mut var_deviceType = <String>::sse_decode(deserializer);
         let mut var_code = <String>::sse_decode(deserializer);
         let mut var_ticket = <String>::sse_decode(deserializer);
         return crate::api::lan::NearbyReceiverInfo {
             fullname: var_fullname,
             label: var_label,
+            device_type: var_deviceType,
             code: var_code,
             ticket: var_ticket,
         };
@@ -1334,6 +1336,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::lan::NearbyReceiverInfo {
         [
             self.fullname.into_into_dart().into_dart(),
             self.label.into_into_dart().into_dart(),
+            self.device_type.into_into_dart().into_dart(),
             self.code.into_into_dart().into_dart(),
             self.ticket.into_into_dart().into_dart(),
         ]
@@ -1885,6 +1888,7 @@ impl SseEncode for crate::api::lan::NearbyReceiverInfo {
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <String>::sse_encode(self.fullname, serializer);
         <String>::sse_encode(self.label, serializer);
+        <String>::sse_encode(self.device_type, serializer);
         <String>::sse_encode(self.code, serializer);
         <String>::sse_encode(self.ticket, serializer);
     }

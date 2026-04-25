@@ -52,12 +52,14 @@ class NearbyReceiver {
   const NearbyReceiver({
     required this.fullname,
     required this.label,
+    required this.deviceType,
     required this.code,
     required this.ticket,
   });
 
   final String fullname;
   final String label;
+  final String deviceType;
   final String code;
   final String ticket;
 }

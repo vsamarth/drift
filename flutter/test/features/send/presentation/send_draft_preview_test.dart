@@ -297,6 +297,7 @@ void main() {
         NearbyReceiver(
           fullname: 'samarth-laptop',
           label: 'Laptop',
+          deviceType: 'phone',
           code: 'ABC123',
           ticket: 'ticket-1',
         ),
@@ -326,6 +327,8 @@ void main() {
 
     expect(find.text('Nearby devices'), findsOneWidget);
     expect(find.text('Laptop'), findsOneWidget);
+    expect(find.byIcon(Icons.smartphone_rounded), findsOneWidget);
+    expect(find.byIcon(Icons.laptop_mac_rounded), findsNothing);
     expect(find.text('Send with code'), findsOneWidget);
     expect(
       find.text('Use the 6 characters shown on the receiver.'),
