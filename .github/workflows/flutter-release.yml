@@ -313,12 +313,13 @@ jobs:
           manifest-path: flutter/linux/sh.vs.drift.yaml
           cache: false
           branch: main
+          upload-artifact: false
 
       - name: Upload Flatpak artifact
         uses: actions/upload-artifact@v4
         with:
           name: drift-flatpak
-          path: flutter/drift-${{ env.SAFE_VERSION }}.flatpak
+          path: drift-${{ env.SAFE_VERSION }}.flatpak
           if-no-files-found: error
 
   create_release:
