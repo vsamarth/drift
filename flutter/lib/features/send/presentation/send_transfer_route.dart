@@ -329,6 +329,8 @@ transfer_state.TransferTransferProgress? _buildSharedTransferProgress(
     totalBytes: transfer.totalBytes,
     completedFiles: snapshot?.completedFiles ?? 0,
     totalFiles: snapshot?.totalFiles ?? fallbackFileCount,
+    activeFileIndex: snapshot?.activeFileId,
+    activeFileBytesTransferred: snapshot?.activeFileBytes,
     speedLabel: viewSpeedLabel(transfer),
     etaLabel: viewEtaLabel(transfer),
   );
