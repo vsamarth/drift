@@ -152,14 +152,17 @@ impl BlobRegistration {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(unix)]
+    use std::os::unix::fs::symlink;
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::{SystemTime, UNIX_EPOCH};
 
+    use crate::blobs::error::BlobError;
+
     use super::PreparedStore;
 
     type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
-
     fn unique_temp_dir(prefix: &str) -> PathBuf {
         static NEXT_TEMP_ID: AtomicU64 = AtomicU64::new(0);
         let unique = format!(
@@ -188,6 +191,29 @@ mod tests {
             .expect_err("expected duplicate transfer path failure");
         let err_text = format!("{err:#}");
         assert!(err_text.contains("duplicate transfer path in manifest: source/same.txt"));
+
+        std::fs::remove_dir_all(&root)?;
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn prepare_store_rejects_nested_symbolic_links() -> Result<()> {
+        let root = unique_temp_dir("drift-one-shot-symlink-entry");
+        let source = root.join("source");
+        let store_root = root.join("store");
+        std::fs::create_dir_all(&source)?;
+        std::fs::create_dir_all(&store_root)?;
+        std::fs::write(source.join("real.txt"), b"real")?;
+        symlink("real.txt", source.join("link.txt"))?;
+
+        let err = PreparedStore::prepare(&store_root, vec![source])
+            .await
+            .expect_err("expected nested symbolic link to be rejected");
+        match err {
+            BlobError::ImportFiles { .. } => {}
+            other => panic!("unexpected error: {other:#}"),
+        }
 
         std::fs::remove_dir_all(&root)?;
         Ok(())

@@ -1,6 +1,6 @@
 pub(crate) mod error;
 pub mod receive;
 pub mod send;
-mod util;
+pub(crate) mod util;
 
 pub use error::BlobError;

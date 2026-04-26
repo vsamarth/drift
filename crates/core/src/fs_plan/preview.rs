@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 
+use crate::blobs::util::walk_files;
 use crate::fs_plan::error::FsPlanError;
 
 type Result<T> = std::result::Result<T, FsPlanError>;
@@ -66,80 +67,41 @@ fn inspect_selected_path(path: &Path) -> Result<SelectedPathPreview> {
         source,
     })?;
     let file_type = metadata.file_type();
-
-    if file_type.is_symlink() {
+    let kind = if file_type.is_file() {
+        SelectedPathKind::File
+    } else if file_type.is_dir() {
+        SelectedPathKind::Folder
+    } else if file_type.is_symlink() {
         return Err(FsPlanError::SymbolicLink {
             path: path.to_path_buf(),
         });
-    }
-
-    if file_type.is_file() {
-        return Ok(SelectedPathPreview {
+    } else {
+        return Err(FsPlanError::UnsupportedFileType {
             path: path.to_path_buf(),
-            kind: SelectedPathKind::File,
-            file_count: 1,
-            total_size: metadata.len(),
         });
+    };
+
+    let mut file_count = 0_u64;
+    let mut total_size = 0_u64;
+    for (_, local_path) in walk_files(path.to_path_buf())? {
+        let local_metadata =
+            std::fs::metadata(&local_path).map_err(|source| FsPlanError::ReadMetadata {
+                path: local_path.clone(),
+                source,
+            })?;
+        file_count = file_count
+            .checked_add(1)
+            .ok_or(FsPlanError::FileCountOverflow)?;
+        total_size = total_size
+            .checked_add(local_metadata.len())
+            .ok_or(FsPlanError::TotalSizeOverflow)?;
     }
 
-    if file_type.is_dir() {
-        let mut file_count = 0_u64;
-        let mut total_size = 0_u64;
-        let mut stack = vec![path.to_path_buf()];
-
-        while let Some(current) = stack.pop() {
-            let entries =
-                std::fs::read_dir(&current).map_err(|source| FsPlanError::ReadDirectory {
-                    path: current.clone(),
-                    source,
-                })?;
-
-            for entry in entries {
-                let entry = entry.map_err(|source| FsPlanError::ReadDirectory {
-                    path: current.clone(),
-                    source,
-                })?;
-                let child_path = entry.path();
-                let metadata = entry
-                    .metadata()
-                    .map_err(|source| FsPlanError::ReadMetadata {
-                        path: child_path.clone(),
-                        source,
-                    })?;
-                let child_type = metadata.file_type();
-
-                if child_type.is_symlink() {
-                    return Err(FsPlanError::SymbolicLink { path: child_path });
-                }
-
-                if child_type.is_dir() {
-                    stack.push(child_path);
-                    continue;
-                }
-
-                if !child_type.is_file() {
-                    return Err(FsPlanError::UnsupportedFileType { path: child_path });
-                }
-
-                file_count = file_count
-                    .checked_add(1)
-                    .ok_or(FsPlanError::FileCountOverflow)?;
-                total_size = total_size
-                    .checked_add(metadata.len())
-                    .ok_or(FsPlanError::TotalSizeOverflow)?;
-            }
-        }
-
-        return Ok(SelectedPathPreview {
-            path: path.to_path_buf(),
-            kind: SelectedPathKind::Folder,
-            file_count,
-            total_size,
-        });
-    }
-
-    Err(FsPlanError::UnsupportedFileType {
+    Ok(SelectedPathPreview {
         path: path.to_path_buf(),
+        kind,
+        file_count,
+        total_size,
     })
 }
 
