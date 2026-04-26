@@ -73,7 +73,15 @@ pub(super) fn spawn_listener_task(
     }
     let device_type = parse_device_type(&device_type)?;
     Ok(tokio::spawn(async move {
-        run_listener_loop(endpoint, cmd_tx, out_dir, device_name, device_type).await;
+        run_listener_loop(
+            endpoint,
+            cmd_tx,
+            out_dir,
+            device_name,
+            device_type,
+            conflict_policy,
+        )
+        .await;
     }))
 }
 
@@ -234,6 +242,7 @@ async fn run_listener_loop(
     out_dir: std::path::PathBuf,
     device_name: String,
     device_type: DeviceType,
+    conflict_policy: ConflictPolicy,
 ) {
     let save_root_label = super::session::save_root_display(&out_dir);
     if let Err(err) = tokio::fs::create_dir_all(&out_dir).await {
@@ -288,6 +297,7 @@ async fn run_listener_loop(
             out_dir_for_offer,
             device_name_for_offer,
             device_type,
+            conflict_policy,
             cmd_tx_for_offer,
         );
         let _ = session.spawn();
