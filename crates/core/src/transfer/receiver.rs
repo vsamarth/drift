@@ -502,37 +502,23 @@ async fn run_session(
     .await;
 
     // Final wait for Sender to acknowledge our result
-    let outcome = match protocol_wire::read_sender_message(&mut control_recv).await {
-        Ok(protocol_message::SenderMessage::TransferAck(_)) => {
-            finish_control_stream(&mut control_send).await;
-            emit_receiver_event(
-                &event_tx,
-                ReceiverEvent::TransferCompleted {
-                    session_id: session_id.clone(),
-                    snapshot: final_snapshot,
-                },
-            );
-            emit_receiver_event(
-                &event_tx,
-                ReceiverEvent::Completed {
-                    session_id: session_id.clone(),
-                },
-            );
-            cleanup_transfer_workspace(&record_dir).await;
-            Ok(TransferOutcome::Completed)
-        }
-        Ok(_) => {
-            return Err(TransferError::other(
-                "waiting for sender ack",
-                std::io::Error::other("missing final transfer ack from sender"),
-            ));
-        }
-        Err(error) => {
-            return Err(error.into());
-        }
-    };
-
-    outcome
+    await_final_sender_ack(&mut control_recv, &session_id).await;
+    finish_control_stream(&mut control_send).await;
+    emit_receiver_event(
+        &event_tx,
+        ReceiverEvent::TransferCompleted {
+            session_id: session_id.clone(),
+            snapshot: final_snapshot,
+        },
+    );
+    emit_receiver_event(
+        &event_tx,
+        ReceiverEvent::Completed {
+            session_id: session_id.clone(),
+        },
+    );
+    cleanup_transfer_workspace(&record_dir).await;
+    Ok(TransferOutcome::Completed)
 }
 
 enum HandshakeResult {
@@ -962,6 +948,15 @@ mod tests {
         assert!(matches!(next, SenderMessage::TransferAck(_)));
     }
 
+    #[tokio::test]
+    async fn final_sender_ack_is_optional_after_successful_receive() {
+        let (local, remote) = duplex(4096);
+        drop(remote);
+        let (mut control_recv, _) = tokio::io::split(local);
+
+        await_final_sender_ack(&mut control_recv, "session-1").await;
+    }
+
     #[cfg(unix)]
     #[tokio::test]
     async fn export_downloaded_collection_rejects_symlinked_parents() {
@@ -1157,6 +1152,36 @@ async fn send_receiver_decline(
     )
     .await
     .map_err(Into::into)
+}
+
+async fn await_final_sender_ack<R>(recv: &mut R, session_id: &str)
+where
+    R: AsyncRead + Unpin,
+{
+    match protocol_wire::read_sender_message(recv).await {
+        Ok(protocol_message::SenderMessage::TransferAck(msg)) if msg.session_id == session_id => {}
+        Ok(protocol_message::SenderMessage::TransferAck(msg)) => {
+            warn!(
+                expected_session_id = %session_id,
+                actual_session_id = %msg.session_id,
+                "ignoring unexpected final sender ack"
+            );
+        }
+        Ok(other) => {
+            warn!(
+                expected_session_id = %session_id,
+                message_kind = ?other.kind(),
+                "ignoring unexpected final sender message"
+            );
+        }
+        Err(error) => {
+            warn!(
+                expected_session_id = %session_id,
+                error = %error,
+                "missing final sender ack"
+            );
+        }
+    }
 }
 
 async fn finish_control_stream(send: &mut iroh::endpoint::SendStream) {
