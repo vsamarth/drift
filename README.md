@@ -1,26 +1,41 @@
-
 > [!WARNING]
-> Drift is still round its edges. If you run into an issue or even if something feels off, don't hesitate to open an [issue](https://github.com/vsamarth/drift/issues/new).
+> Drift is still rough around the edges. If something breaks, feels confusing, or does not work on your device, please open an issue:
+> https://github.com/vsamarth/drift/issues/new
 
 <p align="center">
   <img src="flutter/assets/logo_rounded.png" width="96" alt="Drift Logo">
 </p>
 
-# <p align="center">Drift</p>
+<h1 align="center">Drift</h1>
 
-<p align="center"><strong>Drift is your free, open-source alternative to AirDrop—built to work across every device you own.</strong></p>
+<p align="center">
+  <strong>AirDrop-like file sharing for any device, anywhere.</strong>
+</p>
 
 <p align="center">
   <img src="flutter/assets/demo.png" width="600" alt="Drift Demo">
 </p>
 
+Drift is a free and open-source app for sending files directly between devices.
+
+It is designed to feel as simple as AirDrop, but without being limited to Apple devices or nearby-only transfers. Pick files, connect to another device, and send.
+
 ## Features
 
-- **Send files directly to anyone, anywhere in the world.** Pick your files, connect, and send directly to the other device, with no uploads and no extra steps.
-- Use **Drift** across **macOS, Linux, Windows, Android, and iOS**.
-- **End-to-end encrypted:** Only you and the recipient can read your files; no one else can.
-- **Modern & Fast:** Written in Rust & Flutter and establishes direct QUIC connections between the devices.
-- **Free & open source:** No ads, no limits on what you send, and no account required.
+- **Send files between devices, near or far**  
+  Discover nearby devices on your local network, or connect using a 6-character pairing code.
+
+- **Resumable transfers**  
+  Connection died mid-transfer? Send the same files again and Drift will resume from where the transfer stopped instead of starting over.
+
+- **Cross-platform**  
+  Drift currently provides builds for macOS, Windows, Linux, and Android. iOS support is planned.
+
+- **End-to-end encrypted connections**  
+  Files are sent over an end-to-end encrypted peer-to-peer connection. Files are never stored in the cloud, and only the sender and receiver can read them.
+
+- **Free and open source**  
+  Drift is MIT-licensed and open to contributions. No ads, accounts, or limits on what you send.
 
 ## Installation
 
@@ -30,36 +45,40 @@
 | Windows | [drift-windows-setup-v0.3.3.exe](https://github.com/vsamarth/drift/releases/download/v0.3.3/drift-windows-setup-v0.3.3.exe) |
 | Linux | [drift-linux-v0.3.3.deb](https://github.com/vsamarth/drift/releases/download/v0.3.3/drift-linux-v0.3.3.deb) |
 | Android | [drift-android-v0.3.3.apk](https://github.com/vsamarth/drift/releases/download/v0.3.3/drift-android-v0.3.3.apk) |
-| iOS | *Coming soon* |
+| iOS | Coming soon |
 
 > [!TIP]
-> **macOS Gatekeeper:** If macOS blocks the app because it is currently unsigned, from your terminal, run:
-> `xattr -rd com.apple.quarantine /Applications/Drift.app`
+> **macOS:** Drift is currently unsigned. If Gatekeeper blocks the app, you can remove the quarantine flag:
+>
+> ```sh
+> xattr -rd com.apple.quarantine /Applications/Drift.app
+> ```
 
-**From source:** Build the app in [`flutter/`](flutter/); see [`flutter/README.md`](flutter/README.md).
+### Build from source
 
-## Getting Started
+The Flutter app lives in [`flutter/`](flutter/).
 
-Drift is simple by design. To get started, follow these quick steps:
+See [`flutter/README.md`](flutter/README.md) for build instructions.
 
-1. Choose (or drop) the files you want to send.
-2. Select the receiver from nearby devices or use the 6-character pairing code.
-3. The receiver reviews and accepts to start the transfer.
+## Getting started
 
-## How It Works
+1. Choose or drop the files you want to send.
+2. Select a nearby device, or connect using the 6-character pairing code shown on the receiving device.
+3. The receiver reviews the files and accepts the transfer.
+4. Drift sends the files directly to the other device.
 
-- **Discovery:** Devices connect via a **discovery server** or **LAN discovery**. We only exchange the network info needed to find your peer—never your files.
-- **Direct P2P:** We establish a direct, **[end-to-end encrypted](https://docs.iroh.computer/deployment/security-privacy)** connection between devices.
-- **Explicit Consent:** No data moves until the receiver reviews the file manifest and accepts the transfer.
+## Contributing
 
-## Roadmap
+Drift is usable, but still early. Contributions, testing, bug reports, and UX feedback are welcome.
 
-Drift is still in its early stages. We are focused on stability and UX, and we will continue shipping essential features. Feel free to open a discussion with suggestions. Here are some ideas we are working on:
+Some of the things planned next:
 
-- [x] Add resumable downloads/transfers for interrupted sessions.
-- [ ] Remember trusted devices as favorites for faster repeat transfers.
-- [ ] Keep Drift listening in the background so it is always ready to receive files.
+- [x] Resumable transfers for interrupted sessions
+- [ ] Remember trusted devices for faster repeat transfers
+- [ ] Keep Drift listening in the background
+- [ ] Set up app distribution through app stores and package managers
+- [ ] Add iOS support
 
 ## License
 
-This project is licensed under the MIT License. See [`LICENSE`](LICENSE).
+Drift is licensed under the MIT License. See [`LICENSE`](LICENSE).
