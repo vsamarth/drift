@@ -14,7 +14,7 @@ use tokio::task::JoinHandle;
 use tokio_stream::StreamExt;
 
 use crate::error::{UserFacingError, UserFacingErrorKind, format_error_chain};
-use crate::types::{ReceiverOfferEvent, ReceiverOfferFile, ReceiverOfferPhase};
+use crate::types::{ConflictPolicy, ReceiverOfferEvent, ReceiverOfferFile, ReceiverOfferPhase};
 
 use super::actor::ReceiverCommand;
 use super::runtime::OfferResolution;
@@ -30,6 +30,7 @@ pub(super) struct ReceiverSession {
     out_dir: std::path::PathBuf,
     device_name: String,
     device_type: DeviceType,
+    conflict_policy: ConflictPolicy,
     save_root_label: String,
     cmd_tx: mpsc::Sender<ReceiverCommand>,
 }
@@ -49,6 +50,7 @@ impl ReceiverSession {
         out_dir: std::path::PathBuf,
         device_name: String,
         device_type: DeviceType,
+        conflict_policy: ConflictPolicy,
         cmd_tx: mpsc::Sender<ReceiverCommand>,
     ) -> Self {
         let save_root_label = save_root_display(&out_dir);
@@ -59,6 +61,7 @@ impl ReceiverSession {
             out_dir,
             device_name,
             device_type,
+            conflict_policy,
             save_root_label,
             cmd_tx,
         }
@@ -78,17 +81,19 @@ impl ReceiverSession {
             out_dir,
             device_name,
             device_type,
+            conflict_policy,
             save_root_label,
             cmd_tx,
         } = self;
 
         let connection_path_kind =
             classify_connection_path(&endpoint, connection.remote_id()).await;
-        let session = CoreReceiverSession::new(CoreReceiverRequest {
-            device_name: device_name.clone(),
+        let session = CoreReceiverSession::new(build_core_receiver_request(
+            device_name.clone(),
             device_type,
             out_dir,
-        });
+            conflict_policy,
+        ));
         let start = session.start(endpoint, connection);
         let CoreReceiverStart {
             mut events,
@@ -384,6 +389,20 @@ impl ReceiverSession {
     }
 }
 
+fn build_core_receiver_request(
+    device_name: String,
+    device_type: DeviceType,
+    out_dir: std::path::PathBuf,
+    conflict_policy: ConflictPolicy,
+) -> CoreReceiverRequest {
+    CoreReceiverRequest {
+        device_name,
+        device_type,
+        out_dir,
+        conflict_policy,
+    }
+}
+
 fn completed_offer_event(
     sender_name: String,
     save_root_label: String,
@@ -494,12 +513,26 @@ fn failed_offer_event(
 #[cfg(test)]
 mod tests {
     use super::{
-        build_offer_event, completed_offer_event, connection_path_label, failed_offer_event,
+        build_core_receiver_request, build_offer_event, completed_offer_event,
+        connection_path_label, failed_offer_event,
     };
     use crate::error::UserFacingErrorKind;
+    use crate::types::ConflictPolicy;
     use drift_core::protocol::DeviceType;
     use drift_core::transfer::TransferPlan;
     use drift_core::util::ConnectionPathKind;
+
+    #[test]
+    fn core_receiver_request_preserves_configured_conflict_policy() {
+        let request = build_core_receiver_request(
+            "Receiver".to_owned(),
+            DeviceType::Laptop,
+            std::path::PathBuf::from("downloads"),
+            ConflictPolicy::Reject,
+        );
+
+        assert_eq!(request.conflict_policy, ConflictPolicy::Reject);
+    }
 
     #[test]
     fn failed_offer_event_uses_structured_error() {

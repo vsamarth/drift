@@ -20,6 +20,7 @@ use tracing::{info, instrument, warn};
 
 use crate::{
     blobs::receive::{BlobDownloadSession, BlobDownloadUpdate, BlobReceiver},
+    fs_plan::ConflictPolicy,
     protocol::message as protocol_message,
     protocol::message::MessageKind,
     protocol::wire as protocol_wire,
@@ -45,6 +46,7 @@ pub struct ReceiverRequest {
     pub device_name: String,
     pub device_type: crate::protocol::DeviceType,
     pub out_dir: std::path::PathBuf,
+    pub conflict_policy: ConflictPolicy,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -229,20 +231,26 @@ async fn run_session(
         .as_ref()
         .map(|record| resume_offset_for_record(record, plan.total_bytes))
         .unwrap_or(0);
-    let expected_files =
-        match build_expected_files(&manifest, &request.out_dir, resume_record.as_ref()).await {
-            Ok(f) => f,
-            Err(err) => {
-                let reason = err.to_string();
-                let _ = send_receiver_decline(&mut control_send, &session_id, reason.clone()).await;
-                finish_control_stream(&mut control_send).await;
-                let _ = offer_tx.send(Err(TransferError::other(
-                    "building receiver offer",
-                    std::io::Error::other(reason.clone()),
-                )));
-                return Err(err);
-            }
-        };
+    let expected_files = match build_expected_files(
+        &manifest,
+        &request.out_dir,
+        request.conflict_policy,
+        resume_record.as_ref(),
+    )
+    .await
+    {
+        Ok(f) => f,
+        Err(err) => {
+            let reason = err.to_string();
+            let _ = send_receiver_decline(&mut control_send, &session_id, reason.clone()).await;
+            finish_control_stream(&mut control_send).await;
+            let _ = offer_tx.send(Err(TransferError::other(
+                "building receiver offer",
+                std::io::Error::other(reason.clone()),
+            )));
+            return Err(err);
+        }
+    };
 
     let expected_transfer_files = build_expected_transfer_files(&manifest, expected_files)?;
     let receiver_offer = ReceiverOffer {
@@ -315,7 +323,7 @@ async fn run_session(
             let r = TransferRecord::new(
                 receiver_offer.collection_hash,
                 request.out_dir.clone(),
-                crate::fs_plan::ConflictPolicy::Rename, // Default
+                request.conflict_policy,
                 offer.manifest.clone(),
             );
             r.save(&record_dir)
@@ -741,20 +749,14 @@ pub async fn export_downloaded_collection(
 async fn build_expected_files(
     manifest: &OfferManifest,
     out_dir: &Path,
+    conflict_policy: ConflictPolicy,
     resume_record: Option<&TransferRecord>,
 ) -> Result<BTreeMap<String, ExpectedTransferFile>> {
     let mut expected = BTreeMap::new();
     for file in &manifest.files {
-        let destination = resolve_transfer_destination(out_dir, &file.path)?;
-        match ensure_destination_available(out_dir, &destination).await {
-            Ok(()) => {}
-            Err(super::path::TransferPathError::DestinationExists { path })
-                if resume_record
-                    .map(|record| record.exported_files.contains(&file.path))
-                    .unwrap_or(false)
-                    && path == destination => {}
-            Err(error) => return Err(error.into()),
-        }
+        let destination =
+            resolve_expected_destination(out_dir, &file.path, conflict_policy, resume_record)
+                .await?;
         expected.insert(
             file.path.clone(),
             ExpectedTransferFile {
@@ -765,6 +767,43 @@ async fn build_expected_files(
         );
     }
     Ok(expected)
+}
+
+async fn resolve_expected_destination(
+    out_dir: &Path,
+    transfer_path: &str,
+    conflict_policy: ConflictPolicy,
+    resume_record: Option<&TransferRecord>,
+) -> Result<PathBuf> {
+    let destination = resolve_transfer_destination(out_dir, transfer_path)?;
+    match ensure_destination_available(out_dir, &destination).await {
+        Ok(()) => Ok(destination),
+        Err(super::path::TransferPathError::DestinationExists { path })
+            if resume_record
+                .map(|record| record.exported_files.contains(transfer_path))
+                .unwrap_or(false)
+                && path == destination =>
+        {
+            Ok(destination)
+        }
+        Err(super::path::TransferPathError::DestinationExists { .. }) => match conflict_policy {
+            ConflictPolicy::Reject => {
+                Err(super::path::TransferPathError::DestinationExists { path: destination }.into())
+            }
+            ConflictPolicy::Rename => {
+                let resolved = conflict_policy
+                    .resolve(&destination)
+                    .await
+                    .map_err(|error| {
+                        TransferError::other("resolving destination conflict", error)
+                    })?;
+                ensure_destination_available(out_dir, &resolved).await?;
+                Ok(resolved)
+            }
+            ConflictPolicy::Overwrite => Ok(destination),
+        },
+        Err(error) => Err(error.into()),
+    }
 }
 
 fn load_resume_record(
@@ -891,9 +930,10 @@ mod tests {
         let manifest = manifest_with(&[("already.txt", 4), ("remaining.txt", 9)]);
         let record = record_with_exported(&["already.txt"]);
 
-        let expected = build_expected_files(&manifest, out.path(), Some(&record))
-            .await
-            .unwrap();
+        let expected =
+            build_expected_files(&manifest, out.path(), ConflictPolicy::Rename, Some(&record))
+                .await
+                .unwrap();
 
         assert_eq!(
             expected
@@ -906,6 +946,59 @@ mod tests {
                 .get("remaining.txt")
                 .map(|file| file.destination.as_path()),
             Some(out.path().join("remaining.txt").as_path())
+        );
+    }
+
+    #[tokio::test]
+    async fn rename_policy_renames_existing_destinations() {
+        let out = tempfile::tempdir().unwrap();
+        std::fs::write(out.path().join("report.txt"), b"existing").unwrap();
+        let manifest = manifest_with(&[("report.txt", 4)]);
+
+        let expected = build_expected_files(&manifest, out.path(), ConflictPolicy::Rename, None)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            expected
+                .get("report.txt")
+                .map(|file| file.destination.as_path()),
+            Some(out.path().join("report (1).txt").as_path())
+        );
+    }
+
+    #[tokio::test]
+    async fn rename_policy_keeps_nested_parent_directory() {
+        let out = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(out.path().join("reports")).unwrap();
+        std::fs::write(out.path().join("reports/report.txt"), b"existing").unwrap();
+        let manifest = manifest_with(&[("reports/report.txt", 4)]);
+
+        let expected = build_expected_files(&manifest, out.path(), ConflictPolicy::Rename, None)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            expected
+                .get("reports/report.txt")
+                .map(|file| file.destination.as_path()),
+            Some(out.path().join("reports/report (1).txt").as_path())
+        );
+    }
+
+    #[tokio::test]
+    async fn reject_policy_fails_existing_destinations() {
+        let out = tempfile::tempdir().unwrap();
+        std::fs::write(out.path().join("report.txt"), b"existing").unwrap();
+        let manifest = manifest_with(&[("report.txt", 4)]);
+
+        let err = build_expected_files(&manifest, out.path(), ConflictPolicy::Reject, None)
+            .await
+            .expect_err("expected reject policy to fail");
+
+        assert!(
+            err.to_string().contains("destination already exists"),
+            "unexpected error: {err:#}"
         );
     }
 
