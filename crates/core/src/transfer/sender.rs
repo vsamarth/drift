@@ -406,13 +406,19 @@ where
 
     let mut progress_active = true;
     let mut control_done = false;
+    
+    let mut progress_fut = Box::pin(protocol_wire::read_receiver_message(progress_recv));
+    let mut control_fut = Box::pin(protocol_wire::read_receiver_message(control_recv));
+
     loop {
         if control_done && !progress_active {
             return Ok(TransferOutcome::Completed);
         }
 
+        let mut reload_progress = false;
         tokio::select! {
-            msg = protocol_wire::read_receiver_message(progress_recv), if progress_active => {
+            msg = &mut progress_fut, if progress_active => {
+                reload_progress = true;
                 match msg {
                     Ok(protocol_message::ReceiverMessage::TransferProgress(p)) => {
                         events.emit(SenderEvent::TransferProgress {
@@ -430,10 +436,11 @@ where
                     Ok(other) => return Err(ProtocolError::unexpected_message_kind("receiver progress", MessageKind::TransferProgress, other.kind()).into()),
                     Err(_) => {
                         progress_active = false;
+                        reload_progress = false;
                     }
                 }
             }
-            msg = protocol_wire::read_receiver_message(control_recv), if !control_done => {
+            msg = &mut control_fut, if !control_done => {
                 match msg? {
                     protocol_message::ReceiverMessage::TransferResult(r) => {
                         match r.status {
@@ -451,6 +458,11 @@ where
                     other => return Err(ProtocolError::unexpected_message_kind("receiver control", MessageKind::TransferResult, other.kind()).into()),
                 }
             }
+        }
+
+        if reload_progress {
+            drop(progress_fut);
+            progress_fut = Box::pin(protocol_wire::read_receiver_message(progress_recv));
         }
     }
 }
