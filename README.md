@@ -13,9 +13,9 @@
 </p>
 
 <p align="center">
-  <img src="flutter/assets/laptop.gif" width="500" alt="Drift Desktop Demo">
+  <img src="flutter/assets/laptop.gif" alt="Drift Desktop Demo">
   &nbsp;&nbsp;&nbsp;&nbsp;
-  <img src="flutter/assets/mobile.gif" width="200" alt="Drift Mobile Demo">
+  <img src="flutter/assets/mobile.gif" alt="Drift Mobile Demo">
 </p>
 
 Drift is a free and open-source app for sending files directly between devices.
