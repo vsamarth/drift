@@ -405,7 +405,12 @@ where
     });
 
     let mut progress_active = true;
+    let mut control_done = false;
     loop {
+        if control_done && !progress_active {
+            return Ok(TransferOutcome::Completed);
+        }
+
         tokio::select! {
             msg = protocol_wire::read_receiver_message(progress_recv), if progress_active => {
                 match msg {
@@ -428,11 +433,13 @@ where
                     }
                 }
             }
-            msg = protocol_wire::read_receiver_message(control_recv) => {
+            msg = protocol_wire::read_receiver_message(control_recv), if !control_done => {
                 match msg? {
                     protocol_message::ReceiverMessage::TransferResult(r) => {
                         match r.status {
-                            protocol_message::TransferStatus::Ok => return Ok(TransferOutcome::Completed),
+                            protocol_message::TransferStatus::Ok => {
+                                control_done = true;
+                            },
                             protocol_message::TransferStatus::Error { code, message } => {
                                 return Err(TransferError::other("transfer error from receiver", std::io::Error::other(format!("{code:?}: {message}"))));
                             }
