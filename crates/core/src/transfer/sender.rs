@@ -253,11 +253,6 @@ impl SenderSession {
             }
         }
 
-        let mut progress_recv = connection
-            .accept_uni()
-            .await
-            .map_err(|source| TransferError::other("accepting progress stream", source))?;
-
         // --- Data Transfer ---
         let blob_service = BlobService::new(self.endpoint.clone());
         let registration = blob_service.register(prepared).await.map_err(|source| {
@@ -272,6 +267,11 @@ impl SenderSession {
             }),
         )
         .await?;
+
+        let mut progress_recv = connection
+            .accept_uni()
+            .await
+            .map_err(|source| TransferError::other("accepting progress stream", source))?;
 
         let outcome = tokio::select! {
             res = do_transfer(&self.session_id, &prepared_plan, &mut progress_recv, &mut control_recv, &self.events) => res?,

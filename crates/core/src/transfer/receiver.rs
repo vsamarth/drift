@@ -620,6 +620,16 @@ async fn do_transfer(
         },
     );
 
+    let initial_snapshot = tracker.snapshot(std::time::Instant::now());
+    let _ = protocol_wire::write_receiver_message(
+        progress_send,
+        &protocol_message::ReceiverMessage::TransferProgress(protocol_message::TransferProgress {
+            session_id: session_id.to_owned(),
+            snapshot: to_wire_snapshot(&initial_snapshot),
+        }),
+    )
+    .await;
+
     loop {
         tokio::select! {
             item = download.events_mut().next() => match item {
