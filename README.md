@@ -41,10 +41,10 @@ It is designed to feel as simple as AirDrop, but without being limited to Apple 
 
 | Platform | Download |
 | --- | --- |
-| macOS | [drift-macos-v0.3.3.dmg](https://github.com/vsamarth/drift/releases/download/v0.3.3/drift-macos-v0.3.3.dmg) |
-| Windows | [drift-windows-setup-v0.3.3.exe](https://github.com/vsamarth/drift/releases/download/v0.3.3/drift-windows-setup-v0.3.3.exe) |
-| Linux | [drift-linux-v0.3.3.deb](https://github.com/vsamarth/drift/releases/download/v0.3.3/drift-linux-v0.3.3.deb) |
-| Android | [drift-android-v0.3.3.apk](https://github.com/vsamarth/drift/releases/download/v0.3.3/drift-android-v0.3.3.apk) |
+| macOS | [drift-macos-v0.3.4.dmg](https://github.com/vsamarth/drift/releases/download/v0.3.4/drift-macos-v0.3.4.dmg) |
+| Windows | [drift-windows-setup-v0.3.4.exe](https://github.com/vsamarth/drift/releases/download/v0.3.4/drift-windows-setup-v0.3.4.exe) |
+| Linux | [drift-linux-v0.3.4.deb](https://github.com/vsamarth/drift/releases/download/v0.3.4/drift-linux-v0.3.4.deb) |
+| Android | [drift-android-v0.3.4.apk](https://github.com/vsamarth/drift/releases/download/v0.3.4/drift-android-v0.3.4.apk) |
 | iOS | Coming soon |
 
 > [!TIP]
