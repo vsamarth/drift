@@ -406,7 +406,7 @@ where
 
     let mut progress_active = true;
     let mut control_done = false;
-    
+
     let mut progress_fut = Box::pin(protocol_wire::read_receiver_message(progress_recv));
     let mut control_fut = Box::pin(protocol_wire::read_receiver_message(control_recv));
 
