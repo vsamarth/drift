@@ -26,10 +26,10 @@
 
 | Platform | Download |
 | --- | --- |
-| macOS | [drift-macos-v0.3.1.dmg](https://github.com/vsamarth/drift/releases/download/v0.3.1/drift-macos-v0.3.1.dmg) |
-| Windows | [drift-windows-setup-v0.3.1.exe](https://github.com/vsamarth/drift/releases/download/v0.3.1/drift-windows-setup-v0.3.1.exe) |
-| Linux | [drift-linux-v0.3.1.deb](https://github.com/vsamarth/drift/releases/download/v0.3.1/drift-linux-v0.3.1.deb) |
-| Android | [drift-android-v0.3.1.apk](https://github.com/vsamarth/drift/releases/download/v0.3.1/drift-android-v0.3.1.apk) |
+| macOS | [drift-macos-v0.3.2.dmg](https://github.com/vsamarth/drift/releases/download/v0.3.2/drift-macos-v0.3.2.dmg) |
+| Windows | [drift-windows-setup-v0.3.2.exe](https://github.com/vsamarth/drift/releases/download/v0.3.2/drift-windows-setup-v0.3.2.exe) |
+| Linux | [drift-linux-v0.3.2.deb](https://github.com/vsamarth/drift/releases/download/v0.3.2/drift-linux-v0.3.2.deb) |
+| Android | [drift-android-v0.3.2.apk](https://github.com/vsamarth/drift/releases/download/v0.3.2/drift-android-v0.3.2.apk) |
 | iOS | *Coming soon* |
 
 > [!TIP]
