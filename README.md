@@ -1,6 +1,6 @@
 
 > [!WARNING]
-> Drift is currently in **Beta**. While we strive for stability, you may encounter bugs. We appreciate your patience and feedback!
+> Drift is still round it's edges. If you run into an issue or even if something feels off, don't hesitate to open an [issue](https://github.com/vsamarth/drift/issues/new).
 
 <p align="center">
   <img src="flutter/assets/logo_rounded.png" width="96" alt="Drift Logo">
@@ -33,7 +33,7 @@
 | iOS | *Coming soon* |
 
 > [!TIP]
-> **macOS Gatekeeper:** If macOS blocks the app because it is currently unsigned, move it to your Applications folder and run:
+> **macOS Gatekeeper:** If macOS blocks the app because it is currently unsigned, from your terminal, run:
 > `xattr -rd com.apple.quarantine /Applications/Drift.app`
 
 **From source:** Build the app in [`flutter/`](flutter/); see [`flutter/README.md`](flutter/README.md).
