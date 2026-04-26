@@ -1,6 +1,6 @@
 
 > [!WARNING]
-> Drift is still round it's edges. If you run into an issue or even if something feels off, don't hesitate to open an [issue](https://github.com/vsamarth/drift/issues/new).
+> Drift is still round its edges. If you run into an issue or even if something feels off, don't hesitate to open an [issue](https://github.com/vsamarth/drift/issues/new).
 
 <p align="center">
   <img src="flutter/assets/logo_rounded.png" width="96" alt="Drift Logo">
@@ -56,9 +56,9 @@ Drift is simple by design. To get started, follow these quick steps:
 
 Drift is still in its early stages. We are focused on stability and UX, and we will continue shipping essential features. Feel free to open a discussion with suggestions. Here are some ideas we are working on:
 
-- Remember trusted devices as favorites for faster repeat transfers.
-- Add resumable downloads/transfers for interrupted sessions.
-- Keep Drift listening in the background so it is always ready to receive files.
+- [x] Add resumable downloads/transfers for interrupted sessions.
+- [ ] Remember trusted devices as favorites for faster repeat transfers.
+- [ ] Keep Drift listening in the background so it is always ready to receive files.
 
 ## License
 
