@@ -16,7 +16,7 @@ use tokio::fs;
 use tokio::io::AsyncRead;
 use tokio::sync::{mpsc, oneshot, watch};
 use tokio_stream::wrappers::UnboundedReceiverStream;
-use tracing::{info, instrument};
+use tracing::{info, instrument, warn};
 
 use crate::{
     blobs::receive::{BlobDownloadSession, BlobDownloadUpdate, BlobReceiver},
@@ -518,6 +518,7 @@ async fn run_session(
                     session_id: session_id.clone(),
                 },
             );
+            cleanup_transfer_workspace(&record_dir).await;
             Ok(TransferOutcome::Completed)
         }
         Ok(_) => {
@@ -1009,6 +1010,30 @@ mod tests {
         assert!(format!("{err:#}").contains("symbolic link"));
         assert!(!escape_root.join("owned.txt").exists());
     }
+
+    #[tokio::test]
+    async fn cleanup_transfer_workspace_removes_existing_directory() {
+        let temp = tempfile::tempdir().unwrap();
+        let workspace = temp.path().join("workspace");
+        tokio::fs::create_dir_all(&workspace).await.unwrap();
+        tokio::fs::write(workspace.join("record.json"), b"{}")
+            .await
+            .unwrap();
+
+        cleanup_transfer_workspace(&workspace).await;
+
+        assert!(!workspace.exists());
+    }
+
+    #[tokio::test]
+    async fn cleanup_transfer_workspace_ignores_missing_directory() {
+        let temp = tempfile::tempdir().unwrap();
+        let workspace = temp.path().join("workspace");
+
+        cleanup_transfer_workspace(&workspace).await;
+
+        assert!(!workspace.exists());
+    }
 }
 
 fn build_expected_transfer_files(
@@ -1137,6 +1162,20 @@ async fn send_receiver_decline(
 async fn finish_control_stream(send: &mut iroh::endpoint::SendStream) {
     let _ = send.finish();
     let _ = tokio::time::timeout(Duration::from_secs(2), send.stopped()).await;
+}
+
+async fn cleanup_transfer_workspace(record_dir: &Path) {
+    match fs::remove_dir_all(record_dir).await {
+        Ok(()) => {}
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+        Err(err) => {
+            warn!(
+                path = %record_dir.display(),
+                error = %err,
+                "failed to clean up transfer workspace"
+            );
+        }
+    }
 }
 
 pub async fn bind_endpoint() -> Result<Endpoint> {
