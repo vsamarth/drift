@@ -377,7 +377,8 @@ impl From<TransferPathError> for UserFacingError {
             TransferPathError::DestinationExists { .. } => {
                 UserFacingError::from_kind(UserFacingErrorKind::FileConflict)
             }
-            TransferPathError::DestinationParentNotDirectory { .. } => {
+            TransferPathError::DestinationParentIsSymlink { .. }
+            | TransferPathError::DestinationParentNotDirectory { .. } => {
                 UserFacingError::from_kind(UserFacingErrorKind::InvalidInput)
             }
             TransferPathError::CheckPath { source, .. }

@@ -727,6 +727,7 @@ pub async fn export_downloaded_collection(
                 std::io::Error::other(format!("missing file in collection: {}", exp.path)),
             )
         })?;
+        ensure_destination_available(&record.output_dir, &exp.destination).await?;
         if let Some(p) = exp.destination.parent() {
             fs::create_dir_all(p)
                 .await
@@ -838,10 +839,9 @@ mod tests {
     use crate::blobs::send::PreparedStore;
     use crate::fs_plan::ConflictPolicy;
     use crate::protocol::message::{
-        BlobTicketMessage, ManifestItem, SenderMessage, TransferAck, TransferManifest, TransferRole,
+        BlobTicketMessage, ManifestItem, SenderMessage, TransferAck, TransferManifest,
     };
     use crate::protocol::wire::{read_sender_message, write_sender_message};
-    use crate::transfer::{SendRequest, Sender};
     use tokio::io::duplex;
 
     fn manifest_with(paths: &[(&str, u64)]) -> OfferManifest {
@@ -959,6 +959,55 @@ mod tests {
 
         let next = read_sender_message(&mut local_read).await.unwrap();
         assert!(matches!(next, SenderMessage::TransferAck(_)));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn export_downloaded_collection_rejects_symlinked_parents() {
+        use std::os::unix::fs::symlink;
+
+        let temp = tempfile::tempdir().unwrap();
+        let source_root = temp.path().join("source");
+        let download_root = temp.path().join("downloads");
+        let escape_root = temp.path().join("escape");
+        let record_dir = temp.path().join("record");
+        let source_link = source_root.join("link");
+        let expected_destination = download_root.join("link/owned.txt");
+
+        std::fs::create_dir_all(&source_link).unwrap();
+        std::fs::create_dir_all(&download_root).unwrap();
+        std::fs::create_dir_all(&escape_root).unwrap();
+        std::fs::create_dir_all(&record_dir).unwrap();
+        std::fs::write(source_link.join("owned.txt"), b"owned").unwrap();
+        symlink(&escape_root, download_root.join("link")).unwrap();
+
+        let prepared = PreparedStore::prepare(&source_link, vec![source_link.clone()])
+            .await
+            .unwrap();
+        let mut record = TransferRecord::new(
+            prepared.collection_hash(),
+            download_root.clone(),
+            ConflictPolicy::Rename,
+            prepared.manifest(),
+        );
+        let expected = vec![ExpectedTransferFile {
+            path: "link/owned.txt".to_owned(),
+            size: 5,
+            destination: expected_destination,
+        }];
+
+        let err = export_downloaded_collection(
+            prepared.store(),
+            prepared.collection_hash(),
+            &expected,
+            &mut record,
+            &record_dir,
+        )
+        .await
+        .unwrap_err();
+
+        assert!(format!("{err:#}").contains("symbolic link"));
+        assert!(!escape_root.join("owned.txt").exists());
     }
 }
 

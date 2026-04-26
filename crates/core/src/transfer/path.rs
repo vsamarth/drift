@@ -21,6 +21,8 @@ pub enum TransferPathError {
     InvalidUtf8PathComponent { path: PathBuf },
     #[error("destination already exists: {path}")]
     DestinationExists { path: PathBuf },
+    #[error("destination parent is a symbolic link: {path}")]
+    DestinationParentIsSymlink { path: PathBuf },
     #[error("destination parent is not a directory: {path}")]
     DestinationParentNotDirectory { path: PathBuf },
     #[error("checking {path}")]
@@ -146,9 +148,15 @@ pub async fn ensure_destination_available(
             break;
         }
 
-        match fs::metadata(parent).await {
+        match fs::symlink_metadata(parent).await {
             Ok(metadata) => {
-                if !metadata.is_dir() {
+                let file_type = metadata.file_type();
+                if file_type.is_symlink() {
+                    return Err(TransferPathError::DestinationParentIsSymlink {
+                        path: parent.to_path_buf(),
+                    });
+                }
+                if !file_type.is_dir() {
                     return Err(TransferPathError::DestinationParentNotDirectory {
                         path: parent.to_path_buf(),
                     });
@@ -247,7 +255,7 @@ impl Drop for ScratchDir {
 
 #[cfg(test)]
 mod tests {
-    use super::resolve_output_dir;
+    use super::{TransferPathError, ensure_destination_available, resolve_output_dir};
     use std::path::Path;
 
     type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
@@ -265,6 +273,34 @@ mod tests {
         let cwd = std::env::current_dir()?;
         let resolved = resolve_output_dir(Path::new("./downloads/../downloads/inbox"))?;
         assert_eq!(resolved, cwd.join("downloads/inbox"));
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn ensure_destination_available_rejects_symlinked_parents() -> Result<()> {
+        use std::os::unix::fs::symlink;
+
+        let temp = tempfile::tempdir()?;
+        let out_dir = temp.path().join("downloads");
+        let escaped = temp.path().join("escaped");
+        let link = out_dir.join("link");
+        std::fs::create_dir_all(&out_dir)?;
+        std::fs::create_dir_all(&escaped)?;
+        symlink(&escaped, &link)?;
+
+        let destination = link.join("owned.txt");
+        let err = ensure_destination_available(&out_dir, &destination)
+            .await
+            .unwrap_err();
+
+        match err {
+            TransferPathError::DestinationParentIsSymlink { path } => {
+                assert_eq!(path, link);
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+
         Ok(())
     }
 }
