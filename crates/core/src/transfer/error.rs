@@ -79,6 +79,7 @@ impl TransferError {
                 | TransferPathError::InvalidSegment
                 | TransferPathError::InvalidUtf8RootName { .. }
                 | TransferPathError::InvalidUtf8PathComponent { .. }
+                | TransferPathError::DestinationParentIsSymlink { .. }
                 | TransferPathError::DestinationParentNotDirectory { .. }
                 | TransferPathError::CheckPath { .. }
                 | TransferPathError::CurrentDirectory { .. }
