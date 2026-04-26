@@ -18,7 +18,7 @@
   <img src="flutter/assets/mobile.gif" height="400" alt="Drift Mobile Demo">
 </p>
 
-Drift is a free and open-source app for sending files directly between devices.
+Drift is a free and open-source app for sending files directly between devices, built using [iroh](https://www.iroh.computer/).
 
 It is designed to feel as simple as AirDrop, but without being limited to Apple devices or nearby-only transfers. Pick files, connect to another device, and send.
 
@@ -43,10 +43,10 @@ It is designed to feel as simple as AirDrop, but without being limited to Apple 
 
 | Platform | Download |
 | --- | --- |
-| macOS | [drift-macos-v0.3.5.dmg](https://github.com/vsamarth/drift/releases/download/v0.3.5/drift-macos-v0.3.5.dmg) |
-| Windows | [drift-windows-setup-v0.3.5.exe](https://github.com/vsamarth/drift/releases/download/v0.3.5/drift-windows-setup-v0.3.5.exe) |
-| Linux | [drift-linux-v0.3.5.deb](https://github.com/vsamarth/drift/releases/download/v0.3.5/drift-linux-v0.3.5.deb) |
-| Android | [drift-android-v0.3.5.apk](https://github.com/vsamarth/drift/releases/download/v0.3.5/drift-android-v0.3.5.apk) |
+| macOS | [drift-macos-v0.3.6.dmg](https://github.com/vsamarth/drift/releases/download/v0.3.6/drift-macos-v0.3.6.dmg) |
+| Windows | [drift-windows-setup-v0.3.6.exe](https://github.com/vsamarth/drift/releases/download/v0.3.6/drift-windows-setup-v0.3.6.exe) |
+| Linux | [drift-linux-v0.3.6.deb](https://github.com/vsamarth/drift/releases/download/v0.3.6/drift-linux-v0.3.6.deb) |
+| Android | [drift-android-v0.3.6.apk](https://github.com/vsamarth/drift/releases/download/v0.3.6/drift-android-v0.3.6.apk) |
 | iOS | Coming soon |
 
 > [!TIP]
