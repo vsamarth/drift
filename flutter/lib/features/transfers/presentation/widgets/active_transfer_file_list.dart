@@ -246,7 +246,7 @@ class _FileIcon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final showProgress = progress != null && progress! > 0 && progress! < 1.0;
+    final showProgress = progress != null && progress! >= 0 && progress! < 1.0;
     final isDone = progress != null && progress! >= 1.0;
 
     return Stack(
