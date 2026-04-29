@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:app/app/app.dart';
 import 'package:app/app/app_router.dart';
 import 'package:app/features/receive/application/service.dart';
@@ -7,8 +5,8 @@ import 'package:app/features/send/application/model.dart';
 import 'package:app/features/send/application/send_selection_picker.dart';
 import 'package:app/platform/rust/receiver/fake_source.dart';
 import 'package:app/features/settings/settings_providers.dart';
-import 'package:app/features/send/presentation/send_draft_preview.dart';
 import 'package:app/features/send/presentation/send_transfer_route.dart';
+import 'package:app/features/transfers/feature.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -127,7 +125,7 @@ void main() {
     expect(receiverSource.setDiscoverableCalls, 1);
   });
 
-  testWidgets('receiver discovery turns off for settings and back on home', (
+  testWidgets('receiver discovery stays on while navigating settings', (
     tester,
   ) async {
     final receiverSource = FakeReceiverServiceSource();
@@ -148,58 +146,43 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Settings'), findsWidgets);
-    expect(receiverSource.lastDiscoverableEnabled, isFalse);
+    expect(receiverSource.lastDiscoverableEnabled, isTrue);
+    expect(receiverSource.setDiscoverableCalls, 1);
 
     await tester.tap(find.byTooltip('Back'));
     await tester.pumpAndSettle();
 
     expect(find.text('Drop files to send'), findsOneWidget);
     expect(receiverSource.lastDiscoverableEnabled, isTrue);
+    expect(receiverSource.setDiscoverableCalls, 1);
   });
 
-  testWidgets('receiver discovery turns off while send draft is open', (
+  testWidgets('incoming offers open the receive UI from settings', (
     tester,
   ) async {
     final receiverSource = FakeReceiverServiceSource();
-    late final GoRouter router;
-    final discoveryObserver = DiscoveryRouterObserver(() {
-      final uri = router.routeInformationProvider.value.uri;
-      final enabled = uri.path == AppRoutePaths.home;
-      unawaited(receiverSource.setDiscoverable(enabled: enabled));
-    });
-    router = buildAppRouter(observers: [discoveryObserver]);
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          transferReviewAnimationProvider.overrideWithValue(false),
           initialAppSettingsProvider.overrideWithValue(testAppSettings),
           receiverServiceSourceProvider.overrideWithValue(receiverSource),
+          transfersServiceSourceProvider.overrideWithValue(receiverSource),
         ],
-        child: MaterialApp.router(routerConfig: router),
+        child: const DriftApp(),
       ),
     );
     await tester.pumpAndSettle();
 
-    expect(receiverSource.lastDiscoverableEnabled, isTrue);
-
-    router.go(
-      AppRoutePaths.sendDraft,
-      extra: [
-        SendPickedFile(
-          path: '/tmp/report.pdf',
-          name: 'report.pdf',
-          sizeBytes: BigInt.from(1024),
-        ),
-      ],
-    );
+    await tester.tap(find.byTooltip('Settings'));
     await tester.pumpAndSettle();
 
-    expect(find.byType(SendDraftPreview), findsOneWidget);
-    expect(receiverSource.lastDiscoverableEnabled, isFalse);
+    expect(find.text('Settings'), findsWidgets);
 
-    await tester.tap(find.byTooltip('Back'));
+    receiverSource.emitIncomingOffer(senderName: 'Maya');
     await tester.pumpAndSettle();
 
-    expect(find.text('Drop files to send'), findsOneWidget);
-    expect(receiverSource.lastDiscoverableEnabled, isTrue);
+    expect(find.text('INCOMING'), findsOneWidget);
+    expect(find.text('Maya'), findsAtLeastNWidgets(1));
   });
 }
