@@ -6,9 +6,14 @@ import '../../transfers/application/controller.dart';
 import '../../transfers/application/state.dart';
 
 class ReceiveTransferRouteGate extends ConsumerStatefulWidget {
-  const ReceiveTransferRouteGate({super.key, required this.child});
+  const ReceiveTransferRouteGate({
+    super.key,
+    required this.child,
+    this.onOpenTransfer,
+  });
 
   final Widget child;
+  final VoidCallback? onOpenTransfer;
 
   @override
   ConsumerState<ReceiveTransferRouteGate> createState() =>
@@ -36,7 +41,9 @@ class _ReceiveTransferRouteGateState
           _transferRouteActive = false;
           return;
         }
-        context.pushReceiveTransfer();
+        final openTransfer =
+            widget.onOpenTransfer ?? context.pushReceiveTransfer;
+        openTransfer();
       });
     }
 
